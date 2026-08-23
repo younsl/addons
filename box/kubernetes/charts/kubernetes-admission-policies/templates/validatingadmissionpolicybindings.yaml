@@ -12,7 +12,7 @@ metadata:
     {{- include "kubernetes-admission-policies.labels" $ | nindent 4 }}
   {{- with $.Values.commonAnnotations }}
   annotations:
-    {{- toYaml . | nindent 4 }}
+    {{- tpl (toYaml .) $ | nindent 4 }}
   {{- end }}
 spec:
   policyName: {{ $policyName }}
@@ -22,11 +22,11 @@ spec:
   {{- end }}
   {{- with $bindingValue.matchResources }}
   matchResources:
-    {{- toYaml . | nindent 4 }}
+    {{- tpl (toYaml .) $ | nindent 4 }}
   {{- end }}
   {{- with $bindingValue.paramRef }}
   paramRef:
-    {{- toYaml . | nindent 4 }}
+    {{- tpl (toYaml .) $ | nindent 4 }}
   {{- end }}
 {{- end }}
 {{- end }}

@@ -1,6 +1,6 @@
 # kubernetes-admission-policies
 
-![Version: 0.1.0](https://img.shields.io/badge/Version-0.1.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square)
+![Version: 0.2.0](https://img.shields.io/badge/Version-0.2.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square)
 
 Kubernetes-native admission policies using ValidatingAdmissionPolicy and MutatingAdmissionPolicy with their policy bindings
 
@@ -43,7 +43,7 @@ helm install kubernetes-admission-policies oci://ghcr.io/younsl/charts/kubernete
 Install a specific version:
 
 ```console
-helm install kubernetes-admission-policies oci://ghcr.io/younsl/charts/kubernetes-admission-policies --version 0.1.0
+helm install kubernetes-admission-policies oci://ghcr.io/younsl/charts/kubernetes-admission-policies --version 0.2.0
 ```
 
 ### Install from local chart
@@ -51,7 +51,7 @@ helm install kubernetes-admission-policies oci://ghcr.io/younsl/charts/kubernete
 Download kubernetes-admission-policies chart and install from local directory:
 
 ```console
-helm pull oci://ghcr.io/younsl/charts/kubernetes-admission-policies --untar --version 0.1.0
+helm pull oci://ghcr.io/younsl/charts/kubernetes-admission-policies --untar --version 0.2.0
 helm install kubernetes-admission-policies ./kubernetes-admission-policies
 ```
 
@@ -83,8 +83,8 @@ The following table lists the configurable parameters and their default values.
 | commonAnnotations | object | `{}` | Annotations applied to all resources |
 | apiVersions.validatingAdmissionPolicy | string | `"admissionregistration.k8s.io/v1"` | apiVersion used for ValidatingAdmissionPolicy and ValidatingAdmissionPolicyBinding resources |
 | apiVersions.mutatingAdmissionPolicy | string | `"admissionregistration.k8s.io/v1"` | apiVersion used for MutatingAdmissionPolicy and MutatingAdmissionPolicyBinding resources. Use `admissionregistration.k8s.io/v1beta1` on Kubernetes 1.34, `admissionregistration.k8s.io/v1` on 1.35+ |
-| validatingAdmissionPolicies | object | `{}` | ValidatingAdmissionPolicy resources keyed by policy name. Each policy has its own `enabled` toggle and a map of bindings, each with its own `enabled` toggle. [Kubernetes Docs](https://kubernetes.io/docs/reference/access-authn-authz/validating-admission-policy/) |
-| mutatingAdmissionPolicies | object | `{}` | MutatingAdmissionPolicy resources keyed by policy name. Each policy has its own `enabled` toggle and a map of bindings, each with its own `enabled` toggle. Requires Kubernetes 1.34+ (beta). [Kubernetes Docs](https://kubernetes.io/docs/reference/access-authn-authz/mutating-admission-policy/) |
+| validatingAdmissionPolicies | object | `{}` | ValidatingAdmissionPolicy resources keyed by policy name. Each policy and each binding has its own `enabled` toggle. Object and string fields are rendered through `tpl`, so Helm template expressions are supported. [Kubernetes Docs](https://kubernetes.io/docs/reference/access-authn-authz/validating-admission-policy/) |
+| mutatingAdmissionPolicies | object | `{}` | MutatingAdmissionPolicy resources keyed by policy name. Each policy and each binding has its own `enabled` toggle. Object and string fields are rendered through `tpl`. Requires Kubernetes 1.34+ (beta). [Kubernetes Docs](https://kubernetes.io/docs/reference/access-authn-authz/mutating-admission-policy/) |
 | extraObjects | list | `[]` | Extra Kubernetes objects to deploy alongside the chart. Entries can be plain objects or strings, both rendered through `tpl` so Helm template expressions are supported |
 
 ## Source Code

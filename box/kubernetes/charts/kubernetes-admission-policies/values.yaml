@@ -20,7 +20,8 @@ apiVersions:
   # -- (string) apiVersion used for MutatingAdmissionPolicy and MutatingAdmissionPolicyBinding resources. Use `admissionregistration.k8s.io/v1beta1` on Kubernetes 1.34, `admissionregistration.k8s.io/v1` on 1.35+
   mutatingAdmissionPolicy: admissionregistration.k8s.io/v1
 
-# -- (object) ValidatingAdmissionPolicy resources keyed by policy name. Each policy has its own `enabled` toggle and a map of bindings, each with its own `enabled` toggle. [Kubernetes Docs](https://kubernetes.io/docs/reference/access-authn-authz/validating-admission-policy/)
+# -- (object) ValidatingAdmissionPolicy resources keyed by policy name. Each policy and each binding has its own `enabled` toggle. Object and string
+# fields are rendered through `tpl`, so Helm template expressions are supported. [Kubernetes Docs](https://kubernetes.io/docs/reference/access-authn-authz/validating-admission-policy/)
 # @default -- `{}`
 validatingAdmissionPolicies: {}
   # deny-privileged-containers:
@@ -75,7 +76,8 @@ validatingAdmissionPolicies: {}
   #           matchLabels:
   #             environment: staging
 
-# -- (object) MutatingAdmissionPolicy resources keyed by policy name. Each policy has its own `enabled` toggle and a map of bindings, each with its own `enabled` toggle. Requires Kubernetes 1.34+ (beta). [Kubernetes Docs](https://kubernetes.io/docs/reference/access-authn-authz/mutating-admission-policy/)
+# -- (object) MutatingAdmissionPolicy resources keyed by policy name. Each policy and each binding has its own `enabled` toggle. Object and string fields
+# are rendered through `tpl`. Requires Kubernetes 1.34+ (beta). [Kubernetes Docs](https://kubernetes.io/docs/reference/access-authn-authz/mutating-admission-policy/)
 # @default -- `{}`
 mutatingAdmissionPolicies: {}
   # add-default-labels:

@@ -10,10 +10,10 @@ metadata:
   {{- if or $value.description $.Values.commonAnnotations }}
   annotations:
     {{- with $value.description }}
-    policies.kubernetes.io/description: {{ . | quote }}
+    policies.kubernetes.io/description: {{ tpl . $ | quote }}
     {{- end }}
     {{- with $.Values.commonAnnotations }}
-    {{- toYaml . | nindent 4 }}
+    {{- tpl (toYaml .) $ | nindent 4 }}
     {{- end }}
   {{- end }}
 spec:
@@ -25,23 +25,23 @@ spec:
   {{- end }}
   {{- with $value.matchConstraints }}
   matchConstraints:
-    {{- toYaml . | nindent 4 }}
+    {{- tpl (toYaml .) $ | nindent 4 }}
   {{- end }}
   {{- with $value.mutations }}
   mutations:
-    {{- toYaml . | nindent 4 }}
+    {{- tpl (toYaml .) $ | nindent 4 }}
   {{- end }}
   {{- with $value.matchConditions }}
   matchConditions:
-    {{- toYaml . | nindent 4 }}
+    {{- tpl (toYaml .) $ | nindent 4 }}
   {{- end }}
   {{- with $value.variables }}
   variables:
-    {{- toYaml . | nindent 4 }}
+    {{- tpl (toYaml .) $ | nindent 4 }}
   {{- end }}
   {{- with $value.paramKind }}
   paramKind:
-    {{- toYaml . | nindent 4 }}
+    {{- tpl (toYaml .) $ | nindent 4 }}
   {{- end }}
 {{- end }}
 {{- end }}
