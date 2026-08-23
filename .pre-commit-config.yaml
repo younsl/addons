@@ -17,7 +17,7 @@ repos:
         pass_filenames: false
       - id: resume-pdf
         name: resume-pdf
-        entry: make -C notes/resume pdf
+        entry: make -C docs/resume pdf
         language: system
-        files: '^notes/resume/resume\.html$'
+        files: '^docs/resume/resume\.html$'
         pass_filenames: false
