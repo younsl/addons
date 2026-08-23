@@ -127,3 +127,41 @@ func TestRegisterCertificateExpiryReportsZeroWithNothingLoaded(t *testing.T) {
 		}
 	}
 }
+
+func TestObserveDurations(t *testing.T) {
+	m := NewMetrics()
+	m.ObserveAdmission("denied", 120*time.Millisecond)
+	m.ObserveAdmission("denied", 8*time.Millisecond)
+	m.ObserveUpstreamLookup("missing", 2*time.Millisecond)
+	m.ObserveDesiredImages("error", 3*time.Second)
+
+	if got := testutil.CollectAndCount(m.AdmissionDuration); got != 1 {
+		t.Errorf("admission duration series = %d, want 1", got)
+	}
+	if got := testutil.CollectAndCount(m.UpstreamLookupSeconds); got != 1 {
+		t.Errorf("upstream lookup series = %d, want 1", got)
+	}
+	if got := testutil.CollectAndCount(m.DesiredImagesSeconds); got != 1 {
+		t.Errorf("desired images series = %d, want 1", got)
+	}
+
+	// The top bucket has to cover the webhook timeout, or a slow request is
+	// invisible in exactly the case anybody would go looking for it.
+	if last := latencyBuckets[len(latencyBuckets)-1]; last < 5 {
+		t.Errorf("largest latency bucket = %v, want at least the webhook timeout of 5s", last)
+	}
+}
+
+func TestRecordEvent(t *testing.T) {
+	m := NewMetrics()
+	m.RecordEvent("PromotionBlocked", "Warning")
+	m.RecordEvent("PromotionBlocked", "Warning")
+	m.RecordEvent("PromotionWarning", "Normal")
+
+	if got := testutil.ToFloat64(m.Events.WithLabelValues("PromotionBlocked", "Warning")); got != 2 {
+		t.Errorf("blocked events = %v, want 2", got)
+	}
+	if got := testutil.ToFloat64(m.Events.WithLabelValues("PromotionWarning", "Normal")); got != 1 {
+		t.Errorf("warned events = %v, want 1", got)
+	}
+}

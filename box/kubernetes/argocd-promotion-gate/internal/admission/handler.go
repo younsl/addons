@@ -12,6 +12,7 @@ import (
 
 	"github.com/younsl/o/box/kubernetes/argocd-promotion-gate/internal/argocd"
 	"github.com/younsl/o/box/kubernetes/argocd-promotion-gate/internal/engine"
+	"github.com/younsl/o/box/kubernetes/argocd-promotion-gate/internal/events"
 	"github.com/younsl/o/box/kubernetes/argocd-promotion-gate/internal/gate"
 	"github.com/younsl/o/box/kubernetes/argocd-promotion-gate/internal/observability"
 )
@@ -29,12 +30,14 @@ const maxBodyBytes = 4 << 20
 type Handler struct {
 	engine  *engine.Engine
 	metrics *observability.Metrics
+	events  events.Emitter
 	logger  *slog.Logger
 }
 
-// NewHandler builds the admission handler.
-func NewHandler(eng *engine.Engine, metrics *observability.Metrics, logger *slog.Logger) *Handler {
-	return &Handler{engine: eng, metrics: metrics, logger: logger}
+// NewHandler builds the admission handler. emitter may be nil, which turns
+// event recording off without the handler having to know why.
+func NewHandler(eng *engine.Engine, metrics *observability.Metrics, emitter events.Emitter, logger *slog.Logger) *Handler {
+	return &Handler{engine: eng, metrics: metrics, events: emitter, logger: logger}
 }
 
 // ServeHTTP validates one AdmissionReview.
@@ -70,9 +73,27 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	result := h.decide(r.Context(), review.Request)
+	h.emit(review.Request, result)
+
+	// Measured before the response is written rather than after, so the number
+	// is the gate's own cost and not the API server's read of the socket.
+	elapsed := time.Since(started)
 	h.metrics.RecordAdmission(result.outcome)
-	h.log(review.Request, result, time.Since(started))
+	h.metrics.ObserveAdmission(result.outcome, elapsed)
+	h.log(review.Request, result, elapsed)
 	writeJSON(w, h.logger, result.response)
+}
+
+// emit records the verdict on the Application itself.
+//
+// Skipped on a dry run, which is what sideEffects: NoneOnDryRun commits the
+// webhook to: the API server is asking what would happen, and answering by
+// writing to the cluster would make the question change the answer.
+func (h *Handler) emit(req *Request, res result) {
+	if h.events == nil || res.verdict == nil || req.DryRun {
+		return
+	}
+	h.events.Emit(req.Namespace, req.Name, ObjectUID(req), *res.verdict)
 }
 
 // result is one verdict plus everything worth writing down about it.

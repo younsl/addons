@@ -13,8 +13,6 @@ spec:
   template:
     metadata:
       annotations:
-        # A config change has to restart the pods: the file is read once at
-        # startup so a partially reloaded fleet can never disagree on a verdict.
         checksum/config: {{ include "argocd-promotion-gate.config" . | sha256sum }}
         {{- with .Values.podAnnotations }}
         {{- toYaml . | nindent 8 }}
@@ -44,9 +42,6 @@ spec:
             - --tls-key-file=/etc/argocd-promotion-gate/tls/tls.key
             - --log-level={{ .Values.logging.level }}
             - --log-format={{ .Values.logging.format }}
-            # Only affects the debug copy served on the admin port. The script
-            # argocd-server loads is written by the install-extension init
-            # container, which takes the same name.
             - --extension-name={{ .Values.uiExtension.name }}
           ports:
             - name: webhook
@@ -100,9 +95,6 @@ spec:
         - name: token
           secret:
             secretName: {{ .Values.promotionGate.argocd.tokenSecret.name }}
-            # Optional so the pod still starts before the token exists. A
-            # missing token then surfaces as a lookup failure resolved by
-            # gate.imageTag.onError, not as a crash loop.
             optional: true
         {{- if and .Values.promotionGate.argocd.caSecret.enabled (not .Values.promotionGate.argocd.insecureSkipVerify) }}
         - name: argocd-ca

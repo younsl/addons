@@ -12,6 +12,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/prometheus/client_golang/prometheus/testutil"
+
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -79,7 +81,33 @@ func newHandlerLogging(t *testing.T, cfg config.Config, resolver engine.ImageRes
 	metrics := observability.NewMetrics()
 	reader := argocd.NewReader(client, cfg.ArgoCD.Namespace, cfg.Exempt.Annotation)
 	eng := engine.New(cfg, reader, resolver, metrics, logger)
-	return NewHandler(eng, metrics, logger)
+	return NewHandler(eng, metrics, &fakeEmitter{}, logger)
+}
+
+// fakeEmitter records what the handler asked to be written without needing a
+// cluster. Tests reach it back off the handler with emitterOf.
+type fakeEmitter struct {
+	calls []emitted
+}
+
+type emitted struct {
+	namespace string
+	name      string
+	uid       string
+	verdict   gate.Decision
+}
+
+func (f *fakeEmitter) Emit(namespace, name, uid string, verdict gate.Decision) {
+	f.calls = append(f.calls, emitted{namespace: namespace, name: name, uid: uid, verdict: verdict})
+}
+
+func emitterOf(t *testing.T, h *Handler) *fakeEmitter {
+	t.Helper()
+	fake, ok := h.events.(*fakeEmitter)
+	if !ok {
+		t.Fatalf("handler emitter is %T, want *fakeEmitter", h.events)
+	}
+	return fake
 }
 
 func gatedConfig() config.Config {
@@ -495,4 +523,87 @@ func TestHandlerLogsEveryVerdictWithTargetAndReason(t *testing.T) {
 			}
 		}
 	})
+}
+
+// TestHandlerRecordsDenialAsAnEvent covers the path that puts the reason on
+// the Application itself, which is the only place somebody who did not press
+// Sync can still read it afterwards.
+func TestHandlerRecordsDenialAsAnEvent(t *testing.T) {
+	h := newHandler(t, gatedConfig(), nil,
+		application("stg-payment-api", "stg", "OutOfSync", "Healthy", ""))
+
+	app := syncingApp("prd-payment-api", "prd")
+	app["metadata"].(map[string]any)["uid"] = "app-uid-1"
+	got := post(t, h, syncReview(app, "system:serviceaccount:argocd:argocd-server"))
+	if got.Allowed {
+		t.Fatal("the sync was allowed while stg was OutOfSync")
+	}
+
+	calls := emitterOf(t, h).calls
+	if len(calls) != 1 {
+		t.Fatalf("emitted %d events, want 1", len(calls))
+	}
+	if calls[0].name != "prd-payment-api" || calls[0].namespace != "argocd" {
+		t.Errorf("event targeted %s/%s, want argocd/prd-payment-api", calls[0].namespace, calls[0].name)
+	}
+	// The object UID, not the admission request UID, or the event does not
+	// attach to the Application anybody is looking at.
+	if calls[0].uid != "app-uid-1" {
+		t.Errorf("event uid = %q, want the Application uid app-uid-1", calls[0].uid)
+	}
+	if calls[0].verdict.Code != gate.CodeUpstreamOutOfSync {
+		t.Errorf("event verdict code = %q, want %q", calls[0].verdict.Code, gate.CodeUpstreamOutOfSync)
+	}
+}
+
+// TestHandlerWritesNothingOnADryRun holds the webhook to what
+// sideEffects: NoneOnDryRun promises. The API server is asking what would
+// happen, so answering must not change anything.
+func TestHandlerWritesNothingOnADryRun(t *testing.T) {
+	h := newHandler(t, gatedConfig(), nil,
+		application("stg-payment-api", "stg", "OutOfSync", "Healthy", ""))
+
+	raw := syncReview(syncingApp("prd-payment-api", "prd"), "system:serviceaccount:argocd:argocd-server")
+	var review map[string]any
+	if err := json.Unmarshal(raw, &review); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+	review["request"].(map[string]any)["dryRun"] = true
+	withDryRun, _ := json.Marshal(review)
+
+	got := post(t, h, withDryRun)
+	if got.Allowed {
+		t.Fatal("a dry run must still receive the real verdict")
+	}
+	if calls := emitterOf(t, h).calls; len(calls) != 0 {
+		t.Errorf("a dry run wrote %d events, want none", len(calls))
+	}
+}
+
+// TestHandlerSkipRecordsNoEvent keeps the early exits off the event path. They
+// never reach the rules, so there is no verdict to record.
+func TestHandlerSkipRecordsNoEvent(t *testing.T) {
+	h := newHandler(t, gatedConfig(), nil)
+
+	got := post(t, h, syncReview(syncingApp("prd-payment-api", "prd"),
+		"system:serviceaccount:argocd:argocd-application-controller"))
+	if !got.Allowed {
+		t.Fatal("the exempt controller was denied")
+	}
+	if calls := emitterOf(t, h).calls; len(calls) != 0 {
+		t.Errorf("an exempt principal wrote %d events, want none", len(calls))
+	}
+}
+
+// TestHandlerObservesLatency proves the histogram is fed on the real path, so
+// the number used to size webhook.timeoutSeconds is not always empty.
+func TestHandlerObservesLatency(t *testing.T) {
+	h := newHandler(t, gatedConfig(), nil,
+		application("stg-payment-api", "stg", "OutOfSync", "Healthy", ""))
+
+	post(t, h, syncReview(syncingApp("prd-payment-api", "prd"), "system:serviceaccount:argocd:argocd-server"))
+
+	if got := testutil.CollectAndCount(h.metrics.AdmissionDuration); got == 0 {
+		t.Error("admission_duration_seconds recorded nothing for a handled request")
+	}
 }

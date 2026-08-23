@@ -7,8 +7,6 @@ metadata:
   labels:
     {{- include "argocd-promotion-gate.labels" . | nindent 4 }}
 spec:
-  # Enforcement depends on the webhook being reachable while failurePolicy is
-  # Fail, so voluntary disruption must never drain the last replica.
   minAvailable: {{ .Values.podDisruptionBudget.minAvailable }}
   {{- with .Values.podDisruptionBudget.unhealthyPodEvictionPolicy }}
   unhealthyPodEvictionPolicy: {{ . }}

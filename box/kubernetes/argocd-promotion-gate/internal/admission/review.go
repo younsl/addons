@@ -31,6 +31,11 @@ type Request struct {
 	UserInfo  UserInfo       `json:"userInfo"`
 	Object    map[string]any `json:"object"`
 	OldObject map[string]any `json:"oldObject"`
+	// DryRun is set when the API server is evaluating a write it will not
+	// persist. The verdict is still computed and returned, but nothing may be
+	// written to the cluster on this path, which is what the webhook's
+	// sideEffects: NoneOnDryRun promises.
+	DryRun bool `json:"dryRun"`
 }
 
 // UserInfo is the authenticated principal that issued the write. For a sync
@@ -134,6 +139,14 @@ func InitiatedBy(req *Request) string {
 func SyncRevision(req *Request) string {
 	revision, _ := nested(req.Object, "operation", "sync", "revision").(string)
 	return revision
+}
+
+// ObjectUID is the Application's own UID, which is what an Event has to point
+// at. It is not req.UID: that identifies the admission request and means
+// nothing to anybody reading the Application later.
+func ObjectUID(req *Request) string {
+	uid, _ := nested(req.Object, "metadata", "uid").(string)
+	return uid
 }
 
 // Username is the authenticated principal, with a printable fallback.

@@ -14,6 +14,8 @@ Blocks an Argo CD Application sync until the same application has been promoted 
 
 A sync is a write that sets the Application's `operation` field, and admission is the one place every path takes. Disabling a button in the browser would leave `argocd app sync`, the REST API, and auto-sync untouched. Argo CD renders the denial verbatim in its error toast, and the bundled panel shows the same verdict beforehand by asking the gate rather than re-implementing it.
 
+That toast reaches one person once. Every blocked or warned verdict is therefore also recorded as a Kubernetes Event on the Application, so `kubectl describe application prd-payment-api` still answers why it did not deploy. That Event is the only thing the gate writes to the cluster.
+
 ## What it checks
 
 For an Application in a gated environment, in this order. Cheap checks run first, so a denial never spends an Argo CD API call it did not need.

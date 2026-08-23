@@ -97,6 +97,25 @@ kubectl -n argocd annotate application prod-payment-api \
 
 The annotation is checked before any upstream lookup, so an opted-out app costs nothing. Only the exact string `true`, case-insensitive, counts.
 
+## Events on the Application
+
+Every verdict that blocks a sync or carries a warning is also written onto the Application as a Kubernetes Event. There is no setting for it. The Argo CD toast reaches only the person who pressed Sync and only once, so without an Event the Application carries no trace of having been refused.
+
+```bash
+kubectl -n argocd describe application prod-payment-api | tail -20
+kubectl -n argocd get events --field-selector reason=PromotionBlocked
+```
+
+There are two reasons and no more. A refusal is `PromotionBlocked` with type `Warning`, whatever the underlying code was, so one field selector finds every one of them. A sync the gate allowed while recording something about it, such as a mismatch that `imageTag.mode: warn` let through, is `PromotionWarning` with type `Normal`. A verdict that simply passed writes nothing at all, because Argo CD already records the sync and a line saying the gate agreed would be deleted within the hour anyway.
+
+The verdict code is deliberately absent from the Event. It names a state rather than something that happened, which is not what an Event reason is for, and it is already carried by `decisions_total`, by the JSON the panel reads, and by the log line. Those outlive the Event, which the API server deletes an hour after it is written.
+
+This is the only thing the gate writes to the cluster, and the chart's Role grants `create` and `patch` on `events` for it. Grant the same two verbs if you run with `rbac.create: false` and your own Role. Without them the verdict is unaffected and the write failure is logged, so a missing rule costs the record rather than the enforcement.
+
+Delivery is asynchronous, so a denial is never slowed down by the write. client-go aggregates a repeated Event onto the existing object and drops the rest under its own per-object spam filter, which is what keeps a sync retry loop from filling etcd.
+
+A dry run writes nothing. The API server is asking what would happen, and answering by writing would let the question change the answer, which is what the webhook's `sideEffects: NoneOnDryRun` commits to.
+
 ## The Argo CD API token
 
 Needed only when `imageTag.enabled` is true. The gate reads the upstream's *running* images straight from Kubernetes, but the images a pending sync *would* deploy exist only in Argo CD's cached comparison of git against the cluster.
@@ -137,7 +156,7 @@ Argo CD's self-signed serving certificate is its own issuer and carries SANs for
 
 Enabling everything at once is the one way to make this component look broken. In an estate that has never enforced tag equality, most gated applications are not sitting on the upstream tag, and `enforce` blocks all of them on day one.
 
-1. **Install with `imageTag.mode: warn`.** Upstream sync and health are enforced immediately; tag mismatches are only reported.
+1. **Install with `imageTag.mode: warn`.** Upstream sync and health are enforced immediately. Tag mismatches are only reported.
 2. **Watch the metric.** `argocd_promotion_gate_decisions_total{code="ImageTagMismatch"}` counts what `enforce` would have blocked. [docs/metrics.md](metrics.md) has the query. The warning attached to each allowed sync names the repository and both tags.
 3. **Populate `ignoreRepos`.** Sidecars that differ per environment by design (`nginx`, `autoinstrumentation-*`) belong here, not in the comparison.
 4. **Switch to `enforce`** once the remaining mismatches are ones you actually want blocked.
@@ -177,4 +196,4 @@ matchConditions:
     expression: "request.userInfo.username != 'system:serviceaccount:argocd:argocd-application-controller'"
 ```
 
-This matters at scale. Argo CD writes status to every Application constantly; without the first condition the webhook would be consulted on all of it. The handler re-checks every one of these conditions anyway, so a mistake in the registration cannot turn into a wrong verdict, only into wasted calls.
+This matters at scale. Argo CD writes status to every Application constantly. Without the first condition the webhook would be consulted on all of it. The handler re-checks every one of these conditions anyway, so a mistake in the registration cannot turn into a wrong verdict, only into wasted calls.

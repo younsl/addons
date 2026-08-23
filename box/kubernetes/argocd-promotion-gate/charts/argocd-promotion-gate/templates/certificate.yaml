@@ -12,8 +12,6 @@ metadata:
 spec:
   selfSigned: {}
 ---
-# The serving certificate is signed by a CA of its own rather than being
-# self-signed, so cainjector has a ca.crt to publish into caBundle.
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
@@ -47,8 +45,6 @@ spec:
     secretName: {{ printf "%s-ca" $fullName }}
 ---
 {{- end }}
-# Named after the release so the inject-ca-from annotation on the webhook can
-# address it as <namespace>/<fullname>.
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
@@ -57,8 +53,6 @@ metadata:
   labels:
     {{- include "argocd-promotion-gate.labels" . | nindent 4 }}
 spec:
-  # Written to the same Secret the Deployment already mounts, so the pod spec
-  # does not change when this path is turned on.
   secretName: {{ printf "%s-tls" $fullName }}
   duration: {{ $duration }}
   privateKey:

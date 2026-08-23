@@ -2,7 +2,7 @@
 
 ## Overview
 
-The three metrics the gate exposes, every value their labels can take, and the queries worth keeping. Also which metric answers which question, because the obvious one does not count what its name suggests.
+Every metric the gate exposes, every value their labels can take, and the queries worth keeping. Also which metric answers which question, because the obvious one does not count what its name suggests.
 
 For whoever builds the dashboard or the alerts. [docs/configuration.md](configuration.md) covers the settings these metrics report on.
 
@@ -23,6 +23,10 @@ serviceMonitor:
 | `argocd_promotion_gate_decisions_total` | counter | `env`, `code`, `allowed` | once per verdict, from either the webhook or the panel API |
 | `argocd_promotion_gate_admission_requests_total` | counter | `outcome` | once per AdmissionReview the API server sends |
 | `argocd_promotion_gate_lookup_failures_total` | counter | `kind` | once per fact the gate could not read |
+| `argocd_promotion_gate_events_total` | counter | `reason`, `type` | once per Kubernetes Event handed to the broadcaster |
+| `argocd_promotion_gate_admission_duration_seconds` | histogram | `outcome` | once per AdmissionReview, measured before the response is written |
+| `argocd_promotion_gate_upstream_lookup_duration_seconds` | histogram | `result` | once per Kubernetes read of the upstream Application |
+| `argocd_promotion_gate_desired_images_duration_seconds` | histogram | `result` | once per desired image lookup, cache hits included |
 | `argocd_promotion_gate_webhook_certificate_expiry_seconds` | gauge | none | read at scrape time from the loaded certificate |
 
 ## What each label carries
@@ -56,6 +60,53 @@ serviceMonitor:
 | --- | --- |
 | `upstream` | reading the upstream Application from the Kubernetes API |
 | `desired_images` | reading `managed-resources` from the Argo CD API |
+
+`result` labels the histograms by how the lookup ended, because the three outcomes have latencies that have nothing to do with each other.
+
+| `result` | Meaning |
+| --- | --- |
+| `ok` | the fact was read |
+| `missing` | the upstream Application does not exist, which the API server answers immediately |
+| `error` | the read failed, possibly after burning the whole timeout |
+
+`reason` on `events_total` is the Event reason, which is one of two values rather than a verdict code.
+
+| `reason` | `type` | Meaning |
+| --- | --- | --- |
+| `PromotionBlocked` | `Warning` | the gate refused the sync |
+| `PromotionWarning` | `Normal` | the gate allowed the sync and recorded something about it |
+
+## Latency
+
+The histograms exist to size two settings that are otherwise guesses: `webhook.timeoutSeconds` and `promotionGate.argocd.timeoutSeconds`. A verdict that arrives after the API server gave up is indistinguishable from an outage, and with `failurePolicy: Fail` both block the sync while explaining nothing.
+
+Buckets run from 1ms to 5s. A request slower than the top bucket has already been abandoned, so where it landed after that is not worth a series.
+
+```promql
+histogram_quantile(0.99, sum by (le) (
+  rate(argocd_promotion_gate_admission_duration_seconds_bucket[30m])
+))
+```
+
+`desired_images_duration_seconds` is bimodal on purpose. A cache hit inside `argocd.cacheTtlSeconds` never calls argocd-server, so the fast mode is cache hits and the slow mode is real lookups. Read the two modes rather than the average.
+
+```promql
+sum(rate(argocd_promotion_gate_admission_duration_seconds_bucket{le="1"}[30m]))
+  / sum(rate(argocd_promotion_gate_admission_duration_seconds_count[30m]))
+```
+
+## Events
+
+Every blocked or warned verdict is also written onto the Application as a Kubernetes Event. This is the only thing the gate writes to the cluster, and it is not optional. [docs/configuration.md](configuration.md) covers the RBAC it needs.
+
+```bash
+kubectl -n argocd describe application prd-payment-api | tail -20
+kubectl -n argocd get events --field-selector reason=PromotionBlocked
+```
+
+Every refusal carries the reason `PromotionBlocked`, whatever the underlying code was, so one field selector finds all of them. A mismatch that `imageTag.mode: warn` let through is `PromotionWarning`, because it is worth recording but refused nobody. The verdict code stays out of the Event and lives on `decisions_total`, which is the surface built to be aggregated over. An Event is deleted an hour after it is written, so it is context on one Application rather than a history to query.
+
+`events_total` counts submissions rather than writes. Delivery is asynchronous and client-go aggregates a repeated Event onto the existing object and drops the rest under its own spam filter, so a retry loop cannot flood etcd and the counter will run ahead of the objects that exist.
 
 ## The certificate gauge cannot see the failure that matters
 
@@ -121,6 +172,7 @@ sum by (kind) (rate(argocd_promotion_gate_lookup_failures_total[15m])) > 0
 | `lookup_failures_total{kind="upstream"}` rising | the gate cannot read Applications, so RBAC or the API server is the problem |
 | `admission_requests_total{outcome="malformed"}` above zero | the gate is allowing syncs it could not parse |
 | `decisions_total{code="LookupFailed"}` rising with `allowed="false"` | gated syncs are being refused for a reason that is not a promotion failure |
+| `admission_duration_seconds` p99 approaching `webhook.timeoutSeconds` | verdicts are about to start timing out, which `failurePolicy: Fail` turns into blocked syncs with no message |
 | `webhook_certificate_expiry_seconds` within a month of now | the serving certificate is running out, and only a handful of paths renew it |
 | `apiserver_admission_webhook_rejection_count{error_type="calling_webhook_error"}` above zero | the API server cannot reach or verify the webhook, which no gate metric can show |
 

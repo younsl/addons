@@ -557,7 +557,10 @@ func TestMessagesFollowTheWordingRules(t *testing.T) {
 		}, imageConfig(config.ImageTagModeEnforce)),
 	}
 
-	banned := []string{",", ";", "\u00b7"}
+	// Punctuation that stands in for words. Every one of these messages is
+	// also the text of a Kubernetes Event and of the Argo CD toast, and the
+	// three surfaces do not render them alike.
+	banned := []string{",", ";", "\u00b7", "\u2014", "\u2013", "\u2022", "\u2026"}
 	for _, verdict := range verdicts {
 		texts := append([]string{verdict.Message}, verdict.Warnings...)
 		for _, text := range texts {

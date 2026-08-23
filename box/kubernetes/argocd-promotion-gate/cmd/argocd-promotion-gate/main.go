@@ -24,6 +24,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"k8s.io/client-go/dynamic"
+	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 
@@ -31,6 +32,7 @@ import (
 	"github.com/younsl/o/box/kubernetes/argocd-promotion-gate/internal/argocd"
 	"github.com/younsl/o/box/kubernetes/argocd-promotion-gate/internal/config"
 	"github.com/younsl/o/box/kubernetes/argocd-promotion-gate/internal/engine"
+	"github.com/younsl/o/box/kubernetes/argocd-promotion-gate/internal/events"
 	"github.com/younsl/o/box/kubernetes/argocd-promotion-gate/internal/extension"
 	"github.com/younsl/o/box/kubernetes/argocd-promotion-gate/internal/gate"
 	"github.com/younsl/o/box/kubernetes/argocd-promotion-gate/internal/observability"
@@ -127,10 +129,10 @@ func parseFlags() flags {
 	flag.StringVar(&f.adminAddr, "admin-addr", envOr("ADMIN_ADDR", ":8080"), "address for probes, metrics, and the UI extension API")
 	flag.StringVar(&f.tlsCertFile, "tls-cert-file", envOr("TLS_CERT_FILE", "/etc/argocd-promotion-gate/tls/tls.crt"), "PEM serving certificate for the webhook listener")
 	flag.StringVar(&f.tlsKeyFile, "tls-key-file", envOr("TLS_KEY_FILE", "/etc/argocd-promotion-gate/tls/tls.key"), "PEM private key for the webhook listener")
-	flag.StringVar(&f.kubeconfig, "kubeconfig", os.Getenv("KUBECONFIG"), "path to a kubeconfig; empty uses the in-cluster config")
+	flag.StringVar(&f.kubeconfig, "kubeconfig", os.Getenv("KUBECONFIG"), "path to a kubeconfig. Empty uses the in-cluster config")
 	flag.StringVar(&f.logLevel, "log-level", envOr("LOG_LEVEL", "info"), "log level: debug, info, warn, error")
 	flag.StringVar(&f.logFormat, "log-format", envOr("LOG_FORMAT", "json"), "log format: json or text")
-	flag.StringVar(&f.extensionName, "extension-name", envOr("EXTENSION_NAME", uiextension.DefaultName), "name argocd-server proxies the gate API under; must match argocd-cm")
+	flag.StringVar(&f.extensionName, "extension-name", envOr("EXTENSION_NAME", uiextension.DefaultName), "name argocd-server proxies the gate API under. It must match argocd-cm")
 	flag.BoolVar(&f.showVersion, "version", false, "print version and exit")
 	flag.Parse()
 	return f
@@ -177,17 +179,30 @@ func run(f flags, logger *slog.Logger) error {
 			return fmt.Errorf("build argocd api client: %w", err)
 		}
 		if !client.HasToken() {
-			logger.Warn("no argocd api token found; desired image lookups will fail until the secret is mounted",
+			logger.Warn("no argocd api token found. Desired image lookups will fail until the secret is mounted",
 				"tokenPath", cfg.ArgoCD.TokenPath, "onError", string(cfg.ImageTag.OnError))
 		} else {
 			probeToken(ctx0, logger, cfg, client)
 		}
 		images = client
 	} else {
-		logger.Info("image tag comparison disabled; only upstream sync and health are checked")
+		logger.Info("image tag comparison disabled. Only upstream sync and health are checked")
 	}
 
 	logExemptApplications(ctx0, logger, cfg, reader)
+
+	kube, err := kubernetes.NewForConfig(restCfg)
+	if err != nil {
+		return fmt.Errorf("build kubernetes client for events: %w", err)
+	}
+	emitter := events.NewRecorder(kube, cfg.ArgoCD.Namespace, metrics, logger)
+	defer emitter.Shutdown()
+	logger.Info("kubernetes event recording started",
+		"enabled", true,
+		"namespace", cfg.ArgoCD.Namespace,
+		"involvedObjectKind", "Application",
+		"requiredRbac", "create and patch on events",
+		"note", "a write failure is logged and never changes a verdict")
 
 	eng := engine.New(cfg, reader, images, metrics, logger)
 	ext := extension.NewHandler(eng, logger)
@@ -235,7 +250,7 @@ func run(f flags, logger *slog.Logger) error {
 	})
 
 	webhookMux := http.NewServeMux()
-	webhookMux.Handle("POST /validate", admission.NewHandler(eng, metrics, logger))
+	webhookMux.Handle("POST /validate", admission.NewHandler(eng, metrics, emitter, logger))
 
 	adminSrv := &http.Server{
 		Addr:              f.adminAddr,
@@ -330,7 +345,7 @@ func logGateConfig(logger *slog.Logger, cfg config.Config) {
 			"ignoreRepos", cfg.ImageTag.IgnoreRepos,
 		)
 	} else {
-		logger.Info("image tag check disabled; only upstream sync and health are checked")
+		logger.Info("image tag check disabled. Only upstream sync and health are checked")
 	}
 
 	logger.Info("exemptions",
@@ -338,6 +353,13 @@ func logGateConfig(logger *slog.Logger, cfg config.Config) {
 		"automated", cfg.Exempt.Automated,
 		"skipAnnotation", cfg.Exempt.Annotation,
 		"skipAnnotationValue", "true",
+	)
+
+	logger.Info("kubernetes events",
+		"enabled", true,
+		"blockedVerdicts", "Warning",
+		"warnedVerdicts", "Normal",
+		"passedVerdicts", "no event",
 	)
 
 	logger.Info("argocd access",
@@ -385,7 +407,7 @@ func probeToken(ctx context.Context, logger *slog.Logger, cfg config.Config, cli
 
 	username, err := client.Probe(probeCtx)
 	if err != nil {
-		logger.Warn("argocd api token did not pass a startup check; desired image lookups will fail while this stands",
+		logger.Warn("argocd api token did not pass a startup check. Desired image lookups will fail while this stands",
 			"serverAddress", cfg.ArgoCD.ServerAddress,
 			"tokenPath", cfg.ArgoCD.TokenPath,
 			"onError", string(cfg.ImageTag.OnError),

@@ -5,8 +5,6 @@ metadata:
   name: {{ include "argocd-promotion-gate.fullname" . }}
   {{- if .Values.webhook.certManager.enabled }}
   annotations:
-    # cainjector copies ca.crt out of the Certificate's Secret into caBundle
-    # below, which is why the chart leaves that field unset on this path.
     cert-manager.io/inject-ca-from: {{ printf "%s/%s" .Release.Namespace (include "argocd-promotion-gate.fullname" .) }}
   {{- end }}
   labels:
@@ -15,7 +13,7 @@ webhooks:
   - name: {{ printf "%s.younsl.github.io" (include "argocd-promotion-gate.name" .) }}
     admissionReviewVersions:
       - v1
-    sideEffects: None
+    sideEffects: NoneOnDryRun
     failurePolicy: {{ .Values.webhook.failurePolicy }}
     timeoutSeconds: {{ .Values.webhook.timeoutSeconds }}
     clientConfig:
@@ -28,8 +26,6 @@ webhooks:
       caBundle: {{ .Values.generatedCerts.ca }}
       {{- end }}
     rules:
-      # A sync is a write to the Application itself, setting its top-level
-      # operation field. There is no subresource to watch instead.
       - apiGroups:
           - argoproj.io
         apiVersions:

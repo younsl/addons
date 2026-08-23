@@ -1,6 +1,6 @@
 # argocd-promotion-gate
 
-![Version: 0.2.0](https://img.shields.io/badge/Version-0.2.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.1.0](https://img.shields.io/badge/AppVersion-0.1.0-informational?style=flat-square)
+![Version: 0.3.0](https://img.shields.io/badge/Version-0.3.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.2.0](https://img.shields.io/badge/AppVersion-0.2.0-informational?style=flat-square)
 
 Admission gate that blocks an Argo CD Application sync until the same app is promoted in the upstream environment
 
@@ -43,7 +43,7 @@ helm install argocd-promotion-gate oci://ghcr.io/younsl/charts/argocd-promotion-
 Install a specific version:
 
 ```console
-helm install argocd-promotion-gate oci://ghcr.io/younsl/charts/argocd-promotion-gate --version 0.2.0
+helm install argocd-promotion-gate oci://ghcr.io/younsl/charts/argocd-promotion-gate --version 0.3.0
 ```
 
 ### Install from local chart
@@ -51,7 +51,7 @@ helm install argocd-promotion-gate oci://ghcr.io/younsl/charts/argocd-promotion-
 Download argocd-promotion-gate chart and install from local directory:
 
 ```console
-helm pull oci://ghcr.io/younsl/charts/argocd-promotion-gate --untar --version 0.2.0
+helm pull oci://ghcr.io/younsl/charts/argocd-promotion-gate --untar --version 0.3.0
 helm install argocd-promotion-gate ./argocd-promotion-gate
 ```
 

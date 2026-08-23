@@ -9,6 +9,7 @@ package engine
 import (
 	"context"
 	"log/slog"
+	"time"
 
 	"github.com/younsl/o/box/kubernetes/argocd-promotion-gate/internal/argocd"
 	"github.com/younsl/o/box/kubernetes/argocd-promotion-gate/internal/config"
@@ -61,7 +62,9 @@ func (e *Engine) Evaluate(ctx context.Context, app gate.AppSnapshot) gate.Decisi
 
 	in := gate.Input{App: app}
 
+	started := time.Now()
 	upstream, err := e.reader.Get(ctx, upstreamApp)
+	e.metrics.ObserveUpstreamLookup(lookupResult(upstream, err), time.Since(started))
 	if err != nil {
 		// Reporting a failed read as "upstream missing" would silently open the
 		// gate, so it stays a lookup failure and the onError policy decides.
@@ -79,7 +82,9 @@ func (e *Engine) Evaluate(ctx context.Context, app gate.AppSnapshot) gate.Decisi
 	// whenever the verdict cannot depend on it: an upstream that already fails
 	// the sync or health check denies before images matter.
 	if e.needsImages(upstream, app) {
+		started := time.Now()
 		images, err := e.images.DesiredImages(ctx, app.Name)
+		e.metrics.ObserveDesiredImages(errResult(err), time.Since(started))
 		if err != nil {
 			e.logger.Warn("desired image lookup failed", "app", app.Name, "error", err)
 			e.metrics.RecordLookupFailure("desired_images")
@@ -105,4 +110,25 @@ func (e *Engine) needsImages(upstream *gate.AppSnapshot, app gate.AppSnapshot) b
 		return false
 	}
 	return true
+}
+
+// lookupResult labels the upstream read so the histogram separates the three
+// outcomes that have entirely different latencies: a hit, a miss the API
+// server answered quickly, and a failure that may have burned the timeout.
+func lookupResult(upstream *gate.AppSnapshot, err error) string {
+	switch {
+	case err != nil:
+		return "error"
+	case upstream == nil:
+		return "missing"
+	default:
+		return "ok"
+	}
+}
+
+func errResult(err error) string {
+	if err != nil {
+		return "error"
+	}
+	return "ok"
 }

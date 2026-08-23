@@ -7,8 +7,6 @@ metadata:
   labels:
     {{- include "argocd-promotion-gate.labels" . | nindent 4 }}
 rules:
-  # Read-only, and only Applications. The gate never writes: enforcement is the
-  # admission response, not a mutation.
   - apiGroups:
       - argoproj.io
     resources:
@@ -17,4 +15,11 @@ rules:
       - get
       - list
       - watch
+  - apiGroups:
+      - ""
+    resources:
+      - events
+    verbs:
+      - create
+      - patch
 {{- end }}

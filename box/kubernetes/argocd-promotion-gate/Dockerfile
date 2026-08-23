@@ -21,7 +21,7 @@ FROM scratch AS runtime
 
 LABEL org.opencontainers.image.title="argocd-promotion-gate" \
       org.opencontainers.image.description="Admission gate that blocks an Argo CD Application sync until the same app is promoted in the upstream environment" \
-      org.opencontainers.image.version="0.1.0" \
+      org.opencontainers.image.version="0.2.0" \
       org.opencontainers.image.licenses="Apache-2.0" \
       org.opencontainers.image.base.name="scratch" \
       org.opencontainers.image.deprecated="false"
