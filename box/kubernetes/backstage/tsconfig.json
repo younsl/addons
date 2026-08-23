@@ -37,12 +37,6 @@
       "path": "plugins/catalog-health-backend"
     },
     {
-      "path": "plugins/forklift-coverage"
-    },
-    {
-      "path": "plugins/forklift-coverage-backend"
-    },
-    {
       "path": "plugins/gitlab-token-audit"
     },
     {

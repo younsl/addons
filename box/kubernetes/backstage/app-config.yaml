@@ -10,7 +10,6 @@ app:
     s3LogExtract: true
     opencost: true
     gitlabTokenAudit: true
-    forkliftCoverage: true
     opensearchAccount: true
     opensearchViewer: true
     opensearchScaling: true

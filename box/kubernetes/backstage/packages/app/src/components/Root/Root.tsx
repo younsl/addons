@@ -16,7 +16,6 @@ import AttachMoneyIcon from '@material-ui/icons/AttachMoney';
 import FindInPageIcon from '@material-ui/icons/FindInPage';
 import VpnKeyIcon from '@material-ui/icons/VpnKey';
 import TrendingUpIcon from '@material-ui/icons/TrendingUp';
-import LocalShippingIcon from '@material-ui/icons/LocalShipping';
 import { siArgo, siGitlab, siKubernetes } from 'simple-icons';
 import { createIcon } from '@dweber019/backstage-plugin-simple-icons';
 
@@ -372,7 +371,6 @@ export const Root = ({ children }: PropsWithChildren<{}>) => {
   const s3LogExtractEnabled = config.getOptionalBoolean('app.plugins.s3LogExtract') ?? true;
   const opencostEnabled = config.getOptionalBoolean('app.plugins.opencost') ?? true;
   const gitlabTokenAuditEnabled = config.getOptionalBoolean('app.plugins.gitlabTokenAudit') ?? true;
-  const forkliftCoverageEnabled = config.getOptionalBoolean('app.plugins.forkliftCoverage') ?? true;
   const opensearchAccountEnabled = config.getOptionalBoolean('app.plugins.opensearchAccount') ?? true;
   const opensearchScalingEnabled = config.getOptionalBoolean('app.plugins.opensearchScaling') ?? true;
 
@@ -401,14 +399,6 @@ export const Root = ({ children }: PropsWithChildren<{}>) => {
           <SidebarItem icon={ArgocdIcon} to="argocd-appset" text="ArgoCD" />
         )}
         {gitlabTokenAuditEnabled && <GitlabTokenAuditSidebarItem />}
-        {forkliftCoverageEnabled && (
-          <SidebarItem
-            className="sidebar-item-wide"
-            icon={LocalShippingIcon}
-            to="forklift-coverage"
-            text="Forklift Coverage"
-          />
-        )}
         {opencostEnabled && (
           <SidebarItem icon={AttachMoneyIcon} to="cost-report" text="Cost Report" />
         )}

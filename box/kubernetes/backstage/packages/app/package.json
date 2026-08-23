@@ -40,7 +40,6 @@
     "@immobiliarelabs/backstage-plugin-gitlab": "^7.0.1",
     "@internal/plugin-argocd-appset": "workspace:*",
     "@internal/plugin-catalog-health": "workspace:*",
-    "@internal/plugin-forklift-coverage": "workspace:*",
     "@internal/plugin-gitlab-token-audit": "workspace:*",
     "@internal/plugin-iam-user-audit": "workspace:*",
     "@internal/plugin-openapi-registry": "workspace:*",

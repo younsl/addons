@@ -58,7 +58,6 @@ Most custom plugins ship as `<name>` (frontend) plus `<name>-backend` (backend).
 | OpenCost | `opencost` | Multi-cluster Kubernetes cost visualization |
 | S3 Log Extract | `s3-log-extract` | S3-based Java log extraction with approval workflow |
 | GitLab Token Audit | `gitlab-token-audit` | Audit GitLab personal/project/group access tokens with expiry alerts via Slack webhook |
-| Forklift Coverage | `forklift-coverage` | Track Forklift artifact repository adoption across GitLab CI projects, with Slack summaries and an admin pipeline viewer |
 | OpenSearch | `opensearch-account` | Self-service OpenSearch Security internal user create/list/delete/modify with admin approval, RBAC, and audit trail |
 | Capacity | `opensearch-scaling` | Self-service reserved scaling of OpenSearch Service domains (instance type, node count, EBS) at a scheduled time with in-progress pre-validation |
 | Build Info | — | Settings page showing build metadata, installed plugins, BUI migration progress |

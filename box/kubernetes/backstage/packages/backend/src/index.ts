@@ -58,10 +58,6 @@ if (!disableGitlab) {
   backend.add(import('@internal/plugin-catalog-health-backend'));
 }
 
-if (!disableGitlab) {
-  backend.add(import('@internal/plugin-forklift-coverage-backend'));
-}
-
 backend.add(import('@internal/plugin-opencost-backend'));
 
 backend.add(import('@internal/plugin-opensearch-account-backend'));

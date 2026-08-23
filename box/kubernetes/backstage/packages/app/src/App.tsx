@@ -43,7 +43,6 @@ import { ArgocdAppsetPage } from '@internal/plugin-argocd-appset';
 import { IamUserAuditPage } from '@internal/plugin-iam-user-audit';
 import { S3LogExtractPage } from '@internal/plugin-s3-log-extract';
 import { CatalogHealthPage, GenerateCatalogInfoPage } from '@internal/plugin-catalog-health';
-import { ForkliftCoveragePage } from '@internal/plugin-forklift-coverage';
 import { OpenCostPage, CostAdjustPage } from '@internal/plugin-opencost';
 import {
   OpenSearchAccountPage,
@@ -137,7 +136,6 @@ const routes = (
     <Route path="/s3-log-extract" element={<S3LogExtractPage />} />
     <Route path="/catalog-health" element={<CatalogHealthPage />} />
     <Route path="/catalog-health/generate" element={<GenerateCatalogInfoPage />} />
-    <Route path="/forklift-coverage/*" element={<ForkliftCoveragePage />} />
     <Route path="/cost-report" element={<OpenCostPage />} />
     <Route path="/cost-report/custom-export" element={<CostAdjustPage />} />
     <Route path="/opensearch" element={<OpenSearchAccountPage />} />
