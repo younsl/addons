@@ -1,6 +1,8 @@
 # o
 
-![UNIX](https://www.nokia.com/sites/default/files/2024-10/unix-86-300769_0.jpg?height=&width=)
+![UNIX](./docs/assets/unix-86.jpg)
+
+> Photo: [Nokia Bell Labs](https://www.nokia.com/bell-labs/), UNIX 86.
 
 A [monorepo](https://en.wikipedia.org/wiki/Monorepo) of [Observability](https://opentelemetry.io/docs/concepts/observability-primer/) and [Kubernetes](https://github.com/kubernetes/kubernetes) operation addons built with [Rust](https://github.com/rust-lang/rust) [1.96+](https://github.com/rust-lang/rust/releases/tag/1.96.0). Includes CLI [tools](./box/tools/), [kubernetes](./box/kubernetes/) addons, [kubernetes operators](https://kubernetes.io/docs/concepts/extend-kubernetes/operator/), runtime images, and [notes](./notes/).
 
