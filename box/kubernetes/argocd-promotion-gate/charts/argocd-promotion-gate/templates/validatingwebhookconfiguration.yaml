@@ -42,6 +42,6 @@ webhooks:
         scope: Namespaced
     namespaceSelector:
       matchLabels:
-        kubernetes.io/metadata.name: {{ .Values.gate.argocd.namespace }}
+        kubernetes.io/metadata.name: {{ .Values.promotionGate.argocd.namespace }}
     matchConditions:
       {{- include "argocd-promotion-gate.matchConditions" . | nindent 6 }}

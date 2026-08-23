@@ -20,21 +20,21 @@ For an Application in a gated environment, in this order. Cheap checks run first
 
 | Check | Denied when | Configurable |
 | --- | --- | --- |
-| Chain membership | never (an ungated env is passed through) | `gate.chain`, `gate.gatedEnvs` |
-| Rollback | never (a revision already deployed here is passed through) | `gate.rollback.allowPreviouslyDeployedRevision` |
-| Skip annotation | never (an annotated app is passed through) | `gate.exempt.annotation` |
+| Chain membership | never (an ungated env is passed through) | `promotionGate.chain`, `promotionGate.gatedEnvs` |
+| Rollback | never (a revision already deployed here is passed through) | `promotionGate.rollback.allowPreviouslyDeployedRevision` |
+| Skip annotation | never (an annotated app is passed through) | `promotionGate.exempt.annotation` |
 | Upstream exists | never (an app with no upstream counterpart is passed through) | not configurable |
-| Upstream sync | upstream is not `Synced` | `gate.require.sync` |
-| Upstream health | upstream is not `Healthy` | `gate.require.health` |
-| Image tag | this sync would deploy a tag the upstream is not running | `gate.imageTag.*` |
+| Upstream sync | upstream is not `Synced` | `promotionGate.require.sync` |
+| Upstream health | upstream is not `Healthy` | `promotionGate.require.health` |
+| Image tag | this sync would deploy a tag the upstream is not running | `promotionGate.imageTag.*` |
 
 An Application's environment is its `spec.project` and its name is `<project>-<app>`, so `prod-payment-api` has identity `payment-api` and waits on `stage-payment-api`. Nothing else is inferred: the promotion order is configuration.
 
-The application controller is exempt by default, through `gate.exempt.usernames` and `gate.exempt.automated`. Denying it would turn one reconcile into an endless retry loop rather than prevent a promotion.
+The application controller is exempt by default, through `promotionGate.exempt.usernames` and `promotionGate.exempt.automated`. Denying it would turn one reconcile into an endless retry loop rather than prevent a promotion.
 
 ## Image tag comparison
 
-Running images come from `status.summary.images`, but the images a pending sync would deploy live in git, so the gate reads Argo CD's cached comparison from `GET /api/v1/applications/{name}/managed-resources`. Repositories are matched by basename and only those present on both sides are compared. `gate.imageTag.mode` defaults to `warn`, since `enforce` blocks every application not already on the upstream tag. Watch `argocd_promotion_gate_decisions_total{code="ImageTagMismatch"}`, then switch.
+Running images come from `status.summary.images`, but the images a pending sync would deploy live in git, so the gate reads Argo CD's cached comparison from `GET /api/v1/applications/{name}/managed-resources`. Repositories are matched by basename and only those present on both sides are compared. `promotionGate.imageTag.mode` defaults to `warn`, since `enforce` blocks every application not already on the upstream tag. Watch `argocd_promotion_gate_decisions_total{code="ImageTagMismatch"}`, then switch.
 
 ## Install
 

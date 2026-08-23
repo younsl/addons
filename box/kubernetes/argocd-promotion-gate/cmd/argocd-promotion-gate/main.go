@@ -34,6 +34,7 @@ import (
 	"github.com/younsl/o/box/kubernetes/argocd-promotion-gate/internal/extension"
 	"github.com/younsl/o/box/kubernetes/argocd-promotion-gate/internal/gate"
 	"github.com/younsl/o/box/kubernetes/argocd-promotion-gate/internal/observability"
+	"github.com/younsl/o/box/kubernetes/argocd-promotion-gate/internal/servingcert"
 	"github.com/younsl/o/box/kubernetes/argocd-promotion-gate/internal/uiextension"
 	"github.com/younsl/o/box/kubernetes/argocd-promotion-gate/internal/version"
 )
@@ -55,6 +56,10 @@ const shutdownTimeout = 10 * time.Second
 // exemptScanTimeout bounds the one-off startup listing. It is a report, not a
 // dependency, so it gives up quickly.
 const exemptScanTimeout = 10 * time.Second
+
+// tokenProbeTimeout bounds the one-off startup token check. Same reasoning: a
+// report, so it must not hold the listeners back.
+const tokenProbeTimeout = 5 * time.Second
 
 // maxExemptNamesLogged caps the names printed for the startup scan.
 const maxExemptNamesLogged = 20
@@ -174,6 +179,8 @@ func run(f flags, logger *slog.Logger) error {
 		if !client.HasToken() {
 			logger.Warn("no argocd api token found; desired image lookups will fail until the secret is mounted",
 				"tokenPath", cfg.ArgoCD.TokenPath, "onError", string(cfg.ImageTag.OnError))
+		} else {
+			probeToken(ctx0, logger, cfg, client)
 		}
 		images = client
 	} else {
@@ -235,11 +242,24 @@ func run(f flags, logger *slog.Logger) error {
 		Handler:           adminMux,
 		ReadHeaderTimeout: 5 * time.Second,
 	}
+	// Loaded eagerly so a broken pair fails startup here rather than at the
+	// first handshake, which is where ListenAndServeTLS used to catch it.
+	serving := servingcert.NewReloader(f.tlsCertFile, f.tlsKeyFile, logger)
+	if _, err := serving.Load(); err != nil {
+		return err
+	}
+	metrics.RegisterCertificateExpiry(serving.NotAfter)
+
 	webhookSrv := &http.Server{
 		Addr:              f.webhookAddr,
 		Handler:           webhookMux,
 		ReadHeaderTimeout: 5 * time.Second,
-		TLSConfig:         &tls.Config{MinVersion: tls.VersionTLS12},
+		TLSConfig: &tls.Config{
+			MinVersion: tls.VersionTLS12,
+			// Per handshake rather than once per process, so a re-issued
+			// certificate is picked up without a restart.
+			GetCertificate: serving.GetCertificate,
+		},
 	}
 
 	ctx, stop := signal.NotifyContext(ctx0, syscall.SIGINT, syscall.SIGTERM)
@@ -254,7 +274,8 @@ func run(f flags, logger *slog.Logger) error {
 	}()
 	go func() {
 		logger.Info("admission webhook listening", "addr", f.webhookAddr)
-		if err := webhookSrv.ListenAndServeTLS(f.tlsCertFile, f.tlsKeyFile); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		// Empty paths are correct: TLSConfig.GetCertificate supplies the pair.
+		if err := webhookSrv.ListenAndServeTLS("", ""); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			errCh <- fmt.Errorf("webhook server: %w", err)
 		}
 	}()
@@ -349,6 +370,29 @@ func exemptNames(cfg config.Config, apps []gate.AppSnapshot) (all, gated []strin
 	sort.Strings(all)
 	sort.Strings(gated)
 	return all, gated
+}
+
+// probeToken asks argocd-server whether the mounted token is usable, so a
+// revoked credential is a startup warning rather than a denied production sync
+// hours later.
+//
+// Never fatal and never wired into readiness: a webhook that reported itself
+// unready whenever argocd-server was unreachable would take syncs down for a
+// reason unrelated to promotion.
+func probeToken(ctx context.Context, logger *slog.Logger, cfg config.Config, client *argocd.DesiredImageClient) {
+	probeCtx, cancel := context.WithTimeout(ctx, tokenProbeTimeout)
+	defer cancel()
+
+	username, err := client.Probe(probeCtx)
+	if err != nil {
+		logger.Warn("argocd api token did not pass a startup check; desired image lookups will fail while this stands",
+			"serverAddress", cfg.ArgoCD.ServerAddress,
+			"tokenPath", cfg.ArgoCD.TokenPath,
+			"onError", string(cfg.ImageTag.OnError),
+			"error", err)
+		return
+	}
+	logger.Info("argocd api token accepted", "account", username, "serverAddress", cfg.ArgoCD.ServerAddress)
 }
 
 // logExemptApplications counts the annotation's current reach at startup.

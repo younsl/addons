@@ -1,6 +1,6 @@
 # argocd-promotion-gate
 
-![Version: 0.1.0](https://img.shields.io/badge/Version-0.1.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.1.0](https://img.shields.io/badge/AppVersion-0.1.0-informational?style=flat-square)
+![Version: 0.2.0](https://img.shields.io/badge/Version-0.2.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.1.0](https://img.shields.io/badge/AppVersion-0.1.0-informational?style=flat-square)
 
 Admission gate that blocks an Argo CD Application sync until the same app is promoted in the upstream environment
 
@@ -43,7 +43,7 @@ helm install argocd-promotion-gate oci://ghcr.io/younsl/charts/argocd-promotion-
 Install a specific version:
 
 ```console
-helm install argocd-promotion-gate oci://ghcr.io/younsl/charts/argocd-promotion-gate --version 0.1.0
+helm install argocd-promotion-gate oci://ghcr.io/younsl/charts/argocd-promotion-gate --version 0.2.0
 ```
 
 ### Install from local chart
@@ -51,7 +51,7 @@ helm install argocd-promotion-gate oci://ghcr.io/younsl/charts/argocd-promotion-
 Download argocd-promotion-gate chart and install from local directory:
 
 ```console
-helm pull oci://ghcr.io/younsl/charts/argocd-promotion-gate --untar --version 0.1.0
+helm pull oci://ghcr.io/younsl/charts/argocd-promotion-gate --untar --version 0.2.0
 helm install argocd-promotion-gate ./argocd-promotion-gate
 ```
 
@@ -94,52 +94,62 @@ The following table lists the configurable parameters and their default values.
 | podSecurityContext | object | `{"runAsGroup":65532,"runAsNonRoot":true,"runAsUser":65532,"seccompProfile":{"type":"RuntimeDefault"}}` | Pod-level security context |
 | securityContext | object | `{"allowPrivilegeEscalation":false,"capabilities":{"drop":["ALL"]},"readOnlyRootFilesystem":true}` | Container-level security context |
 | resources | object | `{"limits":{"memory":"128Mi"},"requests":{"cpu":"20m","memory":"64Mi"}}` | Resource requests and limits. No CPU limit: throttling admission turns latency into failed syncs |
+| resizePolicy | list | `[{"resourceName":"cpu","restartPolicy":"NotRequired"},{"resourceName":"memory","restartPolicy":"RestartContainer"}]` | Container resize policy for in-place vertical scaling. A cpu resize applies without a restart, a memory resize needs one |
 | nodeSelector | object | `{}` | Node selector for the gate pods |
 | tolerations | list | `[]` | Tolerations for the gate pods |
 | topologySpreadConstraints | list | `[{"labelSelector":{"matchLabels":{"app.kubernetes.io/name":"argocd-promotion-gate"}},"maxSkew":1,"topologyKey":"kubernetes.io/hostname","whenUnsatisfiable":"ScheduleAnyway"}]` | Topology spread constraints. Spreading replicas keeps one node loss from failing every gated sync |
 | affinity | object | `{}` | Affinity rules for the gate pods |
 | podDisruptionBudget.enabled | bool | `true` | Create a PodDisruptionBudget |
 | podDisruptionBudget.minAvailable | int/string | `1` | Minimum available replicas during voluntary disruption |
+| podDisruptionBudget.unhealthyPodEvictionPolicy | string | `"IfHealthyBudget"` | `IfHealthyBudget` guards a healthy replica while the budget is met. `AlwaysAllow` drops that guard. Empty leaves it unset |
 | service.type | string | `"ClusterIP"` | Service type |
 | service.trafficDistribution | string | `""` | Endpoint routing preference. `PreferSameZone` or `PreferSameNode`, or the deprecated `PreferClose`. Empty leaves it unset |
 | service.webhookPort | int | `443` | Port the API server calls for admission review |
 | service.adminPort | int | `8080` | Port serving probes, metrics, and the UI extension API |
-| serviceMonitor.enabled | bool | `false` | Create a Prometheus Operator ServiceMonitor |
-| serviceMonitor.interval | string | `"30s"` | Scrape interval |
-| serviceMonitor.scrapeTimeout | string | `"10s"` | Scrape timeout |
-| serviceMonitor.labels | object | `{}` | Extra labels for Prometheus Operator selection |
+| serviceMonitor.enabled | bool | `false` | Create a ServiceMonitor. Skipped when the cluster has no Prometheus Operator CRD |
+| serviceMonitor.namespace | string | `""` | Namespace to create the ServiceMonitor in. Empty uses the release namespace |
+| serviceMonitor.selector | object | `{}` | Labels the Prometheus `serviceMonitorSelector` matches on |
+| serviceMonitor.additionalLabels | object | `{}` | Extra labels added to the ServiceMonitor |
+| serviceMonitor.annotations | object | `{}` | Annotations added to the ServiceMonitor |
+| serviceMonitor.interval | string | `"30s"` | Scrape interval. Empty leaves the Prometheus default |
+| serviceMonitor.scrapeTimeout | string | `"10s"` | Scrape timeout. Empty leaves the Prometheus default |
+| serviceMonitor.honorLabels | bool | `false` | Keep labels the target exposes when they collide with server-side labels |
+| serviceMonitor.scheme | string | `""` | Scheme for the scrape. Empty leaves the Prometheus default |
+| serviceMonitor.tlsConfig | object | `{}` | TLS settings for the scrape |
+| serviceMonitor.relabelings | list | `[]` | Relabeling applied to the discovered target |
+| serviceMonitor.metricRelabelings | list | `[]` | Relabeling applied to each scraped metric |
 | logging.level | string | `"info"` | Log level: debug, info, warn, error |
 | logging.format | string | `"json"` | Log format: json or text |
 | webhook.failurePolicy | string | `"Fail"` | `Fail` keeps the gate from being bypassed by an outage. `Ignore` trades enforcement for availability |
 | webhook.timeoutSeconds | int | `5` | Admission timeout. Keep above `gate.argocd.timeoutSeconds` |
 | webhook.certValidityDays | int | `3650` | Serving certificate lifetime in days. The Secret is reused across upgrades |
 | webhook.extraMatchConditions | list | `[]` | Extra CEL match conditions appended to the generated ones |
-| webhook.certManager.enabled | bool | `false` | Hand the serving certificate to cert-manager instead of minting one with `genCA`. The chart reuses an existing pair through `lookup`, which returns nothing under renderers that have no cluster access such as Argo CD repo-server. Every render then mints a new CA while the running pod keeps the one it read at startup, and a `Fail` webhook rejects everything until someone restarts the pod. cert-manager owns the rotation and `cainjector` keeps `caBundle` in step, so the two can no longer drift apart |
-| webhook.certManager.issuerRef | object | `{}` | Issue from an existing issuer, for example `{kind: ClusterIssuer, name: internal-ca}`. Empty makes the chart create a self-signed Issuer and a CA Issuer of its own in the release namespace |
+| webhook.certManager.enabled | bool | `false` | Hand the serving certificate to cert-manager instead of minting one with `genCA`, which a renderer without cluster access re-mints on every pass |
+| webhook.certManager.issuerRef | object | `{}` | Issue from an existing issuer such as `{kind: ClusterIssuer, name: internal-ca}`. Empty makes the chart create its own self-signed and CA Issuer |
 | uiExtension.name | string | `"promotion-gate"` | Name argocd-server proxies under `/extensions/<name>/...`. Must match argocd-cm |
-| gate.chain | list | `["stage","prod"]` | Promotion order lowest first. Env names are Argo CD projects and apps are named `<project>-<app>` |
-| gate.gatedEnvs | list | `["prod"]` | Environments the gate enforces. Empty means the whole chain except its head |
-| gate.require.sync | bool | `true` | Upstream must report `status.sync.status: Synced` |
-| gate.require.health | bool | `true` | Upstream must report `status.health.status: Healthy` |
-| gate.imageTag.enabled | bool | `true` | Compare image tags on top of the upstream sync and health checks |
-| gate.imageTag.mode | string | `"warn"` | `warn` reports a mismatch and lets the sync through. `enforce` denies it |
-| gate.imageTag.kinds | list | `["Deployment","StatefulSet","DaemonSet","CronJob","Rollout"]` | Workload kinds queried for desired images |
-| gate.imageTag.ignoreRepos | list | `[]` | Repository basenames excluded from comparison. A trailing `*` globs |
-| gate.imageTag.onError | string | `"deny"` | Verdict when the desired image lookup fails: `allow` or `deny` |
-| gate.rollback.allowPreviouslyDeployedRevision | bool | `true` | Allow a sync whose target revision this Application already deployed. This is what makes rollback possible |
-| gate.exempt.usernames | list | `["system:serviceaccount:argocd:argocd-application-controller"]` | Principals whose sync requests bypass the gate. Keep the application controller listed |
-| gate.exempt.automated | bool | `true` | Bypass the gate when Argo CD marks the operation automated |
-| gate.exempt.annotation | string | `"promotion-gate.younsl.github.io/skip"` | Application annotation that opts one app out when set to `"true"` |
-| gate.argocd.namespace | string | `"argocd"` | Namespace holding the Application resources |
-| gate.argocd.serverAddress | string | `"https://argocd-server"` | Base URL of argocd-server. Its certificate has no SAN for the fully qualified name |
-| gate.argocd.insecureSkipVerify | bool | `false` | Disable TLS verification against argocd-server. Prefer `caSecret` |
-| gate.argocd.timeoutSeconds | int | `3` | Per-request timeout for argocd-server calls |
-| gate.argocd.cacheTtlSeconds | int | `30` | How long a desired image lookup is reused |
-| gate.argocd.caSecret.enabled | bool | `true` | Mount a CA bundle for argocd-server |
-| gate.argocd.caSecret.name | string | `"argocd-secret"` | Secret holding the CA. Argo CD's certificate is its own issuer |
-| gate.argocd.caSecret.key | string | `"tls.crt"` | Key inside the Secret |
-| gate.argocd.tokenSecret.name | string | `"argocd-promotion-gate-token"` | Secret holding the Argo CD API token for the desired image lookup |
-| gate.argocd.tokenSecret.key | string | `"token"` | Key inside the Secret |
+| promotionGate.chain | list | `["stage","prod"]` | Promotion order lowest first. Env names are Argo CD projects and apps are named `<project>-<app>` |
+| promotionGate.gatedEnvs | list | `["prod"]` | Environments the gate enforces. Empty means the whole chain except its head |
+| promotionGate.require.sync | bool | `true` | Upstream must report `status.sync.status: Synced` |
+| promotionGate.require.health | bool | `true` | Upstream must report `status.health.status: Healthy` |
+| promotionGate.imageTag.enabled | bool | `true` | Compare image tags on top of the upstream sync and health checks |
+| promotionGate.imageTag.mode | string | `"warn"` | `warn` reports a mismatch and lets the sync through. `enforce` denies it |
+| promotionGate.imageTag.kinds | list | `["Deployment","StatefulSet","DaemonSet","CronJob","Rollout"]` | Workload kinds queried for desired images |
+| promotionGate.imageTag.ignoreRepos | list | `[]` | Repository basenames excluded from comparison. A trailing `*` globs |
+| promotionGate.imageTag.onError | string | `"deny"` | Verdict when the desired image lookup fails: `allow` or `deny` |
+| promotionGate.rollback.allowPreviouslyDeployedRevision | bool | `true` | Allow a sync whose target revision this Application already deployed. This is what makes rollback possible |
+| promotionGate.exempt.usernames | list | `["system:serviceaccount:argocd:argocd-application-controller"]` | Principals whose sync requests bypass the gate. Keep the application controller listed |
+| promotionGate.exempt.automated | bool | `true` | Bypass the gate when Argo CD marks the operation automated |
+| promotionGate.exempt.annotation | string | `"promotion-gate.younsl.github.io/skip"` | Application annotation that opts one app out when set to `"true"` |
+| promotionGate.argocd.namespace | string | `"argocd"` | Namespace holding the Application resources |
+| promotionGate.argocd.serverAddress | string | `"https://argocd-server"` | Base URL of argocd-server. Its certificate has no SAN for the fully qualified name |
+| promotionGate.argocd.insecureSkipVerify | bool | `false` | Disable TLS verification against argocd-server. Prefer `caSecret` |
+| promotionGate.argocd.timeoutSeconds | int | `3` | Per-request timeout for argocd-server calls |
+| promotionGate.argocd.cacheTtlSeconds | int | `30` | How long a desired image lookup is reused |
+| promotionGate.argocd.caSecret.enabled | bool | `true` | Mount a CA bundle for argocd-server |
+| promotionGate.argocd.caSecret.name | string | `"argocd-secret"` | Secret holding the CA. Argo CD's certificate is its own issuer |
+| promotionGate.argocd.caSecret.key | string | `"tls.crt"` | Key inside the Secret |
+| promotionGate.argocd.tokenSecret.name | string | `"argocd-promotion-gate-token"` | Secret holding the Argo CD API token for the desired image lookup |
+| promotionGate.argocd.tokenSecret.key | string | `"token"` | Key inside the Secret |
 | extraObjects | list | `[]` | Extra manifests rendered as-is and templated with the release context |
 
 ## Source Code

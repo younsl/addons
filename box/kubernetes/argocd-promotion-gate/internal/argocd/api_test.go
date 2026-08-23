@@ -54,7 +54,7 @@ func TestImagesFromManagedResourcesEmpty(t *testing.T) {
 	}
 }
 
-// tokenFile writes a token and returns a config pointing a client at srv.
+// clientFor points a client at srv, writing token unless it is empty.
 func clientFor(t *testing.T, srv *httptest.Server, token string, kinds []string, ttlSeconds int) *DesiredImageClient {
 	t.Helper()
 	dir := t.TempDir()
@@ -244,5 +244,129 @@ func TestNewDesiredImageClientCABundle(t *testing.T) {
 	cfg.InsecureSkipVerify = true
 	if _, err := NewDesiredImageClient(cfg, []string{"Deployment"}); err != nil {
 		t.Fatalf("NewDesiredImageClient() with verification off error = %v", err)
+	}
+}
+
+func TestDesiredImagesUsesTheTokenOnDiskNotTheOneAtStartup(t *testing.T) {
+	// The credential is re-read per lookup so a rotated Secret takes effect
+	// without a restart. It has to: imageTag.onError defaults to deny, so a
+	// token the process can no longer use closes the gate on every gated
+	// application rather than degrading it.
+	var mu sync.Mutex
+	var seen []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		seen = append(seen, r.Header.Get("Authorization"))
+		mu.Unlock()
+		_ = json.NewEncoder(w).Encode(map[string]any{"items": []any{}})
+	}))
+	defer srv.Close()
+
+	client := clientFor(t, srv, "first", []string{"Deployment"}, 0)
+	if _, err := client.DesiredImages(context.Background(), "prd-payment-api"); err != nil {
+		t.Fatalf("DesiredImages() error = %v", err)
+	}
+
+	if err := os.WriteFile(client.tokenPath, []byte("second\n"), 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+	if _, err := client.DesiredImages(context.Background(), "prd-payment-api"); err != nil {
+		t.Fatalf("DesiredImages() after rotation error = %v", err)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	want := []string{"Bearer first", "Bearer second"}
+	if len(seen) != len(want) {
+		t.Fatalf("authorization headers = %v, want %v", seen, want)
+	}
+	for i := range want {
+		if seen[i] != want[i] {
+			t.Errorf("authorization header %d = %q, want %q", i, seen[i], want[i])
+		}
+	}
+}
+
+func TestDesiredImagesFailsOnceTheTokenIsRemoved(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"items": []any{}})
+	}))
+	defer srv.Close()
+
+	client := clientFor(t, srv, "secret", []string{"Deployment"}, 0)
+	if _, err := client.DesiredImages(context.Background(), "prd-payment-api"); err != nil {
+		t.Fatalf("DesiredImages() error = %v", err)
+	}
+	if err := os.Remove(client.tokenPath); err != nil {
+		t.Fatalf("Remove() error = %v", err)
+	}
+	if client.HasToken() {
+		t.Error("HasToken() = true after the token file was removed")
+	}
+	if _, err := client.DesiredImages(context.Background(), "prd-payment-api"); err == nil {
+		t.Fatal("DesiredImages() = nil error, want failure once the token is gone")
+	}
+}
+
+func TestProbeAcceptsAValidToken(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/session/userinfo" {
+			t.Errorf("path = %q, want the userinfo endpoint", r.URL.Path)
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer secret" {
+			t.Errorf("Authorization = %q, want the bearer token", got)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"loggedIn": true, "username": "promotion-gate"})
+	}))
+	defer srv.Close()
+
+	client := clientFor(t, srv, "secret", []string{"Deployment"}, 0)
+	account, err := client.Probe(context.Background())
+	if err != nil {
+		t.Fatalf("Probe() error = %v", err)
+	}
+	if account != "promotion-gate" {
+		t.Errorf("Probe() = %q, want the account name argocd reported", account)
+	}
+}
+
+func TestProbeRejectsARevokedToken(t *testing.T) {
+	// The case this exists for: HasToken passes because the file is there, and
+	// only argocd-server knows the credential behind it is no longer usable.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer srv.Close()
+
+	client := clientFor(t, srv, "stale", []string{"Deployment"}, 0)
+	if !client.HasToken() {
+		t.Fatal("HasToken() = false with a token file present")
+	}
+	if _, err := client.Probe(context.Background()); err == nil {
+		t.Fatal("Probe() = nil error, want failure on 401")
+	}
+}
+
+func TestProbeRejectsALoggedOutSession(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"loggedIn": false})
+	}))
+	defer srv.Close()
+
+	client := clientFor(t, srv, "stale", []string{"Deployment"}, 0)
+	if _, err := client.Probe(context.Background()); err == nil {
+		t.Fatal("Probe() = nil error, want failure when loggedIn is false")
+	}
+}
+
+func TestProbeRequiresAToken(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		t.Error("Probe() called the API without a token")
+	}))
+	defer srv.Close()
+
+	client := clientFor(t, srv, "", []string{"Deployment"}, 0)
+	if _, err := client.Probe(context.Background()); err == nil {
+		t.Fatal("Probe() = nil error, want failure without a token")
 	}
 }

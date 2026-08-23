@@ -6,7 +6,7 @@ Every setting the gate reads, what it does, and the ones whose default is a deli
 
 For cluster operators installing or tuning the gate. Reading it end to end is not the point, the full example below is the index.
 
-The binary reads one YAML file, mounted from a ConfigMap the chart renders out of `.Values.gate`. Unknown keys are rejected at startup, so a misspelled setting fails the pod rather than silently disabling a check.
+The binary reads one YAML file, mounted from a ConfigMap the chart renders out of `.Values.promotionGate`. Unknown keys are rejected at startup, so a misspelled setting fails the pod rather than silently disabling a check.
 
 ## Full example
 
@@ -41,7 +41,7 @@ argocd:
   cacheTtlSeconds: 30
 ```
 
-`caFile` and `tokenPath` are set by the chart from `gate.argocd.caSecret` and `gate.argocd.tokenSecret`, so they never have to be repeated in values.
+`caFile` and `tokenPath` are set by the chart from `promotionGate.argocd.caSecret` and `promotionGate.argocd.tokenSecret`, so they never have to be repeated in values.
 
 ## The chain
 

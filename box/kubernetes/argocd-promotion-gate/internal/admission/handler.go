@@ -80,8 +80,7 @@ type result struct {
 	response ReviewResponse
 	// outcome is the metric label: allowed, denied, or skipped.
 	outcome string
-	// reason is why, in a form that survives grep.
-	reason string
+	reason  string
 	// verdict is nil on the early exits that never reach the rules.
 	verdict *gate.Decision
 }

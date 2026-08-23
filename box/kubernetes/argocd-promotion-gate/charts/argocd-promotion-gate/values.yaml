@@ -59,6 +59,13 @@ resources:
   limits:
     memory: 128Mi
 
+# -- (list) Container resize policy for in-place vertical scaling. A cpu resize applies without a restart, a memory resize needs one
+resizePolicy:
+  - resourceName: cpu
+    restartPolicy: NotRequired
+  - resourceName: memory
+    restartPolicy: RestartContainer
+
 # -- (object) Node selector for the gate pods
 nodeSelector: {}
 # -- (list) Tolerations for the gate pods
@@ -81,6 +88,8 @@ podDisruptionBudget:
   enabled: true
   # -- (int/string) Minimum available replicas during voluntary disruption
   minAvailable: 1
+  # -- (string) `IfHealthyBudget` guards a healthy replica while the budget is met. `AlwaysAllow` drops that guard. Empty leaves it unset
+  unhealthyPodEvictionPolicy: IfHealthyBudget
 
 service:
   # -- (string) Service type
@@ -93,14 +102,30 @@ service:
   adminPort: 8080
 
 serviceMonitor:
-  # -- (bool) Create a Prometheus Operator ServiceMonitor
+  # -- (bool) Create a ServiceMonitor. Skipped when the cluster has no Prometheus Operator CRD
   enabled: false
-  # -- (string) Scrape interval
+  # -- (string) Namespace to create the ServiceMonitor in. Empty uses the release namespace
+  namespace: ""
+  # -- (object) Labels the Prometheus `serviceMonitorSelector` matches on
+  selector: {}
+  # -- (object) Extra labels added to the ServiceMonitor
+  additionalLabels: {}
+  # -- (object) Annotations added to the ServiceMonitor
+  annotations: {}
+  # -- (string) Scrape interval. Empty leaves the Prometheus default
   interval: 30s
-  # -- (string) Scrape timeout
+  # -- (string) Scrape timeout. Empty leaves the Prometheus default
   scrapeTimeout: 10s
-  # -- (object) Extra labels for Prometheus Operator selection
-  labels: {}
+  # -- (bool) Keep labels the target exposes when they collide with server-side labels
+  honorLabels: false
+  # -- (string) Scheme for the scrape. Empty leaves the Prometheus default
+  scheme: ""
+  # -- (object) TLS settings for the scrape
+  tlsConfig: {}
+  # -- (list) Relabeling applied to the discovered target
+  relabelings: []
+  # -- (list) Relabeling applied to each scraped metric
+  metricRelabelings: []
 
 logging:
   # -- (string) Log level: debug, info, warn, error
@@ -119,24 +144,16 @@ webhook:
   extraMatchConditions: []
 
   certManager:
-    # -- (bool) Hand the serving certificate to cert-manager instead of minting
-    # one with `genCA`. The chart reuses an existing pair through `lookup`, which
-    # returns nothing under renderers that have no cluster access such as Argo CD
-    # repo-server. Every render then mints a new CA while the running pod keeps
-    # the one it read at startup, and a `Fail` webhook rejects everything until
-    # someone restarts the pod. cert-manager owns the rotation and `cainjector`
-    # keeps `caBundle` in step, so the two can no longer drift apart
+    # -- (bool) Hand the serving certificate to cert-manager instead of minting one with `genCA`, which a renderer without cluster access re-mints on every pass
     enabled: false
-    # -- (object) Issue from an existing issuer, for example
-    # `{kind: ClusterIssuer, name: internal-ca}`. Empty makes the chart create a
-    # self-signed Issuer and a CA Issuer of its own in the release namespace
+    # -- (object) Issue from an existing issuer such as `{kind: ClusterIssuer, name: internal-ca}`. Empty makes the chart create its own self-signed and CA Issuer
     issuerRef: {}
 
 uiExtension:
   # -- (string) Name argocd-server proxies under `/extensions/<name>/...`. Must match argocd-cm
   name: promotion-gate
 
-gate:
+promotionGate:
   # -- (list) Promotion order lowest first. Env names are Argo CD projects and apps are named `<project>-<app>`
   chain:
     - stage

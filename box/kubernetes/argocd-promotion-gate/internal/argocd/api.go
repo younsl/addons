@@ -44,21 +44,20 @@ type cacheEntry struct {
 // forcing a repo-server render, and the query is narrowed to workload kinds so
 // the payload stays small enough to answer inside an admission timeout.
 type DesiredImageClient struct {
-	http     *http.Client
-	base     string
-	token    string
-	kinds    []string
-	cacheTTL time.Duration
+	http      *http.Client
+	base      string
+	tokenPath string
+	kinds     []string
+	cacheTTL  time.Duration
 
 	mu    sync.RWMutex
 	cache map[string]cacheEntry
 }
 
-// NewDesiredImageClient builds the client and reads the API token from disk.
-//
-// A missing token is not fatal at construction time: the pod may start before
-// the Secret is projected, and the configured onError policy decides what a
-// failed lookup means.
+// NewDesiredImageClient builds the client. The API token is not read here but
+// on every lookup, so a missing one is not fatal at construction time: the pod
+// may start before the Secret is projected, and the configured onError policy
+// decides what a failed lookup means until it arrives.
 func NewDesiredImageClient(cfg config.ArgoCD, kinds []string) (*DesiredImageClient, error) {
 	tlsCfg := &tls.Config{
 		MinVersion: tls.VersionTLS12,
@@ -77,35 +76,92 @@ func NewDesiredImageClient(cfg config.ArgoCD, kinds []string) (*DesiredImageClie
 		tlsCfg.RootCAs = pool
 	}
 
-	token := ""
-	if raw, err := os.ReadFile(cfg.TokenPath); err == nil {
-		token = strings.TrimSpace(string(raw))
-	}
-
 	return &DesiredImageClient{
 		http: &http.Client{
 			Timeout:   time.Duration(cfg.TimeoutSeconds) * time.Second,
 			Transport: &http.Transport{TLSClientConfig: tlsCfg},
 		},
-		base:     strings.TrimRight(cfg.ServerAddress, "/"),
-		token:    token,
-		kinds:    kinds,
-		cacheTTL: time.Duration(cfg.CacheTTLSeconds) * time.Second,
-		cache:    make(map[string]cacheEntry),
+		base:      strings.TrimRight(cfg.ServerAddress, "/"),
+		tokenPath: cfg.TokenPath,
+		kinds:     kinds,
+		cacheTTL:  time.Duration(cfg.CacheTTLSeconds) * time.Second,
+		cache:     make(map[string]cacheEntry),
 	}, nil
 }
 
-// HasToken reports whether an API token was found, so startup can warn once
+// token reads the mounted credential on every call rather than caching the one
+// present at startup, so a rotated Secret takes effect without a restart.
+//
+// That matters more than the read costs: imageTag.onError defaults to deny, so a
+// credential the process can no longer use does not degrade the gate, it closes
+// it on every gated application at once.
+func (c *DesiredImageClient) token() string {
+	raw, err := os.ReadFile(c.tokenPath)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(raw))
+}
+
+// HasToken reports whether a token is mounted right now, so startup can warn
 // instead of failing every lookup silently.
-func (c *DesiredImageClient) HasToken() bool { return c.token != "" }
+func (c *DesiredImageClient) HasToken() bool { return c.token() != "" }
+
+// userInfo is the shape of GET /api/v1/session/userinfo.
+type userInfo struct {
+	LoggedIn bool   `json:"loggedIn"`
+	Username string `json:"username"`
+}
+
+// Probe reports whether argocd-server accepts the mounted token right now.
+//
+// HasToken only proves a file exists, so a revoked or expired token starts up
+// clean and surfaces as a denied production sync instead. Asking argocd-server
+// moves that to deploy time. It stays a report: readiness must not depend on it,
+// or this webhook's availability becomes argocd-server's.
+func (c *DesiredImageClient) Probe(ctx context.Context) (string, error) {
+	token := c.token()
+	if token == "" {
+		return "", fmt.Errorf("no argocd api token is mounted at %s", c.tokenPath)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.base+"/api/v1/session/userinfo", nil)
+	if err != nil {
+		return "", fmt.Errorf("build request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("call argocd api: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("argocd api returned %d for session/userinfo", resp.StatusCode)
+	}
+
+	var body userInfo
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		return "", fmt.Errorf("decode session/userinfo: %w", err)
+	}
+	if !body.LoggedIn {
+		return "", fmt.Errorf("argocd api reports the mounted token is not logged in")
+	}
+	return body.Username, nil
+}
 
 // DesiredImages returns the images a pending sync of app would deploy.
 func (c *DesiredImageClient) DesiredImages(ctx context.Context, app string) ([]gate.ImageRef, error) {
 	if images, ok := c.cached(app); ok {
 		return images, nil
 	}
-	if c.token == "" {
-		return nil, fmt.Errorf("no argocd api token is mounted")
+	// Read once for the whole lookup. Re-reading per kind would let a rotation
+	// land mid-flight and answer one question with two different credentials.
+	token := c.token()
+	if token == "" {
+		return nil, fmt.Errorf("no argocd api token is mounted at %s", c.tokenPath)
 	}
 
 	type result struct {
@@ -116,7 +172,7 @@ func (c *DesiredImageClient) DesiredImages(ctx context.Context, app string) ([]g
 	var wg sync.WaitGroup
 	for i, kind := range c.kinds {
 		wg.Go(func() {
-			images, err := c.fetchKind(ctx, app, kind)
+			images, err := c.fetchKind(ctx, app, kind, token)
 			results[i] = result{images: images, err: err}
 		})
 	}
@@ -141,7 +197,7 @@ func (c *DesiredImageClient) DesiredImages(ctx context.Context, app string) ([]g
 	return images, nil
 }
 
-func (c *DesiredImageClient) fetchKind(ctx context.Context, app, kind string) ([]gate.ImageRef, error) {
+func (c *DesiredImageClient) fetchKind(ctx context.Context, app, kind, token string) ([]gate.ImageRef, error) {
 	endpoint := fmt.Sprintf("%s/api/v1/applications/%s/managed-resources?kind=%s",
 		c.base, url.PathEscape(app), url.QueryEscape(kind))
 
@@ -149,7 +205,7 @@ func (c *DesiredImageClient) fetchKind(ctx context.Context, app, kind string) ([
 	if err != nil {
 		return nil, fmt.Errorf("build request: %w", err)
 	}
-	req.Header.Set("Authorization", "Bearer "+c.token)
+	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Accept", "application/json")
 
 	resp, err := c.http.Do(req)

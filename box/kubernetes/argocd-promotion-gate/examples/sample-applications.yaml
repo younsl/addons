@@ -13,7 +13,7 @@
 # Prerequisite: the AppProjects named beta and prd have to exist, restricted to
 # the destination below. The gate is what keeps the blast radius small, because
 # its webhook is registered with a match condition that only fires for the
-# projects in gate.gatedEnvs.
+# projects in promotionGate.gatedEnvs.
 #
 # Apply:
 #   kubectl --context shared apply -f sample-applications.yaml

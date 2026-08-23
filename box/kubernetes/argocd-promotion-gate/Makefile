@@ -8,7 +8,7 @@ LDFLAGS     := -s -w \
 	-X $(MODULE)/internal/version.Commit=$(COMMIT)
 REGISTRY    ?= ghcr.io/younsl
 IMAGE       := $(REGISTRY)/$(BINARY)
-COVER_MIN   ?= 70
+COVER_MIN   ?= 73
 CHART       := charts/$(BINARY)
 
 .PHONY: all build run test coverage fmt fix lint vet tidy clean \

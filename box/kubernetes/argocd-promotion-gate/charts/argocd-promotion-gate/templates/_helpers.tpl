@@ -52,20 +52,20 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end -}}
 
 {{/*
-The gate config file. Rendered from .Values.gate plus the mount paths the
+The gate config file. Rendered from .Values.promotionGate plus the mount paths the
 chart owns, so a path never has to be repeated in values.
 */}}
 {{- define "argocd-promotion-gate.config" -}}
-{{- $gate := deepCopy .Values.gate -}}
+{{- $gate := deepCopy .Values.promotionGate -}}
 {{- $argocd := $gate.argocd -}}
 {{- $_ := unset $argocd "caSecret" -}}
 {{- $_ := unset $argocd "tokenSecret" -}}
-{{- if and .Values.gate.argocd.caSecret.enabled (not .Values.gate.argocd.insecureSkipVerify) -}}
-{{- $_ := set $argocd "caFile" (printf "/etc/argocd-promotion-gate/argocd-ca/%s" .Values.gate.argocd.caSecret.key) -}}
+{{- if and .Values.promotionGate.argocd.caSecret.enabled (not .Values.promotionGate.argocd.insecureSkipVerify) -}}
+{{- $_ := set $argocd "caFile" (printf "/etc/argocd-promotion-gate/argocd-ca/%s" .Values.promotionGate.argocd.caSecret.key) -}}
 {{- else -}}
 {{- $_ := set $argocd "caFile" "" -}}
 {{- end -}}
-{{- $_ := set $argocd "tokenPath" (printf "/etc/argocd-promotion-gate/token/%s" .Values.gate.argocd.tokenSecret.key) -}}
+{{- $_ := set $argocd "tokenPath" (printf "/etc/argocd-promotion-gate/token/%s" .Values.promotionGate.argocd.tokenSecret.key) -}}
 {{- $_ := set $gate "argocd" $argocd -}}
 {{- toYaml $gate -}}
 {{- end -}}
@@ -76,15 +76,15 @@ server from calling this webhook on the constant stream of status writes that
 Argo CD makes for every Application.
 */}}
 {{- define "argocd-promotion-gate.matchConditions" -}}
-{{- $gated := .Values.gate.gatedEnvs -}}
+{{- $gated := .Values.promotionGate.gatedEnvs -}}
 {{- if not $gated -}}
-{{- $gated = rest .Values.gate.chain -}}
+{{- $gated = rest .Values.promotionGate.chain -}}
 {{- end -}}
 - name: only-new-sync-operations
   expression: "has(object.operation) && (oldObject == null || !has(oldObject.operation))"
 - name: only-gated-projects
   expression: "has(object.spec) && has(object.spec.project) && object.spec.project in [{{ range $i, $env := $gated }}{{ if $i }}, {{ end }}'{{ $env }}'{{ end }}]"
-{{- range .Values.gate.exempt.usernames }}
+{{- range .Values.promotionGate.exempt.usernames }}
 - name: {{ printf "not-%s" (. | replace ":" "-" | replace "." "-" | lower | trunc 55 | trimSuffix "-") | quote }}
   expression: "request.userInfo.username != '{{ . }}'"
 {{- end }}
@@ -131,4 +131,12 @@ this path entirely and leaves the pair to cert-manager.
       "ca" ($ca.Cert | b64enc)) -}}
 {{- end -}}
 {{- end -}}
+{{- end -}}
+
+{{/*
+The Prometheus Operator apiVersion, so the ServiceMonitor can be skipped on a
+cluster that has no operator installed rather than failing the apply.
+*/}}
+{{- define "argocd-promotion-gate.apiVersions.monitoring" -}}
+monitoring.coreos.com/v1
 {{- end -}}

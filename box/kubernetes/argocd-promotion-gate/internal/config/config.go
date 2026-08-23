@@ -46,9 +46,8 @@ type Require struct {
 // ImageTag configures the image tag comparison.
 type ImageTag struct {
 	// Enabled compares image tags on top of the upstream sync and health checks.
-	Enabled bool `yaml:"enabled"`
-	// Mode is enforce or warn.
-	Mode ImageTagMode `yaml:"mode"`
+	Enabled bool         `yaml:"enabled"`
+	Mode    ImageTagMode `yaml:"mode"`
 	// Kinds are the workload kinds queried for desired images.
 	Kinds []string `yaml:"kinds"`
 	// IgnoreRepos excludes repository basenames from comparison. A trailing
@@ -102,9 +101,8 @@ type ArgoCD struct {
 	// InsecureSkipVerify disables TLS verification against argocd-server. It
 	// exists only for clusters that terminate TLS elsewhere; prefer CAFile,
 	// because the token this client sends is a full Argo CD API credential.
-	InsecureSkipVerify bool `yaml:"insecureSkipVerify"`
-	// TokenPath is the file holding the Argo CD API token.
-	TokenPath string `yaml:"tokenPath"`
+	InsecureSkipVerify bool   `yaml:"insecureSkipVerify"`
+	TokenPath          string `yaml:"tokenPath"`
 	// TimeoutSeconds bounds each argocd-server call. It must stay well under
 	// the webhook's own timeout.
 	TimeoutSeconds int `yaml:"timeoutSeconds"`

@@ -67,6 +67,10 @@ spec:
             {{- toYaml .Values.securityContext | nindent 12 }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
+          {{- with .Values.resizePolicy }}
+          resizePolicy:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           volumeMounts:
             - name: config
               mountPath: /etc/argocd-promotion-gate/config.yaml
@@ -75,11 +79,11 @@ spec:
             - name: tls
               mountPath: /etc/argocd-promotion-gate/tls
               readOnly: true
-            {{- if .Values.gate.imageTag.enabled }}
+            {{- if .Values.promotionGate.imageTag.enabled }}
             - name: token
               mountPath: /etc/argocd-promotion-gate/token
               readOnly: true
-            {{- if and .Values.gate.argocd.caSecret.enabled (not .Values.gate.argocd.insecureSkipVerify) }}
+            {{- if and .Values.promotionGate.argocd.caSecret.enabled (not .Values.promotionGate.argocd.insecureSkipVerify) }}
             - name: argocd-ca
               mountPath: /etc/argocd-promotion-gate/argocd-ca
               readOnly: true
@@ -92,21 +96,21 @@ spec:
         - name: tls
           secret:
             secretName: {{ printf "%s-tls" (include "argocd-promotion-gate.fullname" .) }}
-        {{- if .Values.gate.imageTag.enabled }}
+        {{- if .Values.promotionGate.imageTag.enabled }}
         - name: token
           secret:
-            secretName: {{ .Values.gate.argocd.tokenSecret.name }}
+            secretName: {{ .Values.promotionGate.argocd.tokenSecret.name }}
             # Optional so the pod still starts before the token exists. A
             # missing token then surfaces as a lookup failure resolved by
             # gate.imageTag.onError, not as a crash loop.
             optional: true
-        {{- if and .Values.gate.argocd.caSecret.enabled (not .Values.gate.argocd.insecureSkipVerify) }}
+        {{- if and .Values.promotionGate.argocd.caSecret.enabled (not .Values.promotionGate.argocd.insecureSkipVerify) }}
         - name: argocd-ca
           secret:
-            secretName: {{ .Values.gate.argocd.caSecret.name }}
+            secretName: {{ .Values.promotionGate.argocd.caSecret.name }}
             items:
-              - key: {{ .Values.gate.argocd.caSecret.key }}
-                path: {{ .Values.gate.argocd.caSecret.key }}
+              - key: {{ .Values.promotionGate.argocd.caSecret.key }}
+                path: {{ .Values.promotionGate.argocd.caSecret.key }}
         {{- end }}
         {{- end }}
       {{- with .Values.nodeSelector }}

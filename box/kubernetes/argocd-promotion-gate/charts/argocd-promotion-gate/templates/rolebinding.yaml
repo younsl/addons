@@ -3,7 +3,7 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   name: {{ include "argocd-promotion-gate.fullname" . }}
-  namespace: {{ .Values.gate.argocd.namespace }}
+  namespace: {{ .Values.promotionGate.argocd.namespace }}
   labels:
     {{- include "argocd-promotion-gate.labels" . | nindent 4 }}
 roleRef:

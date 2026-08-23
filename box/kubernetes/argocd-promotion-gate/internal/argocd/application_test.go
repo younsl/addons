@@ -192,3 +192,101 @@ func TestReaderGetNotFoundIsNotAnError(t *testing.T) {
 		t.Errorf("Get() = %+v, want nil", snap)
 	}
 }
+
+func TestReaderList(t *testing.T) {
+	reader := newFakeReader(t,
+		application("stg-payment-api", "stg", "Synced", "Healthy"),
+		application("prd-payment-api", "prd", "OutOfSync", "Degraded"),
+	)
+
+	apps, err := reader.List(context.Background())
+	if err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+	if len(apps) != 2 {
+		t.Fatalf("List() = %d applications, want 2", len(apps))
+	}
+	for _, app := range apps {
+		if app.Identity != "payment-api" {
+			t.Errorf("identity = %q, want payment-api", app.Identity)
+		}
+	}
+}
+
+func TestReaderListSkipsAMalformedApplication(t *testing.T) {
+	// One Application the parser cannot read must not hide the rest, or a single
+	// broken object would make the startup exemption scan report nothing.
+	nameless := &unstructured.Unstructured{Object: map[string]any{
+		"apiVersion": "argoproj.io/v1alpha1",
+		"kind":       "Application",
+		"metadata":   map[string]any{"namespace": "argocd", "generateName": "broken-"},
+	}}
+	reader := newFakeReader(t, application("stg-payment-api", "stg", "Synced", "Healthy"), nameless)
+
+	apps, err := reader.List(context.Background())
+	if err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+	if len(apps) != 1 || apps[0].Name != "stg-payment-api" {
+		t.Errorf("List() = %+v, want only the parsable application", apps)
+	}
+}
+
+func TestDeployedRevisions(t *testing.T) {
+	// status.history is what makes a rollback recognisable from the admission
+	// request alone, and a rollback skips every upstream check, so the parsing
+	// of this field decides whether that bypass fires correctly.
+	obj := decodeApp(t, `{
+		"metadata": {"name": "prd-payment-api"},
+		"spec": {"project": "prd"},
+		"operation": {"sync": {"revision": "aaa111"}},
+		"status": {
+			"sync": {"revision": "ccc333"},
+			"history": [
+				{"revision": "aaa111"},
+				{"revisions": ["bbb222", "ddd444"]},
+				{"revision": "eee555", "revisions": ["fff666"]},
+				{"revision": ""},
+				{"revisions": ["", 42]},
+				"not an object"
+			]
+		}
+	}`)
+
+	snap, err := SnapshotFromMap(obj, skipAnnotation)
+	if err != nil {
+		t.Fatalf("SnapshotFromMap() error = %v", err)
+	}
+
+	want := []string{"aaa111", "bbb222", "ddd444", "eee555", "fff666"}
+	if len(snap.DeployedRevisions) != len(want) {
+		t.Fatalf("DeployedRevisions = %v, want %v", snap.DeployedRevisions, want)
+	}
+	for i := range want {
+		if snap.DeployedRevisions[i] != want[i] {
+			t.Errorf("DeployedRevisions[%d] = %q, want %q", i, snap.DeployedRevisions[i], want[i])
+		}
+	}
+	if !snap.IsRollback() {
+		t.Error("IsRollback() = false for a pending revision present in history")
+	}
+}
+
+func TestDeployedRevisionsWithoutHistory(t *testing.T) {
+	obj := decodeApp(t, `{
+		"metadata": {"name": "prd-payment-api"},
+		"spec": {"project": "prd"},
+		"operation": {"sync": {"revision": "aaa111"}}
+	}`)
+
+	snap, err := SnapshotFromMap(obj, skipAnnotation)
+	if err != nil {
+		t.Fatalf("SnapshotFromMap() error = %v", err)
+	}
+	if snap.DeployedRevisions != nil {
+		t.Errorf("DeployedRevisions = %v, want nil", snap.DeployedRevisions)
+	}
+	if snap.IsRollback() {
+		t.Error("IsRollback() = true with no history to roll back to")
+	}
+}

@@ -1,24 +1,24 @@
 argocd-promotion-gate {{ .Chart.AppVersion }} is installed.
 
-Promotion chain: {{ join " -> " .Values.gate.chain }}
-Enforced in:     {{ if .Values.gate.gatedEnvs }}{{ join ", " .Values.gate.gatedEnvs }}{{ else }}every env except {{ first .Values.gate.chain }}{{ end }}
-Image tag check: {{ if .Values.gate.imageTag.enabled }}{{ .Values.gate.imageTag.mode }}{{ else }}disabled{{ end }}
+Promotion chain: {{ join " -> " .Values.promotionGate.chain }}
+Enforced in:     {{ if .Values.promotionGate.gatedEnvs }}{{ join ", " .Values.promotionGate.gatedEnvs }}{{ else }}every env except {{ first .Values.promotionGate.chain }}{{ end }}
+Image tag check: {{ if .Values.promotionGate.imageTag.enabled }}{{ .Values.promotionGate.imageTag.mode }}{{ else }}disabled{{ end }}
 
 The webhook is live now. A sync of a gated Application is denied unless its
-upstream counterpart is {{ if .Values.gate.require.sync }}Synced{{ end }}{{ if and .Values.gate.require.sync .Values.gate.require.health }} and {{ end }}{{ if .Values.gate.require.health }}Healthy{{ end }}.
-An Application with no upstream counterpart is {{ .Values.gate.missingUpstream }}ed.
+upstream counterpart is {{ if .Values.promotionGate.require.sync }}Synced{{ end }}{{ if and .Values.promotionGate.require.sync .Values.promotionGate.require.health }} and {{ end }}{{ if .Values.promotionGate.require.health }}Healthy{{ end }}.
+An Application with no upstream counterpart is {{ .Values.promotionGate.missingUpstream }}ed.
 
-{{ if .Values.gate.imageTag.enabled }}
+{{ if .Values.promotionGate.imageTag.enabled }}
 Two things still need doing by hand:
 
 1. The Argo CD API token for the image tag lookup. Without it every lookup
-   fails and gate.imageTag.onError ({{ .Values.gate.imageTag.onError }}) decides the verdict.
+   fails and gate.imageTag.onError ({{ .Values.promotionGate.imageTag.onError }}) decides the verdict.
 
-     kubectl -n {{ .Values.gate.argocd.namespace }} patch cm argocd-cm --type merge \
+     kubectl -n {{ .Values.promotionGate.argocd.namespace }} patch cm argocd-cm --type merge \
        -p '{"data":{"accounts.promotion-gate":"apiKey"}}'
      argocd account generate-token --account promotion-gate
-     kubectl -n {{ .Release.Namespace }} create secret generic {{ .Values.gate.argocd.tokenSecret.name }} \
-       --from-literal={{ .Values.gate.argocd.tokenSecret.key }}=<token>
+     kubectl -n {{ .Release.Namespace }} create secret generic {{ .Values.promotionGate.argocd.tokenSecret.name }} \
+       --from-literal={{ .Values.promotionGate.argocd.tokenSecret.key }}=<token>
 
    Grant it read-only access in argocd-rbac-cm:
      p, role:promotion-gate, applications, get, */*, allow
@@ -35,4 +35,4 @@ Two things still need doing by hand:
 Check a verdict without syncing anything:
 
   kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "argocd-promotion-gate.fullname" . }} {{ .Values.service.adminPort }}
-  curl -s 'localhost:{{ .Values.service.adminPort }}/api/v1/gate?app=<{{ if .Values.gate.gatedEnvs }}{{ first .Values.gate.gatedEnvs }}{{ else }}prd{{ end }}-your-app>' | jq
+  curl -s 'localhost:{{ .Values.service.adminPort }}/api/v1/gate?app=<{{ if .Values.promotionGate.gatedEnvs }}{{ first .Values.promotionGate.gatedEnvs }}{{ else }}prd{{ end }}-your-app>' | jq

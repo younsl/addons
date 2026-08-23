@@ -3,6 +3,7 @@ package observability
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/prometheus/client_golang/prometheus/testutil"
 
@@ -78,5 +79,51 @@ func TestRegistryIncludesRuntimeCollectors(t *testing.T) {
 	}
 	if !hasGo {
 		t.Error("the registry exposes no go_* metrics, so runtime health is invisible")
+	}
+}
+
+func TestRegisterCertificateExpiry(t *testing.T) {
+	m := NewMetrics()
+	expiry := time.Unix(1893456000, 0)
+	m.RegisterCertificateExpiry(func() time.Time { return expiry })
+
+	families, err := m.Registry().Gather()
+	if err != nil {
+		t.Fatalf("Gather() error = %v", err)
+	}
+	var got float64
+	var found bool
+	for _, family := range families {
+		if family.GetName() != "argocd_promotion_gate_webhook_certificate_expiry_seconds" {
+			continue
+		}
+		found = true
+		got = family.GetMetric()[0].GetGauge().GetValue()
+	}
+	if !found {
+		t.Fatal("the certificate expiry gauge was not registered")
+	}
+	if got != float64(expiry.Unix()) {
+		t.Errorf("gauge = %v, want %v", got, float64(expiry.Unix()))
+	}
+}
+
+func TestRegisterCertificateExpiryReportsZeroWithNothingLoaded(t *testing.T) {
+	// Zero rather than a stale reading, so an alert on "expiring soon" fires
+	// instead of silently passing when no pair is loaded at all.
+	m := NewMetrics()
+	m.RegisterCertificateExpiry(func() time.Time { return time.Time{} })
+
+	families, err := m.Registry().Gather()
+	if err != nil {
+		t.Fatalf("Gather() error = %v", err)
+	}
+	for _, family := range families {
+		if family.GetName() != "argocd_promotion_gate_webhook_certificate_expiry_seconds" {
+			continue
+		}
+		if got := family.GetMetric()[0].GetGauge().GetValue(); got != 0 {
+			t.Errorf("gauge = %v with no certificate loaded, want 0", got)
+		}
 	}
 }

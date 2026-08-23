@@ -6,6 +6,8 @@
 // engine and passed in, so the rules can be tested without a cluster.
 package gate
 
+import "slices"
+
 // Status values Argo CD publishes on an Application.
 const (
 	SyncSynced    = "Synced"
@@ -52,12 +54,7 @@ func (a AppSnapshot) IsRollback() bool {
 	if a.PendingRevision == "" || a.PendingRevision == a.CurrentRevision {
 		return false
 	}
-	for _, deployed := range a.DeployedRevisions {
-		if deployed == a.PendingRevision {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(a.DeployedRevisions, a.PendingRevision)
 }
 
 // IsSynced reports whether Argo CD considers the app in sync with git.

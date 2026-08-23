@@ -5,6 +5,7 @@ package observability
 
 import (
 	"strconv"
+	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
@@ -75,4 +76,25 @@ func (m *Metrics) RecordAdmission(outcome string) {
 // RecordLookupFailure counts one failed fact lookup.
 func (m *Metrics) RecordLookupFailure(kind string) {
 	m.LookupFailures.WithLabelValues(kind).Inc()
+}
+
+// RegisterCertificateExpiry publishes the webhook certificate's expiry as a
+// unix timestamp, read at scrape time.
+//
+// It covers only the certificate running out. A re-issued CA leaving the served
+// leaf off the published caBundle is invisible from here, because the handshake
+// fails before any request reaches this process. That one shows up only as
+// apiserver_admission_webhook_rejection_count{error_type="calling_webhook_error"}.
+func (m *Metrics) RegisterCertificateExpiry(notAfter func() time.Time) {
+	m.registry.MustRegister(prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+		Namespace: namespace,
+		Name:      "webhook_certificate_expiry_seconds",
+		Help:      "Expiry of the serving certificate the webhook currently has loaded, as a unix timestamp.",
+	}, func() float64 {
+		expiry := notAfter()
+		if expiry.IsZero() {
+			return 0
+		}
+		return float64(expiry.Unix())
+	}))
 }

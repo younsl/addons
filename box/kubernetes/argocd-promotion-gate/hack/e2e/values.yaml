@@ -23,7 +23,7 @@ webhook:
   # gate has to block rather than wave things through.
   failurePolicy: Fail
 
-gate:
+promotionGate:
   chain: [beta, prd]
   gatedEnvs: [prd]
   require:
