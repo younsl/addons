@@ -1,3 +1,5 @@
+<img src="docs/assets/argocd-logo.svg" alt="Argo CD" width="72">
+
 # argocd-promotion-gate
 
 [![GitHub Container Registry](https://img.shields.io/badge/ghcr.io-argocd--promotion--gate-black?style=flat-square&logo=docker&logoColor=white)](https://github.com/younsl/o/pkgs/container/argocd-promotion-gate)
