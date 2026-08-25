@@ -18,3 +18,103 @@
   background-color: rgba(255, 255, 255, 0.2);
   color: rgba(255, 255, 255, 0.5);
 }
+
+/*
+ * Sidebar chrome. These rules replace the makeStyles blocks that used to live in
+ * Root.tsx, so the sidebar is styled the same CSS-and-token way as the rest of
+ * the app rather than through MUI's JSS runtime.
+ */
+.sidebar-logo {
+  display: flex;
+  flex-flow: row nowrap;
+  align-items: center;
+  margin-bottom: -14px;
+}
+
+/*
+ * Descendant selectors, not bare classes, on every element that core-components
+ * hands to Material UI. MUI v4 injects its JSS block at render time, after
+ * style-loader has already added this file, so a bare class ties with
+ * .MuiTypography-root or .MuiSvgIcon-root at 0-1-0 and loses on source order.
+ * The makeStyles version this replaced won instead through its JSS index.
+ */
+.sidebar-logo .sidebar-logo-link {
+  margin-left: 24px;
+}
+
+.sidebar-user {
+  display: flex;
+  align-items: center;
+  padding: 8px 24px;
+}
+
+.sidebar-user .sidebar-user-name {
+  color: rgba(255, 255, 255, 0.7);
+}
+
+/* Foldable sidebar section */
+.sidebar-section-header {
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+  width: 100%;
+  height: 48px;
+  padding-left: 24px;
+  padding-right: 20px;
+  cursor: pointer;
+}
+
+.sidebar-section-header:hover {
+  background-color: rgba(255, 255, 255, 0.08);
+}
+
+/* Rail width only fits the icon, so the header centres it and drops the padding */
+.sidebar-section-header-collapsed {
+  justify-content: center;
+  padding-left: 0;
+  padding-right: 0;
+}
+
+.sidebar-section-header .sidebar-section-icon {
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 20px;
+  margin-right: 16px;
+}
+
+.sidebar-section-header-collapsed .sidebar-section-icon {
+  margin-right: 0;
+}
+
+.sidebar-section-header .sidebar-section-title {
+  flex: 1;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.sidebar-section-header .sidebar-section-expand {
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 18px;
+}
+
+/*
+ * 0fr to 1fr animates without measuring the children. visibility is held until
+ * the fold finishes so the collapsed items leave the tab order, and is restored
+ * with no delay on open so they are reachable while the row is still growing.
+ */
+.sidebar-section-panel {
+  display: grid;
+  grid-template-rows: 0fr;
+  visibility: hidden;
+  transition: grid-template-rows 0.2s ease, visibility 0s linear 0.2s;
+}
+
+.sidebar-section-panel > div {
+  overflow: hidden;
+}
+
+.sidebar-section-panel-open {
+  grid-template-rows: 1fr;
+  visibility: visible;
+  transition: grid-template-rows 0.2s ease, visibility 0s linear 0s;
+}

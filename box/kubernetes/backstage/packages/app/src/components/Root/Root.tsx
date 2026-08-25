@@ -1,5 +1,4 @@
 import React, { PropsWithChildren, useEffect, useState } from 'react';
-import { makeStyles, Typography, Collapse } from '@material-ui/core';
 import CategoryIcon from '@material-ui/icons/Category';
 import ExtensionIcon from '@material-ui/icons/Extension';
 import LibraryBooks from '@material-ui/icons/LibraryBooks';
@@ -16,6 +15,7 @@ import AttachMoneyIcon from '@material-ui/icons/AttachMoney';
 import FindInPageIcon from '@material-ui/icons/FindInPage';
 import VpnKeyIcon from '@material-ui/icons/VpnKey';
 import TrendingUpIcon from '@material-ui/icons/TrendingUp';
+import { Text } from '@backstage/ui';
 import { siArgo, siGitlab, siKubernetes } from 'simple-icons';
 import { createIcon } from '@dweber019/backstage-plugin-simple-icons';
 
@@ -51,46 +51,24 @@ import LogoFull from './LogoFull';
 import LogoIcon from './LogoIcon';
 import './Root.css';
 
-const useSidebarLogoStyles = makeStyles({
-  root: {
-    height: 3 * sidebarConfig.logoHeight,
-    display: 'flex',
-    flexFlow: 'row nowrap',
-    alignItems: 'center',
-    marginBottom: -14,
-  },
-  link: {
-    marginLeft: 24,
-  },
-});
-
 const SidebarLogo = () => {
-  const classes = useSidebarLogoStyles();
   const { isOpen } = useSidebarOpenState();
 
   return (
-    <div className={classes.root}>
-      <Link to="/" underline="none" className={classes.link} aria-label="Home">
+    // The height is Backstage's own logo metric, not a design choice here, so it
+    // stays in JS rather than being duplicated as a magic number in the CSS.
+    <div
+      className="sidebar-logo"
+      style={{ height: 3 * sidebarConfig.logoHeight }}
+    >
+      <Link to="/" underline="none" className="sidebar-logo-link" aria-label="Home">
         {isOpen ? <LogoFull /> : <LogoIcon />}
       </Link>
     </div>
   );
 };
 
-const useUserStyles = makeStyles({
-  userInfo: {
-    padding: '8px 24px',
-    display: 'flex',
-    alignItems: 'center',
-  },
-  userName: {
-    fontSize: '0.875rem',
-    color: 'rgba(255, 255, 255, 0.7)',
-  },
-});
-
 const CurrentUser = () => {
-  const classes = useUserStyles();
   const { isOpen } = useSidebarOpenState();
   const identityApi = useApi(identityApiRef);
   const [displayName, setDisplayName] = useState<string>('');
@@ -104,62 +82,13 @@ const CurrentUser = () => {
   if (!isOpen) return null;
 
   return (
-    <div className={classes.userInfo}>
-      <Typography className={classes.userName}>
+    <div className="sidebar-user">
+      <Text variant="body-small" className="sidebar-user-name">
         Logged in as: {displayName}
-      </Typography>
+      </Text>
     </div>
   );
 };
-
-const useFoldableSectionStyles = makeStyles({
-  header: {
-    display: 'flex',
-    alignItems: 'center',
-    width: '100%',
-    height: 48,
-    paddingLeft: 24,
-    paddingRight: 20,
-    boxSizing: 'border-box',
-    cursor: 'pointer',
-    '&:hover': {
-      backgroundColor: 'rgba(255, 255, 255, 0.08)',
-    },
-  },
-  headerCollapsed: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    width: '100%',
-    height: 48,
-    boxSizing: 'border-box',
-    cursor: 'pointer',
-    '&:hover': {
-      backgroundColor: 'rgba(255, 255, 255, 0.08)',
-    },
-  },
-  icon: {
-    color: 'rgba(255, 255, 255, 0.7)',
-    marginRight: 16,
-    fontSize: 20,
-  },
-  iconCollapsed: {
-    color: 'rgba(255, 255, 255, 0.7)',
-    fontSize: 20,
-  },
-  title: {
-    flex: 1,
-    fontSize: '0.75rem',
-    fontWeight: 700,
-    textTransform: 'uppercase',
-    color: 'rgba(255, 255, 255, 0.5)',
-    letterSpacing: '0.5px',
-  },
-  expandIcon: {
-    color: 'rgba(255, 255, 255, 0.5)',
-    fontSize: 18,
-  },
-});
 
 interface FoldableSectionProps {
   title: string;
@@ -174,7 +103,6 @@ const FoldableSection = ({
   defaultOpen = true,
   children,
 }: FoldableSectionProps) => {
-  const classes = useFoldableSectionStyles();
   const { isOpen: sidebarOpen } = useSidebarOpenState();
   const [expanded, setExpanded] = useState(defaultOpen);
 
@@ -185,13 +113,13 @@ const FoldableSection = ({
   if (!sidebarOpen) {
     return (
       <div
-        className={classes.headerCollapsed}
+        className="sidebar-section-header sidebar-section-header-collapsed"
         onClick={handleToggle}
         role="button"
         tabIndex={0}
         onKeyDown={e => e.key === 'Enter' && handleToggle()}
       >
-        {React.cloneElement(icon, { className: classes.iconCollapsed })}
+        {React.cloneElement(icon, { className: 'sidebar-section-icon' })}
       </div>
     );
   }
@@ -199,21 +127,33 @@ const FoldableSection = ({
   return (
     <>
       <div
-        className={classes.header}
+        className="sidebar-section-header"
         onClick={handleToggle}
         role="button"
         tabIndex={0}
+        aria-expanded={expanded}
         onKeyDown={e => e.key === 'Enter' && handleToggle()}
       >
-        {React.cloneElement(icon, { className: classes.icon })}
-        <Typography className={classes.title}>{title}</Typography>
+        {React.cloneElement(icon, { className: 'sidebar-section-icon' })}
+        <Text variant="body-x-small" weight="bold" className="sidebar-section-title">
+          {title}
+        </Text>
         {expanded ? (
-          <ExpandLessIcon className={classes.expandIcon} />
+          <ExpandLessIcon className="sidebar-section-expand" />
         ) : (
-          <ExpandMoreIcon className={classes.expandIcon} />
+          <ExpandMoreIcon className="sidebar-section-expand" />
         )}
       </div>
-      <Collapse in={expanded}>{children}</Collapse>
+      {/*
+        Grid rows animate the fold the way MUI's Collapse did, without measuring
+        the content. visibility drops the collapsed items out of the tab order,
+        which overflow alone would not do.
+      */}
+      <div
+        className={`sidebar-section-panel${expanded ? ' sidebar-section-panel-open' : ''}`}
+      >
+        <div>{children}</div>
+      </div>
     </>
   );
 };

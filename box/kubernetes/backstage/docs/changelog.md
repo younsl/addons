@@ -10,6 +10,14 @@ Headings are image tags, not Backstage versions. A rebuild at the same Backstage
 
 Tags released before this file existed (`1.51.0-1` through `1.53.0-3`) are not recorded here.
 
+## 1.54.4-1
+
+Released 2026-08-25. Built on Backstage [v1.54.4](https://github.com/backstage/backstage/releases/tag/v1.54.4) as the base version, up from `1.54.0`.
+
+- Base version bumped through `backstage-cli versions:bump`, which moved `@backstage/plugin-scaffolder-backend` to `^4.0.5` and `@backstage/plugin-search-backend` to `^2.1.6` in the backend package. Everything else in the workspace already satisfied the new ranges, so the upgrade is four upstream patch releases and nothing more.
+- ArgoCD AppSet overview gained a Deprecated card. The count of ApplicationSets deploying at least one chart whose `Chart.yaml` declares `deprecated: true` was previously only reachable by opening cards one at a time, so the number that decides retirement work was the one number the overview did not carry. Clicking it filters the list the same way Not HEAD, Upgradable, and Muted already do.
+- Summary cards restacked to number over label. The row was a line of `count label` pairs that had to be read left to right one card at a time. Stacking puts every figure on the same line, so the row can be scanned down the numbers alone. Muted and Deprecated carry their icon beside the label, matching the badge on the cards they filter to.
+
 ## 1.54.0-3
 
 Released 2026-08-21, rebuilt and overwritten in place on 2026-08-23. Built on Backstage [v1.54.0](https://github.com/backstage/backstage/releases/tag/v1.54.0) as the base version, the same base as `1.54.0-1`, so this tag differs only by the changes below.

@@ -6,22 +6,47 @@
   margin-top: var(--bui-space-2);
 }
 
+/*
+ * Number stacked over its label, so a row of cards reads as a row of figures
+ * that can be scanned down the numbers alone. min-width keeps a one-digit card
+ * the same size as a five-digit one, so the row does not reflow as counts load.
+ */
 .appset-summary-card {
+  position: relative;
   display: flex;
+  flex-direction: column;
   align-items: center;
-  padding: var(--bui-space-2) var(--bui-space-3);
+  justify-content: center;
+  min-width: 104px;
+  padding: var(--bui-space-2) var(--bui-space-4);
   border-radius: var(--bui-radius-3);
   background-color: var(--bui-bg-neutral-2);
   border: 1px solid var(--bui-border-1);
-  gap: var(--bui-space-2);
+  gap: 2px;
+  text-align: center;
 }
 
 .appset-summary-value {
   font-weight: var(--bui-font-weight-bold);
   font-size: 1.25rem;
+  line-height: 1.2;
 }
 
+/* Icon rides on the label baseline row, not above it */
+.appset-summary-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/*
+ * Out of the column, so the info affordance does not become a third row and
+ * push the label off-centre against the cards that carry no button.
+ */
 .appset-muted-info-btn {
+  position: absolute;
+  top: 2px;
+  right: 2px;
   width: 20px;
   height: 20px;
   min-width: 20px;

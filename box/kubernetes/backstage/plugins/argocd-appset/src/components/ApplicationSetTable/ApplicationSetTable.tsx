@@ -459,7 +459,7 @@ export const ApplicationSetTable = () => {
   const [repoFilter, setRepoFilter] = useState<string>('all');
   const [revisionFilter, setRevisionFilter] = useState<string>('all');
   const [overviewFilter, setOverviewFilter] = useState<
-    'all' | 'notHead' | 'muted' | 'upgrades'
+    'all' | 'notHead' | 'muted' | 'upgrades' | 'deprecated'
   >('all');
 
   const [chartDetailKey, setChartDetailKey] = useState<string | null>(null);
@@ -517,6 +517,11 @@ export const ApplicationSetTable = () => {
     return appSets.filter(a => a.muted).length;
   }, [appSets]);
 
+  const deprecatedCount = useMemo(() => {
+    if (!appSets) return 0;
+    return appSets.filter(a => deprecatedCharts(a).length > 0).length;
+  }, [appSets]);
+
   const uniqueRepos = useMemo(() => {
     if (!appSets) return [];
     return [...new Set(appSets.map(a => a.repoName).filter(Boolean))].sort();
@@ -542,7 +547,8 @@ export const ApplicationSetTable = () => {
           overviewFilter === 'all' ||
           (overviewFilter === 'notHead' && !a.isHeadRevision) ||
           (overviewFilter === 'muted' && a.muted) ||
-          (overviewFilter === 'upgrades' && appSetUpgrades(a, upstreamState).length > 0);
+          (overviewFilter === 'upgrades' && appSetUpgrades(a, upstreamState).length > 0) ||
+          (overviewFilter === 'deprecated' && deprecatedCharts(a).length > 0);
         return matchesSearch && matchesRepo && matchesRevision && matchesOverview;
       })
       .sort((a, b) => Number(a.isHeadRevision) - Number(b.isHeadRevision));
@@ -856,7 +862,7 @@ export const ApplicationSetTable = () => {
           </div>
           <div className="appset-summary-card">
             <Text weight="bold" className="appset-summary-value">{totalApps}</Text>
-            <Text variant="body-x-small" color="secondary">Total Apps</Text>
+            <Text variant="body-x-small" color="secondary">Applications</Text>
           </div>
           <div
             className={`appset-summary-card appset-summary-clickable ${overviewFilter === 'notHead' ? 'appset-summary-active' : ''}`}
@@ -888,7 +894,42 @@ export const ApplicationSetTable = () => {
             >
               {upgradableCount}
             </Text>
-            <Text variant="body-x-small" color="secondary">Upgradable</Text>
+            <Text variant="body-x-small" color="secondary" className="appset-summary-label">
+              <RiArrowUpCircleLine size={12} aria-hidden="true" />
+              Upgradable
+            </Text>
+          </div>
+          <div
+            className={`appset-summary-card appset-summary-clickable ${overviewFilter === 'deprecated' ? 'appset-summary-active' : ''}`}
+            onClick={() => setOverviewFilter(prev => (prev === 'deprecated' ? 'all' : 'deprecated'))}
+            role="button"
+            tabIndex={0}
+            onKeyDown={e => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                setOverviewFilter(prev => (prev === 'deprecated' ? 'all' : 'deprecated'));
+              }
+            }}
+          >
+            <Text weight="bold" className="appset-summary-value">
+              {deprecatedCount}
+            </Text>
+            <Text variant="body-x-small" color="secondary" className="appset-summary-label">
+              <DeprecatedIcon />
+              Deprecated
+            </Text>
+            <TooltipTrigger delay={200}>
+              <ButtonIcon
+                size="small"
+                variant="tertiary"
+                icon={<RiInformationLine size={14} />}
+                aria-label="Deprecated info"
+                className="appset-muted-info-btn"
+              />
+              <Tooltip>
+                ApplicationSets deploying at least one chart whose Chart.yaml
+                declares deprecated: true.
+              </Tooltip>
+            </TooltipTrigger>
           </div>
           <div
             className={`appset-summary-card appset-summary-clickable ${overviewFilter === 'muted' ? 'appset-summary-active' : ''}`}
@@ -898,7 +939,10 @@ export const ApplicationSetTable = () => {
             onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') setOverviewFilter(prev => prev === 'muted' ? 'all' : 'muted'); }}
           >
             <Text weight="bold" className="appset-summary-value">{mutedCount}</Text>
-            <Text variant="body-x-small" color="secondary">Muted</Text>
+            <Text variant="body-x-small" color="secondary" className="appset-summary-label">
+              <RiNotificationOffLine size={12} aria-hidden="true" />
+              Muted
+            </Text>
             <TooltipTrigger delay={200}>
               <ButtonIcon
                 size="small"
