@@ -856,6 +856,7 @@ pub async fn get_config(State(state): State<AppState>) -> impl IntoResponse {
         ConfigItem::public(env::COLLECT_VULN, c.collect_vulnerability_reports),
         ConfigItem::public(env::COLLECT_SBOM, c.collect_sbom_reports),
         ConfigItem::public(env::AUTH_MODE, auth_mode_str),
+        ConfigItem::public(env::MCP_ENABLED, c.mcp_enabled),
     ];
 
     (StatusCode::OK, Json(ConfigResponse { items }))
@@ -965,6 +966,7 @@ mod tests {
             watch_local: false,
             hub_secret_namespace: String::new(),
             auth_mode: None,
+            mcp_enabled: false,
         });
         let runtime = Arc::new(RuntimeInfo::new());
 

@@ -60,6 +60,17 @@ pub struct CleanupResultLabels {
     pub result: String,
 }
 
+#[derive(Clone, Debug, Hash, PartialEq, Eq, EncodeLabelSet)]
+pub struct McpToolLabels {
+    pub tool: String,
+    pub result: String,
+}
+
+#[derive(Clone, Debug, Hash, PartialEq, Eq, EncodeLabelSet)]
+pub struct McpToolDurationLabels {
+    pub tool: String,
+}
+
 // ============================================
 // Histogram bucket constants
 // ============================================
@@ -92,6 +103,9 @@ pub struct Metrics {
     pub api_logs_total: Option<Gauge>,
     pub api_logs_cleanup_runs_total: Option<Family<CleanupResultLabels, Counter>>,
     pub api_logs_cleanup_deleted_total: Option<Counter>,
+    pub mcp_tool_calls_total: Option<Family<McpToolLabels, Counter>>,
+    pub mcp_tool_duration_seconds: Option<Family<McpToolDurationLabels, Histogram>>,
+    pub mcp_tool_calls_in_flight: Option<Gauge>,
 
     // -- Collector mode --
     pub reports_sent_total: Option<Family<SendLabels, Counter>>,
@@ -126,6 +140,9 @@ impl Metrics {
             api_logs_total: None,
             api_logs_cleanup_runs_total: None,
             api_logs_cleanup_deleted_total: None,
+            mcp_tool_calls_total: None,
+            mcp_tool_duration_seconds: None,
+            mcp_tool_calls_in_flight: None,
             reports_sent_total: None,
             reports_send_duration_seconds: None,
             watcher_events_total: None,
@@ -233,10 +250,39 @@ impl Metrics {
         self.api_logs_cleanup_deleted_total = Some(api_logs_cleanup_deleted_total);
         count += 1;
 
+        let mcp_tool_calls_total = Family::<McpToolLabels, Counter>::default();
+        registry.register(
+            "trivy_collector_mcp_tool_calls",
+            "Total MCP tool invocations by tool and result",
+            mcp_tool_calls_total.clone(),
+        );
+        self.mcp_tool_calls_total = Some(mcp_tool_calls_total);
+        count += 1;
+
+        let mcp_tool_duration_seconds =
+            Family::<McpToolDurationLabels, Histogram>::new_with_constructor(|| {
+                Histogram::new(HTTP_DURATION_BUCKETS.iter().copied())
+            });
+        registry.register(
+            "trivy_collector_mcp_tool_duration_seconds",
+            "MCP tool execution time in seconds, including queueing for a concurrency slot",
+            mcp_tool_duration_seconds.clone(),
+        );
+        self.mcp_tool_duration_seconds = Some(mcp_tool_duration_seconds);
+        count += 1;
+
+        let mcp_tool_calls_in_flight = Gauge::default();
+        registry.register(
+            "trivy_collector_mcp_tool_calls_in_flight",
+            "MCP tool invocations currently executing",
+            mcp_tool_calls_in_flight.clone(),
+        );
+        self.mcp_tool_calls_in_flight = Some(mcp_tool_calls_in_flight);
+        count += 1;
+
         count
     }
 
-    /// Returns the number of metrics registered for collector mode.
     fn register_collector(&mut self, registry: &mut Registry) -> usize {
         let mut count = 0;
 

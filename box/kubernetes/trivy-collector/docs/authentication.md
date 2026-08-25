@@ -89,6 +89,8 @@ Browser ──→ /auth/login ──→ Keycloak Login Page
 
 ## API Tokens
 
+A token inherits the issuer's Keycloak groups at creation time (stored with the token) and therefore the same RBAC roles. Group changes made in Keycloak after issuance do not propagate to existing tokens, delete and re-create the token instead.
+
 API tokens allow programmatic access to the trivy-collector API without browser-based SSO.
 
 ### Token Properties

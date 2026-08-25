@@ -313,9 +313,18 @@ pub async fn run(
         .allow_origin(Any)
         .allow_headers([header::CONTENT_TYPE, header::AUTHORIZATION]);
 
+    // Embedded MCP endpoint (opt-in). Shares the auth/RBAC middleware stack.
+    let mcp_router = config.mcp_enabled.then(|| {
+        crate::mcp::router(
+            state.clone(),
+            &crate::mcp::McpOptions::from_config(&config),
+            crate::mcp::shutdown_token(shutdown.clone()),
+        )
+    });
+
     // Build router based on auth mode
     // Request body limit: 10MB to accommodate large Trivy reports
-    let app = build_router(state, auth_mode)
+    let app = build_router(state, auth_mode, mcp_router)
         .layer(DefaultBodyLimit::max(10 * 1024 * 1024))
         .layer(cors);
 
@@ -424,7 +433,11 @@ pub async fn run(
 }
 
 /// Build the router with conditional auth middleware
-fn build_router(state: AppState, auth_mode: auth::AuthMode) -> Router {
+pub(crate) fn build_router(
+    state: AppState,
+    auth_mode: auth::AuthMode,
+    mcp_router: Option<Router<AppState>>,
+) -> Router {
     // Public routes (never require auth)
     let public_routes = Router::new()
         .route("/healthz", get(healthz))
@@ -551,6 +564,12 @@ fn build_router(state: AppState, auth_mode: auth::AuthMode) -> Router {
         )
         .route("/", get(serve_index))
         .fallback(get(serve_index));
+
+    // MCP sits inside the protected group so require_auth/require_rbac gate it.
+    let protected_routes = match mcp_router {
+        Some(mcp) => protected_routes.merge(mcp),
+        None => protected_routes,
+    };
 
     // Apply auth middleware only when keycloak is enabled
     // Middleware order: require_auth (outermost) -> require_rbac (inner)
@@ -682,6 +701,7 @@ mod tests {
                 watch_local: false,
                 hub_secret_namespace: String::new(),
                 auth_mode: None,
+                mcp_enabled: false,
             }),
             runtime: Arc::new(state::RuntimeInfo::new()),
             auth: None,
@@ -699,7 +719,7 @@ mod tests {
 
     async fn create_router_no_auth() -> Router {
         let state = create_test_app_state().await;
-        build_router(state, auth::AuthMode::None)
+        build_router(state, auth::AuthMode::None, None)
     }
 
     #[tokio::test]

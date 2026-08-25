@@ -8,9 +8,19 @@ use tracing::debug;
 use super::database::Database;
 use super::models::TokenInfo;
 
+/// Result of a successful token lookup: the subject and the group snapshot
+/// captured when the token was issued.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ValidatedToken {
+    pub user_sub: String,
+    pub groups: Vec<String>,
+}
+
 impl Database {
     /// Create a new API token for the given user.
     /// `expires_days` must be one of 1, 7, 30, 90, 180, 365.
+    /// `groups` is the issuer's current group list, frozen into the token so
+    /// RBAC evaluates Bearer requests with the same roles as the issuer.
     /// Returns (plaintext_token, TokenInfo).
     pub async fn create_token(
         &self,
@@ -18,6 +28,7 @@ impl Database {
         name: &str,
         description: &str,
         expires_days: u32,
+        groups: &[String],
     ) -> Result<(String, TokenInfo)> {
         let token_plaintext = generate_token();
         let token_hash = hash_token(&token_plaintext);
@@ -30,8 +41,10 @@ impl Database {
             .unwrap_or(now)
             .to_rfc3339();
 
+        let groups_json = serde_json::to_string(groups).unwrap_or_else(|_| "[]".to_string());
+
         let result = sqlx::query(
-            "INSERT INTO api_tokens (user_sub, name, description, token_hash, token_prefix, created_at, expires_at) VALUES ($1, $2, $3, $4, $5, $6, $7)",
+            "INSERT INTO api_tokens (user_sub, name, description, token_hash, token_prefix, created_at, expires_at, groups_json) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
         )
         .bind(user_sub)
         .bind(name)
@@ -40,6 +53,7 @@ impl Database {
         .bind(&token_prefix)
         .bind(&created_at)
         .bind(&expires_at)
+        .bind(&groups_json)
         .execute(&self.pool)
         .await
         .context("Failed to insert API token")?;
@@ -107,25 +121,27 @@ impl Database {
         Ok(rows > 0)
     }
 
-    /// Validate a plaintext token. Returns the user_sub if valid (and not expired),
-    /// and updates last_used_at.
-    pub async fn validate_token(&self, token_plaintext: &str) -> Result<Option<String>> {
+    /// Validate a plaintext token. Returns the subject and group snapshot if
+    /// valid (and not expired), and updates last_used_at.
+    pub async fn validate_token(&self, token_plaintext: &str) -> Result<Option<ValidatedToken>> {
         let token_hash = hash_token(token_plaintext);
 
-        let result: Option<(i64, String, String)> =
-            sqlx::query("SELECT id, user_sub, expires_at FROM api_tokens WHERE token_hash = $1")
-                .bind(&token_hash)
-                .fetch_optional(&self.pool)
-                .await?
-                .map(|row| {
-                    (
-                        row.get::<i64, _>(0),
-                        row.get::<String, _>(1),
-                        row.get::<String, _>(2),
-                    )
-                });
+        let result: Option<(i64, String, String, Option<String>)> = sqlx::query(
+            "SELECT id, user_sub, expires_at, groups_json FROM api_tokens WHERE token_hash = $1",
+        )
+        .bind(&token_hash)
+        .fetch_optional(&self.pool)
+        .await?
+        .map(|row| {
+            (
+                row.get::<i64, _>(0),
+                row.get::<String, _>(1),
+                row.get::<String, _>(2),
+                row.get::<Option<String>, _>(3),
+            )
+        });
 
-        if let Some((id, user_sub, expires_at)) = result {
+        if let Some((id, user_sub, expires_at, groups_json)) = result {
             // Check expiration
             if let Ok(exp) = chrono::DateTime::parse_from_rfc3339(&expires_at)
                 && chrono::Utc::now() >= exp
@@ -140,8 +156,12 @@ impl Database {
                 .bind(id)
                 .execute(&self.pool)
                 .await;
-            debug!(token_id = id, user_sub = %user_sub, "API token validated");
-            Ok(Some(user_sub))
+            let groups: Vec<String> = groups_json
+                .as_deref()
+                .and_then(|g| serde_json::from_str(g).ok())
+                .unwrap_or_default();
+            debug!(token_id = id, user_sub = %user_sub, groups = ?groups, "API token validated");
+            Ok(Some(ValidatedToken { user_sub, groups }))
         } else {
             Ok(None)
         }
@@ -196,7 +216,7 @@ mod tests {
             .expect("Failed to create database");
 
         let (plaintext, info) = db
-            .create_token("user-1", "my-token", "", 30)
+            .create_token("user-1", "my-token", "", 30, &[])
             .await
             .expect("Failed to create token");
 
@@ -221,7 +241,13 @@ mod tests {
             .expect("Failed to create database");
 
         let (plaintext, _) = db
-            .create_token("user-1", "my-token", "test desc", 365)
+            .create_token(
+                "user-1",
+                "my-token",
+                "test desc",
+                365,
+                &["security-team".to_string(), "platform".to_string()],
+            )
             .await
             .expect("Failed to create token");
 
@@ -229,7 +255,13 @@ mod tests {
             .validate_token(&plaintext)
             .await
             .expect("Failed to validate token");
-        assert_eq!(result, Some("user-1".to_string()));
+        assert_eq!(
+            result,
+            Some(ValidatedToken {
+                user_sub: "user-1".to_string(),
+                groups: vec!["security-team".to_string(), "platform".to_string()],
+            })
+        );
 
         let result = db
             .validate_token("tc_invalidtoken")
@@ -245,7 +277,7 @@ mod tests {
             .expect("Failed to create database");
 
         let (_, info) = db
-            .create_token("user-1", "my-token", "", 7)
+            .create_token("user-1", "my-token", "", 7, &[])
             .await
             .expect("Failed to create token");
 
@@ -276,11 +308,11 @@ mod tests {
             .await
             .expect("Failed to create database");
 
-        db.create_token("user-1", "my-token", "", 30)
+        db.create_token("user-1", "my-token", "", 30, &[])
             .await
             .expect("Failed to create token");
 
-        let result = db.create_token("user-1", "my-token", "", 90).await;
+        let result = db.create_token("user-1", "my-token", "", 90, &[]).await;
         assert!(result.is_err());
     }
 
@@ -290,10 +322,10 @@ mod tests {
             .await
             .expect("Failed to create database");
 
-        db.create_token("user-1", "ci-token", "", 30)
+        db.create_token("user-1", "ci-token", "", 30, &[])
             .await
             .expect("Failed to create token");
-        db.create_token("user-2", "ci-token", "", 30)
+        db.create_token("user-2", "ci-token", "", 30, &[])
             .await
             .expect("Failed to create token");
 

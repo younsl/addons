@@ -58,6 +58,7 @@ pub struct ConfigInfo {
     pub watch_local: bool,
     pub hub_secret_namespace: String,
     pub auth_mode: Option<String>,
+    pub mcp_enabled: bool,
 }
 
 impl From<&Config> for ConfigInfo {
@@ -82,6 +83,7 @@ impl From<&Config> for ConfigInfo {
             watch_local: config.watch_local,
             hub_secret_namespace: config.hub_secret_namespace.clone(),
             auth_mode,
+            mcp_enabled: config.mcp_enabled,
         }
     }
 }
@@ -243,6 +245,10 @@ mod tests {
             oidc_scopes: "openid".to_string(),
             rbac_policy_csv: String::new(),
             rbac_default_policy: "role:readonly".to_string(),
+            mcp_enabled: false,
+            mcp_allowed_hosts: vec![],
+            mcp_stateless: false,
+            mcp_max_concurrency: 8,
         };
         let info = ConfigInfo::from(&config);
         assert_eq!(info.mode, "server");
@@ -286,6 +292,10 @@ mod tests {
             oidc_scopes: "openid".to_string(),
             rbac_policy_csv: String::new(),
             rbac_default_policy: "role:readonly".to_string(),
+            mcp_enabled: false,
+            mcp_allowed_hosts: vec![],
+            mcp_stateless: false,
+            mcp_max_concurrency: 8,
         };
         let info = ConfigInfo::from(&config);
         assert_eq!(info.mode, "scraper");

@@ -5,6 +5,7 @@ pub mod config;
 pub mod health;
 pub mod hub;
 pub mod logging;
+pub mod mcp;
 pub mod metrics;
 pub mod storage;
 pub mod web;

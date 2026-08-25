@@ -232,6 +232,7 @@ mod tests {
                 watch_local: false,
                 hub_secret_namespace: String::new(),
                 auth_mode: None,
+                mcp_enabled: false,
             }),
             runtime: Arc::new(RuntimeInfo::new()),
             auth: None,

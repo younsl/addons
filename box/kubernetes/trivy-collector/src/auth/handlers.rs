@@ -340,13 +340,17 @@ pub struct CreateTokenRequest {
 
 /// Extract the authenticated user's sub from the session cookie.
 /// Returns None if not authenticated.
-fn extract_user_sub(cookie_jar: &PrivateCookieJar) -> Option<String> {
+fn extract_session(cookie_jar: &PrivateCookieJar) -> Option<AuthSession> {
     let cookie = cookie_jar.get(SESSION_COOKIE_NAME)?;
     let session: AuthSession = serde_json::from_str(cookie.value()).ok()?;
     if session.is_expired() {
         return None;
     }
-    Some(session.sub)
+    Some(session)
+}
+
+fn extract_user_sub(cookie_jar: &PrivateCookieJar) -> Option<String> {
+    extract_session(cookie_jar).map(|s| s.sub)
 }
 
 /// GET /api/v1/auth/tokens — List current user's API tokens
@@ -404,8 +408,8 @@ pub async fn create_token(
     cookie_jar: PrivateCookieJar,
     axum::Json(body): axum::Json<CreateTokenRequest>,
 ) -> impl IntoResponse {
-    let user_sub = match extract_user_sub(&cookie_jar) {
-        Some(sub) => sub,
+    let session = match extract_session(&cookie_jar) {
+        Some(session) => session,
         None => {
             return (
                 StatusCode::UNAUTHORIZED,
@@ -415,6 +419,7 @@ pub async fn create_token(
         }
     };
 
+    let user_sub = session.sub.clone();
     let name = body.name.trim();
     if name.len() < 4
         || name.len() > 64
@@ -455,7 +460,13 @@ pub async fn create_token(
 
     match state
         .db
-        .create_token(&user_sub, name, description, body.expires_days)
+        .create_token(
+            &user_sub,
+            name,
+            description,
+            body.expires_days,
+            &session.groups,
+        )
         .await
     {
         Ok((plaintext, info)) => {

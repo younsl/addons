@@ -29,6 +29,10 @@
 | `--storage-path` | `STORAGE_PATH` | `/data` | SQLite database directory |
 | `--watch-local` | `WATCH_LOCAL` | `true` | Watch local cluster's Trivy reports |
 | `--local-cluster-name` | `LOCAL_CLUSTER_NAME` | `local` | Local cluster name for K8s watching |
+| `--mcp-enabled` | `MCP_ENABLED` | `false` | Mount the embedded MCP server at `/mcp` (see [MCP](mcp.md)) |
+| `--mcp-allowed-hosts` | `MCP_ALLOWED_HOSTS` | `""` | Allowed `Host` values for `/mcp`, comma-separated. Empty disables the check |
+| `--mcp-stateless` | `MCP_STATELESS` | `false` | Serve `/mcp` without sessions. Required with more than one server replica |
+| `--mcp-max-concurrency` | `MCP_MAX_CONCURRENCY` | `8` | Concurrent MCP tool executions across all sessions. `0` = unlimited |
 
 ## API Documentation
 

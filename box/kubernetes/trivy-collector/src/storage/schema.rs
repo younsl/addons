@@ -79,6 +79,7 @@ pub async fn init_schema(pool: &SqlitePool) -> Result<()> {
             created_at TEXT NOT NULL,
             expires_at TEXT NOT NULL,
             last_used_at TEXT,
+            groups_json TEXT DEFAULT '[]',
             UNIQUE(user_sub, name)
         );
         CREATE INDEX IF NOT EXISTS idx_api_tokens_user_sub ON api_tokens(user_sub);
@@ -211,6 +212,19 @@ async fn run_migrations(pool: &SqlitePool) -> Result<()> {
             .execute(pool)
             .await
             .context("Failed to add description column to api_tokens")?;
+    }
+
+    // Migration: Add groups_json column to api_tokens. Stores the issuer's group
+    // memberships at creation time so Bearer-token requests carry the same
+    // RBAC subject as the browser session that minted them.
+    if table_exists_check(pool, "api_tokens").await?
+        && !column_exists(pool, "api_tokens", "groups_json").await?
+    {
+        info!("Migrating database: adding groups_json column to api_tokens");
+        sqlx::query("ALTER TABLE api_tokens ADD COLUMN groups_json TEXT DEFAULT '[]'")
+            .execute(pool)
+            .await
+            .context("Failed to add groups_json column to api_tokens")?;
     }
 
     // Migration: Create cleanup_history table if it doesn't exist

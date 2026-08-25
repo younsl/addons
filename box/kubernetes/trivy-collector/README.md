@@ -85,6 +85,7 @@ For detailed architecture documentation, see [Architecture](docs/architecture.md
 - **SQLite storage**: lightweight shared PVC between server and scraper
 - **VulnerabilityReports + SbomReports** collection from any registered cluster
 - **Keycloak OIDC authentication**: `none` or `keycloak` auth modes, with self-issued API tokens for programmatic access
+- **Embedded MCP server**: opt-in `/mcp` endpoint (Streamable HTTP) so LLM agents such as [kagent](https://kagent.dev/) can query reports with the same auth and RBAC as the API
 - **Structured logging**: JSON/pretty format with configurable levels
 - **OpenAPI documentation**: auto-generated spec at `/api-docs/openapi.json` with built-in [Swagger UI](https://swagger.io/tools/swagger-ui/) at `/swagger-ui`
 - **Prometheus ServiceMonitor**: independent scrape config per component
@@ -192,6 +193,7 @@ CRDs on the central cluster itself. See [RBAC](docs/rbac.md).
 - [Architecture](docs/architecture.md): Hub-pull model, scraper/server split, data flow, registration, RBAC, operational notes
 - [Authentication](docs/authentication.md): [Keycloak](https://www.keycloak.org/) OIDC setup, API token management, and security best practices
 - [Configuration](docs/configuration.md): CLI options, environment variables, and API endpoints
+- [MCP](docs/mcp.md): Embedded MCP server, tool reference, and kagent `RemoteMCPServer` setup
 - [Helm Chart](docs/helm-chart.md): Helm values reference and installation examples
 - [Development](docs/development.md): Build commands, local testing (`make dev-all`), and release workflow
 - [Troubleshooting](docs/troubleshooting.md): Common issues and solutions

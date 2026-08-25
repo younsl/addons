@@ -265,7 +265,16 @@ pub fn resolve_endpoint(method: &str, path: &str) -> Option<(&'static str, &'sta
     }
 }
 
+/// The MCP endpoint multiplexes every tool over one path. Gate the whole
+/// endpoint on `reports:get`; each tool re-checks its own resource/action.
+fn is_mcp_path(path: &str) -> bool {
+    path == crate::mcp::MCP_PATH || path.starts_with(&format!("{}/", crate::mcp::MCP_PATH))
+}
+
 fn resolve_get(path: &str) -> Option<(&'static str, &'static str)> {
+    if is_mcp_path(path) {
+        return Some(("reports", "get"));
+    }
     // Reports
     if path.starts_with("/api/v1/vulnerabilityreports") || path.starts_with("/api/v1/sbomreports") {
         return Some(("reports", "get"));
@@ -300,6 +309,9 @@ fn resolve_get(path: &str) -> Option<(&'static str, &'static str)> {
 }
 
 fn resolve_post(path: &str) -> Option<(&'static str, &'static str)> {
+    if is_mcp_path(path) {
+        return Some(("reports", "get"));
+    }
     if path == "/api/v1/auth/tokens" {
         return Some(("tokens", "create"));
     }
@@ -326,6 +338,10 @@ fn resolve_put(path: &str) -> Option<(&'static str, &'static str)> {
 }
 
 fn resolve_delete(path: &str) -> Option<(&'static str, &'static str)> {
+    if is_mcp_path(path) {
+        // Session termination. Same gate as opening one.
+        return Some(("reports", "get"));
+    }
     if path.starts_with("/api/v1/reports/") {
         return Some(("reports", "delete"));
     }
@@ -734,6 +750,20 @@ g, team-b, role:readonly
             resolve_endpoint("DELETE", "/api/v1/admin/logs"),
             Some(("admin", "delete"))
         );
+    }
+
+    #[test]
+    fn test_resolve_mcp() {
+        for method in ["GET", "POST", "DELETE"] {
+            assert_eq!(
+                resolve_endpoint(method, "/mcp"),
+                Some(("reports", "get")),
+                "{method} /mcp"
+            );
+        }
+        assert_eq!(resolve_endpoint("POST", "/mcp/"), Some(("reports", "get")));
+        assert_eq!(resolve_endpoint("PUT", "/mcp"), None);
+        assert_eq!(resolve_endpoint("GET", "/mcpx"), None);
     }
 
     #[test]

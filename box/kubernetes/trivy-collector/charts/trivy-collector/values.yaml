@@ -133,6 +133,17 @@ server:
   affinity: {}
   # -- (list) Topology spread constraints.
   topologySpreadConstraints: []
+  # -- Embedded MCP (Model Context Protocol) server for LLM agents such as kagent.
+  # Served by the server pod at `/mcp` over the Streamable HTTP transport and
+  # gated by the same auth and RBAC as the REST API.
+  mcp:
+    # -- (bool) Mount the MCP endpoint at `/mcp`.
+    enabled: false
+    # -- (list) Allowed `Host` header values for `/mcp`. Leave empty to disable
+    # Host validation, which is required for in-cluster access via Service DNS.
+    allowedHosts: []
+    # -- (bool) Serve MCP without sessions. Set true when server.replicaCount > 1.
+    stateless: false
   # -- ServiceMonitor for server (requires Prometheus Operator).
   serviceMonitor:
     # -- (bool) Create a ServiceMonitor for the server pod.

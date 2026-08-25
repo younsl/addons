@@ -4,6 +4,8 @@ trivy-collector implements ArgoCD-style RBAC using CSV policy files. When `keycl
 
 > When `auth_mode=none`, RBAC is not enforced and all endpoints are accessible.
 
+Self-issued API tokens (`tc_...`) carry the issuer's group list as captured at creation time, so Bearer requests resolve to the same roles as the session that created the token. Tokens created before group snapshots were introduced have an empty group list and use the default policy.
+
 ## Policy Format
 
 Policies use the same CSV format as [ArgoCD RBAC](https://argo-cd.readthedocs.io/en/stable/operator-manual/rbac/):
@@ -32,7 +34,7 @@ g, platform-team, role:admin
 
 | Resource | Action | API Endpoints |
 |----------|--------|---------------|
-| `reports` | `get` | `GET /api/v1/vulnerabilityreports`, `GET /api/v1/sbomreports`, search, suggest, individual report detail |
+| `reports` | `get` | `GET /api/v1/vulnerabilityreports`, `GET /api/v1/sbomreports`, search, suggest, individual report detail, and the `/mcp` endpoint gate (every MCP tool also re-checks its own resource, see [MCP](mcp.md)) |
 | `reports` | `delete` | `DELETE /api/v1/reports/{cluster}/{type}/{namespace}/{name}` |
 | `reports` | `update` | `PUT /api/v1/reports/{...}/notes` |
 | `clusters` | `get` | `GET /api/v1/clusters`, `GET /api/v1/namespaces` |

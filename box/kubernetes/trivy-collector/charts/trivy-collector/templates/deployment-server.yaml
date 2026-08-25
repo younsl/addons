@@ -80,6 +80,18 @@ spec:
             - name: EXTERNAL_URL
               value: {{ $externalUrl | quote }}
             {{- end }}
+            {{- if .Values.server.mcp.enabled }}
+            - name: MCP_ENABLED
+              value: "true"
+            {{- with .Values.server.mcp.allowedHosts }}
+            - name: MCP_ALLOWED_HOSTS
+              value: {{ join "," . | quote }}
+            {{- end }}
+            {{- if .Values.server.mcp.stateless }}
+            - name: MCP_STATELESS
+              value: "true"
+            {{- end }}
+            {{- end }}
             {{- if eq .Values.server.auth.mode "keycloak" }}
             - name: AUTH_MODE
               valueFrom: { configMapKeyRef: { name: {{ include "trivy-collector.fullname" . }}-auth, key: AUTH_MODE } }

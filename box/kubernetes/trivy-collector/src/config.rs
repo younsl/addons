@@ -28,6 +28,12 @@ pub mod env {
     // External base URL used by notification deep links (server-mode only).
     pub const EXTERNAL_URL: &str = "EXTERNAL_URL";
 
+    // Embedded MCP server (server-mode only).
+    pub const MCP_ENABLED: &str = "MCP_ENABLED";
+    pub const MCP_ALLOWED_HOSTS: &str = "MCP_ALLOWED_HOSTS";
+    pub const MCP_STATELESS: &str = "MCP_STATELESS";
+    pub const MCP_MAX_CONCURRENCY: &str = "MCP_MAX_CONCURRENCY";
+
     // Authentication
     pub use crate::auth::config::env::*;
 }
@@ -151,6 +157,28 @@ pub struct Config {
     pub external_url: String,
 
     // ============================================
+    // MCP settings (server mode only)
+    // ============================================
+    /// Mount the embedded MCP server (Streamable HTTP) at `/mcp`
+    #[arg(long, env = env::MCP_ENABLED, default_value = "false")]
+    pub mcp_enabled: bool,
+
+    /// Allowed `Host` header values for `/mcp`, comma-separated.
+    /// Empty = disable Host validation (required for in-cluster Service DNS).
+    #[arg(long, env = env::MCP_ALLOWED_HOSTS, value_delimiter = ',', default_value = "")]
+    pub mcp_allowed_hosts: Vec<String>,
+
+    /// Serve `/mcp` without sessions. Required when more than one server replica
+    /// sits behind the same Service.
+    #[arg(long, env = env::MCP_STATELESS, default_value = "false")]
+    pub mcp_stateless: bool,
+
+    /// Maximum MCP tool calls executing at once across all sessions. Protects
+    /// the shared SQLite pool from agent fan-out. 0 = unlimited.
+    #[arg(long, env = env::MCP_MAX_CONCURRENCY, default_value = "8")]
+    pub mcp_max_concurrency: usize,
+
+    // ============================================
     // Authentication settings (server mode only)
     // ============================================
     /// Authentication mode: "none" or "keycloak"
@@ -256,6 +284,10 @@ mod tests {
             watch_local: true,
             hub_secret_namespace: String::new(),
             external_url: String::new(),
+            mcp_enabled: false,
+            mcp_allowed_hosts: vec![],
+            mcp_stateless: false,
+            mcp_max_concurrency: 8,
             auth_mode: "none".to_string(),
             oidc_issuer_url: None,
             oidc_client_id: None,

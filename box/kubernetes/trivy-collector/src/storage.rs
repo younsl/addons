@@ -26,3 +26,4 @@ pub use models::{
     FullReport, QueryParams, ReportMeta, SbomComponentMatch, Stats, TokenInfo, VulnSearchResult,
     VulnSummary,
 };
+pub use tokens::ValidatedToken;

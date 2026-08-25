@@ -1,6 +1,6 @@
 [package]
 name = "trivy-collector"
-version = "1.5.0"
+version = "1.6.0"
 edition = "2024"
 rust-version = "1.98.0"
 authors = ["younsl <cysl@kakao.com>"]
@@ -23,6 +23,10 @@ reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-feature
 axum = { version = "0.8", features = ["tokio"] }
 tower = "0.5"
 tower-http = { version = "0.6", features = ["cors", "fs"] }
+
+# MCP server (server mode, Streamable HTTP transport)
+rmcp = { version = "3.1", features = ["server", "macros", "schemars", "transport-streamable-http-server"] }
+tokio-util = "0.7"
 
 # OpenAPI documentation
 utoipa = { version = "5.4.0", features = ["axum_extras", "chrono"] }

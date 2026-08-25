@@ -1,6 +1,6 @@
 # trivy-collector
 
-![Version: 0.9.0](https://img.shields.io/badge/Version-0.9.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 1.5.0](https://img.shields.io/badge/AppVersion-1.5.0-informational?style=flat-square)
+![Version: 0.10.0](https://img.shields.io/badge/Version-0.10.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 1.6.0](https://img.shields.io/badge/AppVersion-1.6.0-informational?style=flat-square)
 
 Multi-cluster Trivy report collector and viewer
 
@@ -39,7 +39,7 @@ helm install trivy-collector oci://ghcr.io/younsl/charts/trivy-collector -f valu
 Install a specific version:
 
 ```console
-helm install trivy-collector oci://ghcr.io/younsl/charts/trivy-collector --version 0.9.0
+helm install trivy-collector oci://ghcr.io/younsl/charts/trivy-collector --version 0.10.0
 ```
 
 ### Install from local chart
@@ -47,7 +47,7 @@ helm install trivy-collector oci://ghcr.io/younsl/charts/trivy-collector --versi
 Download trivy-collector chart and install from local directory:
 
 ```console
-helm pull oci://ghcr.io/younsl/charts/trivy-collector --untar --version 0.9.0
+helm pull oci://ghcr.io/younsl/charts/trivy-collector --untar --version 0.10.0
 helm install trivy-collector ./trivy-collector
 ```
 
@@ -123,6 +123,10 @@ The following table lists the configurable parameters and their default values.
 | server.tolerations | list | `[]` | Tolerations. |
 | server.affinity | object | `{}` | Affinity rules. |
 | server.topologySpreadConstraints | list | `[]` | Topology spread constraints. |
+| server.mcp | object | `{"allowedHosts":[],"enabled":false,"stateless":false}` | Embedded MCP (Model Context Protocol) server for LLM agents such as kagent. Served by the server pod at `/mcp` over the Streamable HTTP transport and gated by the same auth and RBAC as the REST API. |
+| server.mcp.enabled | bool | `false` | Mount the MCP endpoint at `/mcp`. |
+| server.mcp.allowedHosts | list | `[]` | Allowed `Host` header values for `/mcp`. Leave empty to disable Host validation, which is required for in-cluster access via Service DNS. |
+| server.mcp.stateless | bool | `false` | Serve MCP without sessions. Set true when server.replicaCount > 1. |
 | server.serviceMonitor | object | `{"additionalLabels":{},"annotations":{},"enabled":false,"interval":"30s","scrapeTimeout":""}` | ServiceMonitor for server (requires Prometheus Operator). |
 | server.serviceMonitor.enabled | bool | `false` | Create a ServiceMonitor for the server pod. |
 | server.serviceMonitor.interval | string | `"30s"` | Scrape interval. |

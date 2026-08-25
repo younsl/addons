@@ -53,15 +53,16 @@ pub async fn require_auth(
         if token.starts_with("tc_") {
             // trivy-collector self-issued API token
             match state.db.validate_token(token).await {
-                Ok(Some(user_sub)) => {
-                    debug!(user_sub = %user_sub, "Authenticated via API token");
-                    // Create a minimal session for RBAC
+                Ok(Some(validated)) => {
+                    debug!(user_sub = %validated.user_sub, groups = ?validated.groups, "Authenticated via API token");
+                    // Minimal session for RBAC. Groups are the snapshot frozen
+                    // at token creation, so the token carries the issuer's roles.
                     let session = AuthSession {
-                        sub: user_sub,
+                        sub: validated.user_sub,
                         email: None,
                         name: None,
                         preferred_username: None,
-                        groups: vec![],
+                        groups: validated.groups,
                         expires_at: i64::MAX,
                     };
                     request.extensions_mut().insert(session);
@@ -92,8 +93,8 @@ pub async fn require_auth(
     // 3. Not authenticated — decide response based on path
     let path = request.uri().path().to_string();
 
-    if path.starts_with("/api/") {
-        // API requests get 401 JSON response
+    if path.starts_with("/api/") || path.starts_with(crate::mcp::MCP_PATH) {
+        // API and MCP requests get 401 JSON response
         (
             StatusCode::UNAUTHORIZED,
             axum::Json(serde_json::json!({
