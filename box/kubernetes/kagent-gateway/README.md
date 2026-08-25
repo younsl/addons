@@ -9,7 +9,7 @@ Receives Alertmanager webhooks, posts each alert to Slack, asks a
 [kagent](https://kagent.dev) agent to investigate it over A2A, and replies with
 the analysis in the alert's own thread. Mentioning the bot inside a thread runs
 the agent again and answers there, so a follow-up question never leaves Slack.
-Built with Go 1.26 and shipped as a statically linked binary on a scratch image.
+Built with Go 1.27 and shipped as a statically linked binary on a scratch image.
 
 ## How it works
 

@@ -6,7 +6,7 @@
 [![GitHub license](https://img.shields.io/github/license/younsl/o?style=flat-square&color=black)](https://github.com/younsl/o/blob/main/LICENSE)
 
 Prometheus exporter that polls the EC2 DescribeInstances API and publishes
-every instance's private IP and Name tag as metric labels. Built with Go 1.26
+every instance's private IP and Name tag as metric labels. Built with Go 1.27
 and shipped as a statically linked binary on a scratch image.
 
 ## Architecture
