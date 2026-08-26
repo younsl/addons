@@ -6,7 +6,6 @@ on:
     branches: [main]
     paths:
       - 'box/kubernetes/backstage/Dockerfile'
-      - 'box/kubernetes/logstash-with-opensearch-plugin/Dockerfile'
       - 'box/kubernetes/jenkins-inbound-agent/Dockerfile'
   workflow_dispatch:
     inputs:
@@ -16,7 +15,6 @@ on:
         type: choice
         options:
           - backstage
-          - logstash-with-opensearch-plugin
           - jenkins-inbound-agent
       force:
         description: "Rebuild even if the version already exists on GHCR (overwrites the tag)"
@@ -35,8 +33,6 @@ jobs:
     outputs:
       backstage_release: ${{ steps.check.outputs.backstage_release }}
       backstage_version: ${{ steps.check.outputs.backstage_version }}
-      logstash_with_opensearch_plugin_release: ${{ steps.check.outputs.logstash_with_opensearch_plugin_release }}
-      logstash_with_opensearch_plugin_version: ${{ steps.check.outputs.logstash_with_opensearch_plugin_version }}
       jenkins_inbound_agent_release: ${{ steps.check.outputs.jenkins_inbound_agent_release }}
       jenkins_inbound_agent_version: ${{ steps.check.outputs.jenkins_inbound_agent_version }}
     steps:
@@ -68,7 +64,7 @@ jobs:
             fi
           }
 
-          CONTAINERS=("backstage" "logstash-with-opensearch-plugin" "jenkins-inbound-agent")
+          CONTAINERS=("backstage" "jenkins-inbound-agent")
 
           for container in "${CONTAINERS[@]}"; do
             var=$(echo "${container}" | tr '-' '_')
@@ -178,12 +174,6 @@ jobs:
             context: box/kubernetes/backstage
             platforms: linux/amd64
             push_latest: true
-          - name: logstash-with-opensearch-plugin
-            release_flag: logstash_with_opensearch_plugin_release
-            version_key: logstash_with_opensearch_plugin_version
-            context: box/kubernetes/logstash-with-opensearch-plugin
-            platforms: linux/amd64
-            push_latest: false
           - name: jenkins-inbound-agent
             release_flag: jenkins_inbound_agent_release
             version_key: jenkins_inbound_agent_version

@@ -24,7 +24,7 @@ This repository follows the single-repository model Google describes in [Why Goo
 | `docs/` | Repository documentation, articles, and the resume |
 | `.github/workflows/` | Shared and per-artifact release pipelines |
 
-Components are mixed-language by design. Go 1.27.0 is the primary runtime, Rust 1.98+ covers the CLI tools and several addons, and a few components are neither: Backstage is Node.js and React, and the Logstash image is JVM based. The repository holds the conventions, not a single toolchain.
+Components are mixed-language by design. Go 1.27.0 is the primary runtime, Rust 1.98+ covers the CLI tools and several addons, and one component is neither: Backstage is Node.js and React. The repository holds the conventions, not a single toolchain.
 
 ## Release isolation
 
