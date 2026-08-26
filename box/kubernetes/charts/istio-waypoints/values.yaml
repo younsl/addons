@@ -1,0 +1,222 @@
+# -- (string) String to partially override the chart name.
+# @default -- chart name
+nameOverride: ~
+
+# -- (string) String to fully override the release name.
+# @default -- release name
+fullnameOverride: ~
+
+# -- (object) Common labels to add to every resource rendered by this chart.
+# @default -- `{}`
+commonLabels: {}
+  # example.com/app: istio-waypoint-example
+  # example.com/env: dev
+
+# -- (object) Common annotations to add to every resource rendered by this chart.
+# @default -- `{}`
+commonAnnotations: {}
+  # my-annotation: my-value
+
+# -- (object) Defaults deep-merged under every `waypoints` entry: maps merge key by key, lists are
+# replaced as a whole. Set a default map to `null` in an entry to drop it (`{}` keeps it).
+defaults:
+  # -- (bool) Render this waypoint.
+  enabled: true
+
+  # -- (string) Gateway name inside the namespace. This is the value workloads reference in
+  # their `istio.io/use-waypoint` label. Defaults to the map key of the waypoint entry.
+  # @default -- map key
+  name: ~
+
+  # -- (string) Traffic the waypoint handles, set as the `istio.io/waypoint-for` label.
+  # One of `service`, `workload`, `all`, `none`.
+  waypointFor: service
+
+  # -- (string) Istio control plane revision (`istio.io/rev` label). Leave empty to use the
+  # default revision.
+  revision: ~
+
+  # -- (string) apiVersion of the rendered Gateway resource. Use `gateway.networking.k8s.io/v1beta1`
+  # on clusters whose Gateway API CRDs do not serve `v1` yet.
+  gatewayApiVersion: gateway.networking.k8s.io/v1
+
+  # -- (string) GatewayClass that implements the waypoint. Istio ships `istio-waypoint`.
+  gatewayClassName: istio-waypoint
+
+  # -- (object) Single HBONE listener of the waypoint. Do not change name, port or protocol;
+  # `allowedRoutes` governs only routes attached to the Gateway itself (see notes below).
+  listener:
+    name: mesh
+    port: 15008
+    protocol: HBONE
+    ## Istio docs (ambient/usage/l7-features): "To attach a route or a policy to the entire
+    ## waypoint, so that it applies to all traffic enrolled to use it, set Gateway as the
+    ## parentRefs or targetRefs value. You can also attach a route to one or more specific
+    ## services within the waypoint. Set Service as the parentRefs or targetRefs value."
+    ## Routes attached to a Service bypass allowedRoutes. When omitted the Gateway API default
+    ## `namespaces.from: Same` applies, so only routes in the waypoint namespace can attach.
+    # allowedRoutes:
+    #   namespaces:
+    #     from: Selector
+    #     selector:
+    #       matchLabels:
+    #         kubernetes.io/metadata.name: platform
+
+  # -- (object) Labels added to the Gateway and every companion resource of this waypoint.
+  labels: {}
+
+  # -- (object) Annotations added to the Gateway and every companion resource of this waypoint.
+  annotations: {}
+
+  # -- (object) `Gateway.spec.infrastructure`. `labels` and `annotations` are propagated by
+  # Istio to the generated Deployment, Pods and Service.
+  infrastructure:
+    labels: {}
+      # example.com/app: istio-waypoint-example
+      # example.com/env: dev
+    annotations: {}
+
+  # -- (object) Patch for the `istio-proxy` container of the waypoint Deployment. Rendered into
+  # `parameters.deployment` unless that patch already declares `containers`.
+  container:
+    name: istio-proxy
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        memory: 1Gi
+    resizePolicy:
+      - resourceName: cpu
+        restartPolicy: NotRequired
+      - resourceName: memory
+        restartPolicy: RestartContainer
+    lifecycle:
+      preStop:
+        exec:
+          command:
+            - /bin/sh
+            - -c
+            - sleep 60
+    env: []
+      # - name: EXIT_ON_ZERO_ACTIVE_CONNECTIONS
+      #   value: "true"
+
+  # -- (object) `parametersRef` ConfigMap content. Istio applies every key as a strategic merge
+  # patch to the resource it generates. Accepted keys: `deployment`, `service`, `serviceAccount`, `horizontalPodAutoscaler`, `podDisruptionBudget`.
+  parameters:
+    ## Unknown keys fail schema validation; non-empty keys render verbatim.
+    ## topologySpreadConstraints items without a labelSelector get one matching the waypoint pods.
+    deployment:
+      spec:
+        template:
+          spec:
+            terminationGracePeriodSeconds: 70
+            priorityClassName: system-cluster-critical
+            dnsConfig:
+              options:
+                - name: ndots
+                  value: "2"
+            # affinity:
+            #   nodeAffinity:
+            #     requiredDuringSchedulingIgnoredDuringExecution:
+            #       nodeSelectorTerms:
+            #         - matchExpressions:
+            #             - key: node-role.example.com/worker
+            #               operator: In
+            #               values:
+            #                 - general
+            tolerations:
+              - effect: NoExecute
+                key: node.kubernetes.io/not-ready
+                operator: Exists
+                tolerationSeconds: 300
+              - effect: NoExecute
+                key: node.kubernetes.io/unreachable
+                operator: Exists
+                tolerationSeconds: 300
+            topologySpreadConstraints:
+              - maxSkew: 1
+                topologyKey: topology.kubernetes.io/zone
+                whenUnsatisfiable: ScheduleAnyway
+              - maxSkew: 1
+                topologyKey: kubernetes.io/hostname
+                whenUnsatisfiable: ScheduleAnyway
+    horizontalPodAutoscaler:
+      spec:
+        minReplicas: 2
+        maxReplicas: 5
+        metrics:
+          - type: Resource
+            resource:
+              name: cpu
+              target:
+                type: Utilization
+                averageUtilization: 70
+    podDisruptionBudget:
+      spec:
+        minAvailable: 1
+    service: {}
+    serviceAccount: {}
+
+  # -- (object) Istio Telemetry resource targeting the waypoint Gateway.
+  telemetry:
+    enabled: true
+    accessLogging:
+      - providers:
+          - name: envoy
+    metrics: []
+    tracing: []
+
+  # -- (object) Map of Istio AuthorizationPolicy resources targeting the waypoint Gateway, keyed by
+  # suffix (rendered as `<waypoint>-<key>`). Enforced for every workload enrolled in the waypoint.
+  authorizationPolicies: {}
+    ## Allow only in-namespace callers, deny a single path for everyone
+    # allow-same-namespace:
+    #   enabled: true
+    #   action: ALLOW
+    #   rules:
+    #     - from:
+    #         - source:
+    #             namespaces: ["frontend"]
+    # deny-admin:
+    #   action: DENY
+    #   rules:
+    #     - to:
+    #         - operation:
+    #             paths: ["/admin/*"]
+
+# -- (object) Map of waypoints keyed by name (used as Gateway name unless `name` is set). Each entry
+# requires `namespace` and may override any field of `defaults`.
+# @default -- `{}`
+waypoints: {}
+  ## One waypoint per namespace, all named "waypoint" so workloads use the same label value
+  # frontend:
+  #   namespace: frontend
+  #   name: waypoint
+  ## Keep the entry but do not render it
+  # legacy:
+  #   enabled: false
+  #   namespace: legacy
+  # backend:
+  #   namespace: backend
+  #   name: waypoint
+  #   parameters:
+  #     horizontalPodAutoscaler:
+  #       spec:
+  #         minReplicas: 3
+  ## A dedicated waypoint for a single high-traffic service in the same namespace
+  # backend-orders:
+  #   namespace: backend
+  #   name: orders-waypoint
+  #   waypointFor: all
+
+# -- (list) Extra Kubernetes objects rendered as-is through `tpl`.
+# @default -- `[]`
+extraObjects: []
+  # - apiVersion: v1
+  #   kind: ConfigMap
+  #   metadata:
+  #     name: '{{ include "istio-waypoints.fullname" . }}-extra'
+  #   data:
+  #     key: value

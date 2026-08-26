@@ -1,0 +1,42 @@
+# CI test values for istio-waypoints chart: per-entry overrides
+
+waypoints:
+  # Test: per-entry overrides, HPA bump, revision, L7 policy
+  backend:
+    namespace: backend
+    name: waypoint
+    revision: canary
+    container:
+      resources:
+        requests:
+          cpu: 500m
+      env:
+        - name: EXIT_ON_ZERO_ACTIVE_CONNECTIONS
+          value: "true"
+    parameters:
+      horizontalPodAutoscaler:
+        spec:
+          minReplicas: 3
+      serviceAccount:
+        metadata:
+          annotations:
+            example.com/role: waypoint
+    authorizationPolicies:
+      allow-frontend:
+        action: ALLOW
+        rules:
+          - from:
+              - source:
+                  namespaces: ["frontend"]
+            to:
+              - operation:
+                  methods: ["GET"]
+      deny-admin:
+        action: DENY
+        rules:
+          - to:
+              - operation:
+                  paths: ["/admin/*"]
+      disabled-policy:
+        enabled: false
+        action: DENY

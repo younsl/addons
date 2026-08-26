@@ -20,6 +20,7 @@ For these reasons this repository publishes charts only as OCI artifacts and doe
 | [argo-workflows-templates](./argo-workflows-templates) | Manages Argo Workflows WorkflowTemplate and ClusterWorkflowTemplate resources. Requires the Argo Workflows controller to be installed first. |
 | [grafana-dashboards](./grafana-dashboards) | Deploys Grafana dashboards as ConfigMaps, provisioned automatically by the Grafana sidecar. Supports per-dashboard folder, labels, and annotations. |
 | [istio-envoyfilters](./istio-envoyfilters) | Manages Istio EnvoyFilter resources to customize Envoy proxy configurations across namespaces. |
+| [istio-waypoints](./istio-waypoints) | Manages Istio ambient waypoint proxies. One Gateway per waypoint with parametersRef ConfigMap, Telemetry and AuthorizationPolicy, many waypoints from a single values file. |
 | [karpenter-nodepool](./karpenter-nodepool) | Creates Karpenter NodePool and EC2NodeClass resources. |
 | [kubernetes-admission-policies](./kubernetes-admission-policies) | Kubernetes-native admission policies using ValidatingAdmissionPolicy and MutatingAdmissionPolicy with their policy bindings. |
 

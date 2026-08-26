@@ -1,0 +1,49 @@
+{{- range $key, $waypoint := .Values.waypoints }}
+{{- $cfg := include "istio-waypoints.resolve" (dict "key" $key "waypoint" $waypoint "root" $) | fromYaml }}
+{{- if $cfg.enabled }}
+---
+apiVersion: {{ $cfg.gatewayApiVersion }}
+kind: Gateway
+metadata:
+  name: {{ $cfg.name }}
+  namespace: {{ $cfg.namespace }}
+  labels:
+    {{- include "istio-waypoints.waypointLabels" (dict "root" $ "cfg" $cfg) | nindent 4 }}
+    {{- with $cfg.revision }}
+    istio.io/rev: {{ . | quote }}
+    {{- end }}
+  {{- $annotations := include "istio-waypoints.waypointAnnotations" (dict "root" $ "cfg" $cfg) | trim }}
+  {{- if $annotations }}
+  annotations:
+    {{- $annotations | nindent 4 }}
+  {{- end }}
+spec:
+  gatewayClassName: {{ $cfg.gatewayClassName }}
+  listeners:
+    - name: {{ $cfg.listener.name }}
+      port: {{ $cfg.listener.port }}
+      protocol: {{ $cfg.listener.protocol }}
+      {{- with $cfg.listener.allowedRoutes }}
+      allowedRoutes:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+  {{- $hasParameters := include "istio-waypoints.hasParameters" $cfg }}
+  {{- if or $cfg.infrastructure.labels $cfg.infrastructure.annotations $hasParameters }}
+  infrastructure:
+    {{- with $cfg.infrastructure.labels }}
+    labels:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+    {{- with $cfg.infrastructure.annotations }}
+    annotations:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+    {{- if $hasParameters }}
+    parametersRef:
+      group: ""
+      kind: ConfigMap
+      name: {{ include "istio-waypoints.parametersName" $cfg }}
+    {{- end }}
+  {{- end }}
+{{- end }}
+{{- end }}

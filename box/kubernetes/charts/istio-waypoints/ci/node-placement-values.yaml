@@ -1,0 +1,30 @@
+# CI test values for istio-waypoints chart: per-waypoint node placement
+
+waypoints:
+  # Test: affinity merges into defaults; tolerations and topologySpreadConstraints replace the default lists
+  payments:
+    namespace: payments
+    name: waypoint
+    parameters:
+      deployment:
+        spec:
+          template:
+            spec:
+              affinity:
+                nodeAffinity:
+                  requiredDuringSchedulingIgnoredDuringExecution:
+                    nodeSelectorTerms:
+                      - matchExpressions:
+                          - key: node-role.example.com/worker
+                            operator: In
+                            values:
+                              - batch
+              tolerations:
+                - key: node-role.example.com/worker
+                  operator: Equal
+                  value: batch
+                  effect: NoSchedule
+              topologySpreadConstraints:
+                - maxSkew: 1
+                  topologyKey: topology.kubernetes.io/zone
+                  whenUnsatisfiable: DoNotSchedule

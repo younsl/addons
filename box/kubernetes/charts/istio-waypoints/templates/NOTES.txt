@@ -1,0 +1,36 @@
+Thank you for installing {{ .Chart.Name }}.
+
+Your release is named {{ .Release.Name }}.
+
+{{- $enabled := list }}
+{{- range $key, $waypoint := .Values.waypoints }}
+{{- $cfg := include "istio-waypoints.resolve" (dict "key" $key "waypoint" $waypoint "root" $) | fromYaml }}
+{{- if $cfg.enabled }}
+{{- $enabled = append $enabled (printf "%s/%s (waypoint-for=%s)" $cfg.namespace $cfg.name $cfg.waypointFor) }}
+{{- end }}
+{{- end }}
+
+{{- if $enabled }}
+
+Enabled waypoints:
+{{- range $enabled }}
+  - {{ . }}
+{{- end }}
+
+A waypoint receives no traffic until workloads are enrolled. Label the Service,
+Pod or Namespace that should use it:
+
+  kubectl label service <name> -n <namespace> istio.io/use-waypoint=<waypoint-name>
+{{- else }}
+
+No waypoints are enabled. Add an entry under `waypoints` in values.yaml with at
+least a `namespace`.
+{{- end }}
+
+To check the status of your waypoints:
+
+  kubectl get gateway -A -l istio.io/waypoint-for
+  istioctl waypoint list -A
+
+For more information about Istio waypoints:
+  https://istio.io/latest/docs/ambient/usage/waypoint/
