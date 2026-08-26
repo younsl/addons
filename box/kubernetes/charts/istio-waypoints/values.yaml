@@ -168,8 +168,9 @@ defaults:
     metrics: []
     tracing: []
 
-  # -- (object) Map of Istio AuthorizationPolicy resources targeting the waypoint Gateway, keyed by
-  # suffix (rendered as `<waypoint>-<key>`). Enforced for every workload enrolled in the waypoint.
+  # -- (object) Map of Istio AuthorizationPolicy resources keyed by suffix (rendered as
+  # `<waypoint>-<key>`). Without `targetRefs` a policy targets the waypoint Gateway and applies to
+  # every enrolled workload; set `targetRefs` to a Service to scope it to that service only.
   authorizationPolicies: {}
     ## Allow only in-namespace callers, deny a single path for everyone
     # allow-same-namespace:
@@ -185,15 +186,34 @@ defaults:
     #     - to:
     #         - operation:
     #             paths: ["/admin/*"]
+    ## Per-service policy through the same waypoint
+    # orders-internal-only:
+    #   targetRefs:
+    #     - group: ""
+    #       kind: Service
+    #       name: orders
+    #   action: ALLOW
+    #   rules:
+    #     - from:
+    #         - source:
+    #             principals: ["cluster.local/ns/backend/sa/checkout"]
 
 # -- (object) Map of waypoints keyed by name (used as Gateway name unless `name` is set). Each entry
 # requires `namespace` and may override any field of `defaults`.
 # @default -- `{}`
 waypoints: {}
-  ## One waypoint per namespace, all named "waypoint" so workloads use the same label value
+  ## One waypoint per namespace with fixed replicas: drop the HPA, keep PDB minAvailable below replicas
   # frontend:
   #   namespace: frontend
   #   name: waypoint
+  #   parameters:
+  #     horizontalPodAutoscaler: ~
+  #     deployment:
+  #       spec:
+  #         replicas: 3
+  #     podDisruptionBudget:
+  #       spec:
+  #         minAvailable: 2
   ## Keep the entry but do not render it
   # legacy:
   #   enabled: false

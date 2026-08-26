@@ -1,6 +1,6 @@
 # istio-waypoints
 
-![Version: 0.1.0](https://img.shields.io/badge/Version-0.1.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.1.0](https://img.shields.io/badge/AppVersion-0.1.0-informational?style=flat-square)
+![Version: 0.2.0](https://img.shields.io/badge/Version-0.2.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.2.0](https://img.shields.io/badge/AppVersion-0.2.0-informational?style=flat-square)
 
 A Helm chart for managing Istio ambient waypoint proxies. Declares one Gateway per waypoint with its parametersRef ConfigMap, Telemetry and AuthorizationPolicy, so many waypoints across namespaces are managed from a single values file.
 
@@ -43,7 +43,7 @@ helm install istio-waypoints oci://ghcr.io/younsl/charts/istio-waypoints -f valu
 Install a specific version:
 
 ```console
-helm install istio-waypoints oci://ghcr.io/younsl/charts/istio-waypoints --version 0.1.0
+helm install istio-waypoints oci://ghcr.io/younsl/charts/istio-waypoints --version 0.2.0
 ```
 
 ### Install from local chart
@@ -51,7 +51,7 @@ helm install istio-waypoints oci://ghcr.io/younsl/charts/istio-waypoints --versi
 Download istio-waypoints chart and install from local directory:
 
 ```console
-helm pull oci://ghcr.io/younsl/charts/istio-waypoints --untar --version 0.1.0
+helm pull oci://ghcr.io/younsl/charts/istio-waypoints --untar --version 0.2.0
 helm install istio-waypoints ./istio-waypoints
 ```
 
@@ -95,7 +95,7 @@ The following table lists the configurable parameters and their default values.
 | defaults.container | object | `{"env":[],"lifecycle":{"preStop":{"exec":{"command":["/bin/sh","-c","sleep 60"]}}},"name":"istio-proxy","resizePolicy":[{"resourceName":"cpu","restartPolicy":"NotRequired"},{"resourceName":"memory","restartPolicy":"RestartContainer"}],"resources":{"limits":{"memory":"1Gi"},"requests":{"cpu":"100m","memory":"128Mi"}}}` | Patch for the `istio-proxy` container of the waypoint Deployment. Rendered into `parameters.deployment` unless that patch already declares `containers`. |
 | defaults.parameters | object | `{"deployment":{"spec":{"template":{"spec":{"dnsConfig":{"options":[{"name":"ndots","value":"2"}]},"priorityClassName":"system-cluster-critical","terminationGracePeriodSeconds":70,"tolerations":[{"effect":"NoExecute","key":"node.kubernetes.io/not-ready","operator":"Exists","tolerationSeconds":300},{"effect":"NoExecute","key":"node.kubernetes.io/unreachable","operator":"Exists","tolerationSeconds":300}],"topologySpreadConstraints":[{"maxSkew":1,"topologyKey":"topology.kubernetes.io/zone","whenUnsatisfiable":"ScheduleAnyway"},{"maxSkew":1,"topologyKey":"kubernetes.io/hostname","whenUnsatisfiable":"ScheduleAnyway"}]}}}},"horizontalPodAutoscaler":{"spec":{"maxReplicas":5,"metrics":[{"resource":{"name":"cpu","target":{"averageUtilization":70,"type":"Utilization"}},"type":"Resource"}],"minReplicas":2}},"podDisruptionBudget":{"spec":{"minAvailable":1}},"service":{},"serviceAccount":{}}` | `parametersRef` ConfigMap content. Istio applies every key as a strategic merge patch to the resource it generates. Accepted keys: `deployment`, `service`, `serviceAccount`, `horizontalPodAutoscaler`, `podDisruptionBudget`. |
 | defaults.telemetry | object | `{"accessLogging":[{"providers":[{"name":"envoy"}]}],"enabled":true,"metrics":[],"tracing":[]}` | Istio Telemetry resource targeting the waypoint Gateway. |
-| defaults.authorizationPolicies | object | `{}` | Map of Istio AuthorizationPolicy resources targeting the waypoint Gateway, keyed by suffix (rendered as `<waypoint>-<key>`). Enforced for every workload enrolled in the waypoint. |
+| defaults.authorizationPolicies | object | `{}` | Map of Istio AuthorizationPolicy resources keyed by suffix (rendered as `<waypoint>-<key>`). Without `targetRefs` a policy targets the waypoint Gateway and applies to every enrolled workload; set `targetRefs` to a Service to scope it to that service only. |
 | waypoints | object | `{}` | Map of waypoints keyed by name (used as Gateway name unless `name` is set). Each entry requires `namespace` and may override any field of `defaults`. |
 | extraObjects | list | `[]` | Extra Kubernetes objects rendered as-is through `tpl`. |
 

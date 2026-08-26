@@ -18,9 +18,13 @@ metadata:
   {{- end }}
 spec:
   targetRefs:
+    {{- if $policy.targetRefs }}
+    {{- toYaml $policy.targetRefs | nindent 4 }}
+    {{- else }}
     - group: gateway.networking.k8s.io
       kind: Gateway
       name: {{ $cfg.name }}
+    {{- end }}
   action: {{ $policy.action | default "ALLOW" }}
   {{- with $policy.provider }}
   provider:
