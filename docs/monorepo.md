@@ -32,9 +32,9 @@ The main risk of a monorepo is that every push rebuilds everything. Two mechanis
 
 Each release workflow declares an explicit `paths:` filter listing the exact files it owns, so a workflow only wakes for changes inside its own components. The `paths:` list at the top of a workflow is the authoritative record of which artifacts that workflow releases.
 
-Releases then trigger on a version value changing inside a file rather than on any change at all. A container releases when the `org.opencontainers.image.version` label in its Dockerfile changes, a chart when `version` in its `Chart.yaml` changes, and the Rust CLI on a namespaced git tag. Editing a Dockerfile without touching its version label still starts a workflow run, which then finds the version already published and no-ops. That is the intended way to make a non-releasing change.
+Releases then trigger on a version value changing inside a file rather than on any change at all. A container releases when the `org.opencontainers.image.version` label in its Dockerfile changes, a chart when `version` in its `Chart.yaml` changes, and the Rust CLI when `version` in its `Cargo.toml` changes. Editing a Dockerfile without touching its version label still starts a workflow run, which then finds the version already published and no-ops. That is the intended way to make a non-releasing change.
 
-Git tags are namespaced per component, as in `ij/x.y.z`, because a flat `vx.y.z` tag space cannot express independent versions for independent components sharing one history.
+The `ij` release workflow creates the GitHub release itself, and the tag it cuts is namespaced per component, as in `ij/x.y.z`, because a flat `vx.y.z` tag space cannot express independent versions for independent components sharing one history.
 
 ## Costs
 

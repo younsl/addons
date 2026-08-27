@@ -1,10 +1,11 @@
 name: Release Rust CLI
-run-name: "\U0001F4E6 Release ${{ github.ref_name }}"
+run-name: "\U0001F4E6 Release rust CLI (Cargo.toml version change)"
 
 on:
   push:
-    tags:
-      - 'ij/[0-9]+.[0-9]+.[0-9]+'
+    branches: [main]
+    paths:
+      - 'box/tools/ij/Cargo.toml'
   workflow_dispatch:
     inputs:
       project:
@@ -13,32 +14,42 @@ on:
         type: choice
         options:
           - ij
-      version:
-        description: "Semantic version to release (e.g. 1.0.0)"
-        required: true
-        default: "x.y.z"
+      force:
+        description: "Release even if the version already exists (overwrites the existing release)"
+        required: false
+        default: false
+        type: boolean
 
 jobs:
-  extract-info:
+  # ---------------------------------------------------------------------------
+  # Detect: read the version from Cargo.toml, skip when that release already
+  # exists on GitHub. A merge that leaves the version untouched no-ops here.
+  # ---------------------------------------------------------------------------
+  detect:
     runs-on: ubuntu-24.04
-    permissions: {}
+    permissions:
+      contents: read
     outputs:
+      has_release: ${{ steps.info.outputs.has_release }}
       project_name: ${{ steps.info.outputs.project_name }}
       version: ${{ steps.info.outputs.version }}
+      tag: ${{ steps.info.outputs.tag }}
       project_base_dir: ${{ steps.info.outputs.project_base_dir }}
       macos_runner: ${{ steps.info.outputs.macos_runner }}
     steps:
-      - name: Extract project info from tag or input
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Resolve project and version from Cargo.toml
         id: info
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SELECTED: ${{ inputs.project }}
+          FORCE: ${{ inputs.force }}
         run: |
-          if [ "${{ github.event_name }}" = "push" ]; then
-            TAG="${GITHUB_REF#refs/tags/}"
-            PROJECT_NAME="${TAG%%/*}"
-            VERSION="${TAG#*/}"
-          else
-            PROJECT_NAME="${{ inputs.project }}"
-            VERSION="${{ inputs.version }}"
-          fi
+          set -euo pipefail
+
+          PROJECT_NAME="${SELECTED:-ij}"
 
           case "${PROJECT_NAME}" in
             ij)
@@ -46,28 +57,65 @@ jobs:
               MACOS_RUNNER="macos-latest"
               ;;
             *)
-              echo "Error: Unknown project '${PROJECT_NAME}'"
+              echo "::error::Unknown project '${PROJECT_NAME}'"
               exit 1
               ;;
           esac
 
-          echo "project_name=${PROJECT_NAME}" >> $GITHUB_OUTPUT
-          echo "version=${VERSION}" >> $GITHUB_OUTPUT
-          echo "project_base_dir=${PROJECT_BASE_DIR}" >> $GITHUB_OUTPUT
-          echo "macos_runner=${MACOS_RUNNER}" >> $GITHUB_OUTPUT
+          CARGO_TOML="${PROJECT_BASE_DIR}/Cargo.toml"
+          if [[ ! -f "${CARGO_TOML}" ]]; then
+            echo "::error::${CARGO_TOML} not found"
+            exit 1
+          fi
+
+          # The [package] version is the only key at the start of a line; every
+          # dependency version lives inside an inline table.
+          VERSION=$(grep -m1 -oP '^version\s*=\s*"\K[^"]+' "${CARGO_TOML}" || echo "")
+          if [[ -z "${VERSION}" ]]; then
+            echo "::error::package version not found in ${CARGO_TOML}"
+            exit 1
+          fi
+
+          TAG="${PROJECT_NAME}/${VERSION}"
+
+          HAS_RELEASE="true"
+          if gh release view "${TAG}" --repo "${GITHUB_REPOSITORY}" > /dev/null 2>&1; then
+            # The duplicate check keeps a merge that touched Cargo.toml without
+            # bumping the version from re-cutting a release. A manual run asking
+            # for force is a statement of intent.
+            if [[ "${FORCE}" != "true" ]]; then
+              echo "✅ ${TAG} already released — skip"
+              HAS_RELEASE="false"
+            else
+              echo "♻️ ${TAG} already released — forced re-release, the existing release will be overwritten"
+            fi
+          else
+            echo "🆕 ${TAG} not released yet — will release"
+          fi
+
+          {
+            echo "has_release=${HAS_RELEASE}"
+            echo "project_name=${PROJECT_NAME}"
+            echo "version=${VERSION}"
+            echo "tag=${TAG}"
+            echo "project_base_dir=${PROJECT_BASE_DIR}"
+            echo "macos_runner=${MACOS_RUNNER}"
+          } >> $GITHUB_OUTPUT
 
           echo "Project: ${PROJECT_NAME}"
           echo "Version: ${VERSION}"
+          echo "Tag: ${TAG}"
           echo "Base dir: ${PROJECT_BASE_DIR}"
           echo "macOS runner: ${MACOS_RUNNER}"
 
   test:
-    needs: [extract-info]
+    needs: [detect]
+    if: needs.detect.outputs.has_release == 'true'
     runs-on: ubuntu-24.04
     permissions:
       contents: read
     env:
-      PROJECT_BASE_DIR: ${{ needs.extract-info.outputs.project_base_dir }}
+      PROJECT_BASE_DIR: ${{ needs.detect.outputs.project_base_dir }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -111,14 +159,14 @@ jobs:
         run: cargo llvm-cov --fail-under-lines 70
 
   build-binaries:
-    needs: [extract-info, test]
+    needs: [detect, test]
     runs-on: ${{ matrix.os }}
     permissions:
       contents: read
     env:
-      PROJECT_NAME: ${{ needs.extract-info.outputs.project_name }}
-      PROJECT_BASE_DIR: ${{ needs.extract-info.outputs.project_base_dir }}
-      VERSION: ${{ needs.extract-info.outputs.version }}
+      PROJECT_NAME: ${{ needs.detect.outputs.project_name }}
+      PROJECT_BASE_DIR: ${{ needs.detect.outputs.project_base_dir }}
+      VERSION: ${{ needs.detect.outputs.version }}
     strategy:
       matrix:
         include:
@@ -130,11 +178,11 @@ jobs:
             target: aarch64-unknown-linux-gnu
             platform: linux
             arch: arm64
-          - os: ${{ needs.extract-info.outputs.macos_runner }}
+          - os: ${{ needs.detect.outputs.macos_runner }}
             target: x86_64-apple-darwin
             platform: darwin
             arch: amd64
-          - os: ${{ needs.extract-info.outputs.macos_runner }}
+          - os: ${{ needs.detect.outputs.macos_runner }}
             target: aarch64-apple-darwin
             platform: darwin
             arch: arm64
@@ -229,13 +277,14 @@ jobs:
 
   release:
     runs-on: ubuntu-24.04
-    needs: [extract-info, build-binaries, test]
+    needs: [detect, build-binaries, test]
     permissions:
       contents: write
     env:
-      PROJECT_NAME: ${{ needs.extract-info.outputs.project_name }}
-      PROJECT_BASE_DIR: ${{ needs.extract-info.outputs.project_base_dir }}
-      VERSION: ${{ needs.extract-info.outputs.version }}
+      PROJECT_NAME: ${{ needs.detect.outputs.project_name }}
+      PROJECT_BASE_DIR: ${{ needs.detect.outputs.project_base_dir }}
+      VERSION: ${{ needs.detect.outputs.version }}
+      TAG: ${{ needs.detect.outputs.tag }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -312,6 +361,8 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: release-assets/*
+          tag_name: ${{ env.TAG }}
+          target_commitish: ${{ github.sha }}
           name: ${{ env.PROJECT_NAME }} ${{ env.VERSION }}
           body_path: release-body.md
           generate_release_notes: true
@@ -321,18 +372,19 @@ jobs:
 
   update-homebrew:
     runs-on: ubuntu-24.04
-    needs: [extract-info, release]
+    needs: [detect, release]
     permissions:
       contents: read
     env:
-      PROJECT_NAME: ${{ needs.extract-info.outputs.project_name }}
-      VERSION: ${{ needs.extract-info.outputs.version }}
+      PROJECT_NAME: ${{ needs.detect.outputs.project_name }}
+      VERSION: ${{ needs.detect.outputs.version }}
+      TAG: ${{ needs.detect.outputs.tag }}
       HOMEBREW_TAP_REPO: younsl/homebrew-tap
     steps:
       - name: Download release assets and compute SHA256
         id: sha
         run: |
-          BASE_URL="https://github.com/${{ github.repository }}/releases/download/${PROJECT_NAME}/${VERSION}"
+          BASE_URL="https://github.com/${{ github.repository }}/releases/download/${TAG}"
 
           for PLATFORM_ARCH in darwin-amd64 darwin-arm64 linux-amd64 linux-arm64; do
             FILE="${PROJECT_NAME}-${PLATFORM_ARCH}.tar.gz"
@@ -380,7 +432,7 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add "Formula/${PROJECT_NAME}.rb"
           git diff --cached --quiet && echo "No changes to commit" && exit 0
-          RELEASE_URL="https://github.com/${{ github.repository }}/releases/tag/${PROJECT_NAME}/${VERSION}"
+          RELEASE_URL="https://github.com/${{ github.repository }}/releases/tag/${TAG}"
           git commit \
             -m "bump(${PROJECT_NAME}): ${VERSION} formula version and SHA" \
             -m "Release: ${RELEASE_URL}"
