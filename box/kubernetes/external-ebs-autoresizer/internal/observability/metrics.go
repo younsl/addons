@@ -69,6 +69,11 @@ type Metrics struct {
 	unusedTotal         *prometheus.GaugeVec
 	unusedCapacityTotal *prometheus.GaugeVec
 	unusedScanTotal     prometheus.Counter
+
+	unusedScanFailureTotal prometheus.Counter
+	unusedScanLastSuccess  prometheus.Gauge
+	unusedScanDuration     prometheus.Gauge
+	leader                 prometheus.Gauge
 }
 
 // NewMetrics builds the collectors and registers them on a private registry.
@@ -167,13 +172,30 @@ func NewMetrics() *Metrics {
 			Name: "external_ebs_autoresizer_unused_scan_total",
 			Help: "Total unused volume scan passes started.",
 		}),
+		unusedScanFailureTotal: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "external_ebs_autoresizer_unused_scan_failure_total",
+			Help: "Total unused volume scan passes that ended in an error. Subtract it from unused_scan_total for the number that succeeded; error_total counts per-object failures inside a pass, which is a different unit of work.",
+		}),
+		unusedScanLastSuccess: prometheus.NewGauge(prometheus.GaugeOpts{
+			Name: "external_ebs_autoresizer_unused_scan_last_success_timestamp_seconds",
+			Help: "Unix timestamp of the last unused volume scan pass that completed without error. Zero until the first one does. Alert on time() minus this value rather than on a boolean up gauge: the findings gauges are republished every pass and hold their last value forever, so age is the only thing that distinguishes a fresh report from a frozen one.",
+		}),
+		unusedScanDuration: prometheus.NewGauge(prometheus.GaugeOpts{
+			Name: "external_ebs_autoresizer_unused_scan_duration_seconds",
+			Help: "Wall-clock duration of the most recent unused volume scan pass, successful or not. The pass reads the whole cluster in four list calls, so a rising value is the API server slowing down before it starts failing.",
+		}),
+		leader: prometheus.NewGauge(prometheus.GaugeOpts{
+			Name: "external_ebs_autoresizer_leader",
+			Help: "1 on the replica currently running the reconcile loops, 0 on every other replica. Scope liveness alerts to it: a follower publishes no scan or reconcile activity by design, and an alert that ignores this fires on every non-leader.",
+		}),
 	}
 	m.registry.MustRegister(m.usage, m.volumeSize, m.resizeTotal, m.skipTotal, m.errorTotal, m.reconcileTotal, m.policyInstances,
 		m.nodeCurrentMiBps, m.nodePeakMiBps, m.nodeRecommendedMiBps, m.recommendationTotal, m.throughputApplyTotal,
 		m.throughputApplySkipTotal, m.recommenderReconcileTotal,
 		m.unusedPVCInfo, m.unusedPVInfo,
 		m.unusedPVCAge, m.unusedPVCCapacity, m.unusedPVAge, m.unusedPVCapacity,
-		m.unusedTotal, m.unusedCapacityTotal, m.unusedScanTotal)
+		m.unusedTotal, m.unusedCapacityTotal, m.unusedScanTotal,
+		m.unusedScanFailureTotal, m.unusedScanLastSuccess, m.unusedScanDuration, m.leader)
 	return m
 }
 
@@ -305,6 +327,36 @@ func (m *Metrics) ObserveUnusedSummary(kind, reason string, count int, capacityB
 // loop the way reconcile_total is for the resizer.
 func (m *Metrics) ObserveUnusedScan() {
 	m.unusedScanTotal.Inc()
+}
+
+// ObserveUnusedScanResult records how one scan pass ended. A pass that returned
+// no error stamps the success timestamp, which is the series to alert on: the
+// findings gauges are reset and republished on every pass, so a scanner that has
+// stopped running leaves them holding their last values indefinitely and looking
+// exactly like a healthy cluster with nothing to report.
+//
+// The duration is recorded either way. A pass that failed still consumed time,
+// and how long it took before failing is what separates an API server that is
+// slow from one that is rejecting the calls outright.
+func (m *Metrics) ObserveUnusedScanResult(duration time.Duration, err error) {
+	m.unusedScanDuration.Set(duration.Seconds())
+	if err != nil {
+		m.unusedScanFailureTotal.Inc()
+		return
+	}
+	m.unusedScanLastSuccess.Set(float64(time.Now().Unix()))
+}
+
+// SetLeader records whether this replica is the one running the reconcile loops.
+// Leader election gates every loop, so without this a follower is
+// indistinguishable from a leader whose loops have wedged: both publish no
+// activity at all.
+func (m *Metrics) SetLeader(leading bool) {
+	if leading {
+		m.leader.Set(1)
+		return
+	}
+	m.leader.Set(0)
 }
 
 // ObserveError counts an error in the given reconcile stage.

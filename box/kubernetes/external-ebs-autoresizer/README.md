@@ -397,6 +397,22 @@ wait for the threshold: if the annotation waited too, the clock would never
 start. An object that comes back into use has every one of these keys removed on
 the next pass, so a stale mark never outlives the condition that produced it.
 
+### Knowing the scan is running
+
+Every findings gauge is reset and republished on each pass, so all of them hold
+their last values for as long as the process lives. A scanner that stopped an
+hour ago and a cluster with nothing left to clean up read identically. Four
+series exist so that case is not silent:
+
+| Metric | What it answers |
+|--------|-----------------|
+| `external_ebs_autoresizer_unused_scan_total` | Is the loop ticking at all. Raised before the pass runs, so it counts attempts, not outcomes |
+| `external_ebs_autoresizer_unused_scan_failure_total` | How many passes ended in an error. Distinct from `error_total{stage="pv_annotate"}`, which is a per-object failure inside a pass that still succeeds |
+| `external_ebs_autoresizer_unused_scan_last_success_timestamp_seconds` | How current the report is. Alert on `time()` minus this, not on a boolean: a boolean set at startup stays `1` while the loop is wedged |
+| `external_ebs_autoresizer_leader` | Which replica is actually running the loops. A follower publishes no activity by design, so a liveness alert that ignores this fires on every non-leader |
+
+See [docs/metrics.md](docs/metrics.md) for the alert expression.
+
 ### No configuration
 
 The loop has no settings. Its cadence (1 hour), its threshold (24 hours), what

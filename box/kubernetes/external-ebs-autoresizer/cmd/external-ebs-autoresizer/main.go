@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+	"time"
 
 	"k8s.io/klog/v2"
 
@@ -141,6 +142,11 @@ func runDaemon(configFile string) error {
 	// query the addon issues. Both loops live under the same leader election, so
 	// only one replica annotates Nodes.
 	runLoop := func(ctx context.Context) {
+		// Every loop below runs only here, which is only on the leader. The gauge
+		// says which replica that is, so a liveness alert can tell a follower
+		// (silent by design) from a leader whose loops have stopped.
+		metrics.SetLeader(true)
+		defer metrics.SetLeader(false)
 		var wg sync.WaitGroup
 		if rcm != nil {
 			wg.Go(func() {
@@ -158,8 +164,15 @@ func runDaemon(configFile string) error {
 		if scn != nil {
 			wg.Go(func() {
 				controller.Run(ctx, pvscan.Interval, func(ctx context.Context) (int, error) {
+					// The counter is incremented before the pass and therefore
+					// counts attempts, not outcomes: a pass that fails to list the
+					// cluster still raises it. The result recorded afterwards is
+					// what says whether the report on the other end is current.
 					metrics.ObserveUnusedScan()
-					return scn.Reconcile(ctx)
+					start := time.Now()
+					scanned, err := scn.Reconcile(ctx)
+					metrics.ObserveUnusedScanResult(time.Since(start), err)
+					return scanned, err
 				}, logger.With("loop", "unused_volume_scan"))
 			})
 		}

@@ -1,6 +1,7 @@
 package observability
 
 import (
+	"errors"
 	"io"
 	"net/http"
 	"testing"
@@ -207,4 +208,50 @@ func itoa(n int) string {
 		n /= 10
 	}
 	return string(b)
+}
+
+func TestMetricsUnusedScanResult(t *testing.T) {
+	m := NewMetrics()
+	if got := testutil.ToFloat64(m.unusedScanLastSuccess); got != 0 {
+		t.Errorf("last success before any pass = %v, want 0", got)
+	}
+
+	before := float64(time.Now().Unix())
+	m.ObserveUnusedScanResult(250*time.Millisecond, nil)
+	if got := testutil.ToFloat64(m.unusedScanLastSuccess); got < before {
+		t.Errorf("last success = %v, want at least %v", got, before)
+	}
+	if got := testutil.ToFloat64(m.unusedScanDuration); got != 0.25 {
+		t.Errorf("scan duration = %v, want 0.25", got)
+	}
+	if got := testutil.ToFloat64(m.unusedScanFailureTotal); got != 0 {
+		t.Errorf("scan failures = %v, want 0", got)
+	}
+
+	stamped := testutil.ToFloat64(m.unusedScanLastSuccess)
+	m.ObserveUnusedScanResult(2*time.Second, errors.New("list volumes: forbidden"))
+	if got := testutil.ToFloat64(m.unusedScanFailureTotal); got != 1 {
+		t.Errorf("scan failures = %v, want 1", got)
+	}
+	if got := testutil.ToFloat64(m.unusedScanLastSuccess); got != stamped {
+		t.Errorf("last success = %v, want %v (a failed pass must not stamp it)", got, stamped)
+	}
+	if got := testutil.ToFloat64(m.unusedScanDuration); got != 2 {
+		t.Errorf("scan duration = %v, want 2 (a failed pass still records how long it took)", got)
+	}
+}
+
+func TestMetricsLeader(t *testing.T) {
+	m := NewMetrics()
+	if got := testutil.ToFloat64(m.leader); got != 0 {
+		t.Errorf("leader before election = %v, want 0", got)
+	}
+	m.SetLeader(true)
+	if got := testutil.ToFloat64(m.leader); got != 1 {
+		t.Errorf("leader = %v, want 1", got)
+	}
+	m.SetLeader(false)
+	if got := testutil.ToFloat64(m.leader); got != 0 {
+		t.Errorf("leader after losing the lease = %v, want 0", got)
+	}
 }

@@ -368,8 +368,80 @@ The total capacity the reported objects hold, by kind and reason.
 
 - Type: Counter
 
-The total number of unused volume scan passes started, the liveness signal of the
-scanner loop. Absent when the scanner is disabled.
+The total number of unused volume scan passes started. It is incremented before
+the pass runs, so it counts attempts rather than outcomes: a pass that cannot
+list the cluster still raises it. Use it for "is the loop ticking at all", and
+`unused_scan_last_success_timestamp_seconds` for "is the report current".
+
+### external_ebs_autoresizer_unused_scan_failure_total
+
+- Type: Counter
+
+The total number of scan passes that ended in an error. Subtract it from
+`unused_scan_total` for the number that succeeded.
+
+This is a different unit of work from `error_total`. A pass fails as a whole when
+it cannot read the cluster inventory (`error_total{stage="pv_inventory"}`), while
+a per-object annotation failure (`error_total{stage="pv_annotate"}`) is logged,
+counted, and skipped without aborting the pass. A pass can therefore raise
+`error_total` several times and still succeed.
+
+### external_ebs_autoresizer_unused_scan_last_success_timestamp_seconds
+
+- Type: Gauge
+
+The Unix timestamp of the last scan pass that completed without an error, and `0`
+until the first one does.
+
+This is the health signal of the scanner, and the reason it is a timestamp rather
+than a boolean `up` gauge. The findings gauges (`unused_objects`,
+`unused_pvc_info`, and the rest) are reset and republished on every pass, so they
+hold their last values for as long as the process lives. A scanner that stopped
+running an hour ago and a cluster with nothing to report look identical in every
+one of them. A boolean set at startup has the same defect: it stays `1` while the
+loop is wedged. The age of this timestamp is the only thing that separates a
+fresh report from a frozen one.
+
+Alert on the age, scoped to the leader:
+
+```promql
+(time() - max by (cluster) (
+  external_ebs_autoresizer_unused_scan_last_success_timestamp_seconds
+    and on (pod) external_ebs_autoresizer_leader == 1
+)) > 3 * 3600
+```
+
+The scan interval is one hour and is not configurable, so three hours is two
+missed passes. Guard against the zero value if you do not want the alert to fire
+during the first pass after a restart, which normally lands within seconds of
+startup.
+
+### external_ebs_autoresizer_unused_scan_duration_seconds
+
+- Type: Gauge
+
+How long the most recent scan pass took, successful or not. The pass reads the
+whole cluster in four list calls, so a rising value is the API server slowing
+down before it starts failing outright. It is recorded for failed passes too,
+because how long a pass ran before failing separates a slow API server from one
+rejecting the calls.
+
+### external_ebs_autoresizer_leader
+
+- Type: Gauge
+
+`1` on the replica currently running the reconcile loops, `0` on every other
+replica.
+
+Every loop (resizer, throughput recommender, unused volume scanner) runs under
+one leader election, so a follower publishes no scan, resize, or reconcile
+activity at all. That is by design, and it is indistinguishable from a leader
+whose loops have wedged. Any liveness alert over the counters above must be
+scoped with `and on (pod) external_ebs_autoresizer_leader == 1`, or it fires on
+every non-leader replica as soon as the Deployment is scaled past one.
+
+When leader election is disabled, or `POD_NAME` is unset, the process runs the
+loops directly and reports `1`.
 
 ## Example queries
 
@@ -389,6 +461,18 @@ Errors by stage over the last hour:
 
 ```promql
 sum by (stage) (rate(external_ebs_autoresizer_error_total[1h]))
+```
+
+Scan passes that failed over the last day:
+
+```promql
+increase(external_ebs_autoresizer_unused_scan_failure_total[1d])
+```
+
+How long ago the unused volume report was last refreshed, in seconds:
+
+```promql
+time() - max(external_ebs_autoresizer_unused_scan_last_success_timestamp_seconds)
 ```
 
 Volumes stuck at the max-size ceiling while still filling up (above 90%):
