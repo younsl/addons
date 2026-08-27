@@ -7,7 +7,7 @@ import (
 )
 
 // newRootCommand builds the cobra command tree. The root command runs the
-// controller; subcommands (validate, policies, instances) are operational
+// controller; subcommands (validate, policies, instances, unused) are operational
 // helpers that need no running controller. A persistent --config flag, shared
 // by every command, defaults to $CONFIG_FILE or the mounted config path.
 func newRootCommand() *cobra.Command {
@@ -58,6 +58,17 @@ func newRootCommand() *cobra.Command {
 		},
 	}
 
-	root.AddCommand(run, validate, policies, instances)
+	var includePending bool
+	unused := &cobra.Command{
+		Use:   "unused",
+		Short: "List unused PersistentVolumeClaims and PersistentVolumes (reads the Kubernetes API, writes nothing)",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return runUnused(cmd.Context(), configFile, includePending)
+		},
+	}
+	unused.Flags().BoolVar(&includePending, "all", false,
+		"Include objects that have not yet been unused for unusedVolumeScan.minUnusedAge")
+
+	root.AddCommand(run, validate, policies, instances, unused)
 	return root
 }

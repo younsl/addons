@@ -24,6 +24,7 @@ Available Commands:
   instances   List discovered instances grouped by the policy each matches (calls AWS)
   policies    Print the resolved resize policies and their effective settings
   run         Run the controller (the default when no subcommand is given)
+  unused      List unused PersistentVolumeClaims and PersistentVolumes (reads the Kubernetes API, writes nothing)
   validate    Load and validate the config file, then exit
 ```
 
@@ -115,6 +116,43 @@ default  (none)
 Use it to answer "which policy will govern this instance?" and to confirm a
 policy's reach before merging a selector change.
 
+### unused
+
+Lists the PersistentVolumeClaims and PersistentVolumes no workload is using,
+sorted longest-unused first. It reads the Kubernetes API and writes nothing, so
+it is safe to run at any time. Requires in-cluster access, so it runs inside the
+Pod rather than from a laptop.
+
+```console
+$ kubectl exec deploy/external-ebs-autoresizer -- external-ebs-autoresizer unused
+KIND                   NAMESPACE  NAME               REASON                   UNUSED_FOR  CAPACITY  STORAGE_CLASS  EBS_VOLUME             BOUND_TO
+persistentvolume       -          pvc-9f2c1a4b       released                 512h0m0s    100.0Gi   gp3            vol-0a1b2c3d4e5f67890  legacy/reports
+persistentvolumeclaim  analytics  data-clickhouse-3  statefulset_scaled_down  336h0m0s    500.0Gi   gp3            vol-0123456789abcdef0  pvc-3d7e2b91
+persistentvolumeclaim  legacy     uploads            no_consumer_pod          72h0m0s     20.0Gi    gp3            vol-0fedcba9876543210  pvc-77c1e004
+
+3 unused objects holding 620.0Gi, out of 214 objects scanned (minUnusedAge 24h0m0s)
+```
+
+| Column | Meaning |
+|--------|---------|
+| `KIND` | `persistentvolumeclaim` or `persistentvolume` |
+| `NAMESPACE` | The claim's namespace, `-` for a cluster-scoped volume |
+| `REASON` | Why it is unused. See [Unused volume identification](../README.md#unused-volume-identification) for each value |
+| `UNUSED_FOR` | How long it has been continuously unused |
+| `CAPACITY` | Provisioned size, the number that turns the report into a cost |
+| `EBS_VOLUME` | The EBS volume ID to price or delete in EC2, `-` when not EBS-backed |
+| `BOUND_TO` | The bound volume for a claim, the bound claim for a volume |
+
+The `UNUSED_FOR` clock lives in the annotation the scan loop writes, so a freshly
+started controller reports every object as unused since now until its first pass
+lands. Which objects are listed is unaffected. Pass `--all` to include objects
+that have not yet been unused for 24 hours.
+
+Nothing in this command deletes anything, and neither does the loop behind it.
+"Unused" is an observation about the cluster's current state, not a statement
+that the data is disposable: a claim held for a quarterly job and a claim nobody
+will ever read again look identical from here.
+
 ### run
 
 Starts the controller (identical to running with no subcommand): loads the
@@ -129,10 +167,12 @@ The container image ships the same binary, so every command works via
 ```bash
 kubectl exec deploy/external-ebs-autoresizer -- external-ebs-autoresizer policies --count
 kubectl exec deploy/external-ebs-autoresizer -- external-ebs-autoresizer instances
+kubectl exec deploy/external-ebs-autoresizer -- external-ebs-autoresizer unused
 ```
 
 The Pod's IRSA/Pod Identity credentials cover the read-only EC2 calls, since
-the controller already requires them.
+the controller already requires them. `unused` needs no AWS credentials at all,
+only the ClusterRole the chart creates whenever `rbac.create` is true.
 
 ## Local verification
 
@@ -145,6 +185,9 @@ make validate     # go run ... validate  --config config.example.yaml
 make policies     # go run ... policies   --config config.example.yaml
 make instances    # go run ... instances  --config config.example.yaml (needs AWS credentials)
 ```
+
+`unused` has no local equivalent: it reads the Kubernetes API through the
+in-cluster config, which does not exist outside a Pod.
 
 ## Conclusion
 

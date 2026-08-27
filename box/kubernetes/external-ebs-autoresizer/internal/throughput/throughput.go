@@ -56,7 +56,7 @@ type EC2API interface {
 }
 
 // NodeEventEmitter publishes Kubernetes Events against Node objects.
-// events.NodeEmitter implements it. A nil NodeEventEmitter disables Events (e.g.
+// events.ObjectEmitter implements it. A nil NodeEventEmitter disables Events (e.g.
 // when running outside a cluster or during tests).
 type NodeEventEmitter interface {
 	NodeEventf(name, uid, eventType, reason, messageFmt string, args ...any)

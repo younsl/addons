@@ -44,7 +44,7 @@ type RecommendationSource interface {
 
 // NodeEventEmitter publishes Kubernetes Events against Node objects, so a
 // volume modification is visible in kubectl describe node when the volume
-// belongs to one. events.NodeEmitter implements it. A nil NodeEventEmitter
+// belongs to one. events.ObjectEmitter implements it. A nil NodeEventEmitter
 // disables Node Events (standalone-only fleets, running outside a cluster,
 // tests).
 type NodeEventEmitter interface {

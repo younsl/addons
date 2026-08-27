@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/younsl/o/box/kubernetes/external-ebs-autoresizer/internal/config"
-	"github.com/younsl/o/box/kubernetes/external-ebs-autoresizer/internal/events"
 	"github.com/younsl/o/box/kubernetes/external-ebs-autoresizer/internal/nodes"
 	"github.com/younsl/o/box/kubernetes/external-ebs-autoresizer/internal/promql"
 	"github.com/younsl/o/box/kubernetes/external-ebs-autoresizer/internal/throughput"
@@ -56,20 +55,6 @@ func buildRecommender(ctx context.Context, cfg *config.Config, ec2 throughput.EC
 	// this cluster's node names, so it does not exist until the Nodes are listed.
 	logProbe(ctx, recommender, throughput.QueryTimeout(), tr.MetricNodeNameLabel, logger)
 	return recommender
-}
-
-// buildNodeEventEmitter constructs the shared Node Event emitter, or nil when
-// Node Events cannot be published (running outside a cluster). Node Events are
-// auxiliary: losing them stops neither loop. The emitter is its own rather
-// than the resize loop's Pod emitter because a Node's Events are stored in the
-// "default" namespace, and client-go binds a sink to one namespace.
-func buildNodeEventEmitter(logger *slog.Logger) (*events.NodeEmitter, func()) {
-	emitter, err := events.NewNodeEmitter()
-	if err != nil {
-		logger.Warn("Node Event publishing disabled", "error", err)
-		return nil, func() {}
-	}
-	return emitter, emitter.Shutdown
 }
 
 // queryHeaders builds the static headers for every query. The only one is the

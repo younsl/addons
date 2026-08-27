@@ -272,6 +272,105 @@ The total number of throughput recommender passes started, the liveness signal o
 the recommender loop the way `reconcile_total` is for the resize loop. Absent when
 the recommender is disabled.
 
+### external_ebs_autoresizer_unused_pvc_info
+
+- Type: Gauge (always `1`)
+- Labels: `namespace`, `name`, `volume_name`, `volume_id`, `storage_class`,
+  `reason`
+
+One series per reported unused PersistentVolumeClaim, carrying every descriptive
+label the report is listed by. The value is always `1`: this is an identity
+series, not a measurement. `reason` is one of `no_consumer_pod`,
+`statefulset_scaled_down`, or `unbound`. `volume_id` is the EBS volume behind the
+claim's bound volume, empty when the claim never bound or is not EBS-backed.
+
+Query it alone for the list of unused claims, or join it to the two value series
+below for a table that also carries the numbers.
+
+### external_ebs_autoresizer_unused_pv_info
+
+- Type: Gauge (always `1`)
+- Labels: `name`, `volume_id`, `storage_class`, `reason`, `reclaim_policy`,
+  `claim_namespace`, `claim_name`
+
+One series per reported unused PersistentVolume. `reason` is one of `released`,
+`available`, `failed`, `missing_claim`, or `bound_to_unused_claim`.
+`reclaim_policy` matters for reading the row: a `Released` volume under `Retain`
+is one Kubernetes will never clean up on its own. `claim_namespace` and
+`claim_name` are the claim it is or was bound to, empty for a volume that was
+never claimed, and they are what lets a table listed by volume name still name
+the workload that left it behind.
+
+### external_ebs_autoresizer_unused_pvc_age_seconds
+
+- Type: Gauge
+- Labels: `namespace`, `name`
+
+How long a claim has been continuously unused, in seconds. Only claims unused for
+at least 24 hours are exported, so a workload between two Pods never appears
+here.
+
+### external_ebs_autoresizer_unused_pvc_capacity_bytes
+
+- Type: Gauge
+- Labels: `namespace`, `name`
+
+The provisioned capacity of the same claim, keyed identically to the age gauge.
+
+### external_ebs_autoresizer_unused_pv_age_seconds
+
+- Type: Gauge
+- Labels: `name`
+
+How long a volume has been continuously unused, in seconds.
+
+### external_ebs_autoresizer_unused_pv_capacity_bytes
+
+- Type: Gauge
+- Labels: `name`
+
+The provisioned capacity of the same volume.
+
+#### Why identity and measurement are separate series
+
+The descriptive labels live on the `_info` series and the value gauges are keyed
+by nothing but the object's own name. That split is deliberate:
+
+- A series identity that includes `reason` restarts whenever the reason changes,
+  so a range query over an object's age would break exactly when something about
+  it changed. Keyed by name alone, the age series is continuous for as long as
+  the object is unused.
+- The label set is written once rather than duplicated across three metrics.
+
+The cost is that a full table needs a join, which is one `group_left` (see the
+example queries). The `_info` pattern is the standard Prometheus shape for
+exactly this, and Grafana renders the joined result as one table.
+
+### external_ebs_autoresizer_unused_objects
+
+- Type: Gauge
+- Labels: `kind`, `reason`
+
+How many objects the latest scan reported, by kind (`persistentvolumeclaim`,
+`persistentvolume`) and reason. Every known reason is published on every pass, so
+a reason that has stopped occurring reads as `0` rather than vanishing. This is
+the series to alert on: the per-object series carry a name label and are too wide
+for an alert rule.
+
+### external_ebs_autoresizer_unused_objects_capacity_bytes
+
+- Type: Gauge
+- Labels: `kind`, `reason`
+
+The total capacity the reported objects hold, by kind and reason.
+
+### external_ebs_autoresizer_unused_scan_total
+
+- Type: Counter
+
+The total number of unused volume scan passes started, the liveness signal of the
+scanner loop. Absent when the scanner is disabled.
+
 ## Example queries
 
 Instances currently above 80% usage:
@@ -297,6 +396,76 @@ Volumes stuck at the max-size ceiling while still filling up (above 90%):
 ```promql
 rate(external_ebs_autoresizer_skip_total{reason="max_size"}[1h]) > 0
   and on() max(external_ebs_autoresizer_root_usage_percent) > 90
+```
+
+The full list of unused PersistentVolumes, one row per volume with every label
+and both numbers. This is the table query: `group_left` copies the `_info`
+labels onto the value series, and the second join adds capacity.
+
+```promql
+(
+  external_ebs_autoresizer_unused_pv_age_seconds
+    * on (name) group_left (volume_id, storage_class, reason, reclaim_policy, claim_namespace, claim_name)
+      external_ebs_autoresizer_unused_pv_info
+)
+```
+
+Capacity instead of age, with the same labels:
+
+```promql
+external_ebs_autoresizer_unused_pv_capacity_bytes
+  * on (name) group_left (volume_id, storage_class, reason, reclaim_policy, claim_namespace, claim_name)
+    external_ebs_autoresizer_unused_pv_info
+```
+
+The same list for claims, joined on both identity labels:
+
+```promql
+external_ebs_autoresizer_unused_pvc_age_seconds
+  * on (namespace, name) group_left (volume_name, volume_id, storage_class, reason)
+    external_ebs_autoresizer_unused_pvc_info
+```
+
+In Grafana, run either query as a **Table** panel with **Format: Table** and
+**Instant** on, then use an *Organize fields* transform to drop `Time` and
+`__name__` and to rename `Value`. To show both numbers in one table, add the age
+and capacity queries as separate refIds and join them with a *Join by field*
+transform on `name`.
+
+Every unused volume of one storage class, released and never reclaimed:
+
+```promql
+external_ebs_autoresizer_unused_pv_info{reason="released", reclaim_policy="Retain", storage_class="gp3"}
+```
+
+Unused claims left behind by one namespace, whatever the reason:
+
+```promql
+external_ebs_autoresizer_unused_pvc_info{namespace="legacy"}
+```
+
+Total GiB held by unused claims and volumes, without double counting a claim and
+the volume bound to it:
+
+```promql
+sum(external_ebs_autoresizer_unused_objects_capacity_bytes{kind="persistentvolumeclaim"}) / 1024^3
+  + sum(external_ebs_autoresizer_unused_objects_capacity_bytes{kind="persistentvolume", reason!="bound_to_unused_claim"}) / 1024^3
+```
+
+Claims left behind by a StatefulSet scale-down, oldest first. The `and on` filters
+the value series by an `_info` selector without copying its labels:
+
+```promql
+topk(20,
+  external_ebs_autoresizer_unused_pvc_age_seconds
+    and on (namespace, name) external_ebs_autoresizer_unused_pvc_info{reason="statefulset_scaled_down"}
+)
+```
+
+The ten unused claims holding the most storage:
+
+```promql
+topk(10, external_ebs_autoresizer_unused_pvc_capacity_bytes)
 ```
 
 Detect a stalled reconcile loop (no new pass in 15 minutes):

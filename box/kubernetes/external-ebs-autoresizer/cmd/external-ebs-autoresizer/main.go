@@ -21,6 +21,7 @@ import (
 	"github.com/younsl/o/box/kubernetes/external-ebs-autoresizer/internal/leader"
 	"github.com/younsl/o/box/kubernetes/external-ebs-autoresizer/internal/observability"
 	"github.com/younsl/o/box/kubernetes/external-ebs-autoresizer/internal/policy"
+	"github.com/younsl/o/box/kubernetes/external-ebs-autoresizer/internal/pvscan"
 	"github.com/younsl/o/box/kubernetes/external-ebs-autoresizer/internal/recstore"
 	"github.com/younsl/o/box/kubernetes/external-ebs-autoresizer/internal/resizer"
 	"github.com/younsl/o/box/kubernetes/external-ebs-autoresizer/internal/throughput"
@@ -56,6 +57,7 @@ func runDaemon(configFile string) error {
 		"dry_run", cfg.DryRun)
 	logResizePolicy(logger, cfg)
 	logPiggybackPolicy(logger, cfg)
+	logUnusedVolumeScanPolicy(logger, cfg)
 
 	// Per-instance-group resize policies. Validation failures are fatal so a
 	// broken policy entry never silently falls back to the global settings.
@@ -106,25 +108,31 @@ func runDaemon(configFile string) error {
 	// throughputRecommendation.applyOnResize inside the resizer.
 	var sink throughput.RecommendationSink
 	var recs resizer.RecommendationSource
-	var nodeEvents *events.NodeEmitter
-	shutdownNodeEvents := func() {}
 	if cfg.ThroughputRecommendation.Enabled {
 		store := recstore.New()
 		sink, recs = store, store
-		nodeEvents, shutdownNodeEvents = buildNodeEventEmitter(logger)
 	}
-	defer shutdownNodeEvents()
+
+	// One emitter serves every loop that writes Events about an object the addon
+	// does not own, because its sink is bound to no namespace and can therefore
+	// reach a Node, a cluster-scoped volume, and a namespaced claim alike. The
+	// unused volume scanner always runs, so it is always built.
+	objectEvents, shutdownObjectEvents := buildObjectEventEmitter(logger)
+	defer shutdownObjectEvents()
 
 	// The same typed-nil trap applies to the emitter: hand the interfaces a nil
 	// only when the concrete pointer is nil.
 	var resizerNodeEvents resizer.NodeEventEmitter
 	var recommenderNodeEvents throughput.NodeEventEmitter
-	if nodeEvents != nil {
-		resizerNodeEvents, recommenderNodeEvents = nodeEvents, nodeEvents
+	var scannerEvents pvscan.EventEmitter
+	if objectEvents != nil {
+		resizerNodeEvents, recommenderNodeEvents = objectEvents, objectEvents
+		scannerEvents = objectEvents
 	}
 
 	rsz := resizer.New(cfg, resolver, clients, clients, metrics, snk.emitter, snk.notifier, snk.annotator, recs, resizerNodeEvents, logger)
 	rcm := buildRecommender(ctx, cfg, clients, metrics, sink, recommenderNodeEvents, logger)
+	scn := buildScanner(cfg, metrics, scannerEvents, logger)
 	health.SetReady(true)
 
 	// The recommender runs on its own interval alongside the resize loop, because
@@ -140,6 +148,19 @@ func runDaemon(configFile string) error {
 					metrics.ObserveRecommenderReconcile()
 					return rcm.Reconcile(ctx)
 				}, logger.With("loop", "throughput_recommender"))
+			})
+		}
+		// The scanner is a third loop under the same leader election, on its own
+		// interval again: what it reports changes when workloads are deleted, and
+		// every finding is held back by minUnusedAge anyway, so running it at the
+		// resizer's cadence would only re-list the whole cluster to reach the same
+		// answer.
+		if scn != nil {
+			wg.Go(func() {
+				controller.Run(ctx, pvscan.Interval, func(ctx context.Context) (int, error) {
+					metrics.ObserveUnusedScan()
+					return scn.Reconcile(ctx)
+				}, logger.With("loop", "unused_volume_scan"))
 			})
 		}
 		controller.Run(ctx, cfg.ReconcileInterval, func(ctx context.Context) (int, error) {
@@ -253,4 +274,19 @@ func newLogger(level, format string) *slog.Logger {
 		handler = slog.NewJSONHandler(os.Stdout, opts)
 	}
 	return slog.New(handler)
+}
+
+// buildObjectEventEmitter constructs the shared emitter for Events about cluster
+// objects the addon observes but does not own, or nil when they cannot be
+// published (running outside a cluster). These Events are auxiliary: losing them
+// stops no loop. The emitter is its own rather than the resize loop's Pod emitter
+// because client-go binds a sink to one namespace, and these Events land in the
+// object's namespace or in "default", never in the controller's.
+func buildObjectEventEmitter(logger *slog.Logger) (*events.ObjectEmitter, func()) {
+	emitter, err := events.NewObjectEmitter()
+	if err != nil {
+		logger.Warn("Event publishing on Nodes, claims, and volumes disabled", "error", err)
+		return nil, func() {}
+	}
+	return emitter, emitter.Shutdown
 }

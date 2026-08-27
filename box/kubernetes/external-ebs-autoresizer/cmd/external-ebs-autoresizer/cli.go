@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"sort"
 	"text/tabwriter"
@@ -11,6 +12,7 @@ import (
 	"github.com/younsl/o/box/kubernetes/external-ebs-autoresizer/internal/awsx"
 	"github.com/younsl/o/box/kubernetes/external-ebs-autoresizer/internal/config"
 	"github.com/younsl/o/box/kubernetes/external-ebs-autoresizer/internal/policy"
+	"github.com/younsl/o/box/kubernetes/external-ebs-autoresizer/internal/pvscan"
 )
 
 // configFilePath resolves the default config file: the CONFIG_FILE env, else
@@ -224,4 +226,98 @@ func selectorOf(cfg *config.Config, name string) string {
 		return parts
 	}
 	return ""
+}
+
+// runUnused lists the PersistentVolumeClaims and PersistentVolumes no workload
+// is using, grouped by kind and sorted longest-unused first. It reads the
+// Kubernetes API and never writes: unlike the scanner loop it annotates nothing,
+// so it is safe to run against a cluster where the loop is still disabled.
+//
+// The clock behind UNUSED_FOR lives in the annotation the loop writes. Without
+// that loop running there is nothing to read, so every object reports as unused
+// since now; the classification itself is unaffected.
+func runUnused(ctx context.Context, path string, all bool) error {
+	cfg, _, err := loadResolver(path)
+	if err != nil {
+		return err
+	}
+	kube, err := pvscan.NewClient()
+	if err != nil {
+		return fmt.Errorf("in-cluster Kubernetes access is required to scan volumes: %w", err)
+	}
+	scanner := pvscan.New(cfg.DryRun, kube, discardRecorder{}, nil, slog.New(slog.DiscardHandler))
+
+	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	defer cancel()
+	findings, err := scanner.Findings(ctx)
+	if err != nil {
+		return err
+	}
+
+	unused := make([]pvscan.Finding, 0, len(findings))
+	for _, f := range findings {
+		if f.Unused && (all || f.Reportable) {
+			unused = append(unused, f)
+		}
+	}
+	sort.SliceStable(unused, func(i, j int) bool {
+		if unused[i].Kind != unused[j].Kind {
+			return unused[i].Kind < unused[j].Kind
+		}
+		return unused[i].Age > unused[j].Age
+	})
+
+	tw := tabwriter.NewWriter(os.Stdout, 0, 2, 2, ' ', 0)
+	fmt.Fprintln(tw, "KIND\tNAMESPACE\tNAME\tREASON\tUNUSED_FOR\tCAPACITY\tSTORAGE_CLASS\tEBS_VOLUME\tBOUND_TO")
+	var total int64
+	for _, f := range unused {
+		total += f.CapacityBytes
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+			f.Kind, orDash(f.Namespace), f.Name, f.Reason, f.Age.Round(time.Minute),
+			humanBytes(f.CapacityBytes), orDash(f.StorageClass), orDash(f.VolumeID), orDash(f.BoundTo()))
+	}
+	if len(unused) == 0 {
+		fmt.Fprintln(tw, "(none)\t\t\t\t\t\t\t\t")
+	}
+	if err := tw.Flush(); err != nil {
+		return err
+	}
+	fmt.Printf("\n%d unused %s holding %s, out of %d objects scanned (minUnusedAge %s)\n",
+		len(unused), pluralize(len(unused), "object", "objects"), humanBytes(total),
+		len(findings), pvscan.MinUnusedAge)
+	return nil
+}
+
+// discardRecorder satisfies pvscan.Recorder for the CLI, which reports to stdout
+// rather than to the metrics registry the daemon serves.
+type discardRecorder struct{}
+
+func (discardRecorder) ResetUnusedVolumes()                                      {}
+func (discardRecorder) ObserveUnusedPVC(_, _, _, _, _, _ string, _, _ float64)   {}
+func (discardRecorder) ObserveUnusedPV(_, _, _, _, _, _, _ string, _, _ float64) {}
+func (discardRecorder) ObserveUnusedSummary(_, _ string, _ int, _ int64)         {}
+func (discardRecorder) ObserveError(string)                                      {}
+
+// orDash renders an empty column as a dash, so a blank cell always means "no
+// value" rather than a rendering slip.
+func orDash(s string) string {
+	if s == "" {
+		return "-"
+	}
+	return s
+}
+
+// humanBytes renders a byte count in the binary units Kubernetes capacities are
+// written in, so a column lines up with what kubectl shows.
+func humanBytes(b int64) string {
+	const unit = 1024
+	if b < unit {
+		return fmt.Sprintf("%dB", b)
+	}
+	div, exp := int64(unit), 0
+	for n := b / unit; n >= unit && exp < 4; n /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f%ci", float64(b)/float64(div), "KMGTP"[exp])
 }

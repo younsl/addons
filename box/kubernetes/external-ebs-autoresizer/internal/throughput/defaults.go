@@ -3,20 +3,20 @@ package throughput
 import (
 	"math"
 	"time"
+
+	"github.com/younsl/o/box/kubernetes/external-ebs-autoresizer/internal/annotations"
 )
+
+// AnnotationPrefix is the prefix of every annotation key written on a Node. It
+// is re-exported from the shared annotations package, which owns it because the
+// unused volume scanner writes under the same prefix on other objects.
+const AnnotationPrefix = annotations.Prefix
 
 // Fixed policy. These were configuration once and are constants now: every one of
 // them is either an AWS limit, a value derived from how node exporter works, or a
 // judgement call that does not vary per cluster. Exposing them as settings only
 // created ways to configure the recommender into producing nothing.
 const (
-	// AnnotationPrefix is the prefix of every annotation key written on a Node. A
-	// single DNS label is a valid annotation key prefix, so this needs no domain.
-	// It is a constant because the keys are this addon's published interface:
-	// changing the prefix orphans every annotation already on every Node, which is
-	// not a per-install decision.
-	AnnotationPrefix = "external-ebs-autoresizer"
-
 	// deviceRegex selects which block devices count toward a node's throughput. It
 	// covers every device naming AWS produces (NVMe on Nitro, xvd and sd
 	// elsewhere) and excludes dm-*, loop*, and md*, whose IO is already counted on

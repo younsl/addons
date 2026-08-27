@@ -1,6 +1,6 @@
 # external-ebs-autoresizer
 
-![Version: 0.5.0](https://img.shields.io/badge/Version-0.5.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.5.0](https://img.shields.io/badge/AppVersion-0.5.0-informational?style=flat-square)
+![Version: 0.6.0](https://img.shields.io/badge/Version-0.6.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.6.0](https://img.shields.io/badge/AppVersion-0.6.0-informational?style=flat-square)
 
 Auto-expands the root filesystem (ext2/3/4 or XFS) of standalone EC2 instances via EBS ModifyVolume and SSM
 
@@ -39,7 +39,7 @@ helm install external-ebs-autoresizer oci://ghcr.io/younsl/charts/external-ebs-a
 Install a specific version:
 
 ```console
-helm install external-ebs-autoresizer oci://ghcr.io/younsl/charts/external-ebs-autoresizer --version 0.5.0
+helm install external-ebs-autoresizer oci://ghcr.io/younsl/charts/external-ebs-autoresizer --version 0.6.0
 ```
 
 ### Install from local chart
@@ -47,7 +47,7 @@ helm install external-ebs-autoresizer oci://ghcr.io/younsl/charts/external-ebs-a
 Download external-ebs-autoresizer chart and install from local directory:
 
 ```console
-helm pull oci://ghcr.io/younsl/charts/external-ebs-autoresizer --untar --version 0.5.0
+helm pull oci://ghcr.io/younsl/charts/external-ebs-autoresizer --untar --version 0.6.0
 helm install external-ebs-autoresizer ./external-ebs-autoresizer
 ```
 
@@ -120,7 +120,7 @@ The following table lists the configurable parameters and their default values.
 | config.grafanaAnnotation.existingSecret | string | `""` | Name of an existing Secret holding the Grafana token; takes precedence over apiToken |
 | config.grafanaAnnotation.existingSecretKey | string | `"token"` | Key within existingSecret (or the generated Secret) holding the token |
 | config.throughputRecommendation | object | `{"enabled":false,"interval":"30m","lookbackWindow":"7d","metricNodeNameLabel":"node","prometheusTenantId":"","prometheusUrl":""}` | Node EBS throughput recommendations. A second loop reads node exporter counters from a Prometheus-compatible backend and publishes a recommended gp3 throughput as annotations on each in-cluster Node. It never modifies a volume: an operator reviews the annotation and applies it. Targets in-cluster Nodes, unlike the resize loop above, which excludes them by default. Everything not listed here (the observation quantile, headroom, recommendation step, device matcher, annotation prefix) is fixed policy in the addon rather than a setting. |
-| config.throughputRecommendation.enabled | bool | `false` | Enable node throughput recommendations; requires prometheusUrl when true. Also creates the ClusterRole granting get/list/patch on nodes and create/patch on events, since a Node's Events are stored outside the release namespace. |
+| config.throughputRecommendation.enabled | bool | `false` | Enable node throughput recommendations; requires prometheusUrl when true. Adds get/list/patch on nodes to the ClusterRole. |
 | config.throughputRecommendation.prometheusUrl | string | `""` | Base URL of a Prometheus server or a Mimir query-frontend/gateway; required when enabled. The /prometheus API prefix Mimir usually serves under may be included or omitted, since it is probed at startup. |
 | config.throughputRecommendation.prometheusTenantId | string | `""` | Tenant sent as the X-Scope-OrgID header, which Mimir requires when multi-tenancy is enabled. Leave empty for Prometheus, which ignores it. For a gateway needing token auth, inject PROMETHEUS_BEARER_TOKEN via extraEnv from a Secret. |
 | config.throughputRecommendation.metricNodeNameLabel | string | `"node"` | Metric label carrying the Kubernetes node name. kube-prometheus-stack relabels it to "node"; a plain node exporter scrape leaves only "instance". There is no default that is right for both. |
@@ -130,7 +130,7 @@ The following table lists the configurable parameters and their default values.
 | extraEnvFrom | list | `[]` | Additional envFrom sources for the container (configMapRef/secretRef entries) |
 | ports.health | int | `8080` | Port serving /healthz and /readyz |
 | ports.metrics | int | `8081` | Port serving Prometheus /metrics |
-| rbac.create | bool | `true` | Create the Role and RoleBinding granting create/patch on Events for Kubernetes Event publishing, plus the ClusterRole and ClusterRoleBinding granting get/list/patch on nodes when config.throughputRecommendation.enabled is true |
+| rbac.create | bool | `true` | Create the Role, RoleBinding, ClusterRole, and ClusterRoleBinding the addon needs |
 | serviceAccount.create | bool | `true` | Create a ServiceAccount |
 | serviceAccount.name | string | `""` | ServiceAccount name; defaults to the chart fullname when empty |
 | serviceAccount.annotations | object | `{}` | ServiceAccount annotations, e.g. the IRSA role ARN |

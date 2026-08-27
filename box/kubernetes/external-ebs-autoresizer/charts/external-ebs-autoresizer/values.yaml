@@ -130,7 +130,7 @@ config:
     existingSecretKey: "token"
   # -- (object) Node EBS throughput recommendations. A second loop reads node exporter counters from a Prometheus-compatible backend and publishes a recommended gp3 throughput as annotations on each in-cluster Node. It never modifies a volume: an operator reviews the annotation and applies it. Targets in-cluster Nodes, unlike the resize loop above, which excludes them by default. Everything not listed here (the observation quantile, headroom, recommendation step, device matcher, annotation prefix) is fixed policy in the addon rather than a setting.
   throughputRecommendation:
-    # -- (bool) Enable node throughput recommendations; requires prometheusUrl when true. Also creates the ClusterRole granting get/list/patch on nodes and create/patch on events, since a Node's Events are stored outside the release namespace.
+    # -- (bool) Enable node throughput recommendations; requires prometheusUrl when true. Adds get/list/patch on nodes to the ClusterRole.
     enabled: false
     # -- (string) Base URL of a Prometheus server or a Mimir query-frontend/gateway; required when enabled. The /prometheus API prefix Mimir usually serves under may be included or omitted, since it is probed at startup.
     prometheusUrl: ""
@@ -142,7 +142,6 @@ config:
     lookbackWindow: "7d"
     # -- (string) How often recommendations are recomputed, as a Go duration. Separate from reconcileInterval and higher on purpose: the observation window spans days, so a much shorter interval only re-runs the most expensive query the addon issues.
     interval: "30m"
-
 # -- (list) Additional environment variables for the container (raw EnvVar entries)
 extraEnv: []
   # - name: HTTP_PROXY
@@ -165,7 +164,7 @@ ports:
   metrics: 8081
 
 rbac:
-  # -- (bool) Create the Role and RoleBinding granting create/patch on Events for Kubernetes Event publishing, plus the ClusterRole and ClusterRoleBinding granting get/list/patch on nodes when config.throughputRecommendation.enabled is true
+  # -- (bool) Create the Role, RoleBinding, ClusterRole, and ClusterRoleBinding the addon needs
   create: true
 
 serviceAccount:
