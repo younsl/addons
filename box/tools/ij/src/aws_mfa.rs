@@ -46,7 +46,7 @@ pub async fn build_sdk_config(
     if let Some(p) = profile
         && let Some(info) = detect_mfa_profile(p, aws_config_file).await
     {
-        return build_with_mfa(info, aws_config_file).await;
+        return build_with_mfa(p, info, aws_config_file).await;
     }
 
     Ok(default_loader(profile, aws_config_file).load().await)
@@ -68,7 +68,7 @@ pub async fn resolve_credentials(
     let Some(info) = detect_mfa_profile(p, aws_config_file).await else {
         return Ok(None);
     };
-    let creds = resolve_mfa_credentials(&info, aws_config_file).await?;
+    let creds = resolve_mfa_credentials(p, &info, aws_config_file).await?;
     Ok(Some(creds))
 }
 
@@ -96,7 +96,6 @@ fn default_loader(
 
 #[derive(Debug, Clone)]
 struct MfaProfile {
-    profile_name: String,
     role_arn: String,
     mfa_serial: String,
     source_profile: String,
@@ -140,7 +139,6 @@ async fn detect_mfa_profile(profile: &str, aws_config_file: Option<&str>) -> Opt
     let role_arn = p.get("role_arn")?.to_string();
 
     Some(MfaProfile {
-        profile_name: profile.to_string(),
         role_arn,
         mfa_serial,
         source_profile: p.get("source_profile").unwrap_or("default").to_string(),
@@ -151,8 +149,12 @@ async fn detect_mfa_profile(profile: &str, aws_config_file: Option<&str>) -> Opt
     })
 }
 
-async fn build_with_mfa(info: MfaProfile, aws_config_file: Option<&str>) -> Result<SdkConfig> {
-    let creds = resolve_mfa_credentials(&info, aws_config_file).await?;
+async fn build_with_mfa(
+    profile: &str,
+    info: MfaProfile,
+    aws_config_file: Option<&str>,
+) -> Result<SdkConfig> {
+    let creds = resolve_mfa_credentials(profile, &info, aws_config_file).await?;
     let region = info
         .region
         .clone()
@@ -166,18 +168,16 @@ async fn build_with_mfa(info: MfaProfile, aws_config_file: Option<&str>) -> Resu
 }
 
 async fn resolve_mfa_credentials(
+    profile: &str,
     info: &MfaProfile,
     aws_config_file: Option<&str>,
 ) -> Result<Credentials> {
     {
         let guard = cache().lock().await;
-        if let Some(creds) = guard.get(&info.profile_name)
+        if let Some(creds) = guard.get(profile)
             && !is_expired(creds)
         {
-            debug!(
-                "Reusing cached MFA credentials for profile {}",
-                info.profile_name
-            );
+            debug!("Reusing cached MFA credentials for profile {profile}");
             return Ok(creds.clone());
         }
     }
@@ -191,7 +191,7 @@ async fn resolve_mfa_credentials(
         .load()
         .await;
 
-    let token_code = prompt_mfa_token(&info.mfa_serial, &info.profile_name)?;
+    let token_code = prompt_mfa_token(profile)?;
 
     let sts = aws_sdk_sts::Client::new(&source_config);
     let session_name = info
@@ -235,7 +235,7 @@ async fn resolve_mfa_credentials(
     cache()
         .lock()
         .await
-        .insert(info.profile_name.clone(), creds.clone());
+        .insert(profile.to_string(), creds.clone());
 
     Ok(creds)
 }
@@ -246,17 +246,17 @@ fn is_expired(creds: &Credentials) -> bool {
         .is_some_and(|t| t <= SystemTime::now() + Duration::from_secs(60))
 }
 
-fn prompt_mfa_token(serial: &str, profile: &str) -> Result<String> {
+fn prompt_mfa_token(profile: &str) -> Result<String> {
     use std::io::IsTerminal;
 
     if !std::io::stdin().is_terminal() {
         return Err(Error::Aws(format!(
-            "MFA required for profile '{profile}' (serial: {serial}), but stdin is not a TTY. Run from an interactive terminal."
+            "MFA required for profile '{profile}', but stdin is not a TTY. Run from an interactive terminal."
         )));
     }
 
     eprintln!();
-    eprintln!("MFA required for AWS profile '{profile}' (serial: {serial})");
+    eprintln!("MFA required for AWS profile '{profile}'");
     let token = dialoguer::Input::<String>::new()
         .with_prompt("MFA token code")
         .interact_text()
