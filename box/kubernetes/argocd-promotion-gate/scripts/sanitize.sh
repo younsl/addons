@@ -6,15 +6,15 @@
 # Generic registry fixtures (example/, stefanprodan/) are intentionally kept.
 #
 # Usage:
-#   ./hack/sanitize.sh              # dry-run: show what would change
-#   ./hack/sanitize.sh --apply      # rewrite files in place
+#   ./scripts/sanitize.sh              # dry-run: show what would change
+#   ./scripts/sanitize.sh --apply      # rewrite files in place
 #
 # Override replacement targets via environment variables:
 #   NEW_SOURCE_PATH=git.example.com/platform/argocd-promotion-gate \
 #   NEW_REGISTRY=registry.example.com/platform \
 #   NEW_SOURCE_URL=https://git.example.com/platform/argocd-promotion-gate \
 #   NEW_DOMAIN=promotion-gate.example.com \
-#   ./hack/sanitize.sh --apply
+#   ./scripts/sanitize.sh --apply
 set -euo pipefail
 
 cd "$(dirname "$0")/.."

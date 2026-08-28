@@ -108,7 +108,7 @@ Tests worth keeping in mind when changing behaviour, because each pins a decisio
 
 ## End to end
 
-`hack/e2e` drives a local kind cluster. Nothing in it touches the real kubeconfig: each mode writes its own `.kubeconfig-*` file, and every script refuses to run against a context that is not on localhost.
+`scripts/e2e` drives a local kind cluster. Nothing in it touches the real kubeconfig: each mode writes its own `.kubeconfig-*` file, and every script refuses to run against a context that is not on localhost.
 
 | Script | What it does |
 | --- | --- |
@@ -120,8 +120,8 @@ Tests worth keeping in mind when changing behaviour, because each pins a decisio
 | `down.sh` | removes both clusters and their kubeconfigs |
 
 ```bash
-hack/e2e/up.sh && hack/e2e/test.sh && hack/e2e/tag-test.sh
-hack/e2e/down.sh
+scripts/e2e/up.sh && scripts/e2e/test.sh && scripts/e2e/tag-test.sh
+scripts/e2e/down.sh
 ```
 
 `up.sh` and `up-argocd.sh` cross-compile a static musl binary with cargo-zigbuild for the node architecture and build the scratch image from it, the same way the release workflow does. That needs `cargo install cargo-zigbuild` and the `aarch64-unknown-linux-musl` or `x86_64-unknown-linux-musl` target installed. The staged `argocd-promotion-gate-linux-*` binary lands in the project root and is gitignored.

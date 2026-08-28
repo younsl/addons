@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Stand up a local Argo CD with the gate wired in, for pressing Sync by hand.
 #
-# This is the slow path. hack/e2e/up.sh installs only the Application CRD and
+# This is the slow path. scripts/e2e/up.sh installs only the Application CRD and
 # is what the scripted assertions use, because a real controller keeps rewriting
 # the statuses those tests set. Use this one when the point is to log into the
 # UI, see the Promotion Gate panel, and watch a denial arrive as a toast.

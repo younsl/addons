@@ -34,5 +34,5 @@ log "ready"
 "${KUBECTL[@]}" -n "${NAMESPACE}" get pods,svc
 "${KUBECTL[@]}" get validatingwebhookconfiguration argocd-promotion-gate \
   -o jsonpath='{range .webhooks[0].matchConditions[*]}{.name}{": "}{.expression}{"\n"}{end}'
-printf '\nnext: hack/e2e/test.sh\n'
+printf '\nnext: scripts/e2e/test.sh\n'
 print_kubeconfig_hint

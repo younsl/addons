@@ -31,5 +31,5 @@ promotionGate:
     health: true
   imageTag:
     # Off for the webhook tier. Tag comparison needs an Argo CD API to ask, and
-    # that is covered separately by hack/e2e/tag-test.sh against a stub.
+    # that is covered separately by scripts/e2e/tag-test.sh against a stub.
     enabled: false
