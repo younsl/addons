@@ -2,9 +2,11 @@
 
 Status: implemented in app 1.7.0 / chart 0.12.0
 
-The chart provisions a 1Gi RWO PVC and mounts it at `/data` in both the `scraper` and the `server` pod. Neither pod treats it as storage. The scraper opens `/data/trivy.db` as a writer, the server opens the same file as a reader, and the PVC exists only so that two processes can point at one SQLite file. It is an IPC channel wearing a PersistentVolumeClaim.
+![Volume-free storage, from the Kubernetes side](volume-free-storage.svg)
 
-Everything painful about the current deployment follows from that. The server cannot run more than one replica, because a second replica would need the same RWO volume on the same node. Both pods are pinned to whichever node and availability zone the EBS volume was created in. The scraper is fixed at `replicas: 1` with `strategy: Recreate`, so every scraper rollout is a full outage of the write path, and the comment in `deployment-scraper.yaml` explaining the single writer is really explaining the volume. Node loss means waiting on a CSI detach and reattach before either pod is schedulable again.
+The chart provisioned a 1Gi RWO PVC and mounted it at `/data` in both the `scraper` and the `server` pod. Neither pod treated it as storage. The scraper opened `/data/trivy.db` as a writer, the server opened the same file as a reader, and the PVC existed only so that two processes could point at one SQLite file. It was an IPC channel wearing a PersistentVolumeClaim.
+
+Everything painful about that deployment followed from it. The server could not run more than one replica, because a second replica would need the same RWO volume on the same node. Both pods were pinned to whichever node and availability zone the EBS volume was created in. The scraper was fixed at `replicas: 1` with `strategy: Recreate`, so every scraper rollout was a full outage of the write path, and the comment in `deployment-scraper.yaml` explaining the single writer was really explaining the volume. Node loss meant waiting on a CSI detach and reattach before either pod was schedulable again.
 
 This design removes the PersistentVolume entirely. No pod in the chart mounts a volume that survives its own lifetime. The state that genuinely cannot be regenerated moves into Kubernetes objects, and the state that can be regenerated moves into an `emptyDir` owned by exactly one process.
 
