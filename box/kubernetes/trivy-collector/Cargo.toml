@@ -17,7 +17,11 @@ kube = { version = "4.2", features = ["runtime", "derive", "client"] }
 k8s-openapi = { version = "0.28", features = ["v1_32"] }
 
 # HTTP client (collector mode)
-reqwest = { version = "0.13", features = ["json", "query", "form", "rustls"], default-features = false }
+# `rustls-no-provider` instead of `rustls`: the latter enables the aws-lc-rs
+# CryptoProvider while kube enables ring. With both compiled in, rustls cannot
+# pick a default provider and panics at the first TLS handshake. Ring comes
+# from kube's `ring` feature and serves both clients.
+reqwest = { version = "0.13", features = ["json", "query", "form", "rustls-no-provider"], default-features = false }
 
 # Web framework (server mode)
 axum = { version = "0.8.9", features = ["tokio"] }
