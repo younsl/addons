@@ -78,11 +78,11 @@ runs and these series stay at zero.
 
 | Metric | Type | Description |
 |--------|------|-------------|
-| `kagent_gateway_build_info{version, commit, go_version}` | Gauge | Always 1. Gateway version, git commit, and Go runtime version. |
+| `kagent_gateway_build_info{version, commit, rustc_version}` | Gauge | Always 1. Gateway version, git commit, and the rustc version that built it. |
 
-The Go runtime and process collectors are registered as well, so
-`go_goroutines`, `go_memstats_*`, and `process_*` are available on the same
-endpoint.
+No runtime or process collector is registered: the binary exposes only the
+series above, and container resource usage is read from the kubelet
+`container_*` series instead.
 
 ## Example queries
 

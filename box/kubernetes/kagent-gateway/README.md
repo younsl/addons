@@ -2,14 +2,14 @@
 
 [![GitHub Container Registry](https://img.shields.io/badge/ghcr.io-kagent--gateway-black?style=flat-square&logo=docker&logoColor=white)](https://github.com/younsl/o/pkgs/container/kagent-gateway)
 [![Helm Chart](https://img.shields.io/badge/ghcr.io-charts%2Fkagent--gateway-black?style=flat-square&logo=helm&logoColor=white)](https://github.com/younsl/o/pkgs/container/charts%2Fkagent-gateway)
-[![Go](https://img.shields.io/badge/go-1.27.0-black?style=flat-square&logo=go&logoColor=white)](https://go.dev/)
+[![Rust](https://img.shields.io/badge/rust-1.98.0-black?style=flat-square&logo=rust&logoColor=white)](https://www.rust-lang.org/)
 [![GitHub license](https://img.shields.io/github/license/younsl/o?style=flat-square&color=black)](https://github.com/younsl/o/blob/main/LICENSE)
 
 Receives Alertmanager webhooks, posts each alert to Slack, asks a
 [kagent](https://kagent.dev) agent to investigate it over A2A, and replies with
 the analysis in the alert's own thread. Mentioning the bot inside a thread runs
 the agent again and answers there, so a follow-up question never leaves Slack.
-Built with Go 1.27 and shipped as a statically linked binary on a scratch image.
+Built with Rust 1.98 and shipped as a statically linked musl binary on a scratch image, cross-compiled with cargo-zigbuild.
 
 ## How it works
 

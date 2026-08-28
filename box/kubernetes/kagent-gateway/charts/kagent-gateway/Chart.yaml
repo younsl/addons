@@ -2,8 +2,8 @@ apiVersion: v2
 name: kagent-gateway
 description: Posts Alertmanager alerts to Slack and replies in-thread with an analysis from a kagent agent over A2A
 type: application
-version: 0.1.0
-appVersion: "0.1.0"
+version: 0.2.0
+appVersion: "0.2.0"
 keywords:
   - alertmanager
   - slack

@@ -8,7 +8,6 @@ on:
       - 'box/kubernetes/external-ebs-autoresizer/Dockerfile'
       - 'box/kubernetes/ec2-metadata-exporter/Dockerfile'
       - 'box/kubernetes/aws-vpn-maintenance-handler/Dockerfile'
-      - 'box/kubernetes/kagent-gateway/Dockerfile'
       - 'box/kubernetes/filesystem-cleaner/Dockerfile'
       - 'box/kubernetes/argocd-promotion-gate/Dockerfile'
   workflow_dispatch:
@@ -21,7 +20,6 @@ on:
           - external-ebs-autoresizer
           - ec2-metadata-exporter
           - aws-vpn-maintenance-handler
-          - kagent-gateway
           - filesystem-cleaner
           - argocd-promotion-gate
       force:
@@ -82,7 +80,6 @@ jobs:
             "external-ebs-autoresizer:external-ebs-autoresizer"
             "ec2-metadata-exporter:ec2-metadata-exporter"
             "aws-vpn-maintenance-handler:aws-vpn-maintenance-handler"
-            "kagent-gateway:kagent-gateway"
             "filesystem-cleaner:filesystem-cleaner"
             "argocd-promotion-gate:argocd-promotion-gate"
           )
