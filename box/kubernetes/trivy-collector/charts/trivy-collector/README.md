@@ -1,6 +1,6 @@
 # trivy-collector
 
-![Version: 0.12.0](https://img.shields.io/badge/Version-0.12.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 1.8.0](https://img.shields.io/badge/AppVersion-1.8.0-informational?style=flat-square)
+![Version: 0.12.0](https://img.shields.io/badge/Version-0.12.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 1.7.0](https://img.shields.io/badge/AppVersion-1.7.0-informational?style=flat-square)
 
 Multi-cluster Trivy report collector and viewer
 
@@ -200,13 +200,16 @@ The following table lists the configurable parameters and their default values.
 | readinessProbe.failureThreshold | int | `3` | Number of failures before marking not ready |
 | dnsPolicy | string | "" | DNS policy for the pod (ClusterFirst, ClusterFirstWithHostNet, Default, None) |
 | dnsConfig | object | {} | DNS configuration for the pod |
-| migration | object | `{"exportState":{"backoffLimit":2,"dbPath":"/data/trivy.db","dryRun":false,"enabled":false,"existingClaim":"","resources":{"limits":{"memory":"128Mi"},"requests":{"cpu":"50m","memory":"64Mi"}},"ttlSecondsAfterFinished":3600}}` | One-shot migration off the PersistentVolume. Reports need no export — the next scraper start relists them — but API tokens and report notes are unrecoverable, so they are read out of the legacy database and written to a Secret and a ConfigMap before the volume goes away.  Run with exportState.enabled and the old PVC name, verify both objects, then disable it and delete the PVC. Until then the PVC is the rollback. |
+| migration | object | `{"exportState":{"affinity":{},"backoffLimit":2,"dbPath":"/data/trivy.db","dryRun":false,"enabled":false,"existingClaim":"","nodeSelector":{},"resources":{"limits":{"memory":"128Mi"},"requests":{"cpu":"50m","memory":"64Mi"}},"tolerations":[],"ttlSecondsAfterFinished":3600}}` | One-shot migration off the PersistentVolume. Reports need no export — the next scraper start relists them — but API tokens and report notes are unrecoverable, so they are read out of the legacy database and written to a Secret and a ConfigMap before the volume goes away.  Run with exportState.enabled and the old PVC name, verify both objects, then disable it and delete the PVC. Until then the PVC is the rollback. |
 | migration.exportState.enabled | bool | `false` | Run the export as a pre-install/pre-upgrade hook Job. |
 | migration.exportState.existingClaim | string | `""` | Name of the existing PVC holding the legacy database. |
 | migration.exportState.dbPath | string | `"/data/trivy.db"` | Path to the legacy database inside that volume. |
 | migration.exportState.dryRun | bool | `false` | Report what would be written without writing it. |
 | migration.exportState.backoffLimit | int | `2` | Job backoff limit. |
 | migration.exportState.ttlSecondsAfterFinished | int | `3600` | Seconds to keep the finished Job. |
+| migration.exportState.nodeSelector | object | `{}` | Node selector. Defaults to the scraper's, because the legacy PVC is ReadWriteOnce and this Job can only mount it where the scraper already has it attached. |
+| migration.exportState.tolerations | list | `[]` | Tolerations. Defaults to the scraper's. Without them a Job on a tainted node stays Pending, and a pending pre-sync hook blocks the upgrade it was meant to precede. |
+| migration.exportState.affinity | object | `{}` | Affinity rules. Defaults to the scraper's. |
 | migration.exportState.resources | object | `{"limits":{"memory":"128Mi"},"requests":{"cpu":"50m","memory":"64Mi"}}` | Resource requests and limits. |
 | extraObjects | list | [] | Extra Kubernetes objects to deploy alongside the chart |
 

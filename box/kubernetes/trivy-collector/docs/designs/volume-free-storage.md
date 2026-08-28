@@ -1,6 +1,6 @@
 # Volume-free storage
 
-Status: implemented in app 1.7.0 / chart 0.11.0
+Status: implemented in app 1.7.0 / chart 0.12.0
 
 The chart provisions a 1Gi RWO PVC and mounts it at `/data` in both the `scraper` and the `server` pod. Neither pod treats it as storage. The scraper opens `/data/trivy.db` as a writer, the server opens the same file as a reader, and the PVC exists only so that two processes can point at one SQLite file. It is an IPC channel wearing a PersistentVolumeClaim.
 

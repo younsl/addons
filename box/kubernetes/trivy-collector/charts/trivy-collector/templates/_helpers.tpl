@@ -1,13 +1,7 @@
-{{/*
-Expand the name of the chart.
-*/}}
 {{- define "trivy-collector.name" -}}
 {{- default .Chart.Name .Values.nameOverride | trunc 63 | trimSuffix "-" }}
 {{- end }}
 
-{{/*
-Create a default fully qualified app name.
-*/}}
 {{- define "trivy-collector.fullname" -}}
 {{- if .Values.fullnameOverride }}
 {{- .Values.fullnameOverride | trunc 63 | trimSuffix "-" }}
@@ -21,16 +15,10 @@ Create a default fully qualified app name.
 {{- end }}
 {{- end }}
 
-{{/*
-Create chart name and version as used by the chart label.
-*/}}
 {{- define "trivy-collector.chart" -}}
 {{- printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" | trunc 63 | trimSuffix "-" }}
 {{- end }}
 
-{{/*
-Common labels
-*/}}
 {{- define "trivy-collector.labels" -}}
 helm.sh/chart: {{ include "trivy-collector.chart" . }}
 {{ include "trivy-collector.selectorLabels" . }}
@@ -40,19 +28,11 @@ app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
 app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{- end }}
 
-{{/*
-Selector labels (chart-wide — DO NOT use on per-role Deployments / Pods;
-selectors must differ for server and scraper to avoid one replica set
-managing the other's pods).
-*/}}
 {{- define "trivy-collector.selectorLabels" -}}
 app.kubernetes.io/name: {{ include "trivy-collector.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
 
-{{/*
-Role-specific names: one pod per responsibility.
-*/}}
 {{- define "trivy-collector.serverName" -}}
 {{- printf "%s-server" (include "trivy-collector.fullname" .) -}}
 {{- end }}
@@ -71,10 +51,6 @@ app.kubernetes.io/component: server
 app.kubernetes.io/component: scraper
 {{- end }}
 
-
-{{/*
-Name of the Secret holding the shared internal-API token.
-*/}}
 {{- define "trivy-collector.internalSecretName" -}}
 {{- if .Values.internal.existingSecret -}}
 {{- .Values.internal.existingSecret -}}
@@ -83,11 +59,6 @@ Name of the Secret holding the shared internal-API token.
 {{- end -}}
 {{- end }}
 
-{{/*
-Names of the Kubernetes objects holding authored state. Reports live on the
-scraper's emptyDir and are regenerated on every restart; these two hold what a
-human typed and cannot be.
-*/}}
 {{- define "trivy-collector.notesConfigMapName" -}}
 {{- printf "%s-notes" (include "trivy-collector.fullname" .) -}}
 {{- end }}
@@ -96,21 +67,10 @@ human typed and cannot be.
 {{- printf "%s-api-tokens" (include "trivy-collector.fullname" .) -}}
 {{- end }}
 
-{{/*
-Base URL the server uses to reach the scraper's internal API.
-*/}}
 {{- define "trivy-collector.scraperUrl" -}}
 {{- printf "http://%s.%s.svc:%v" (include "trivy-collector.scraperName" .) .Release.Namespace .Values.internal.port -}}
 {{- end }}
 
-{{/*
-External base URL used to render "View report" deep links in outbound
-notifications. Both pods need it: the server renders links, and the scraper
-now owns alert dispatch. Resolution order:
-  1. server.externalUrl (explicit override, full URL)
-  2. gateway.hostnames[0] when gateway.enabled
-Empty when neither yields a value.
-*/}}
 {{- define "trivy-collector.externalUrl" -}}
 {{- if .Values.server.externalUrl -}}
 {{- .Values.server.externalUrl -}}
@@ -119,9 +79,6 @@ Empty when neither yields a value.
 {{- end -}}
 {{- end }}
 
-{{/*
-Environment shared by both pods: log settings and the internal-API token.
-*/}}
 {{- define "trivy-collector.commonEnv" -}}
 - name: LOG_FORMAT
   value: {{ .Values.logging.format | quote }}
@@ -136,9 +93,6 @@ Environment shared by both pods: log settings and the internal-API token.
       key: {{ .Values.internal.secretKey }}
 {{- end }}
 
-{{/*
-Create the name of the service account to use
-*/}}
 {{- define "trivy-collector.serviceAccountName" -}}
 {{- if .Values.serviceAccount.create }}
 {{- default (include "trivy-collector.fullname" .) .Values.serviceAccount.name }}

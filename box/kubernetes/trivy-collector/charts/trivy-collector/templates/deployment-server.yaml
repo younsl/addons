@@ -1,12 +1,3 @@
-{{- /*
-    The server holds no database and mounts no volume. Reports come from the
-    scraper's internal API, notes and API tokens from a watched ConfigMap and
-    Secret, and request logs go to stdout.
-
-    That is what makes this tier disposable, and disposable is the point: image
-    bumps, config changes, and replica changes here are frequent, while scraper
-    restarts are rare and self-healing.
-*/}}
 apiVersion: apps/v1
 kind: Deployment
 metadata:

@@ -413,6 +413,16 @@ migration:
     backoffLimit: 2
     # -- (int) Seconds to keep the finished Job.
     ttlSecondsAfterFinished: 3600
+    # -- (object) Node selector. Defaults to the scraper's, because the legacy
+    # PVC is ReadWriteOnce and this Job can only mount it where the scraper
+    # already has it attached.
+    nodeSelector: {}
+    # -- (list) Tolerations. Defaults to the scraper's. Without them a Job on a
+    # tainted node stays Pending, and a pending pre-sync hook blocks the
+    # upgrade it was meant to precede.
+    tolerations: []
+    # -- (object) Affinity rules. Defaults to the scraper's.
+    affinity: {}
     # -- (object) Resource requests and limits.
     resources:
       limits:

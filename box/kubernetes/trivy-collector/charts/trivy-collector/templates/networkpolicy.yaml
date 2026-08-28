@@ -1,9 +1,4 @@
 {{- if .Values.internal.networkPolicy.enabled }}
-{{- /*
-    Second fence around the internal API, alongside the shared token: only the
-    server pods may reach the scraper's internal port. The port is also absent
-    from the HTTPRoute and both ServiceMonitors.
-*/}}
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -18,7 +13,6 @@ spec:
   policyTypes:
     - Ingress
   ingress:
-    # The internal read API: server pods only.
     - from:
         - podSelector:
             matchLabels:
@@ -29,7 +23,6 @@ spec:
       ports:
         - protocol: TCP
           port: {{ .Values.internal.port }}
-    # Metrics and probes stay open to the monitoring stack and the kubelet.
     - ports:
         - protocol: TCP
           port: {{ .Values.health.port }}

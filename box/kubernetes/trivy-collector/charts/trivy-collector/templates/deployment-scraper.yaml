@@ -1,13 +1,3 @@
-{{- /*
-    The scraper owns the only database in the release, on an emptyDir that
-    starts empty on every restart. Nothing is lost: each watcher's initial list
-    rebuilds `reports` from the clusters that own the CRs, and the authored
-    state that cannot be rebuilt lives in a ConfigMap and a Secret instead.
-
-    Losing the PersistentVolume is what unpins this pod from one node and one
-    availability zone, and what lets a rollout be a rollout rather than an
-    outage of the write path.
-*/}}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -21,17 +11,8 @@ metadata:
     {{- end }}
     app.kubernetes.io/managed-by: {{ .Release.Service }}
 spec:
-  # One replica by choice, not by constraint: a second scraper would double the
-  # watch load on every registered cluster for no benefit. The old comment here
-  # was really about the shared volume, which no longer exists.
   replicas: 1
   strategy:
-    {{- /*
-        A rolling update is now safe. Each pod has its own emptyDir, and the
-        new pod reports unready until every registered cluster has replayed its
-        initial list, so the old pod keeps serving reads for the whole rebuild.
-        Surging costs one extra relist; `Recreate` would cost an outage.
-    */}}
     {{- toYaml .Values.scraper.strategy | nindent 4 }}
   revisionHistoryLimit: {{ .Values.revisionHistoryLimit }}
   selector:
@@ -88,11 +69,6 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.namespace
-            {{- /*
-                Alert evaluation lives here, on the write path, where the
-                previous revision of a report is in hand and a finding can be
-                told apart from one already reported.
-            */ -}}
             {{- $externalUrl := include "trivy-collector.externalUrl" . }}
             {{- if $externalUrl }}
             - name: EXTERNAL_URL
@@ -108,23 +84,8 @@ spec:
           livenessProbe:
             {{- toYaml .Values.livenessProbe | nindent 12 }}
           readinessProbe:
-            {{- /*
-                Readiness follows fleet hydration, so the server is never
-                routed to a scraper whose report set is still being rebuilt.
-                The initial sync of a large fleet takes minutes, hence the
-                generous failureThreshold.
-            */}}
             {{- toYaml .Values.scraper.readinessProbe | nindent 12 }}
           resources:
-            {{- /*
-                An emptyDir draws from the node's ephemeral storage, so it has
-                to be declared: the kubelet can then schedule honestly and evict
-                this pod rather than a neighbour if the estimate is wrong. The
-                scraper also serves queries now, including the JSON scans behind
-                component and vulnerability search, so its memory limit covers
-                SQLite page cache and result construction — headroom the server
-                no longer needs.
-            */}}
             {{- toYaml .Values.scraper.resources | nindent 12 }}
           {{- with .Values.scraper.resizePolicy }}
           resizePolicy:

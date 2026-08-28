@@ -1,9 +1,4 @@
 {{- if and .Values.server.podDisruptionBudget.enabled (gt (int .Values.server.replicaCount) 1) }}
-{{- /*
-    Only meaningful now that the server holds no volume: with the database
-    behind the scraper, the UI tier is a plain stateless Deployment that can
-    keep serving through a node drain.
-*/}}
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:

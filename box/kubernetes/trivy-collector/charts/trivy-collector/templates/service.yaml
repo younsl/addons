@@ -1,5 +1,4 @@
 ---
-# Service targeting the server pod only (UI / API).
 apiVersion: v1
 kind: Service
 metadata:
@@ -25,14 +24,6 @@ spec:
   selector:
     {{- include "trivy-collector.serverSelectorLabels" . | nindent 4 }}
 ---
-# Service for the scraper pod. Carries metrics for Prometheus and the internal
-# read API the server pods proxy through.
-#
-# The internal port is deliberately absent from the HTTPRoute and
-# both ServiceMonitors: it answers with every report in the fleet and no
-# per-user filtering, because RBAC is applied above it in the server. It is
-# fenced by the shared token and, when enabled, by a NetworkPolicy admitting
-# only the server pods.
 apiVersion: v1
 kind: Service
 metadata:

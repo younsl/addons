@@ -6,7 +6,7 @@ FROM scratch AS runtime
 
 LABEL org.opencontainers.image.title="trivy-collector" \
       org.opencontainers.image.description="Multi-cluster Trivy report collector and viewer" \
-      org.opencontainers.image.version="1.8.0" \
+      org.opencontainers.image.version="1.7.0" \
       org.opencontainers.image.licenses="Apache-2.0" \
       org.opencontainers.image.base.name="scratch" \
       org.opencontainers.image.deprecated="false"
