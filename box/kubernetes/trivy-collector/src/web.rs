@@ -39,7 +39,6 @@ pub use types::{
 };
 
 use utoipa::OpenApi;
-use utoipa_swagger_ui::SwaggerUi;
 
 use crate::collector::types::{ReportEvent, ReportEventType, ReportPayload};
 use crate::storage::{
@@ -185,6 +184,16 @@ const GAUGE_REFRESH_SECS: u64 = 60;
 /// intervals fire immediately on the first tick, so this is also how quickly a
 /// freshly started pod can report ready.
 const READINESS_PROBE_SECS: u64 = 5;
+
+/// Where the API reference UI is mounted.
+const API_DOCS_PATH: &str = "/api-docs";
+
+/// Where the generated OpenAPI document is served.
+const OPENAPI_SPEC_PATH: &str = "/api-docs/openapi.json";
+
+/// The Scalar standalone bundle, emitted into `static/` by the frontend build
+/// under a fixed name so this page can reference it.
+const SCALAR_BUNDLE_PATH: &str = "/assets/scalar-standalone.js";
 
 #[derive(Embed)]
 #[folder = "static/"]
@@ -503,17 +512,8 @@ pub(crate) fn build_router(
         .route("/auth/error", get(auth::handlers::auth_error));
 
     let protected_routes = Router::new()
-        .merge(
-            SwaggerUi::new("/swagger-ui")
-                .url("/api-docs/openapi.json", ApiDoc::openapi())
-                .config(
-                    utoipa_swagger_ui::Config::from("/api-docs/openapi.json")
-                        .display_request_duration(true)
-                        .filter(true)
-                        .try_it_out_enabled(true)
-                        .deep_linking(true),
-                ),
-        )
+        .route(API_DOCS_PATH, get(serve_api_docs))
+        .route(OPENAPI_SPEC_PATH, get(serve_openapi_spec))
         .route(
             "/api/v1/vulnerabilityreports",
             get(list_vulnerability_reports),
@@ -636,6 +636,102 @@ pub(crate) fn build_router(
             logging_middleware::api_request_logger,
         ))
         .with_state(state)
+}
+
+/// Serve the generated OpenAPI document.
+///
+/// `utoipa_swagger_ui` used to publish this alongside its UI. Serving it here
+/// keeps the path stable now that the UI is Scalar.
+async fn serve_openapi_spec() -> impl IntoResponse {
+    axum::Json(ApiDoc::openapi())
+}
+
+/// Content-Security-Policy for the API reference page.
+///
+/// `connect-src 'self'` is the load-bearing directive. Scalar's configuration
+/// has several knobs that point at its hosted platform, and setting them is not
+/// the same as being unable to reach it: a later version can add an endpoint
+/// this configuration says nothing about. The header removes the capability
+/// instead of asking for it not to be used.
+///
+/// `unsafe-inline` is needed for the bootstrap script below and for the
+/// `<style>` element the bundle injects at load. Neither is user input.
+const API_DOCS_CSP: &str = "default-src 'self'; \
+     script-src 'self' 'unsafe-inline'; \
+     style-src 'self' 'unsafe-inline'; \
+     img-src 'self' data:; \
+     font-src 'self' data:; \
+     connect-src 'self'; \
+     form-action 'self'; \
+     frame-ancestors 'none'; \
+     base-uri 'none'";
+
+/// Serve the API reference.
+///
+/// Scalar's documented integration loads its bundle from jsdelivr, which is not
+/// an option here: the image is `scratch`, the cluster may have no egress, and
+/// an unpinned CDN reference would let the docs UI change outside a release.
+/// The bundle ships as an embedded asset instead.
+async fn serve_api_docs() -> impl IntoResponse {
+    // Measured, not assumed: with only `telemetry: false` set, loading this page
+    // still fetched https://api.scalar.com/vector/registry/{curated,search}.
+    // Those come from `externalUrls.apiBaseUrl`, which defaults to Scalar's
+    // hosted API, and telemetry does not gate them.
+    //
+    // - telemetry defaults to true upstream. This is an internal security tool;
+    //   it does not report usage to a third party.
+    // - externalUrls is pinned to this origin so the registry and dashboard
+    //   lookups have nowhere off-cluster to go.
+    // - proxyUrl is deliberately unset. Scalar's "Test Request" would otherwise
+    //   be able to relay requests through Scalar's proxy, and those requests
+    //   carry the operator's Bearer token.
+    // - showDeveloperTools would surface Share and Deploy actions into their
+    //   hosted platform. It defaults to showing on localhost, which is exactly
+    //   where a developer would mistake them for local features.
+    // - withDefaultFonts pulls woff2 files from fonts.scalar.com, which fails
+    //   closed on an air-gapped cluster and leaks a request on any other.
+    let configuration = serde_json::json!({
+        "url": OPENAPI_SPEC_PATH,
+        "telemetry": false,
+        "withDefaultFonts": false,
+        "showDeveloperTools": "never",
+        "externalUrls": {
+            "apiBaseUrl": API_DOCS_PATH,
+            "registryUrl": API_DOCS_PATH,
+            "dashboardUrl": API_DOCS_PATH,
+            "proxyUrl": "",
+        },
+        "darkMode": true,
+        "hideClientButton": true,
+        "metaData": { "title": "Trivy Collector API" },
+    });
+
+    let html = format!(
+        r#"<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Trivy Collector API</title>
+<style>body {{ margin: 0; background: #0d0d0d; }}</style>
+</head>
+<body>
+<div id="app"></div>
+<script src="{bundle}"></script>
+<script>
+  window.Scalar.createApiReference('#app', {configuration});
+</script>
+</body>
+</html>
+"#,
+        bundle = SCALAR_BUNDLE_PATH,
+        configuration = configuration,
+    );
+
+    (
+        [(header::CONTENT_SECURITY_POLICY, API_DOCS_CSP)],
+        Html(html),
+    )
 }
 
 async fn serve_index() -> impl IntoResponse {
@@ -824,9 +920,70 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn swagger_ui_is_mounted() {
-        let status = get("/swagger-ui/").await.status();
-        assert!(status.is_success() || status.is_redirection());
+    async fn the_api_reference_is_mounted_and_self_contained() {
+        let resp = get(API_DOCS_PATH).await;
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let body = resp.into_body().collect().await.unwrap().to_bytes();
+        let html = String::from_utf8(body.to_vec()).unwrap();
+
+        // The bundle must come from this pod, not from a CDN.
+        assert!(html.contains(SCALAR_BUNDLE_PATH));
+        assert!(
+            !html.contains("jsdelivr") && !html.contains("unpkg"),
+            "the API reference must not load anything from a CDN"
+        );
+        assert!(html.contains(OPENAPI_SPEC_PATH));
+    }
+
+    #[tokio::test]
+    async fn the_api_reference_cannot_reach_off_origin() {
+        // The configuration alone was not enough: with only `telemetry: false`
+        // the page still fetched api.scalar.com/vector/registry/*. This asserts
+        // the header that removes the capability, because a later Scalar version
+        // can add an endpoint the configuration says nothing about.
+        let resp = get(API_DOCS_PATH).await;
+        let csp = resp
+            .headers()
+            .get(header::CONTENT_SECURITY_POLICY)
+            .and_then(|v| v.to_str().ok())
+            .expect("the API reference must carry a CSP")
+            .to_string();
+
+        assert!(csp.contains("connect-src 'self'"), "got: {csp}");
+        assert!(csp.contains("default-src 'self'"), "got: {csp}");
+    }
+
+    #[tokio::test]
+    async fn the_api_reference_opts_out_of_the_hosted_platform() {
+        let resp = get(API_DOCS_PATH).await;
+        let body = resp.into_body().collect().await.unwrap().to_bytes();
+        let html = String::from_utf8(body.to_vec()).unwrap();
+
+        // Upstream defaults telemetry on, points its registry lookups at
+        // api.scalar.com, and shows Share/Deploy actions on localhost.
+        assert!(html.contains(r#""telemetry":false"#));
+        assert!(html.contains(r#""withDefaultFonts":false"#));
+        assert!(html.contains(r#""showDeveloperTools":"never""#));
+        assert!(
+            !html.contains("scalar.com"),
+            "no Scalar-hosted URL may survive into the page"
+        );
+        // The request proxy would relay traffic carrying the operator's Bearer
+        // token through a third party.
+        assert!(html.contains(r#""proxyUrl":"""#));
+    }
+
+    #[tokio::test]
+    async fn the_openapi_spec_is_served_as_json() {
+        let resp = get(OPENAPI_SPEC_PATH).await;
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let body = resp.into_body().collect().await.unwrap().to_bytes();
+        let spec: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(spec["info"]["title"], "Trivy Collector API");
+        // A route the sidebar links to has to actually be in the document.
+        assert!(spec["paths"]["/api/v1/hydration"].is_object());
     }
 
     #[tokio::test]

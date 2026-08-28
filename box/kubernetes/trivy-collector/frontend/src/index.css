@@ -51,13 +51,50 @@ body {
     line-height: 1.5;
 }
 
+/* ===========================================
+   App shell
+
+   The sidebar and the content sit side by side, and the content takes whatever
+   width is left. That is the point of folding the sidebar: the reclaimed space
+   goes to the tables rather than to a wider gutter, which a fixed max-width on
+   `main` would have swallowed.
+   =========================================== */
+
+.appShell {
+    flex: 1;
+    display: flex;
+    align-items: flex-start;
+    min-height: 100vh;
+}
+
+.appContent {
+    flex: 1;
+    /* Without this a wide table stretches the flex item instead of scrolling
+       inside it, and the sidebar gets pushed off-screen. */
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+}
+
 /* Main */
 main {
     flex: 1;
     padding: 24px;
-    max-width: 1400px;
-    margin: 0 auto;
     width: 100%;
+}
+
+@media (max-width: 900px) {
+    /* The sidebar becomes a horizontal bar at this width, so the shell has to
+       stack rather than sit side by side. */
+    .appShell {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    main {
+        padding: 16px;
+    }
 }
 
 /* ===========================================

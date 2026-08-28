@@ -63,7 +63,7 @@ Server mode exposes auto-generated OpenAPI 3.1 spec via [utoipa](https://github.
 curl -s http://localhost:3000/api-docs/openapi.json | jq .
 ```
 
-View with [Swagger Editor](https://editor.swagger.io) or import into Postman.
+The reference UI is an embedded [Scalar](https://scalar.com/) build at `/api-docs`, served from the image rather than a CDN. Telemetry and Scalar’s request proxy are both disabled: the proxy would relay "Test Request" traffic, including the Bearer token, through a third party.
 
 ## Health Check Endpoints
 

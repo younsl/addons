@@ -44,7 +44,19 @@ pub async fn run(
     );
 
     let db = Arc::new(Database::new(&config.get_db_path()).await?);
-    let watcher_status = Arc::new(WatcherStatus::new());
+
+    // The configuration is the only thing that knows whether an empty cluster
+    // map means "still starting" or "nothing to watch", so it is decided once
+    // here and every consumer reads it back off the status.
+    let watcher_status = Arc::new(if watches_nothing(&config) {
+        warn!(
+            "No watchers configured — the report set will stay empty, and that \
+             is reported as a complete answer rather than a rebuild"
+        );
+        WatcherStatus::watching_nothing()
+    } else {
+        WatcherStatus::new()
+    });
 
     // Alert evaluation lives here rather than in the server: this is where
     // writes happen, so this is where a net-new finding can be detected.
@@ -84,7 +96,6 @@ pub async fn run(
     // its initial list, the report set is legitimately incomplete and the
     // scraper must not be routed to.
     let readiness = spawn_readiness_loop(
-        &config,
         health_server,
         watcher_status.clone(),
         metrics.clone(),
@@ -214,26 +225,18 @@ fn watches_nothing(config: &Config) -> bool {
     !config.watch_local && config.hub_secret_namespace.trim().is_empty()
 }
 
-/// Flip `/readyz` once the fleet is hydrated.
+/// Flip `/readyz` to follow hydration.
 ///
-/// A deployment that watches nothing at all would never hydrate, so that case
-/// is reported ready immediately rather than hanging forever.
+/// `WatcherStatus` already accounts for a deployment that watches nothing, so
+/// this loop has one rule and the UI banner reads the same answer. Two separate
+/// judgements of the same condition is how they came to disagree before.
 fn spawn_readiness_loop(
-    config: &Config,
     health_server: HealthServer,
     watcher_status: Arc<WatcherStatus>,
     metrics: Arc<Metrics>,
     mut shutdown: tokio::sync::watch::Receiver<bool>,
 ) -> tokio::task::JoinHandle<()> {
-    let watches_nothing = watches_nothing(config);
-
     tokio::spawn(async move {
-        if watches_nothing {
-            warn!("No watchers configured — reporting ready with an empty report set");
-            health_server.set_ready(true);
-            return;
-        }
-
         let mut interval =
             tokio::time::interval(std::time::Duration::from_secs(READINESS_POLL_SECS));
         loop {
@@ -334,31 +337,25 @@ mod tests {
 
     #[tokio::test]
     async fn readiness_short_circuits_when_nothing_is_watched() {
-        let mut config = Config::for_test(crate::config::Mode::Scraper);
-        config.watch_local = false;
-        config.hub_secret_namespace = String::new();
-
         let health = health();
-        let status = Arc::new(WatcherStatus::new());
-        let (_tx, rx) = tokio::sync::watch::channel(false);
-        let task = spawn_readiness_loop(&config, health.clone(), status, metrics(), rx);
+        let status = Arc::new(WatcherStatus::watching_nothing());
+        let (tx, rx) = tokio::sync::watch::channel(false);
+        let task = spawn_readiness_loop(health.clone(), status, metrics(), rx);
 
         assert!(
             eventually(|| health.is_ready()).await,
             "a fleet nobody watches must not wait for a sync that never comes"
         );
+        let _ = tx.send(true);
         let _ = task.await;
     }
 
     #[tokio::test]
     async fn readiness_waits_for_every_registered_cluster() {
-        let mut config = Config::for_test(crate::config::Mode::Scraper);
-        config.watch_local = true;
-
         let health = health();
         let status = Arc::new(WatcherStatus::new());
         let (tx, rx) = tokio::sync::watch::channel(false);
-        let task = spawn_readiness_loop(&config, health.clone(), status.clone(), metrics(), rx);
+        let task = spawn_readiness_loop(health.clone(), status.clone(), metrics(), rx);
 
         status.register_cluster("prod");
         status.register_cluster("stage");
@@ -379,13 +376,10 @@ mod tests {
 
     #[tokio::test]
     async fn readiness_is_withdrawn_when_a_new_cluster_starts_syncing() {
-        let mut config = Config::for_test(crate::config::Mode::Scraper);
-        config.watch_local = true;
-
         let health = health();
         let status = Arc::new(WatcherStatus::new());
         let (tx, rx) = tokio::sync::watch::channel(false);
-        let task = spawn_readiness_loop(&config, health.clone(), status.clone(), metrics(), rx);
+        let task = spawn_readiness_loop(health.clone(), status.clone(), metrics(), rx);
 
         status.register_cluster("prod");
         status.set_sync_done("prod", ReportKind::Vulnerability, true);
@@ -403,15 +397,8 @@ mod tests {
 
     #[tokio::test]
     async fn readiness_stops_on_shutdown() {
-        let config = Config::for_test(crate::config::Mode::Scraper);
         let (tx, rx) = tokio::sync::watch::channel(false);
-        let task = spawn_readiness_loop(
-            &config,
-            health(),
-            Arc::new(WatcherStatus::new()),
-            metrics(),
-            rx,
-        );
+        let task = spawn_readiness_loop(health(), Arc::new(WatcherStatus::new()), metrics(), rx);
 
         let _ = tx.send(true);
         // A loop that ignored shutdown would hang this test.

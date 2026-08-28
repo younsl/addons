@@ -1,5 +1,35 @@
 # Upgrading
 
+## To app 1.8.0 / chart 0.12.0
+
+UI and API-docs changes only. No data migration, no values removed.
+
+### `/swagger-ui` is gone
+
+The API reference is now an embedded [Scalar](https://scalar.com/) build. Update bookmarks and any links that pointed at the old path.
+
+| Before | After |
+| --- | --- |
+| `/swagger-ui` | `/api-docs` |
+| `/api-docs/openapi.json` | unchanged |
+
+The Scalar bundle ships inside the image rather than loading from a CDN, so the page works with no egress. Two upstream defaults are overridden deliberately, both verified by watching what the page actually requests rather than by reading the configuration:
+
+- `telemetry` defaults to true, and does **not** gate Scalar's registry lookups. Those come from `externalUrls.apiBaseUrl`, which defaults to `api.scalar.com`, and fired on every page load until pinned to this origin.
+- `showDeveloperTools` defaults to showing Share and Deploy actions on localhost. Those lead into Scalar's hosted platform.
+
+The page also carries a `Content-Security-Policy` with `connect-src 'self'`. Configuration asks a dependency not to call out; the header removes its ability to, which is what survives a future version adding an endpoint the configuration says nothing about. If you front this app with a proxy that rewrites CSP, leave that header alone.
+
+### The header became a sidebar
+
+Navigation moved from a horizontal header to a foldable sidebar, and the fold is remembered per browser in `localStorage`. Two sets of pages that were previously reachable only from inside another page are now top-level entries: the search pages (CVE, Component) and the admin pages (Clusters, Alerts). The admin tab strip is gone.
+
+`main` no longer caps content at 1400px, so tables use the full window width. Folding the sidebar gives that width back to the content, which is the point of the control.
+
+### A misconfigured scraper stops claiming it is rebuilding
+
+A scraper with `scraper.watchLocal: false` and no registered edge clusters previously reported `hydrated: false` forever, so the dashboard showed a "Rebuilding report data" banner that could never clear. Hydration now distinguishes "nothing to watch" from "still syncing", and the UI says which one it is. `GET /api/v1/hydration` gained a `watching` field; a missing field is read as `true`, so a new server works against a 1.7.0 scraper during a rolling upgrade.
+
 ## To app 1.7.0 / chart 0.11.0
 
 This release removes the PersistentVolume. The scraper now owns SQLite on its own `emptyDir` and serves it back to the server pods over an internal API, so the server holds no database and no volume. See [Architecture](architecture.md) for why.

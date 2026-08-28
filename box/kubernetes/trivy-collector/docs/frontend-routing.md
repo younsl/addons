@@ -61,7 +61,7 @@ automatically clears the namespace filter.
 
 The Rust backend serves the frontend as a Single Page Application. All
 non-API routes (i.e., anything outside `/api/*`, `/auth/*`, `/healthz`,
-`/metrics`, `/swagger-ui/*`, `/assets/*`, `/static/*`) fall back to
+`/metrics`, `/api-docs*`, `/assets/*`, `/static/*`) fall back to
 `index.html`, allowing react-router-dom to handle client-side routing.
 Direct URL access (e.g., pasting `/admin/clusters` into the browser address
 bar) works without additional server configuration.

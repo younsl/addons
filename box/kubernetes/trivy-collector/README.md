@@ -88,7 +88,7 @@ For detailed architecture documentation, see [Architecture](docs/architecture.md
 - **Keycloak OIDC authentication**: `none` or `keycloak` auth modes, with self-issued API tokens for programmatic access
 - **Embedded MCP server**: opt-in `/mcp` endpoint (Streamable HTTP) so LLM agents such as [kagent](https://kagent.dev/) can query reports with the same auth and RBAC as the API
 - **Structured logging**: JSON/pretty format with configurable levels
-- **OpenAPI documentation**: auto-generated spec at `/api-docs/openapi.json` with built-in [Swagger UI](https://swagger.io/tools/swagger-ui/) at `/swagger-ui`
+- **OpenAPI documentation**: auto-generated spec at `/api-docs/openapi.json`, rendered by an embedded [Scalar](https://scalar.com/) reference at `/api-docs`. The bundle ships inside the image, so the page needs no CDN and no egress
 - **Prometheus ServiceMonitor**: independent scrape config per component
 - **Helm chart**: one release, two Deployments, all scheduling/resources configurable per component
 

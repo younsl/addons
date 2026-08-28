@@ -285,12 +285,16 @@ export interface ClusterSync {
 }
 
 /**
- * Fleet hydration. `hydrated` is true only once every registered cluster has
- * replayed its initial list; until then any empty result is a rebuild in
- * progress rather than an answer.
+ * Fleet hydration.
+ *
+ * `hydrated` is true once nothing is left to wait for. `watching` separates the
+ * two ways the report set can be empty: a scraper that expects clusters and has
+ * none yet is still starting up, while one configured to watch nothing has
+ * already given its final answer.
  */
 export interface HydrationStatus {
   hydrated: boolean
+  watching: boolean
   clusters: Record<string, ClusterSync>
 }
 

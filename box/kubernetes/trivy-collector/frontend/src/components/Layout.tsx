@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
-import Header from './Header'
+import Sidebar from './Sidebar'
 import HydrationBanner from './HydrationBanner'
 import { getStats, getClusters, getNamespaces, getVersion } from '../api'
 import { usePolling } from '../hooks/usePolling'
@@ -62,18 +62,20 @@ export default function Layout() {
   }, [location.pathname, navigate])
 
   return (
-    <>
-      <Header version={version} />
-      <main>
-        <HydrationBanner />
-        <Outlet context={{ stats, clusterOptions, namespaceOptions, setFilterCluster }} />
-      </main>
-      <footer>
-        <p>Trivy Collector &mdash; Multi-cluster security report aggregator
-          <span style={{ margin: '0 8px' }}>|</span>
-          <a href="/swagger-ui/" target="_blank" rel="noopener noreferrer">API Docs</a>
-        </p>
-      </footer>
-    </>
+    <div className="appShell">
+      <Sidebar version={version} />
+      <div className="appContent">
+        <main>
+          <HydrationBanner />
+          <Outlet context={{ stats, clusterOptions, namespaceOptions, setFilterCluster }} />
+        </main>
+        <footer>
+          <p>Trivy Collector &mdash; Multi-cluster security report aggregator
+            <span style={{ margin: '0 8px' }}>|</span>
+            <a href="/api-docs" target="_blank" rel="noopener noreferrer">API Docs</a>
+          </p>
+        </footer>
+      </div>
+    </div>
   )
 }

@@ -43,12 +43,39 @@ impl ClusterSync {
 /// Fleet-wide hydration state. Between scraper start and the last `InitDone`
 /// the database is incomplete by construction — an `emptyDir` starts empty —
 /// so this is surfaced rather than hidden behind a confidently empty answer.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+///
+/// `watching` separates the two ways an empty report set can come about. A
+/// scraper that expects clusters and has none yet is still starting up; one
+/// configured to watch nothing is as complete as it will ever be. Collapsing
+/// those would either hide a real rebuild or leave a rebuilding notice up
+/// forever.
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HydrationStatus {
-    /// True when every registered cluster has finished its initial sync.
+    /// True when there is nothing left to wait for.
     pub hydrated: bool,
+    /// False when the scraper watches no clusters at all, which makes an empty
+    /// report set the correct answer rather than a temporary one.
+    ///
+    /// Defaults to true so a server talking to a scraper from before this field
+    /// existed keeps the old reading: those always expected watchers.
+    #[serde(default = "default_true")]
+    pub watching: bool,
     /// Per-cluster detail, keyed by cluster name.
     pub clusters: BTreeMap<String, ClusterSync>,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+impl Default for HydrationStatus {
+    fn default() -> Self {
+        Self {
+            hydrated: false,
+            watching: true,
+            clusters: BTreeMap::new(),
+        }
+    }
 }
 
 impl HydrationStatus {
@@ -57,6 +84,7 @@ impl HydrationStatus {
     pub fn complete() -> Self {
         Self {
             hydrated: true,
+            watching: true,
             clusters: BTreeMap::new(),
         }
     }
@@ -276,6 +304,17 @@ mod tests {
     }
 
     #[test]
+    fn a_hydration_payload_without_watching_reads_as_watching() {
+        // A new server can talk to a scraper from before the field existed
+        // during a rolling upgrade. Those always expected watchers, so the
+        // missing field must not be read as "watches nothing".
+        let back: HydrationStatus =
+            serde_json::from_str(r#"{"hydrated":false,"clusters":{}}"#).unwrap();
+        assert!(back.watching);
+        assert!(!back.hydrated);
+    }
+
+    #[test]
     fn hydration_status_roundtrips() {
         let mut h = HydrationStatus::default();
         h.clusters.insert(
@@ -290,6 +329,7 @@ mod tests {
         let json = serde_json::to_string(&h).unwrap();
         let back: HydrationStatus = serde_json::from_str(&json).unwrap();
         assert!(!back.hydrated);
+        assert!(back.watching);
         assert!(!back.clusters["prod"].is_hydrated());
     }
 

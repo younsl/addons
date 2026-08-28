@@ -1,6 +1,6 @@
 [package]
 name = "trivy-collector"
-version = "1.7.0"
+version = "1.8.0"
 edition = "2024"
 rust-version = "1.98.0"
 authors = ["younsl <cysl@kakao.com>"]
@@ -28,9 +28,9 @@ tower-http = { version = "0.6", features = ["cors", "fs"] }
 rmcp = { version = "3.1", features = ["server", "macros", "schemars", "transport-streamable-http-server"] }
 tokio-util = "0.7"
 
-# OpenAPI documentation
+# OpenAPI documentation. The reference UI is Scalar, whose standalone bundle
+# ships as an embedded static asset, so no renderer crate is needed here.
 utoipa = { version = "5.4.0", features = ["axum_extras", "chrono"] }
-utoipa-swagger-ui = { version = "9", features = ["axum"] }
 
 # Database (server mode)
 sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite"] }

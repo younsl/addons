@@ -11,9 +11,28 @@ use std::sync::RwLock;
 
 use crate::storage::{ClusterSync, HydrationStatus};
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct WatcherStatus {
     clusters: RwLock<BTreeMap<String, ClusterSync>>,
+    /// Whether any watcher is ever going to start.
+    ///
+    /// An empty cluster map means two different things, and only the
+    /// configuration can tell them apart: a scraper that expects clusters is
+    /// still starting up, while one configured to watch nothing has already
+    /// arrived. Without this, the second case would report "rebuilding" for the
+    /// life of the pod.
+    expects_clusters: bool,
+}
+
+impl Default for WatcherStatus {
+    fn default() -> Self {
+        Self {
+            clusters: RwLock::new(BTreeMap::new()),
+            // The safe assumption: an empty map is treated as a rebuild in
+            // progress rather than as a complete answer.
+            expects_clusters: true,
+        }
+    }
 }
 
 /// Which of a cluster's two watchers a status update refers to.
@@ -34,8 +53,23 @@ impl ReportKind {
 }
 
 impl WatcherStatus {
+    /// Status for a scraper that expects at least one cluster.
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Status for a scraper with no watchers configured at all, whose empty
+    /// report set is the final answer rather than a transient one.
+    pub fn watching_nothing() -> Self {
+        Self {
+            expects_clusters: false,
+            ..Self::default()
+        }
+    }
+
+    /// Whether any cluster is being watched.
+    pub fn is_watching(&self) -> bool {
+        self.expects_clusters
     }
 
     fn read(&self) -> std::sync::RwLockReadGuard<'_, BTreeMap<String, ClusterSync>> {
@@ -84,18 +118,25 @@ impl WatcherStatus {
         self.read().len()
     }
 
-    /// True once every registered cluster has replayed both initial lists.
-    /// An empty fleet is not hydrated: nothing has confirmed anything yet.
+    /// True once there is nothing left to wait for.
+    ///
+    /// With watchers expected, an empty fleet is not hydrated: nothing has
+    /// confirmed anything yet, and the window before the first cluster
+    /// registers must not read as a complete answer. With no watchers
+    /// configured there is nothing to confirm, so it is hydrated immediately.
     pub fn is_hydrated(&self) -> bool {
+        if !self.expects_clusters {
+            return true;
+        }
         let guard = self.read();
         !guard.is_empty() && guard.values().all(ClusterSync::is_hydrated)
     }
 
     pub fn snapshot(&self) -> HydrationStatus {
-        let clusters = self.read().clone();
         HydrationStatus {
-            hydrated: !clusters.is_empty() && clusters.values().all(ClusterSync::is_hydrated),
-            clusters,
+            hydrated: self.is_hydrated(),
+            watching: self.expects_clusters,
+            clusters: self.read().clone(),
         }
     }
 }
@@ -172,6 +213,39 @@ mod tests {
     }
 
     #[test]
+    fn a_scraper_watching_nothing_is_hydrated_immediately() {
+        // Its empty report set is the final answer, not a transient one, so it
+        // must not read as a rebuild for the life of the pod.
+        let s = WatcherStatus::watching_nothing();
+        assert!(s.is_hydrated());
+        assert!(!s.is_watching());
+
+        let snap = s.snapshot();
+        assert!(snap.hydrated);
+        assert!(!snap.watching);
+        assert!(snap.clusters.is_empty());
+    }
+
+    #[test]
+    fn an_expectant_scraper_is_not_hydrated_before_its_first_cluster() {
+        // The window between process start and the local watcher registering
+        // must not report an empty database as a complete answer.
+        let s = WatcherStatus::new();
+        assert!(s.is_watching());
+        assert!(!s.is_hydrated());
+        assert!(s.snapshot().watching);
+    }
+
+    #[test]
+    fn watching_nothing_stays_hydrated_even_if_a_cluster_appears_unsynced() {
+        // Defensive: the flag describes configuration, so a stray registration
+        // cannot flip a deployment that watches nothing back into rebuilding.
+        let s = WatcherStatus::watching_nothing();
+        s.register_cluster("stray");
+        assert!(s.is_hydrated());
+    }
+
+    #[test]
     fn snapshot_reports_every_cluster() {
         let s = WatcherStatus::new();
         s.register_cluster("prod");
@@ -179,6 +253,7 @@ mod tests {
 
         let snap = s.snapshot();
         assert!(!snap.hydrated);
+        assert!(snap.watching);
         assert_eq!(snap.clusters.len(), 1);
         assert!(snap.clusters["prod"].sbom_watcher_running);
     }

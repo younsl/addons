@@ -1,81 +1,56 @@
-import { Link, useLocation } from 'react-router-dom'
-import { useAuth } from '../contexts/AuthContext'
-import type { AuthPermissions } from '../types'
+import { useLocation } from 'react-router-dom'
 
-interface Tab {
-  to: string
-  label: string
-  description: string
-  /** Predicate over current user permissions; tab is shown when true. */
-  visible: (p: AuthPermissions | null | undefined) => boolean
-}
-
-const tabs: Tab[] = [
+/**
+ * Description line for the current admin page.
+ *
+ * This used to be a strip of tabs, which meant reaching Alerts required first
+ * landing on Clusters. Those destinations are sidebar entries now, so what is
+ * left worth keeping is the sentence explaining what the page is for.
+ */
+const DESCRIPTIONS: { prefix: string; title: string; description: string }[] = [
   {
-    to: '/admin/clusters',
-    label: 'Clusters',
+    prefix: '/admin/clusters',
+    title: 'Clusters',
     description:
       'Register edge clusters for hub-pull mode and review their report sync status.',
-    visible: (p) => !!p?.can_view_clusters,
   },
   {
-    to: '/admin/alerts',
-    label: 'Alerts',
+    prefix: '/admin/alerts',
+    title: 'Alerts',
     description:
       'Define ConfigMap-backed alert rules and route matching findings to Slack receivers.',
-    visible: (p) => !!p?.can_view_alerts,
   },
 ]
 
 export default function AdminSubNav() {
   const { pathname } = useLocation()
-  const { permissions } = useAuth()
-  const visibleTabs = tabs.filter((t) => t.visible(permissions))
-  const active = visibleTabs.find((t) => pathname.startsWith(t.to))
+  const current = DESCRIPTIONS.find((d) => pathname.startsWith(d.prefix))
+
+  if (!current) return null
+
   return (
     <div style={{ marginBottom: 16 }}>
-      <div
+      <h2
         style={{
-          display: 'flex',
-          gap: 4,
-          borderBottom: '1px solid var(--border)',
+          margin: 0,
+          fontSize: 16,
+          fontWeight: 600,
+          letterSpacing: '-0.2px',
+          color: 'var(--text-primary)',
         }}
       >
-        {visibleTabs.map((t) => {
-          const isActive = pathname.startsWith(t.to)
-          return (
-            <Link
-              key={t.to}
-              to={t.to}
-              style={{
-                padding: '8px 16px',
-                fontSize: 13,
-                fontWeight: 600,
-                textDecoration: 'none',
-                color: isActive ? 'var(--accent)' : 'var(--text-secondary)',
-                borderBottom: isActive
-                  ? '2px solid var(--accent)'
-                  : '2px solid transparent',
-                marginBottom: -1,
-              }}
-            >
-              {t.label}
-            </Link>
-          )
-        })}
-      </div>
-      {active && (
-        <div
-          style={{
-            padding: '10px 4px 0',
-            fontSize: 12,
-            color: 'var(--text-muted)',
-            lineHeight: 1.5,
-          }}
-        >
-          {active.description}
-        </div>
-      )}
+        {current.title}
+      </h2>
+      <p
+        style={{
+          margin: '4px 0 0',
+          fontSize: 12,
+          lineHeight: 1.5,
+          color: 'var(--text-muted)',
+        }}
+      >
+        {current.description}
+      </p>
     </div>
   )
 }

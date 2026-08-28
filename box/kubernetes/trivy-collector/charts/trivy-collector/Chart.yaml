@@ -3,8 +3,8 @@ name: trivy-collector
 description: Multi-cluster Trivy report collector and viewer
 type: application
 deprecated: false
-version: 0.11.0
-appVersion: "1.7.0"
+version: 0.12.0
+appVersion: "1.8.0"
 keywords:
   - trivy
   - security
@@ -20,29 +20,11 @@ maintainers:
     url: https://github.com/younsl
 annotations:
   artifacthub.io/changes: |
+    - kind: changed
+      description: "Replace the horizontal header with a foldable sidebar; menus regrouped and search/admin pages promoted to top-level entries"
+    - kind: changed
+      description: "Replace Swagger UI with an embedded Scalar reference at /api-docs; the bundle ships in the image, and a CSP plus config opt-out keep it from reaching Scalar's hosted platform"
     - kind: removed
-      description: "Remove the PersistentVolumeClaim: the scraper owns the report database on its own emptyDir"
-    - kind: removed
-      description: "Remove server.persistence — the server pod holds no database and mounts no volume"
-    - kind: removed
-      description: "Remove the API log table and the Admin Console log page; requests are structured stdout lines"
-    - kind: changed
-      description: "Report notes move to a ConfigMap and API tokens to a Secret, both watched into memory"
-    - kind: changed
-      description: "Scraper serves an internal read API on port 8081, guarded by a shared token and an optional NetworkPolicy"
-    - kind: changed
-      description: "Scraper /readyz follows per-cluster hydration, so a rebuild is never served as a complete answer"
-    - kind: changed
-      description: "Scraper rollout is RollingUpdate instead of Recreate, and gains ephemeral-storage requests and limits"
-    - kind: changed
-      description: "Alert evaluation moves to the scraper's ingest path, where it can fire on net-new findings"
-    - kind: added
-      description: "Add server.podDisruptionBudget, now that the UI tier is stateless and scales past one replica"
-    - kind: added
-      description: "Add trivy-collector export-state for the one-shot migration off the PersistentVolume"
-    - kind: removed
-      description: "Remove Ingress support; expose the UI through Gateway API HTTPRoute (server.gateway) instead"
+      description: "Remove /swagger-ui; the OpenAPI document stays at /api-docs/openapi.json"
     - kind: fixed
-      description: "COLLECT_VULN and COLLECT_SBOM now actually gate their watchers, exposed as scraper.collect"
-    - kind: fixed
-      description: "Server readiness now probes the scraper, so an unreachable scraper no longer rolls out green"
+      description: "A scraper configured to watch nothing no longer reports a permanent rebuild; hydration now separates 'nothing to watch' from 'still syncing'"

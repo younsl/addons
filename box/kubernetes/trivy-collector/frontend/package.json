@@ -21,6 +21,7 @@
     "react-router-dom": "^7.13.1"
   },
   "devDependencies": {
+    "@scalar/api-reference": "^1.66.1",
     "@types/cytoscape": "^3.21.9",
     "@types/node": "^25.3.0",
     "@types/react": "^19.1.0",

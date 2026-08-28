@@ -106,7 +106,7 @@ mod tests {
         assert!(!skip_access_log("/api/v1/reports"));
         assert!(skip_access_log("/"));
         assert!(skip_access_log("/assets/app.js"));
-        assert!(skip_access_log("/swagger-ui"));
+        assert!(skip_access_log("/api-docs"));
     }
 
     #[test]
