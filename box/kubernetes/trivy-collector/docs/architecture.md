@@ -120,7 +120,7 @@ stringData:
 The schema is compatible with ArgoCD's own cluster Secrets. Secrets can be
 created via:
 
-- The Hub UI's two-step wizard (`/admin/clusters`)
+- The Hub UI's two-step wizard (`/admin/clusters/new`)
 - `POST /api/v1/hub/clusters` REST call
 - `kubectl apply` / Helm / ArgoCD ApplicationSet / SealedSecrets (GitOps)
 
@@ -209,7 +209,7 @@ All other logic lives on the central cluster.
 
 ### Via UI (recommended)
 
-`/admin/clusters` runs a two-step wizard:
+`/admin/clusters/new` (the **Create** button on `/admin/clusters`) runs a two-step wizard:
 
 1. **Bootstrap**: Copy the generated YAML (SA + ClusterRole +
    ClusterRoleBinding + token Secret) and `kubectl apply` on the Edge cluster
@@ -217,7 +217,8 @@ All other logic lives on the central cluster.
    SA token, CA, and API server URL.
 2. **Register**: Paste the three extracted values into the form. Submitting
    calls `POST /api/v1/hub/clusters`, which creates the Hub Secret. The
-   scraper attaches within seconds and the table flips to **Synced**.
+   scraper attaches within seconds, the UI returns to `/admin/clusters`, and the
+   table flips to **Synced**.
 
 ### Via GitOps / kubectl
 

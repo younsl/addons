@@ -126,7 +126,7 @@ Verify both objects, confirm a known token still authenticates and a known note 
 
 ### 2. Register an Edge cluster via the UI
 
-Open `/admin/clusters` and use the two-step wizard:
+Open `/admin/clusters`, click **Create** (or go straight to `/admin/clusters/new`), and use the two-step wizard:
 
 **Step 1 (Bootstrap)**: copy the generated YAML and apply it on the Edge
 cluster with an admin kubeconfig. It installs:

@@ -78,6 +78,8 @@ const NAV_GROUPS: NavGroup[] = [
         to: '/admin/clusters',
         label: 'Clusters',
         icon: 'fa-solid fa-server',
+        // Keeps the entry lit on the /admin/clusters/new wizard.
+        prefix: true,
         visible: (p) => !!p?.can_view_clusters,
       },
       {

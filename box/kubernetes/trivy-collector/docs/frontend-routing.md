@@ -20,7 +20,8 @@ bookmarking, link sharing, and browser back/forward navigation.
 | `/dashboard` | Dashboard | Security trends dashboard with charts |
 | `/auth` | Auth | OIDC login status and self-issued API token management |
 | `/admin` | - | Redirects to `/admin/clusters` |
-| `/admin/clusters` | Clusters | Registered cluster list + two-step registration wizard (admin only) |
+| `/admin/clusters` | Clusters | Registered cluster list with a Create button (admin only) |
+| `/admin/clusters/new` | Register cluster | Two-step cluster registration wizard, returns to `/admin/clusters` on success (admin only) |
 | `/version` | Version | Build and runtime version information |
 | `*` | - | Any unknown path redirects to `/vulnerabilities` |
 

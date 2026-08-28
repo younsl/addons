@@ -8,6 +8,13 @@ import { useLocation } from 'react-router-dom'
  * left worth keeping is the sentence explaining what the page is for.
  */
 const DESCRIPTIONS: { prefix: string; title: string; description: string }[] = [
+  // Most specific prefix first: find() returns the first match.
+  {
+    prefix: '/admin/clusters/new',
+    title: 'Register cluster',
+    description:
+      'Bootstrap a read-only ServiceAccount on the edge cluster, then register its credentials on the hub.',
+  },
   {
     prefix: '/admin/clusters',
     title: 'Clusters',
