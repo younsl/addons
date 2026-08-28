@@ -1,6 +1,6 @@
 # kagent-gateway
 
-![Version: 0.2.0](https://img.shields.io/badge/Version-0.2.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.2.0](https://img.shields.io/badge/AppVersion-0.2.0-informational?style=flat-square)
+![Version: 0.1.0](https://img.shields.io/badge/Version-0.1.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.1.0](https://img.shields.io/badge/AppVersion-0.1.0-informational?style=flat-square)
 
 Posts Alertmanager alerts to Slack and replies in-thread with an analysis from a kagent agent over A2A
 
@@ -39,7 +39,7 @@ helm install kagent-gateway oci://ghcr.io/younsl/charts/kagent-gateway -f values
 Install a specific version:
 
 ```console
-helm install kagent-gateway oci://ghcr.io/younsl/charts/kagent-gateway --version 0.2.0
+helm install kagent-gateway oci://ghcr.io/younsl/charts/kagent-gateway --version 0.1.0
 ```
 
 ### Install from local chart
@@ -47,7 +47,7 @@ helm install kagent-gateway oci://ghcr.io/younsl/charts/kagent-gateway --version
 Download kagent-gateway chart and install from local directory:
 
 ```console
-helm pull oci://ghcr.io/younsl/charts/kagent-gateway --untar --version 0.2.0
+helm pull oci://ghcr.io/younsl/charts/kagent-gateway --untar --version 0.1.0
 helm install kagent-gateway ./kagent-gateway
 ```
 
