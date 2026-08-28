@@ -12,8 +12,11 @@ export interface Config {
     clusters?: Array<{
       /** @visibility frontend */
       name: string;
-      /** @visibility frontend */
-      title?: string;
+      /**
+       * Operator-facing cluster name shown in the UI and written to the Cluster column of CSV exports
+       * @visibility frontend
+       */
+      alias?: string;
     }>;
   };
 }

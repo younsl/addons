@@ -76,16 +76,16 @@ opencost:
   timezone: Asia/Seoul
   clusters:
     - name: shared
-      title: Shared
+      alias: Shared
       url: ${OPENCOST_SHARED_URL}
     - name: dev
-      title: Dev
+      alias: Dev
       url: ${OPENCOST_DEV_URL}
     - name: stg
-      title: Stage
+      alias: Stage
       url: ${OPENCOST_STG_URL}
     - name: prd
-      title: Production
+      alias: Production
       url: ${OPENCOST_PRD_URL}
 ```
 
@@ -93,8 +93,20 @@ opencost:
 |-------|------|---------|-------------|
 | `timezone` | `string` | `UTC` | IANA timezone for billing day boundaries |
 | `clusters[].name` | `string` | — | Cluster identifier (used in API calls) |
-| `clusters[].title` | `string` | — | Display name in UI |
+| `clusters[].alias` | `string` | — | Operator-facing cluster name shown in the UI and written to the Cluster column of CSV exports |
 | `clusters[].url` | `string` | — | OpenCost API base URL |
+
+### Controller Filter Presets
+
+Presets are managed from the OpenCost page (Filters bar, Preset select, Manage button) and stored in the plugin database, not in app-config. A preset is a named list of SQL LIKE patterns matched against the controller (workload) name: `%` matches any run of characters and `_` exactly one. Patterns in a preset are ORed together. A preset can be limited to specific clusters, otherwise it is offered for all of them.
+
+Selecting a preset restricts the yearly, monthly and daily views, the controller dropdown, the monthly Pod Breakdown table and every CSV export to matching pods, and the selection is carried in the URL as `filter=<name>` so a month-end billing view can be bookmarked per cluster. The editor previews the effect of the patterns against the selected cluster and month before saving.
+
+Any authenticated Backstage user can manage presets. There is no finer-grained permission check.
+
+### CSV Exports
+
+Every CSV export starts with a `Cluster` column holding the cluster `alias` from `opencost.clusters`, so exports from several clusters can be concatenated without losing their origin.
 
 ### Sidebar Toggle
 
@@ -172,12 +184,17 @@ Base path: `/api/opencost-backend/`
 | GET | `/clusters/status` | Cluster connectivity status |
 | GET | `/allocation` | Proxy to OpenCost API with carbon enrichment |
 | GET | `/costs/years` | Available years for cluster |
-| GET | `/costs/controllers` | Distinct controllers for month |
+| GET | `/costs/controllers` | Distinct controllers for month, or for the whole year when `month` is omitted |
+| GET | `/costs/monthly-totals` | One aggregated row per month, used by the yearly overview |
 | GET | `/costs/daily-summary` | Per-day aggregates for month |
 | GET | `/costs` | Monthly pod costs (summary or real-time aggregation) |
 | GET | `/costs/daily` | Daily costs for specific pod |
 | GET | `/costs/pods` | All pod costs for specific date |
 | GET | `/costs/collection-runs` | Task execution history |
+| GET | `/filters` | Controller filter presets |
+| PUT | `/filters/{name}` | Create or replace a preset (`title`, `description`, `patterns[]`, `clusters[]`) |
+| DELETE | `/filters/{name}` | Delete a preset |
+| POST | `/filters/preview` | Dry-run `patterns[]` against a `cluster`, `year`, `month` and return matched controllers, pod count, total and sample pods |
 
 ### Query Parameters
 
@@ -185,8 +202,9 @@ Base path: `/api/opencost-backend/`
 |----------|-----------|----------|-------------|
 | `/costs/*` | `cluster` | Yes | Cluster name |
 | `/costs/*` | `year` | Yes | Year (YYYY) |
-| `/costs/*` | `month` | Yes | Month (1-12) |
-| `/costs`, `/costs/daily-summary` | `controllers` | No | Comma-separated controller filter |
+| `/costs/*` | `month` | Yes, optional for `/costs/controllers` | Month (1-12) |
+| `/costs`, `/costs/monthly-totals`, `/costs/daily-summary`, `/costs/controllers`, `/costs/pods` | `controllers` | No | Comma-separated exact controller names |
+| `/costs`, `/costs/monthly-totals`, `/costs/daily-summary`, `/costs/controllers`, `/costs/pods` | `filter` | No | Preset name. Its LIKE patterns are ORed together and ANDed with `controllers`. 400 if unknown or not enabled for the cluster |
 | `/costs/daily` | `pod` | Yes | Pod name |
 | `/costs/pods` | `date` | Yes | Date (YYYY-MM-DD) |
 
@@ -201,6 +219,7 @@ Six tables with 3NF-normalized schema. See [OpenCost ERD](erd.md) for full schem
 | `opencost_pods` | Pod dimension (namespace, controller metadata) |
 | `opencost_daily_costs` | Per-pod daily cost snapshots |
 | `opencost_monthly_summaries` | Aggregated monthly costs per pod |
+| `opencost_controller_filters` | Admin-defined controller filter presets (LIKE patterns as JSON text) |
 | `opencost_collection_runs` | Task execution history |
 
 ## Cache Strategy

@@ -4,7 +4,7 @@ import fetch from 'node-fetch';
 
 interface ClusterConfig {
   name: string;
-  title: string;
+  alias: string;
   url: string;
 }
 
@@ -40,13 +40,13 @@ export class OpenCostService {
 
     for (const c of clusterConfigs) {
       const name = c.getString('name');
-      const title = c.getOptionalString('title') ?? name;
+      const alias = c.getOptionalString('alias') ?? name;
       const url = c.getOptionalString('url');
       if (!url) {
         logger.warn(`OpenCost cluster '${name}' has no url configured, skipping`);
         continue;
       }
-      clusters.set(name, { name, title, url });
+      clusters.set(name, { name, alias, url });
     }
 
     logger.info(`Loaded ${clusters.size} OpenCost cluster(s): ${[...clusters.keys()].join(', ')}`);
@@ -91,14 +91,14 @@ export class OpenCostService {
     }
   }
 
-  async checkClustersStatus(): Promise<{ name: string; title: string; status: 'connected' | 'disconnected' }[]> {
+  async checkClustersStatus(): Promise<{ name: string; alias: string; status: 'connected' | 'disconnected' }[]> {
     const results = await Promise.all(
       [...this.clusters.values()].map(async cluster => {
         try {
           const res = await fetch(`${cluster.url}/healthz`, { timeout: 3000 } as any);
-          return { name: cluster.name, title: cluster.title, status: res.ok ? 'connected' as const : 'disconnected' as const };
+          return { name: cluster.name, alias: cluster.alias, status: res.ok ? 'connected' as const : 'disconnected' as const };
         } catch {
-          return { name: cluster.name, title: cluster.title, status: 'disconnected' as const };
+          return { name: cluster.name, alias: cluster.alias, status: 'disconnected' as const };
         }
       }),
     );

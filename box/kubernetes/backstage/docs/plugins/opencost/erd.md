@@ -84,6 +84,17 @@ erDiagram
         datetime finished_at "nullable"
     }
 
+    opencost_controller_filters {
+        integer id PK
+        varchar(64) name UK "slug, used as ?filter="
+        varchar(100) title
+        text description "nullable"
+        text patterns "JSON array of SQL LIKE patterns"
+        text clusters "nullable JSON array of cluster names"
+        datetime created_at
+        datetime updated_at
+    }
+
     opencost_clusters ||--o{ opencost_pods : "has"
     opencost_clusters ||--o{ opencost_daily_costs : "has"
     opencost_clusters ||--o{ opencost_monthly_summaries : "has"
@@ -164,6 +175,19 @@ Snapshot execution history for observability.
 | `monthly-agg` | `target_year`, `target_month` |
 
 Lifecycle: row inserted with `status = 'partial'` at start, updated to `success` or `failure` on completion.
+
+### opencost_controller_filters
+
+Admin-defined controller filter presets, managed from the UI. Not related to any cluster row: `clusters` is an optional JSON list of cluster names that limits where the preset is offered, and `null` means every cluster.
+
+| Constraint | Columns |
+|------------|---------|
+| PK | `id` |
+| UNIQUE | `name` |
+
+`patterns` and `clusters` are JSON arrays serialised as `text` so the column type is identical on SQLite and PostgreSQL. Patterns are SQL LIKE expressions applied to `opencost_pods.controller` and ORed together at query time.
+
+Schema version 3 added this table and the `opencost_daily_costs (pod_id)`, `opencost_monthly_summaries (pod_id)` and `opencost_pods (cluster_id, controller)` indexes.
 
 ## Design Decisions
 

@@ -6,8 +6,9 @@ const PODS_TABLE = 'opencost_pods';
 const DAILY_TABLE = 'opencost_daily_costs';
 const MONTHLY_TABLE = 'opencost_monthly_summaries';
 const RUNS_TABLE = 'opencost_collection_runs';
+const FILTERS_TABLE = 'opencost_controller_filters';
 
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 
 export interface DailyCostItem {
   namespace: string;
@@ -52,6 +53,59 @@ export interface DailySummaryRow {
   networkCost: number;
   totalCost: number;
   carbonCost: number;
+}
+
+export interface MonthlyTotalsRow {
+  year: number;
+  month: number;
+  cpuCost: number;
+  ramCost: number;
+  gpuCost: number;
+  pvCost: number;
+  networkCost: number;
+  totalCost: number;
+  carbonCost: number;
+  podCount: number;
+  daysCovered: number;
+  source: 'monthly' | 'daily' | 'none';
+}
+
+/**
+ * Restricts cost rows by `opencost_pods.controller`. Both keys are ANDed: a preset
+ * supplies `patterns` (SQL LIKE, `%` and `_` wildcards) and the UI may narrow further
+ * with an explicit `controllers` list. An empty or missing filter matches everything.
+ */
+export interface ControllerFilter {
+  controllers?: string[];
+  patterns?: string[];
+}
+
+/**
+ * Admin-defined controller filter, managed from the OpenCost UI and stored in
+ * `opencost_controller_filters`. Patterns are SQL LIKE expressions matched against
+ * `opencost_pods.controller` (`%` any run of characters, `_` one character). A preset
+ * with `clusters` set is offered only for those clusters.
+ */
+export interface ControllerFilterPreset {
+  name: string;
+  title: string;
+  description: string | null;
+  patterns: string[];
+  clusters: string[] | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ControllerFilterPresetInput {
+  name: string;
+  title: string;
+  description?: string | null;
+  patterns: string[];
+  clusters?: string[] | null;
+}
+
+export function hasControllerFilter(filter?: ControllerFilter): boolean {
+  return !!filter && ((filter.controllers?.length ?? 0) > 0 || (filter.patterns?.length ?? 0) > 0);
 }
 
 export type CollectionTaskType = 'daily' | 'gap-fill' | 'monthly-agg';
@@ -99,6 +153,10 @@ export class OpenCostCostStore {
     if (hasMeta) {
       const version = await this.getSchemaVersion();
       if (version >= SCHEMA_VERSION) return;
+      if (version === 2) {
+        await this.migrateV2toV3();
+        return;
+      }
     }
 
     const hasDaily = await this.db.schema.hasTable(DAILY_TABLE);
@@ -109,6 +167,39 @@ export class OpenCostCostStore {
       // Fresh install
       await this.createSchemaV2();
     }
+    await this.migrateV2toV3();
+  }
+
+  /**
+   * V3 adds covering indexes for the read paths the UI hits on every page load
+   * (pod-level drill-down joins daily_costs by pod_id, the controller filter looks
+   * pods up by (cluster_id, controller)) and the admin-managed controller filter
+   * presets table. Every step is guarded so the migration is idempotent.
+   */
+  private async migrateV2toV3(): Promise<void> {
+    await this.db.raw(
+      `CREATE INDEX IF NOT EXISTS ${DAILY_TABLE}_pod_id_index ON ${DAILY_TABLE} (pod_id)`,
+    );
+    await this.db.raw(
+      `CREATE INDEX IF NOT EXISTS ${PODS_TABLE}_cluster_id_controller_index ON ${PODS_TABLE} (cluster_id, controller)`,
+    );
+    await this.db.raw(
+      `CREATE INDEX IF NOT EXISTS ${MONTHLY_TABLE}_pod_id_index ON ${MONTHLY_TABLE} (pod_id)`,
+    );
+    if (!(await this.db.schema.hasTable(FILTERS_TABLE))) {
+      await this.db.schema.createTable(FILTERS_TABLE, table => {
+        table.increments('id').primary();
+        table.string('name', 64).notNullable().unique();
+        table.string('title', 100).notNullable();
+        table.text('description');
+        // JSON arrays serialised as text so the column type is identical on SQLite and PostgreSQL
+        table.text('patterns').notNullable();
+        table.text('clusters');
+        table.timestamp('created_at').defaultTo(this.db.fn.now());
+        table.timestamp('updated_at').defaultTo(this.db.fn.now());
+      });
+    }
+    await this.setSchemaVersion(SCHEMA_VERSION);
   }
 
   private async getSchemaVersion(): Promise<number> {
@@ -205,7 +296,7 @@ export class OpenCostCostStore {
       table.index(['task_type', 'status']);
     });
 
-    await this.setSchemaVersion(SCHEMA_VERSION);
+    await this.setSchemaVersion(2);
   }
 
   /**
@@ -392,7 +483,32 @@ export class OpenCostCostStore {
       });
     }
 
-    await this.setSchemaVersion(SCHEMA_VERSION);
+    await this.setSchemaVersion(2);
+  }
+
+  /* ═══════════════════════════════════════════
+   *  Controller filter
+   * ═══════════════════════════════════════════ */
+
+  /**
+   * Apply a ControllerFilter to a query that already joins `opencost_pods`.
+   * Patterns are ORed together, then ANDed with the explicit controller list.
+   */
+  private applyControllerFilter<T extends Knex.QueryBuilder>(query: T, filter?: ControllerFilter): T {
+    if (!hasControllerFilter(filter)) return query;
+    const controllers = filter!.controllers ?? [];
+    const patterns = filter!.patterns ?? [];
+    if (controllers.length > 0) {
+      query.whereIn(`${PODS_TABLE}.controller`, controllers);
+    }
+    if (patterns.length > 0) {
+      query.where(function () {
+        for (const pattern of patterns) {
+          this.orWhere(`${PODS_TABLE}.controller`, 'like', pattern);
+        }
+      });
+    }
+    return query;
   }
 
   /* ═══════════════════════════════════════════
@@ -561,7 +677,7 @@ export class OpenCostCostStore {
    * Get per-day aggregated cost summary for a month.
    * Returns one row per day with totals and pod count.
    */
-  async getDailySummary(clusterId: number, year: number, month: number, controllers?: string[]): Promise<DailySummaryRow[]> {
+  async getDailySummary(clusterId: number, year: number, month: number, filter?: ControllerFilter): Promise<DailySummaryRow[]> {
     const startDate = `${year}-${String(month).padStart(2, '0')}-01`;
     const nextMonth = month === 12 ? 1 : month + 1;
     const nextYear = month === 12 ? year + 1 : year;
@@ -572,10 +688,11 @@ export class OpenCostCostStore {
       .where('date', '>=', startDate)
       .where('date', '<', endDate);
 
-    if (controllers && controllers.length > 0) {
-      query = query
-        .join(PODS_TABLE, `${DAILY_TABLE}.pod_id`, '=', `${PODS_TABLE}.id`)
-        .whereIn(`${PODS_TABLE}.controller`, controllers);
+    if (hasControllerFilter(filter)) {
+      query = this.applyControllerFilter(
+        query.join(PODS_TABLE, `${DAILY_TABLE}.pod_id`, '=', `${PODS_TABLE}.id`),
+        filter,
+      );
     }
 
     const rows = await query
@@ -613,10 +730,12 @@ export class OpenCostCostStore {
   /**
    * Get all pod costs for a specific date.
    */
-  async getPodsForDate(clusterId: number, date: string): Promise<DailyCostItem[]> {
-    const rows = await this.db(DAILY_TABLE)
+  async getPodsForDate(clusterId: number, date: string, filter?: ControllerFilter): Promise<DailyCostItem[]> {
+    const query = this.db(DAILY_TABLE)
       .join(PODS_TABLE, `${DAILY_TABLE}.pod_id`, '=', `${PODS_TABLE}.id`)
-      .where({ [`${DAILY_TABLE}.cluster_id`]: clusterId, [`${DAILY_TABLE}.date`]: date })
+      .where({ [`${DAILY_TABLE}.cluster_id`]: clusterId, [`${DAILY_TABLE}.date`]: date });
+    this.applyControllerFilter(query, filter);
+    const rows = await query
       .select(
         `${PODS_TABLE}.namespace`,
         `${PODS_TABLE}.controller_kind`,
@@ -714,14 +833,11 @@ export class OpenCostCostStore {
    *  Monthly operations
    * ═══════════════════════════════════════════ */
 
-  async getMonthlySummary(clusterId: number, year: number, month: number, controllers?: string[]): Promise<MonthlySummaryRow[]> {
-    let query = this.db(MONTHLY_TABLE)
+  async getMonthlySummary(clusterId: number, year: number, month: number, filter?: ControllerFilter): Promise<MonthlySummaryRow[]> {
+    const query = this.db(MONTHLY_TABLE)
       .join(PODS_TABLE, `${MONTHLY_TABLE}.pod_id`, '=', `${PODS_TABLE}.id`)
       .where({ [`${MONTHLY_TABLE}.cluster_id`]: clusterId, year, month });
-
-    if (controllers && controllers.length > 0) {
-      query = query.whereIn(`${PODS_TABLE}.controller`, controllers);
-    }
+    this.applyControllerFilter(query, filter);
 
     const rows = await query
       .select(
@@ -816,22 +932,19 @@ export class OpenCostCostStore {
     clusterId: number,
     year: number,
     month: number,
-    controllers?: string[],
+    filter?: ControllerFilter,
   ): Promise<{ rows: MonthlySummaryRow[]; daysCovered: number }> {
     const startDate = `${year}-${String(month).padStart(2, '0')}-01`;
     const nextMonth = month === 12 ? 1 : month + 1;
     const nextYear = month === 12 ? year + 1 : year;
     const endDate = `${nextYear}-${String(nextMonth).padStart(2, '0')}-01`;
 
-    let query = this.db(DAILY_TABLE)
+    const query = this.db(DAILY_TABLE)
       .join(PODS_TABLE, `${DAILY_TABLE}.pod_id`, '=', `${PODS_TABLE}.id`)
       .where({ [`${DAILY_TABLE}.cluster_id`]: clusterId })
       .where(`${DAILY_TABLE}.date`, '>=', startDate)
       .where(`${DAILY_TABLE}.date`, '<', endDate);
-
-    if (controllers && controllers.length > 0) {
-      query = query.whereIn(`${PODS_TABLE}.controller`, controllers);
-    }
+    this.applyControllerFilter(query, filter);
 
     const rows = await query
       .select(
@@ -883,20 +996,144 @@ export class OpenCostCostStore {
   }
 
   /**
-   * Get distinct controller names that have cost data for a cluster in a given month.
+   * Single-row monthly totals for the yearly overview table.
+   *
+   * Replaces fetching every per-pod row of `/costs` and summing client-side: the
+   * yearly view only needs one aggregated row per month, so the SUM runs in SQL
+   * and the response is a few hundred bytes regardless of pod count. Reads from
+   * `monthly_summaries` when the month has been aggregated, otherwise from
+   * `daily_costs` (current month, or a month whose aggregation has not run yet).
+   *
+   * `daysCovered` is cluster-wide even when a controller filter is applied, matching
+   * how `/costs` reports it.
    */
-  async getControllers(clusterId: number, year: number, month: number): Promise<{ controller: string; controllerKind: string | null }[]> {
+  async getMonthlyTotals(
+    clusterId: number,
+    year: number,
+    month: number,
+    filter?: ControllerFilter,
+  ): Promise<MonthlyTotalsRow> {
+    const hasFilter = hasControllerFilter(filter);
+    const empty: MonthlyTotalsRow = {
+      year, month,
+      cpuCost: 0, ramCost: 0, gpuCost: 0, pvCost: 0, networkCost: 0, totalCost: 0, carbonCost: 0,
+      podCount: 0, daysCovered: 0, source: 'none',
+    };
+    const toRow = (
+      r: Record<string, unknown> | undefined,
+      daysCovered: number,
+      source: 'monthly' | 'daily',
+    ): MonthlyTotalsRow => ({
+      year, month,
+      cpuCost: Number(r?.cpu_cost ?? 0),
+      ramCost: Number(r?.ram_cost ?? 0),
+      gpuCost: Number(r?.gpu_cost ?? 0),
+      pvCost: Number(r?.pv_cost ?? 0),
+      networkCost: Number(r?.network_cost ?? 0),
+      totalCost: Number(r?.total_cost ?? 0),
+      carbonCost: Number(r?.carbon_cost ?? 0),
+      podCount: Number(r?.pod_count ?? 0),
+      daysCovered,
+      source,
+    });
+
+    // 1. monthly_summaries
+    let monthly = this.db(MONTHLY_TABLE)
+      .where({ [`${MONTHLY_TABLE}.cluster_id`]: clusterId, year, month });
+    if (hasFilter) {
+      monthly = this.applyControllerFilter(
+        monthly.join(PODS_TABLE, `${MONTHLY_TABLE}.pod_id`, '=', `${PODS_TABLE}.id`),
+        filter,
+      );
+    }
+    const m = await monthly
+      .count('* as pod_count')
+      .sum(`${MONTHLY_TABLE}.cpu_cost as cpu_cost`)
+      .sum(`${MONTHLY_TABLE}.ram_cost as ram_cost`)
+      .sum(`${MONTHLY_TABLE}.gpu_cost as gpu_cost`)
+      .sum(`${MONTHLY_TABLE}.pv_cost as pv_cost`)
+      .sum(`${MONTHLY_TABLE}.network_cost as network_cost`)
+      .sum(`${MONTHLY_TABLE}.total_cost as total_cost`)
+      .sum(`${MONTHLY_TABLE}.carbon_cost as carbon_cost`)
+      .max(`${MONTHLY_TABLE}.days_covered as days_covered`)
+      .first();
+
+    if (m && Number(m.pod_count) > 0) {
+      let daysCovered = Number(m.days_covered ?? 0);
+      if (hasFilter) {
+        // days_covered is cluster-wide: re-read it without the controller filter
+        const unfiltered = await this.db(MONTHLY_TABLE)
+          .where({ cluster_id: clusterId, year, month })
+          .max('days_covered as days_covered')
+          .first();
+        daysCovered = Number(unfiltered?.days_covered ?? daysCovered);
+      }
+      return toRow(m, daysCovered, 'monthly');
+    }
+
+    // 2. daily_costs fallback
     const startDate = `${year}-${String(month).padStart(2, '0')}-01`;
     const nextMonth = month === 12 ? 1 : month + 1;
     const nextYear = month === 12 ? year + 1 : year;
     const endDate = `${nextYear}-${String(nextMonth).padStart(2, '0')}-01`;
 
-    const rows = await this.db(DAILY_TABLE)
+    let daily = this.db(DAILY_TABLE)
+      .where({ [`${DAILY_TABLE}.cluster_id`]: clusterId })
+      .where(`${DAILY_TABLE}.date`, '>=', startDate)
+      .where(`${DAILY_TABLE}.date`, '<', endDate);
+    if (hasFilter) {
+      daily = this.applyControllerFilter(
+        daily.join(PODS_TABLE, `${DAILY_TABLE}.pod_id`, '=', `${PODS_TABLE}.id`),
+        filter,
+      );
+    }
+    const d = await daily
+      .countDistinct(`${DAILY_TABLE}.pod_id as pod_count`)
+      .countDistinct(`${DAILY_TABLE}.date as days_covered`)
+      .sum(`${DAILY_TABLE}.cpu_cost as cpu_cost`)
+      .sum(`${DAILY_TABLE}.ram_cost as ram_cost`)
+      .sum(`${DAILY_TABLE}.gpu_cost as gpu_cost`)
+      .sum(`${DAILY_TABLE}.pv_cost as pv_cost`)
+      .sum(`${DAILY_TABLE}.network_cost as network_cost`)
+      .sum(`${DAILY_TABLE}.total_cost as total_cost`)
+      .sum(`${DAILY_TABLE}.carbon_cost as carbon_cost`)
+      .first();
+
+    if (!d || Number(d.pod_count) === 0) return empty;
+
+    let daysCovered = Number(d.days_covered ?? 0);
+    if (hasFilter) {
+      daysCovered = await this.getDailyCoverage(clusterId, year, month);
+    }
+    return toRow(d, daysCovered, 'daily');
+  }
+
+  /**
+   * Get distinct controller names that have cost data for a cluster in a given month.
+   * When `month` is omitted the whole year is scanned in one query, which the yearly
+   * view uses instead of issuing one request per month.
+   */
+  async getControllers(clusterId: number, year: number, month?: number, filter?: ControllerFilter): Promise<{ controller: string; controllerKind: string | null }[]> {
+    let startDate: string;
+    let endDate: string;
+    if (month === undefined) {
+      startDate = `${year}-01-01`;
+      endDate = `${year + 1}-01-01`;
+    } else {
+      startDate = `${year}-${String(month).padStart(2, '0')}-01`;
+      const nextMonth = month === 12 ? 1 : month + 1;
+      const nextYear = month === 12 ? year + 1 : year;
+      endDate = `${nextYear}-${String(nextMonth).padStart(2, '0')}-01`;
+    }
+
+    const query = this.db(DAILY_TABLE)
       .join(PODS_TABLE, `${DAILY_TABLE}.pod_id`, '=', `${PODS_TABLE}.id`)
       .where({ [`${DAILY_TABLE}.cluster_id`]: clusterId })
       .where(`${DAILY_TABLE}.date`, '>=', startDate)
       .where(`${DAILY_TABLE}.date`, '<', endDate)
-      .whereNotNull(`${PODS_TABLE}.controller`)
+      .whereNotNull(`${PODS_TABLE}.controller`);
+    this.applyControllerFilter(query, filter);
+    const rows = await query
       .distinct(`${PODS_TABLE}.controller`, `${PODS_TABLE}.controller_kind`)
       .orderBy(`${PODS_TABLE}.controller`, 'asc');
 
@@ -924,6 +1161,65 @@ export class OpenCostCostStore {
       years.push(y);
     }
     return years;
+  }
+
+  /* ═══════════════════════════════════════════
+   *  Controller filter presets
+   * ═══════════════════════════════════════════ */
+
+  private toPreset(r: Record<string, unknown>): ControllerFilterPreset {
+    const parse = (v: unknown): string[] | null => {
+      if (v === null || v === undefined) return null;
+      try {
+        const arr = JSON.parse(String(v));
+        return Array.isArray(arr) ? arr.map(String) : null;
+      } catch {
+        return null;
+      }
+    };
+    const ts = (v: unknown) => (v instanceof Date ? v.toISOString() : String(v));
+    return {
+      name: r.name as string,
+      title: r.title as string,
+      description: (r.description as string | null) ?? null,
+      patterns: parse(r.patterns) ?? [],
+      clusters: parse(r.clusters),
+      createdAt: ts(r.created_at),
+      updatedAt: ts(r.updated_at),
+    };
+  }
+
+  async listFilterPresets(): Promise<ControllerFilterPreset[]> {
+    const rows = await this.db(FILTERS_TABLE).orderBy('title', 'asc').orderBy('name', 'asc');
+    return rows.map(r => this.toPreset(r));
+  }
+
+  async getFilterPreset(name: string): Promise<ControllerFilterPreset | undefined> {
+    const row = await this.db(FILTERS_TABLE).where({ name }).first();
+    return row ? this.toPreset(row) : undefined;
+  }
+
+  /** Create or replace a preset by name. */
+  async upsertFilterPreset(input: ControllerFilterPresetInput): Promise<ControllerFilterPreset> {
+    const now = new Date().toISOString();
+    const clusters = input.clusters && input.clusters.length > 0 ? JSON.stringify(input.clusters) : null;
+    await this.db.raw(
+      `INSERT INTO ${FILTERS_TABLE} (name, title, description, patterns, clusters, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT (name) DO UPDATE SET
+         title = EXCLUDED.title,
+         description = EXCLUDED.description,
+         patterns = EXCLUDED.patterns,
+         clusters = EXCLUDED.clusters,
+         updated_at = EXCLUDED.updated_at`,
+      [input.name, input.title, input.description ?? null, JSON.stringify(input.patterns), clusters, now, now],
+    );
+    return (await this.getFilterPreset(input.name))!;
+  }
+
+  async deleteFilterPreset(name: string): Promise<boolean> {
+    const deleted = await this.db(FILTERS_TABLE).where({ name }).del();
+    return deleted > 0;
   }
 
   /* ═══════════════════════════════════════════

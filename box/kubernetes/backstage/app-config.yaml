@@ -258,19 +258,19 @@ opencost:
   timezone: Asia/Seoul
   clusters:
     - name: shared
-      title: Shared
+      alias: Shared
       url: ${OPENCOST_SHARED_URL}
     - name: dev
-      title: Dev
+      alias: Dev
       url: ${OPENCOST_DEV_URL}
     - name: stg
-      title: Stage
+      alias: Stage
       url: ${OPENCOST_STG_URL}
     - name: sb
-      title: Sandbox
+      alias: Sandbox
       url: ${OPENCOST_SB_URL}
     - name: prd
-      title: Production
+      alias: Production
       url: ${OPENCOST_PRD_URL}
 
 opensearchAccount:

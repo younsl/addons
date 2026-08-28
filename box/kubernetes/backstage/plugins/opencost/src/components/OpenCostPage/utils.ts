@@ -115,3 +115,22 @@ export function toTzString(utcIso: string, tz: string): string {
 export function daysInMonth(year: number, month: number): number {
   return new Date(year, month, 0).getDate();
 }
+
+/**
+ * Convert a SQL LIKE pattern (`%` any run, `_` one character) to a RegExp so the
+ * browser can apply a preset to live OpenCost API rows the same way the backend
+ * applies it to stored rows. Case-insensitive to match SQLite's ASCII LIKE.
+ */
+export function likeToRegExp(pattern: string): RegExp {
+  let out = '';
+  for (const ch of pattern) {
+    if (ch === '%') out += '.*';
+    else if (ch === '_') out += '.';
+    else out += ch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+  return new RegExp(`^${out}$`, 'i');
+}
+
+export function matchesAnyLike(value: string, patterns: string[]): boolean {
+  return patterns.some(p => likeToRegExp(p).test(value));
+}

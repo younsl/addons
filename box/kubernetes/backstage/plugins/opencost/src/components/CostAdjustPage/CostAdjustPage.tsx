@@ -32,6 +32,7 @@ import {
   randomHash,
   truncate1,
   getDayWindow,
+  matchesAnyLike,
 } from '../OpenCostPage/utils';
 import '../OpenCostPage/OpenCostPage.css';
 import './CostAdjustPage.css';
@@ -70,12 +71,20 @@ export const CostAdjustPage = () => {
   const year = Number(searchParams.get('year')) || new Date().getFullYear();
   const month = Number(searchParams.get('month')) || new Date().getMonth() + 1;
   const controllersParam = searchParams.get('controllers') ?? undefined;
+  const filterParam = searchParams.get('filter') ?? undefined;
   const monthLabel = `${year}-${String(month).padStart(2, '0')}`;
 
   const billingTz = useMemo(
     () => configApi.getOptionalString('opencost.timezone') ?? 'UTC',
     [configApi],
   );
+
+  // Operator-facing cluster name, written to the Cluster column of the CSV
+  const clusterAlias = useMemo(() => {
+    const arr = configApi.getOptionalConfigArray('opencost.clusters') ?? [];
+    const match = arr.find(c => c.getString('name') === cluster);
+    return match?.getOptionalString('alias') ?? cluster;
+  }, [configApi, cluster]);
 
   /* ── Fetch data ── */
   const [baseUrl, setBaseUrl] = useState('');
@@ -92,13 +101,26 @@ export const CostAdjustPage = () => {
       month: String(month),
     });
     if (controllersParam) params.set('controllers', controllersParam);
+    if (filterParam) params.set('filter', filterParam);
     const res = await fetchApi.fetch(`${baseUrl}/costs/daily-summary?${params}`);
     if (res.ok) {
       const json = await res.json();
       return (json.data as DailySummaryItem[]) ?? null;
     }
     return null;
-  }, [baseUrl, cluster, year, month, controllersParam]);
+  }, [baseUrl, cluster, year, month, controllersParam, filterParam]);
+
+  // Patterns of the active preset, needed to apply it to live (not yet stored) rows
+  const { value: presetPatterns } = useAsync(async (): Promise<string[] | null> => {
+    if (!baseUrl || !filterParam) return null;
+    try {
+      const res = await fetchApi.fetch(`${baseUrl}/filters`);
+      if (!res.ok) return null;
+      const json = await res.json();
+      const preset = (json.data as { name: string; patterns: string[] }[] | undefined)?.find(p => p.name === filterParam);
+      return preset?.patterns ?? null;
+    } catch { return null; }
+  }, [baseUrl, filterParam]);
 
   // Fetch today's live cost from OpenCost API (for "In Progress" row)
   const { value: todayLiveCost } = useAsync(async (): Promise<DailySummaryItem | null> => {
@@ -119,6 +141,9 @@ export const CostAdjustPage = () => {
       if (!res.ok) return null;
       const json = await res.json();
       let entries = Object.values(json.data?.[0] ?? {}).filter((e: any) => e.name !== '__idle__') as any[];
+      if (presetPatterns && presetPatterns.length > 0) {
+        entries = entries.filter((e: any) => matchesAnyLike(e.properties?.controller ?? '', presetPatterns));
+      }
       if (controllersParam) {
         const ctrl = controllersParam.split(',');
         entries = entries.filter((e: any) => ctrl.includes(e.properties?.controller ?? ''));
@@ -136,7 +161,7 @@ export const CostAdjustPage = () => {
         carbonCost: entries.reduce((s: number, e: any) => s + (e.carbonCost ?? 0), 0),
       };
     } catch { return null; }
-  }, [baseUrl, cluster, year, month, billingTz, controllersParam]);
+  }, [baseUrl, cluster, year, month, billingTz, controllersParam, presetPatterns]);
 
   /* ── Build full month rows ── */
   const fullRows = useMemo((): DayRow[] => {
@@ -351,11 +376,12 @@ export const CostAdjustPage = () => {
   const handleExport = () => {
     const statusLabelMap: Record<DataStatus, string> = { collected: 'Collected', collecting: 'In Progress', missing: 'Missing', pending: 'Pending' };
     const headers = hasAnyAdjustment
-      ? ['Date', 'Day', 'Status', 'CPU', 'RAM', 'GPU', 'PV', 'Network', 'Total', 'Adjusted', 'Carbon']
-      : ['Date', 'Day', 'Status', 'CPU', 'RAM', 'GPU', 'PV', 'Network', 'Total', 'Carbon'];
+      ? ['Cluster', 'Date', 'Day', 'Status', 'CPU', 'RAM', 'GPU', 'PV', 'Network', 'Total', 'Adjusted', 'Carbon']
+      : ['Cluster', 'Date', 'Day', 'Status', 'CPU', 'RAM', 'GPU', 'PV', 'Network', 'Total', 'Carbon'];
     const rows = totals.included.map(r => {
       const adj = applyRow(r);
-      const base = [
+      const base: (string | number)[] = [
+        clusterAlias,
         r.date,
         r.dayOfWeek,
         statusLabelMap[r.status],
@@ -381,6 +407,8 @@ export const CostAdjustPage = () => {
 
   const goBack = () => {
     const params = new URLSearchParams({ cluster, year: String(year), month: String(month) });
+    if (controllersParam) params.set('controllers', controllersParam);
+    if (filterParam) params.set('filter', filterParam);
     navigate(`/cost-report?${params}`);
   };
 

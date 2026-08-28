@@ -700,3 +700,28 @@
   opacity: 1;
 }
 
+
+.oc-pending-row td {
+  opacity: 0.6;
+}
+
+.oc-preset-select-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.oc-preset-select-row select {
+  height: 2rem;
+  min-width: 160px;
+  padding: 0 8px;
+  border-radius: var(--bui-radius-3, 0.5rem);
+  border: 1px solid var(--bui-border-2, rgba(255, 255, 255, 0.2));
+  background: var(--bui-bg-neutral-1, rgba(255, 255, 255, 0.05));
+  color: var(--bui-fg-primary, inherit);
+  font-size: 0.8125rem;
+}
+
+.oc-preset-chip {
+  border-style: dashed;
+}

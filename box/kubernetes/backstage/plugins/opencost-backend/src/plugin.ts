@@ -6,6 +6,7 @@ import { createRouter } from './service/router';
 import { OpenCostService } from './service/OpenCostService';
 import { OpenCostCostStore } from './service/OpenCostCostStore';
 import { OpenCostCollector } from './service/OpenCostCollector';
+import { ControllerFilterPresets } from './service/ControllerFilterPresets';
 
 export const opencostPlugin = createBackendPlugin({
   pluginId: 'opencost',
@@ -36,7 +37,8 @@ export const opencostPlugin = createBackendPlugin({
         const collector = await OpenCostCollector.create(costStore, config, logger);
         await collector.registerTasks(scheduler);
 
-        const router = await createRouter({ service, costStore, collector, logger });
+        const presets = new ControllerFilterPresets(costStore);
+        const router = await createRouter({ service, costStore, collector, presets, logger });
 
         httpRouter.use(router as any);
         httpRouter.addAuthPolicy({

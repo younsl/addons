@@ -10,6 +10,7 @@
  */
 import knex, { Knex } from 'knex';
 import { OpenCostCostStore, DailyCostItem } from './OpenCostCostStore';
+import { ControllerFilterPresets, validatePresetInput } from './ControllerFilterPresets';
 
 /* ────────────────────────────────
  *  Helpers
@@ -150,4 +151,135 @@ describe('OpenCostCostStore batch performance', () => {
     },
     120_000,
   );
+
+  /* ─── getMonthlyTotals ─── */
+
+  test('getMonthlyTotals — one aggregated row from monthly_summaries', async () => {
+    const clusterId = (await store.getClusterId('bench-cluster'))!;
+    // 2025-02 was aggregated by the previous test
+    const perPod = await store.getMonthlySummary(clusterId, 2025, 2);
+    expect(perPod.length).toBeGreaterThan(0);
+
+    counter.count = 0;
+    const start = performance.now();
+    const totals = await store.getMonthlyTotals(clusterId, 2025, 2);
+    const elapsed = performance.now() - start;
+    console.log(`  getMonthlyTotals(monthly, ${perPod.length} pods): ${counter.count} queries, ${elapsed.toFixed(1)}ms`);
+
+    expect(counter.count).toBe(1);
+    expect(totals.source).toBe('monthly');
+    expect(totals.podCount).toBe(perPod.length);
+    expect(totals.daysCovered).toBe(perPod[0].daysCovered);
+    const expected = perPod.reduce((s, r) => s + r.totalCost, 0);
+    expect(totals.totalCost).toBeCloseTo(expected, 4);
+  });
+
+  test('getMonthlyTotals — falls back to daily_costs when month not aggregated', async () => {
+    const clusterId = (await store.getClusterId('bench-cluster'))!;
+    for (let day = 1; day <= 5; day++) {
+      await store.insertDailyCosts(clusterId, `2025-03-${String(day).padStart(2, '0')}`, generateItems(200));
+    }
+    const { rows, daysCovered } = await store.aggregateMonthOnTheFly(clusterId, 2025, 3);
+
+    counter.count = 0;
+    const totals = await store.getMonthlyTotals(clusterId, 2025, 3);
+
+    // 1 miss on monthly_summaries + 1 aggregate over daily_costs
+    expect(counter.count).toBe(2);
+    expect(totals.source).toBe('daily');
+    expect(totals.daysCovered).toBe(daysCovered);
+    expect(totals.podCount).toBe(rows.length);
+    expect(totals.totalCost).toBeCloseTo(rows.reduce((s, r) => s + r.totalCost, 0), 4);
+  });
+
+  test('getMonthlyTotals — controller filter keeps cluster-wide daysCovered', async () => {
+    const clusterId = (await store.getClusterId('bench-cluster'))!;
+    const filtered = await store.getMonthlyTotals(clusterId, 2025, 3, { controllers: ['deploy-1'] });
+    const { rows } = await store.aggregateMonthOnTheFly(clusterId, 2025, 3, { controllers: ['deploy-1'] });
+
+    expect(filtered.source).toBe('daily');
+    expect(filtered.daysCovered).toBe(5);
+    expect(filtered.podCount).toBe(rows.length);
+    expect(filtered.totalCost).toBeCloseTo(rows.reduce((s, r) => s + r.totalCost, 0), 4);
+  });
+
+  test('controller LIKE patterns — ORed, ANDed with explicit list', async () => {
+    const clusterId = (await store.getClusterId('bench-cluster'))!;
+    // generateItems assigns controller deploy-(i % 50), so deploy-1% matches deploy-1, deploy-10..19
+    const { rows } = await store.aggregateMonthOnTheFly(clusterId, 2025, 3, { patterns: ['deploy-1%'] });
+    const names = new Set(rows.map(r => r.controller));
+    expect(names.size).toBe(11);
+    for (const n of names) expect(n!.startsWith('deploy-1')).toBe(true);
+
+    const two = await store.aggregateMonthOnTheFly(clusterId, 2025, 3, { patterns: ['deploy-4_', 'deploy-2'] });
+    const twoNames = new Set(two.rows.map(r => r.controller));
+    expect(twoNames.size).toBe(11);
+    expect(twoNames.has('deploy-2')).toBe(true);
+    expect(twoNames.has('deploy-40')).toBe(true);
+
+    const both = await store.aggregateMonthOnTheFly(clusterId, 2025, 3, { patterns: ['deploy-1%'], controllers: ['deploy-12', 'deploy-3'] });
+    expect(new Set(both.rows.map(r => r.controller))).toEqual(new Set(['deploy-12']));
+
+    const totals = await store.getMonthlyTotals(clusterId, 2025, 3, { patterns: ['deploy-1%'] });
+    expect(totals.podCount).toBe(rows.length);
+    expect(totals.totalCost).toBeCloseTo(rows.reduce((s, r) => s + r.totalCost, 0), 4);
+
+    const daily = await store.getDailySummary(clusterId, 2025, 3, { patterns: ['deploy-1%'] });
+    expect(daily.length).toBe(5);
+    expect(daily.reduce((s, d) => s + d.totalCost, 0)).toBeCloseTo(totals.totalCost, 4);
+
+    const pods = await store.getPodsForDate(clusterId, '2025-03-01', { patterns: ['deploy-1%'] });
+    expect(pods.length).toBe(rows.length);
+
+    const ctrls = await store.getControllers(clusterId, 2025, 3, { patterns: ['deploy-1%'] });
+    expect(ctrls.map(c => c.controller).sort()).toEqual(Array.from(names).sort());
+  });
+
+  test('controller filter presets — CRUD and request resolution', async () => {
+    const presets = new ControllerFilterPresets(store);
+    expect(await presets.list()).toEqual([]);
+
+    const v = validatePresetInput({ title: 'Vendor X', patterns: ['deploy-1%', ' deploy-2 ', 'deploy-1%', ''], clusters: ['bench-cluster'], name: 'vendor-x' });
+    expect(v.ok).toBe(true);
+    if (!v.ok) throw new Error(v.error);
+    expect(v.value.patterns).toEqual(['deploy-1%', 'deploy-2']);
+
+    const created = await presets.save(v.value);
+    expect(created.name).toBe('vendor-x');
+    expect(created.clusters).toEqual(['bench-cluster']);
+
+    const updated = await presets.save({ ...v.value, title: 'Vendor X (renamed)', clusters: null });
+    expect(updated.title).toBe('Vendor X (renamed)');
+    expect(updated.clusters).toBeNull();
+    expect((await presets.list()).length).toBe(1);
+
+    const resolved = await presets.resolve('vendor-x', ['deploy-12'], 'bench-cluster');
+    expect(resolved.filter).toEqual({ controllers: ['deploy-12'], patterns: ['deploy-1%', 'deploy-2'] });
+    expect((await presets.resolve('nope', undefined, 'bench-cluster')).error).toMatch(/Unknown/);
+
+    await presets.save({ ...v.value, clusters: ['other'] });
+    expect((await presets.resolve('vendor-x', undefined, 'bench-cluster')).error).toMatch(/not enabled/);
+
+    expect(await presets.remove('vendor-x')).toBe(true);
+    expect(await presets.remove('vendor-x')).toBe(false);
+
+    expect(validatePresetInput({ name: 'Bad Name', patterns: ['x'] }).ok).toBe(false);
+    expect(validatePresetInput({ name: 'ok', patterns: [] }).ok).toBe(false);
+    expect(validatePresetInput({ name: 'ok', patterns: 'x' }).ok).toBe(false);
+  });
+
+  test('getMonthlyTotals — empty month reports source none', async () => {
+    const clusterId = (await store.getClusterId('bench-cluster'))!;
+    const totals = await store.getMonthlyTotals(clusterId, 2019, 1);
+    expect(totals.source).toBe('none');
+    expect(totals.totalCost).toBe(0);
+  });
+
+  test('getControllers — year-wide query without month', async () => {
+    const clusterId = (await store.getClusterId('bench-cluster'))!;
+    const year = await store.getControllers(clusterId, 2025);
+    const feb = await store.getControllers(clusterId, 2025, 2);
+    expect(year.length).toBeGreaterThanOrEqual(feb.length);
+    expect(year.map(c => c.controller)).toEqual(expect.arrayContaining(feb.map(c => c.controller)));
+  });
 });

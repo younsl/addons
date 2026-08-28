@@ -1,20 +1,31 @@
-import { Router } from 'express';
+import { Router, json as jsonBody } from 'express';
 import { LoggerService } from '@backstage/backend-plugin-api';
 import { OpenCostService } from './OpenCostService';
 import { OpenCostCostStore } from './OpenCostCostStore';
 import { OpenCostCollector } from './OpenCostCollector';
+import { ControllerFilterPresets, validatePresetInput } from './ControllerFilterPresets';
 
 export interface RouterOptions {
   service: OpenCostService;
   costStore: OpenCostCostStore;
   collector: OpenCostCollector;
+  presets: ControllerFilterPresets;
   logger: LoggerService;
 }
 
 export async function createRouter(options: RouterOptions): Promise<Router> {
-  const { service, costStore, collector, logger } = options;
+  const { service, costStore, collector, presets, logger } = options;
 
   const router = Router();
+  router.use(jsonBody({ limit: '64kb' }));
+
+  /** Parse `controllers` (comma list) and `filter` (preset name) into a store filter. */
+  const parseFilter = async (req: { query: Record<string, unknown> }, cluster: string) => {
+    const controllersParam = req.query.controllers as string | undefined;
+    const controllers = controllersParam ? controllersParam.split(',').filter(Boolean) : undefined;
+    const presetName = (req.query.filter as string | undefined) || undefined;
+    return presets.resolve(presetName, controllers, cluster);
+  };
 
   // Log response time for all routes except /health
   router.use((req, res, next) => {
@@ -41,6 +52,112 @@ export async function createRouter(options: RouterOptions): Promise<Router> {
       timezone: collector.timezone,
       dailyCollectorCron: collector.dailyCronLocal,
     });
+  });
+
+  /**
+   * Controller filter presets, managed from the OpenCost UI.
+   *   GET    /filters          list
+   *   PUT    /filters/:name    create or replace
+   *   DELETE /filters/:name    delete
+   */
+  router.get('/filters', async (_req, res) => {
+    try {
+      res.json({ data: await presets.list() });
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      logger.error(`Error listing controller filters: ${msg}`);
+      res.status(500).json({ message: 'Internal error listing controller filters' });
+    }
+  });
+
+  /**
+   * POST /filters/preview  { cluster, year, month, patterns[] }
+   * Dry-run a pattern list against stored data so the editor can show what a preset
+   * would match before it is saved. Nothing is persisted.
+   */
+  router.post('/filters/preview', async (req, res) => {
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const cluster = typeof body.cluster === 'string' ? body.cluster : undefined;
+    const year = Number(body.year);
+    const month = Number(body.month);
+    const validated = validatePresetInput({ name: 'preview', patterns: body.patterns });
+    if (!cluster || !year || !month || month < 1 || month > 12) {
+      res.status(400).json({ message: 'Required: cluster, year, month (1-12), patterns[]' });
+      return;
+    }
+    if (!validated.ok) {
+      res.status(400).json({ message: validated.error });
+      return;
+    }
+    try {
+      const clusterId = await costStore.getClusterId(cluster);
+      if (!clusterId) {
+        res.json({ data: { controllers: [], controllerCount: 0, podCount: 0, totalCost: 0, daysCovered: 0, samplePods: [] } });
+        return;
+      }
+      const filter = { patterns: validated.value.patterns };
+      const [controllers, totals, { rows }] = await Promise.all([
+        costStore.getControllers(clusterId, year, month, filter),
+        costStore.getMonthlyTotals(clusterId, year, month, filter),
+        costStore.aggregateMonthOnTheFly(clusterId, year, month, filter),
+      ]);
+      const CONTROLLER_CAP = 100;
+      const SAMPLE_CAP = 20;
+      res.json({
+        data: {
+          controllers: controllers.slice(0, CONTROLLER_CAP),
+          controllerCount: controllers.length,
+          podCount: totals.podCount,
+          totalCost: totals.totalCost,
+          daysCovered: totals.daysCovered,
+          samplePods: rows.slice(0, SAMPLE_CAP).map(r => ({
+            namespace: r.namespace,
+            controllerKind: r.controllerKind,
+            controller: r.controller,
+            pod: r.pod,
+            totalCost: r.totalCost,
+          })),
+        },
+      });
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      logger.error(`Error previewing controller filter for cluster=${cluster} ${year}-${month}: ${msg}`);
+      res.status(500).json({ message: 'Internal error previewing controller filter' });
+    }
+  });
+
+  router.put('/filters/:name', async (req, res) => {
+    const validated = validatePresetInput({ ...(req.body ?? {}), name: req.params.name });
+    if (!validated.ok) {
+      res.status(400).json({ message: validated.error });
+      return;
+    }
+    try {
+      const existed = !!(await presets.get(validated.value.name));
+      const saved = await presets.save(validated.value);
+      logger.info(`Controller filter '${saved.name}' ${existed ? 'updated' : 'created'} (${saved.patterns.length} pattern(s))`);
+      res.status(existed ? 200 : 201).json({ data: saved });
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      logger.error(`Error saving controller filter '${req.params.name}': ${msg}`);
+      res.status(500).json({ message: 'Internal error saving controller filter' });
+    }
+  });
+
+  router.delete('/filters/:name', async (req, res) => {
+    try {
+      const removed = await presets.remove(req.params.name);
+      if (!removed) {
+        res.status(404).json({ message: `Unknown controller filter: ${req.params.name}` });
+        return;
+      }
+      logger.info(`Controller filter '${req.params.name}' deleted`);
+      res.status(204).end();
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      logger.error(`Error deleting controller filter '${req.params.name}': ${msg}`);
+      res.status(500).json({ message: 'Internal error deleting controller filter' });
+    }
   });
 
   router.get('/clusters/status', async (_req, res) => {
@@ -101,16 +218,17 @@ export async function createRouter(options: RouterOptions): Promise<Router> {
   });
 
   /**
-   * GET /costs/controllers?cluster=X&year=Y&month=Z
+   * GET /costs/controllers?cluster=X&year=Y[&month=Z][&filter=preset]
    * Returns distinct controller names for the given cluster/month.
+   * Without `month` the whole year is returned in one response.
    */
   router.get('/costs/controllers', async (req, res) => {
     const cluster = req.query.cluster as string | undefined;
     const year = Number(req.query.year);
-    const month = Number(req.query.month);
+    const month = req.query.month === undefined ? undefined : Number(req.query.month);
 
-    if (!cluster || !year || !month || month < 1 || month > 12) {
-      res.status(400).json({ message: 'Required: cluster, year, month (1-12)' });
+    if (!cluster || !year || (month !== undefined && (!month || month < 1 || month > 12))) {
+      res.status(400).json({ message: 'Required: cluster, year. Optional: month (1-12)' });
       return;
     }
 
@@ -121,7 +239,12 @@ export async function createRouter(options: RouterOptions): Promise<Router> {
         return;
       }
 
-      const data = await costStore.getControllers(clusterId, year, month);
+      const { filter, error } = await parseFilter(req, cluster);
+      if (error) {
+        res.status(400).json({ message: error });
+        return;
+      }
+      const data = await costStore.getControllers(clusterId, year, month, filter);
       res.json({ data });
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
@@ -131,29 +254,66 @@ export async function createRouter(options: RouterOptions): Promise<Router> {
   });
 
   /**
-   * GET /costs/daily-summary?cluster=X&year=Y&month=Z[&controllers=a,b]
+   * GET /costs/monthly-totals?cluster=X&year=Y&month=Z[&controllers=a,b][&filter=preset]
+   * Returns one aggregated row for the month. Serves the yearly overview, which
+   * previously pulled every per-pod row via /costs and summed in the browser.
+   */
+  router.get('/costs/monthly-totals', async (req, res) => {
+    const cluster = req.query.cluster as string | undefined;
+    const year = Number(req.query.year);
+    const month = Number(req.query.month);
+    if (!cluster || !year || !month || month < 1 || month > 12) {
+      res.status(400).json({ message: 'Required: cluster, year, month (1-12)' });
+      return;
+    }
+    try {
+      const { filter, error: filterError } = await parseFilter(req, cluster);
+      if (filterError) {
+        res.status(400).json({ message: filterError });
+        return;
+      }
+
+      const clusterId = await costStore.getClusterId(cluster);
+      if (!clusterId) {
+        res.json({ data: null });
+        return;
+      }
+
+      const data = await costStore.getMonthlyTotals(clusterId, year, month, filter);
+      res.json({ data });
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      logger.error(`Error fetching monthly totals for cluster=${cluster} ${year}-${month}: ${msg}`);
+      res.status(500).json({ message: 'Internal error fetching monthly totals' });
+    }
+  });
+
+  /**
+   * GET /costs/daily-summary?cluster=X&year=Y&month=Z[&controllers=a,b][&filter=preset]
    * Returns per-day aggregated cost totals for a month from DB.
    */
   router.get('/costs/daily-summary', async (req, res) => {
     const cluster = req.query.cluster as string | undefined;
     const year = Number(req.query.year);
     const month = Number(req.query.month);
-    const controllersParam = req.query.controllers as string | undefined;
-    const controllers = controllersParam ? controllersParam.split(',').filter(Boolean) : undefined;
-
     if (!cluster || !year || !month || month < 1 || month > 12) {
       res.status(400).json({ message: 'Required: cluster, year, month (1-12)' });
       return;
     }
-
     try {
+      const { filter, error: filterError } = await parseFilter(req, cluster);
+      if (filterError) {
+        res.status(400).json({ message: filterError });
+        return;
+      }
+
       const clusterId = await costStore.getClusterId(cluster);
       if (!clusterId) {
         res.json({ data: [] });
         return;
       }
 
-      const data = await costStore.getDailySummary(clusterId, year, month, controllers);
+      const data = await costStore.getDailySummary(clusterId, year, month, filter);
       res.json({ data });
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
@@ -163,7 +323,7 @@ export async function createRouter(options: RouterOptions): Promise<Router> {
   });
 
   /**
-   * GET /costs/pods?cluster=X&date=YYYY-MM-DD
+   * GET /costs/pods?cluster=X&date=YYYY-MM-DD[&controllers=a,b][&filter=preset]
    * Returns all pod costs for a specific date from DB.
    */
   router.get('/costs/pods', async (req, res) => {
@@ -174,15 +334,20 @@ export async function createRouter(options: RouterOptions): Promise<Router> {
       res.status(400).json({ message: 'Required: cluster, date (YYYY-MM-DD)' });
       return;
     }
-
     try {
+      const { filter, error: filterError } = await parseFilter(req, cluster);
+      if (filterError) {
+        res.status(400).json({ message: filterError });
+        return;
+      }
+
       const clusterId = await costStore.getClusterId(cluster);
       if (!clusterId) {
         res.json({ data: [] });
         return;
       }
 
-      const data = await costStore.getPodsForDate(clusterId, date);
+      const data = await costStore.getPodsForDate(clusterId, date, filter);
       res.json({ data });
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
@@ -192,7 +357,7 @@ export async function createRouter(options: RouterOptions): Promise<Router> {
   });
 
   /**
-   * GET /costs?cluster=X&year=Y&month=Z[&controllers=a,b]
+   * GET /costs?cluster=X&year=Y&month=Z[&controllers=a,b][&filter=preset]
    * Returns monthly pod cost data from DB.
    * Checks monthly_summaries first, falls back to real-time aggregation from daily_costs.
    */
@@ -200,15 +365,17 @@ export async function createRouter(options: RouterOptions): Promise<Router> {
     const cluster = req.query.cluster as string | undefined;
     const year = Number(req.query.year);
     const month = Number(req.query.month);
-    const controllersParam = req.query.controllers as string | undefined;
-    const controllers = controllersParam ? controllersParam.split(',').filter(Boolean) : undefined;
-
     if (!cluster || !year || !month || month < 1 || month > 12) {
       res.status(400).json({ message: 'Required: cluster, year, month (1-12)' });
       return;
     }
-
     try {
+      const { filter, error: filterError } = await parseFilter(req, cluster);
+      if (filterError) {
+        res.status(400).json({ message: filterError });
+        return;
+      }
+
       const clusterId = await costStore.getClusterId(cluster);
       if (!clusterId) {
         res.json({ data: [], daysCovered: 0, source: 'none' });
@@ -216,14 +383,14 @@ export async function createRouter(options: RouterOptions): Promise<Router> {
       }
 
       // Try monthly summaries first
-      const summaries = await costStore.getMonthlySummary(clusterId, year, month, controllers);
+      const summaries = await costStore.getMonthlySummary(clusterId, year, month, filter);
       if (summaries.length > 0) {
         res.json({ data: summaries, daysCovered: summaries[0].daysCovered, source: 'monthly' });
         return;
       }
 
       // Fall back to real-time aggregation from daily costs
-      const { rows, daysCovered } = await costStore.aggregateMonthOnTheFly(clusterId, year, month, controllers);
+      const { rows, daysCovered } = await costStore.aggregateMonthOnTheFly(clusterId, year, month, filter);
       res.json({ data: rows, daysCovered, source: 'daily' });
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);

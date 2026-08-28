@@ -37,7 +37,9 @@ import {
   downloadCsv,
   toTzString,
   daysInMonth,
+  matchesAnyLike,
 } from './utils';
+import { FilterPresetManager, FilterPreset } from '../FilterPresetManager';
 import './OpenCostPage.css';
 
 /* ─── Types ─── */
@@ -108,6 +110,21 @@ interface PodCostItem {
   carbonCost: number;
 }
 
+interface PodMonthlyItem {
+  namespace: string;
+  controllerKind: string | null;
+  controller: string | null;
+  pod: string;
+  cpuCost: number;
+  ramCost: number;
+  gpuCost: number;
+  pvCost: number;
+  networkCost: number;
+  totalCost: number;
+  carbonCost: number;
+  daysCovered: number;
+}
+
 interface PodDailyItem {
   date: string;
   cpuCost: number;
@@ -167,10 +184,11 @@ export const OpenCostPage = () => {
 
   const clusters = useMemo(() => {
     const arr = configApi.getOptionalConfigArray('opencost.clusters');
-    if (!arr || arr.length === 0) return [{ name: 'default', title: 'Default' }];
+    if (!arr || arr.length === 0) return [{ name: 'default', alias: 'Default' }];
     return arr.map(c => ({
       name: c.getString('name'),
-      title: c.getOptionalString('title') ?? c.getString('name'),
+      // `alias` is the operator-facing cluster name and the value written to the Cluster column of every CSV
+      alias: c.getOptionalString('alias') ?? c.getString('name'),
     }));
   }, [configApi]);
 
@@ -184,13 +202,14 @@ export const OpenCostPage = () => {
     const month = Number(searchParams.get('month')) || now.getMonth() + 1;
     const date = searchParams.get('date');
     const pod = searchParams.get('pod');
+    const filter = searchParams.get('filter');
 
     let drill: DrillDown = 'year';
     if (pod && date) drill = 'pod';
     else if (date) drill = 'day';
     else if (searchParams.has('month')) drill = 'month';
 
-    return { cluster, year, month, date, pod, drill };
+    return { cluster, year, month, date, pod, drill, filter };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // intentionally run once
 
@@ -198,6 +217,11 @@ export const OpenCostPage = () => {
   const [selectedCluster, setSelectedCluster] = useState(initialState.cluster);
   const [selectedYear, setSelectedYear] = useState(initialState.year);
   const [selectedMonth, setSelectedMonth] = useState(initialState.month);
+  const [selectedPreset, setSelectedPreset] = useState<string | null>(initialState.filter);
+  const clusterAlias = useMemo(
+    () => clusters.find(c => c.name === selectedCluster)?.alias ?? selectedCluster,
+    [clusters, selectedCluster],
+  );
 
   /* ── Drill-down state ── */
   const [drillDown, setDrillDown] = useState<DrillDown>(initialState.drill);
@@ -210,8 +234,9 @@ export const OpenCostPage = () => {
     if (drillDown !== 'year') params.month = String(selectedMonth);
     if (selectedDate) params.date = selectedDate;
     if (selectedPod) params.pod = selectedPod;
+    if (selectedPreset) params.filter = selectedPreset;
     setSearchParams(params, { replace: true });
-  }, [selectedCluster, selectedYear, selectedMonth, drillDown, selectedDate, selectedPod, setSearchParams]);
+  }, [selectedCluster, selectedYear, selectedMonth, drillDown, selectedDate, selectedPod, selectedPreset, setSearchParams]);
 
   /* ── Monthly (daily table) sort state ── */
   const [dailySortField, setDailySortField] = useState<DailySortField>('date');
@@ -286,6 +311,36 @@ export const OpenCostPage = () => {
   const [controllerSearch, setControllerSearch] = useState('');
   const controllerDropdownRef = useRef<HTMLDivElement>(null);
 
+  // Controller filter presets (admin-managed, stored in the backend DB)
+  const [presets, setPresets] = useState<FilterPreset[]>([]);
+  const [presetManagerOpen, setPresetManagerOpen] = useState(false);
+  const reloadPresets = useCallback(async () => {
+    if (!baseUrl) return;
+    try {
+      const res = await fetchApi.fetch(`${baseUrl}/filters`);
+      if (res.ok) {
+        const json = await res.json();
+        setPresets((json.data as FilterPreset[]) ?? []);
+      }
+    } catch { /* presets are optional */ }
+  }, [baseUrl, fetchApi]);
+  useEffect(() => { reloadPresets(); }, [reloadPresets]);
+
+  const presetsForCluster = useMemo(
+    () => presets.filter(p => !p.clusters || p.clusters.includes(selectedCluster)),
+    [presets, selectedCluster],
+  );
+  const activePreset = useMemo(
+    () => (selectedPreset ? presetsForCluster.find(p => p.name === selectedPreset) ?? null : null),
+    [presetsForCluster, selectedPreset],
+  );
+  // Drop a selected preset that no longer exists or does not apply to this cluster
+  useEffect(() => {
+    if (selectedPreset && presets.length > 0 && !activePreset) setSelectedPreset(null);
+  }, [selectedPreset, presets, activePreset]);
+  const filterParam = activePreset ? activePreset.name : undefined;
+  const filterKey = filterParam ?? '';
+
   // Close dropdown when clicking outside
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -303,7 +358,7 @@ export const OpenCostPage = () => {
     if (!baseUrl || (drillDown !== 'year' && drillDown !== 'month')) return;
 
     if (drillDown === 'month') {
-      const key = `${selectedCluster}:${selectedYear}:${selectedMonth}`;
+      const key = `${selectedCluster}:${selectedYear}:${selectedMonth}:${filterKey}`;
       if (controllerListByMonth.has(key)) return;
       try {
         const params = new URLSearchParams({
@@ -311,6 +366,7 @@ export const OpenCostPage = () => {
           year: String(selectedYear),
           month: String(selectedMonth),
         });
+        if (filterParam) params.set('filter', filterParam);
         const res = await fetchApi.fetch(`${baseUrl}/costs/controllers?${params}`);
         if (res.ok) {
           const json = await res.json();
@@ -318,38 +374,23 @@ export const OpenCostPage = () => {
         }
       } catch { /* optional */ }
     } else {
-      // Year view: fetch controllers for all months in parallel
-      const currentYear = now.getFullYear();
-      const currentMonth = now.getMonth() + 1;
-      const lastMonth = selectedYear < currentYear ? 12 : currentMonth;
-      const fetches = [];
-      for (let m = 1; m <= lastMonth; m++) {
-        const key = `${selectedCluster}:${selectedYear}:${m}`;
-        if (controllerListByMonth.has(key)) continue;
-        fetches.push(
-          fetchApi.fetch(
-            `${baseUrl}/costs/controllers?cluster=${encodeURIComponent(selectedCluster)}&year=${selectedYear}&month=${m}`,
-          ).then(async r => {
-            if (r.ok) {
-              const json = await r.json();
-              return { key, data: json.data as { controller: string; controllerKind: string | null }[] };
-            }
-            return null;
-          }).catch(() => null),
-        );
-      }
-      if (fetches.length > 0) {
-        const results = await Promise.all(fetches);
-        setControllerListByMonth(prev => {
-          const next = new Map(prev);
-          for (const r of results) {
-            if (r) next.set(r.key, r.data);
-          }
-          return next;
+      // Year view: one request for the whole year instead of one per month
+      const key = `${selectedCluster}:${selectedYear}:*:${filterKey}`;
+      if (controllerListByMonth.has(key)) return;
+      try {
+        const params = new URLSearchParams({
+          cluster: selectedCluster,
+          year: String(selectedYear),
         });
-      }
+        if (filterParam) params.set('filter', filterParam);
+        const res = await fetchApi.fetch(`${baseUrl}/costs/controllers?${params}`);
+        if (res.ok) {
+          const json = await res.json();
+          setControllerListByMonth(prev => new Map(prev).set(key, json.data ?? []));
+        }
+      } catch { /* optional */ }
     }
-  }, [drillDown, baseUrl, selectedCluster, selectedYear, selectedMonth, fetchApi]);
+  }, [drillDown, baseUrl, selectedCluster, selectedYear, selectedMonth, fetchApi, filterParam]);
 
   // Derived: merged controller list for current view
   const { availableControllers, controllerKindMap } = useMemo(() => {
@@ -360,28 +401,33 @@ export const OpenCostPage = () => {
       }
     };
     if (drillDown === 'month') {
-      const key = `${selectedCluster}:${selectedYear}:${selectedMonth}`;
+      const key = `${selectedCluster}:${selectedYear}:${selectedMonth}:${filterKey}`;
       addItems(controllerListByMonth.get(key) ?? []);
     } else {
-      // Year view: merge all months
-      const currentYear = now.getFullYear();
-      const currentMonth = now.getMonth() + 1;
-      const lastMonth = selectedYear < currentYear ? 12 : currentMonth;
-      for (let m = 1; m <= lastMonth; m++) {
-        const key = `${selectedCluster}:${selectedYear}:${m}`;
-        addItems(controllerListByMonth.get(key) ?? []);
-      }
+      // Year view: year-wide list fetched in one request
+      addItems(controllerListByMonth.get(`${selectedCluster}:${selectedYear}:*:${filterKey}`) ?? []);
     }
     return {
       availableControllers: Array.from(map.keys()).sort(),
       controllerKindMap: map,
     };
-  }, [drillDown, selectedCluster, selectedYear, selectedMonth, controllerListByMonth, now]);
+  }, [drillDown, selectedCluster, selectedYear, selectedMonth, controllerListByMonth, filterKey]);
 
   const controllersParam = useMemo(
     () => selectedControllers.length > 0 ? selectedControllers.join(',') : undefined,
     [selectedControllers],
   );
+
+  const handlePresetChange = useCallback((name: string | null) => {
+    setSelectedPreset(name);
+    setSelectedControllers([]);
+  }, []);
+
+  /** Apply the active preset's LIKE patterns to live OpenCost API rows. */
+  const applyPresetLive = useCallback((entries: any[]) => {
+    if (!activePreset) return entries;
+    return entries.filter((e: any) => matchesAnyLike(e.properties?.controller ?? '', activePreset.patterns));
+  }, [activePreset]);
 
   // Cache for past-month data
   const cache = useRef(new Map<string, any>());
@@ -437,112 +483,151 @@ export const OpenCostPage = () => {
      Level 0: Yearly View — monthly summary table
      ═══════════════════════════════════════════ */
 
-  const {
-    value: yearlyData,
-    loading: yearlyLoading,
-    error: yearlyError,
-  } = useAsync(async (): Promise<MonthlySummaryItem[] | null> => {
-    if (drillDown !== 'year' || !baseUrl) return null;
+  // Months are requested newest-first and rendered as each response lands, so the
+  // most recent month is on screen before older ones finish. Each request hits
+  // /costs/monthly-totals, which returns one aggregated row instead of every pod.
+  const [yearlyMonths, setYearlyMonths] = useState<Map<number, MonthlySummaryItem>>(new Map());
+  const [yearlyPending, setYearlyPending] = useState<number[]>([]);
+  const [yearlyError, setYearlyError] = useState<Error | undefined>(undefined);
 
-    const ck = `year:${selectedCluster}:${selectedYear}:${controllersParam ?? ''}`;
-    if (cache.current.has(ck)) return cache.current.get(ck);
-
+  const yearMonthList = useMemo(() => {
     const currentYear = now.getFullYear();
     const currentMonth = now.getMonth() + 1;
-    const isPastYear = selectedYear < currentYear;
-    const monthMap = new Map<number, MonthlySummaryItem>();
+    if (selectedYear > currentYear) return [];
+    const last = selectedYear < currentYear ? 12 : currentMonth;
+    const months: number[] = [];
+    for (let m = last; m >= 1; m--) months.push(m);
+    return months;
+  }, [now, selectedYear]);
 
-    // Past months: fetch from DB (fast, ~10ms each)
-    const lastDbMonth = isPastYear ? 12 : currentMonth;
-    const dbFetches = [];
-    for (let m = 1; m <= lastDbMonth; m++) {
-      const costUrl = `${baseUrl}/costs?cluster=${encodeURIComponent(selectedCluster)}&year=${selectedYear}&month=${m}${controllersParam ? `&controllers=${encodeURIComponent(controllersParam)}` : ''}`;
-      dbFetches.push(
-        fetchApi.fetch(costUrl).then(async r => {
-          if (!r.ok) return;
+  useEffect(() => {
+    if (drillDown !== 'year' || !baseUrl) return undefined;
+
+    const ck = `year:${selectedCluster}:${selectedYear}:${controllersParam ?? ''}:${filterKey}`;
+    const cached = cache.current.get(ck) as Map<number, MonthlySummaryItem> | undefined;
+    if (cached) {
+      setYearlyMonths(cached);
+      setYearlyPending([]);
+      setYearlyError(undefined);
+      return undefined;
+    }
+
+    const isPastYear = selectedYear < now.getFullYear();
+    const results = new Map<number, MonthlySummaryItem>();
+    let cancelled = false;
+    let remaining = yearMonthList.length;
+
+    setYearlyMonths(new Map());
+    setYearlyPending(yearMonthList);
+    setYearlyError(undefined);
+
+    for (const m of yearMonthList) {
+      const params = new URLSearchParams({
+        cluster: selectedCluster,
+        year: String(selectedYear),
+        month: String(m),
+      });
+      if (controllersParam) params.set('controllers', controllersParam);
+      if (filterParam) params.set('filter', filterParam);
+
+      fetchApi.fetch(`${baseUrl}/costs/monthly-totals?${params}`)
+        .then(async r => {
+          if (!r.ok) throw new Error(`HTTP ${r.status}`);
           const json = await r.json();
-          const rows = json.data as Array<{
-            cpuCost: number; ramCost: number; gpuCost: number;
-            pvCost: number; networkCost: number; totalCost: number; carbonCost: number;
-          }> | undefined;
-          if (!rows || rows.length === 0) return;
-          const cpu = rows.reduce((s, e) => s + (e.cpuCost ?? 0), 0);
-          const ram = rows.reduce((s, e) => s + (e.ramCost ?? 0), 0);
-          const gpu = rows.reduce((s, e) => s + (e.gpuCost ?? 0), 0);
-          const pv = rows.reduce((s, e) => s + (e.pvCost ?? 0), 0);
-          const network = rows.reduce((s, e) => s + (e.networkCost ?? 0), 0);
-          const total = rows.reduce((s, e) => s + (e.totalCost ?? 0), 0);
-          const carbon = rows.reduce((s, e) => s + (e.carbonCost ?? 0), 0);
+          const t = json.data as {
+            cpuCost: number; ramCost: number; gpuCost: number; pvCost: number;
+            networkCost: number; totalCost: number; carbonCost: number;
+            daysCovered: number; source: 'monthly' | 'daily' | 'none';
+          } | null;
+          if (cancelled || !t || t.source === 'none') return;
           const td = daysInMonth(selectedYear, m);
-          monthMap.set(m, {
+          const item: MonthlySummaryItem = {
             month: `${selectedYear}-${String(m).padStart(2, '0')}`,
-            monthNum: m, cpuCost: cpu, ramCost: ram, gpuCost: gpu,
-            pvCost: pv, networkCost: network, totalCost: total, carbonCost: carbon,
-            daysCovered: json.daysCovered ?? td, totalDays: td,
-          });
-        }).catch(() => {}),
-      );
-    }
-    await Promise.all(dbFetches);
-
-    // Supplement today's live cost for current month (DB doesn't have today yet)
-    if (!isPastYear) {
-      const todayStr = new Intl.DateTimeFormat('en-CA', { timeZone: billingTz }).format(new Date());
-      const monthPrefix = `${selectedYear}-${String(currentMonth).padStart(2, '0')}`;
-      if (todayStr.startsWith(monthPrefix)) {
-        const hasControllerFilter = selectedControllers.length > 0;
-        const { start: dStart, end: dEnd } = getDayWindow(todayStr, billingTz);
-        const liveParams = new URLSearchParams({
-          cluster: selectedCluster,
-          window: `${dStart},${dEnd}`,
-          aggregate: hasControllerFilter ? 'pod' : 'cluster',
-          accumulate: 'true',
+            monthNum: m,
+            cpuCost: t.cpuCost, ramCost: t.ramCost, gpuCost: t.gpuCost,
+            pvCost: t.pvCost, networkCost: t.networkCost, totalCost: t.totalCost,
+            carbonCost: t.carbonCost,
+            daysCovered: t.daysCovered || td, totalDays: td,
+          };
+          results.set(m, item);
+          setYearlyMonths(prev => new Map(prev).set(m, item));
+        })
+        .catch(e => {
+          if (!cancelled) setYearlyError(e instanceof Error ? e : new Error(String(e)));
+        })
+        .finally(() => {
+          if (cancelled) return;
+          setYearlyPending(prev => prev.filter(x => x !== m));
+          remaining -= 1;
+          if (remaining === 0 && isPastYear) cache.current.set(ck, results);
         });
-        try {
-          const liveRes = await fetchApi.fetch(`${baseUrl}/allocation?${liveParams}`);
-          if (liveRes.ok) {
-            const liveJson = await liveRes.json();
-            let le = Object.values(liveJson.data?.[0] ?? {}).filter((e: any) => e.name !== '__idle__') as any[];
-            if (hasControllerFilter) {
-              le = le.filter((e: any) => selectedControllers.includes(e.properties?.controller ?? ''));
-            }
-            if (le.length > 0) {
-              const cpu = le.reduce((s: number, e: any) => s + (e.cpuCost ?? 0), 0);
-              const ram = le.reduce((s: number, e: any) => s + (e.ramCost ?? 0), 0);
-              const gpu = le.reduce((s: number, e: any) => s + (e.gpuCost ?? 0), 0);
-              const pv = le.reduce((s: number, e: any) => s + (e.pvCost ?? 0), 0);
-              const network = le.reduce((s: number, e: any) => s + (e.networkCost ?? 0), 0);
-              const total = le.reduce((s: number, e: any) => s + (e.totalCost ?? 0), 0);
-              const carbon = le.reduce((s: number, e: any) => s + (e.carbonCost ?? 0), 0);
-              const existing = monthMap.get(currentMonth);
-              if (existing) {
-                existing.cpuCost += cpu;
-                existing.ramCost += ram;
-                existing.gpuCost += gpu;
-                existing.pvCost += pv;
-                existing.networkCost += network;
-                existing.totalCost += total;
-                existing.carbonCost += carbon;
-                existing.daysCovered += 1;
-              } else {
-                const td = daysInMonth(selectedYear, currentMonth);
-                monthMap.set(currentMonth, {
-                  month: monthPrefix,
-                  monthNum: currentMonth, cpuCost: cpu, ramCost: ram, gpuCost: gpu,
-                  pvCost: pv, networkCost: network, totalCost: total, carbonCost: carbon,
-                  daysCovered: 1, totalDays: td,
-                });
-              }
-            }
-          }
-        } catch { /* today's live cost is supplementary */ }
-      }
     }
 
-    const items = Array.from(monthMap.values()).sort((a, b) => a.monthNum - b.monthNum);
-    if (isPastYear) cache.current.set(ck, items);
-    return items;
-  }, [drillDown, baseUrl, selectedCluster, selectedYear, billingTz, controllersParam]);
+    return () => { cancelled = true; };
+  }, [drillDown, baseUrl, selectedCluster, selectedYear, controllersParam, filterParam, filterKey, yearMonthList, now, fetchApi]);
+
+  // Today's live cost for the current month, fetched in parallel with the DB rows
+  // and merged when it lands so the OpenCost API round-trip never blocks the table.
+  const { value: yearLiveDelta, loading: yearLiveLoading } = useAsync(async (): Promise<MonthlySummaryItem | null> => {
+    if (drillDown !== 'year' || !baseUrl) return null;
+    const currentMonth = now.getMonth() + 1;
+    if (selectedYear !== now.getFullYear()) return null;
+    const todayStr = new Intl.DateTimeFormat('en-CA', { timeZone: billingTz }).format(new Date());
+    const monthPrefix = `${selectedYear}-${String(currentMonth).padStart(2, '0')}`;
+    if (!todayStr.startsWith(monthPrefix)) return null;
+
+    const hasControllerFilter = selectedControllers.length > 0 || !!activePreset;
+    const { start: dStart, end: dEnd } = getDayWindow(todayStr, billingTz);
+    const liveParams = new URLSearchParams({
+      cluster: selectedCluster,
+      window: `${dStart},${dEnd}`,
+      aggregate: hasControllerFilter ? 'pod' : 'cluster',
+      accumulate: 'true',
+    });
+    try {
+      const liveRes = await fetchApi.fetch(`${baseUrl}/allocation?${liveParams}`);
+      if (!liveRes.ok) return null;
+      const liveJson = await liveRes.json();
+      let le = Object.values(liveJson.data?.[0] ?? {}).filter((e: any) => e.name !== '__idle__') as any[];
+      le = applyPresetLive(le);
+      if (selectedControllers.length > 0) {
+        le = le.filter((e: any) => selectedControllers.includes(e.properties?.controller ?? ''));
+      }
+      if (le.length === 0) return null;
+      const sum = (k: string) => le.reduce((s: number, e: any) => s + (e[k] ?? 0), 0);
+      return {
+        month: monthPrefix,
+        monthNum: currentMonth,
+        cpuCost: sum('cpuCost'), ramCost: sum('ramCost'), gpuCost: sum('gpuCost'),
+        pvCost: sum('pvCost'), networkCost: sum('networkCost'), totalCost: sum('totalCost'),
+        carbonCost: sum('carbonCost'),
+        daysCovered: 1, totalDays: daysInMonth(selectedYear, currentMonth),
+      };
+    } catch { return null; }
+  }, [drillDown, baseUrl, selectedCluster, selectedYear, billingTz, controllersParam, activePreset]);
+
+  const yearlyData = useMemo((): MonthlySummaryItem[] | null => {
+    if (drillDown !== 'year') return null;
+    const merged = new Map(yearlyMonths);
+    if (yearLiveDelta) {
+      const existing = merged.get(yearLiveDelta.monthNum);
+      merged.set(yearLiveDelta.monthNum, existing ? {
+        ...existing,
+        cpuCost: existing.cpuCost + yearLiveDelta.cpuCost,
+        ramCost: existing.ramCost + yearLiveDelta.ramCost,
+        gpuCost: existing.gpuCost + yearLiveDelta.gpuCost,
+        pvCost: existing.pvCost + yearLiveDelta.pvCost,
+        networkCost: existing.networkCost + yearLiveDelta.networkCost,
+        totalCost: existing.totalCost + yearLiveDelta.totalCost,
+        carbonCost: existing.carbonCost + yearLiveDelta.carbonCost,
+        daysCovered: existing.daysCovered + 1,
+      } : yearLiveDelta);
+    }
+    return Array.from(merged.values()).sort((a, b) => b.monthNum - a.monthNum);
+  }, [drillDown, yearlyMonths, yearLiveDelta]);
+
+  // Skeleton only until the first month lands (or everything resolved empty)
+  const yearlyLoading = yearlyPending.length > 0 && yearlyMonths.size === 0;
 
   const yearlyTotals = useMemo(() => {
     if (!yearlyData) return null;
@@ -578,7 +663,7 @@ export const OpenCostPage = () => {
   } = useAsync(async (): Promise<DailySummaryItem[] | null> => {
     if (drillDown !== 'month' || !baseUrl) return null;
 
-    const ck = `month:${selectedCluster}:${selectedYear}:${selectedMonth}:${controllersParam ?? ''}`;
+    const ck = `month:${selectedCluster}:${selectedYear}:${selectedMonth}:${controllersParam ?? ''}:${filterKey}`;
     if (isPastMonth && cache.current.has(ck)) return cache.current.get(ck);
 
     // DB-first: always fetch from /costs/daily-summary
@@ -589,6 +674,7 @@ export const OpenCostPage = () => {
         month: String(selectedMonth),
       });
       if (controllersParam) params.set('controllers', controllersParam);
+      if (filterParam) params.set('filter', filterParam);
       const res = await fetchApi.fetch(`${baseUrl}/costs/daily-summary?${params}`);
       if (res.ok) {
         const json = await res.json();
@@ -600,7 +686,7 @@ export const OpenCostPage = () => {
     } catch { /* ignore */ }
 
     return null;
-  }, [drillDown, baseUrl, selectedCluster, selectedYear, selectedMonth, isPastMonth, controllersParam]);
+  }, [drillDown, baseUrl, selectedCluster, selectedYear, selectedMonth, isPastMonth, controllersParam, filterParam, filterKey]);
 
   // Fetch collection run info for the selected month
   const { value: collectionRuns } = useAsync(async () => {
@@ -641,6 +727,7 @@ export const OpenCostPage = () => {
       if (!res.ok) return null;
       const json = await res.json();
       let entries = Object.values(json.data?.[0] ?? {}).filter((e: any) => e.name !== '__idle__') as any[];
+      entries = applyPresetLive(entries);
       if (selectedControllers.length > 0) {
         entries = entries.filter((e: any) => selectedControllers.includes(e.properties?.controller ?? ''));
       }
@@ -657,7 +744,30 @@ export const OpenCostPage = () => {
         carbonCost: entries.reduce((s: number, e: any) => s + (e.carbonCost ?? 0), 0),
       };
     } catch { return null; }
-  }, [drillDown, baseUrl, selectedCluster, selectedYear, selectedMonth, billingTz, controllersParam]);
+  }, [drillDown, baseUrl, selectedCluster, selectedYear, selectedMonth, billingTz, controllersParam, activePreset]);
+
+  // Monthly per-pod breakdown, shown when a preset or controller filter narrows the view.
+  // This is the list a billing export needs: every pod matched for the month, with totals.
+  const {
+    value: monthPods,
+    loading: monthPodsLoading,
+  } = useAsync(async (): Promise<PodMonthlyItem[] | null> => {
+    if (drillDown !== 'month' || !baseUrl) return null;
+    if (!filterParam && !controllersParam) return null;
+    const params = new URLSearchParams({
+      cluster: selectedCluster,
+      year: String(selectedYear),
+      month: String(selectedMonth),
+    });
+    if (controllersParam) params.set('controllers', controllersParam);
+    if (filterParam) params.set('filter', filterParam);
+    try {
+      const res = await fetchApi.fetch(`${baseUrl}/costs?${params}`);
+      if (!res.ok) return null;
+      const json = await res.json();
+      return (json.data as PodMonthlyItem[]) ?? [];
+    } catch { return null; }
+  }, [drillDown, baseUrl, selectedCluster, selectedYear, selectedMonth, controllersParam, filterParam]);
 
   // Build full month calendar with snapshot status
   const fullMonthData = useMemo((): DailyRow[] | null => {
@@ -764,12 +874,13 @@ export const OpenCostPage = () => {
   } = useAsync(async (): Promise<DayResult | null> => {
     if (drillDown !== 'day' || !baseUrl || !selectedDate) return null;
 
-    const ck = `day:${selectedCluster}:${selectedDate}`;
+    const ck = `day:${selectedCluster}:${selectedDate}:${filterKey}`;
     if (isPastMonth && cache.current.has(ck)) return cache.current.get(ck);
 
     // DB-first: always try /costs/pods
     try {
       const params = new URLSearchParams({ cluster: selectedCluster, date: selectedDate });
+      if (filterParam) params.set('filter', filterParam);
       const res = await fetchApi.fetch(`${baseUrl}/costs/pods?${params}`);
       if (res.ok) {
         const json = await res.json();
@@ -804,7 +915,7 @@ export const OpenCostPage = () => {
     const json = await res.json();
     const allocationMap = json.data?.[0] ?? {};
     const allItems = Object.values(allocationMap) as AllocationItem[];
-    const filtered = allItems.filter(v => v.name !== '__idle__');
+    const filtered = applyPresetLive(allItems.filter(v => v.name !== '__idle__'));
 
     // Extract actual metric window from allocation items
     let minStart: string | null = null;
@@ -837,7 +948,7 @@ export const OpenCostPage = () => {
 
     if (isPastMonth) cache.current.set(ck, result);
     return result;
-  }, [drillDown, baseUrl, selectedCluster, selectedDate, isPastMonth]);
+  }, [drillDown, baseUrl, selectedCluster, selectedDate, isPastMonth, filterParam, filterKey, applyPresetLive]);
 
   const dayData = dayResult?.pods ?? null;
   const dayMetricWindow = dayResult?.metricWindow ?? null;
@@ -997,7 +1108,7 @@ export const OpenCostPage = () => {
     return years.map(y => ({ value: String(y), label: String(y) }));
   }, [availableYears, currentYear]);
   const clusterOptions = useMemo(
-    () => clusters.map(c => ({ value: c.name, label: c.title })),
+    () => clusters.map(c => ({ value: c.name, label: c.alias })),
     [clusters],
   );
 
@@ -1122,6 +1233,28 @@ export const OpenCostPage = () => {
               selectedKey={selectedCluster} onSelectionChange={key => handleClusterChange(key as string)} />
             <Select label="Year" size="small" options={yearOptions}
               selectedKey={String(selectedYear)} onSelectionChange={key => handleYearChange(key as string)} />
+            <div className="oc-native-select">
+              <label className="oc-native-select-label" htmlFor="oc-preset-select">Preset</label>
+              <div className="oc-preset-select-row">
+                <select
+                  id="oc-preset-select"
+                  value={selectedPreset ?? ''}
+                  onChange={e => handlePresetChange(e.target.value || null)}
+                  title={activePreset?.description ?? undefined}
+                >
+                  <option value="">None</option>
+                  {presetsForCluster.map(p => (
+                    <option key={p.name} value={p.name}>{p.title}</option>
+                  ))}
+                </select>
+                <button
+                  className="oc-export-btn"
+                  style={{ height: '2rem' }}
+                  onClick={() => setPresetManagerOpen(true)}
+                  title="Create, edit or delete filter presets"
+                >Manage</button>
+              </div>
+            </div>
             {(drillDown === 'year' || drillDown === 'month') && availableControllers.length > 0 && (
               <div className="oc-native-select" ref={controllerDropdownRef} style={{ position: 'relative' }}>
                 <label className="oc-native-select-label">Controller</label>
@@ -1195,6 +1328,17 @@ export const OpenCostPage = () => {
               </div>
             )}
           </Flex>
+          {activePreset && (
+            <div className="oc-controller-chips" style={{ marginTop: 8 }}>
+              <span className="oc-controller-chip oc-preset-chip" title={activePreset.patterns.join('\n')}>
+                Preset: {activePreset.title}
+                <span style={{ opacity: 0.6, marginLeft: 6 }}>
+                  {activePreset.patterns.slice(0, 3).join(', ')}{activePreset.patterns.length > 3 ? ` +${activePreset.patterns.length - 3}` : ''}
+                </span>
+                <span className="oc-controller-chip-remove" onClick={() => handlePresetChange(null)}>{'\u00D7'}</span>
+              </span>
+            </div>
+          )}
           {selectedControllers.length > 0 && (
             <div className="oc-controller-chips" style={{ marginTop: 8 }}>
               {selectedControllers.map(c => (
@@ -1327,18 +1471,20 @@ export const OpenCostPage = () => {
                 <Text variant="body-medium" weight="bold">Monthly Cost Breakdown</Text>
                 <Flex align="center" gap="2">
                   <span className="oc-count-badge">{yearlyData.length}</span>
-                  <Text variant="body-small" color="secondary">months</Text>
+                  <Text variant="body-small" color="secondary">
+                    months{yearlyPending.length > 0 ? ` (${yearlyPending.length} loading)` : ''}
+                  </Text>
                   {yearlyData.length > 0 && (
                     <button className="oc-export-btn" onClick={() => downloadCsv(
-                      ['Month', 'CPU', 'RAM', 'GPU', 'PV', 'Network', 'Total', 'Carbon'],
-                      yearlyData.map(r => [r.month, r.cpuCost, r.ramCost, r.gpuCost, r.pvCost, r.networkCost, r.totalCost, r.carbonCost]),
+                      ['Cluster', 'Month', 'CPU', 'RAM', 'GPU', 'PV', 'Network', 'Total', 'Carbon'],
+                      yearlyData.map(r => [clusterAlias, r.month, r.cpuCost, r.ramCost, r.gpuCost, r.pvCost, r.networkCost, r.totalCost, r.carbonCost]),
                       `cost-${selectedCluster}-monthly-${selectedYear}-${csvTimestamp()}.csv`,
                     )}>{'\u2913'} Export CSV</button>
                   )}
                 </Flex>
               </Flex>
 
-              {yearlyData.length === 0 ? (
+              {yearlyData.length === 0 && yearlyPending.length === 0 ? (
                 <div className="oc-empty-state">
                   <Text variant="body-medium" color="secondary">No cost data for {selectedYear}</Text>
                 </div>
@@ -1359,6 +1505,12 @@ export const OpenCostPage = () => {
                       </tr>
                     </thead>
                     <tbody>
+                      {yearlyPending.filter(m => !yearlyMonths.has(m)).map(m => (
+                        <tr key={`pending-${m}`} className="oc-pending-row">
+                          <td>{selectedYear}-{String(m).padStart(2, '0')}</td>
+                          <td colSpan={8}><Skeleton width="100%" height={16} /></td>
+                        </tr>
+                      ))}
                       {yearlyData.map(row => {
                         const pct = row.totalDays > 0 ? Math.round((row.daysCovered / row.totalDays) * 100) : 0;
                         return (
@@ -1404,10 +1556,11 @@ export const OpenCostPage = () => {
                           <td className="oc-cost oc-cost-total"><strong>{formatCost(yearlyTotals.total)}</strong></td>
                           <td className="oc-cost oc-carbon"><strong>{formatCarbon(yearlyTotals.carbon)}</strong></td>
                         </tr>
-                        {yearlyData.some(r => r.daysCovered < r.totalDays) && (
+                        {(yearlyData.some(r => r.daysCovered < r.totalDays) || yearLiveLoading) && (
                           <tr>
                             <td colSpan={9} className="oc-cost-estimated" style={{ fontStyle: 'italic', fontSize: '0.75rem' }}>
                               * Total includes in-progress costs for the current month. Values may change until the month ends.
+                              {yearLiveLoading && " Today's live cost is still loading."}
                             </td>
                           </tr>
                         )}
@@ -1587,8 +1740,8 @@ export const OpenCostPage = () => {
                   <span className="oc-count-badge">{fullMonthData.length}</span>
                   <Text variant="body-small" color="secondary">days</Text>
                   <button className="oc-export-btn" onClick={() => downloadCsv(
-                    ['Date', 'Day', 'Status', 'CPU', 'RAM', 'GPU', 'PV', 'Network', 'Total', 'Carbon'],
-                    sortedMonthData!.map(r => [r.date, r.dayOfWeek, r.status, r.cpuCost, r.ramCost, r.gpuCost, r.pvCost, r.networkCost, r.totalCost, r.carbonCost]),
+                    ['Cluster', 'Date', 'Day', 'Status', 'CPU', 'RAM', 'GPU', 'PV', 'Network', 'Total', 'Carbon'],
+                    sortedMonthData!.map(r => [clusterAlias, r.date, r.dayOfWeek, r.status, r.cpuCost, r.ramCost, r.gpuCost, r.pvCost, r.networkCost, r.totalCost, r.carbonCost]),
                     `cost-${selectedCluster}-daily-${monthLabel}-${csvTimestamp()}.csv`,
                   )}>{'\u2913'} Export CSV</button>
                   <button className="oc-export-btn" onClick={() => {
@@ -1600,6 +1753,7 @@ export const OpenCostPage = () => {
                     if (selectedControllers.length > 0) {
                       params.set('controllers', selectedControllers.join(','));
                     }
+                    if (filterParam) params.set('filter', filterParam);
                     navigate(`/cost-report/custom-export?${params}`);
                   }}>Custom Export</button>
                 </Flex>
@@ -1721,6 +1875,83 @@ export const OpenCostPage = () => {
                 </div>
             </Box>
           </>
+        )}
+
+        {/* Monthly pod breakdown (only when a preset or controller filter is active) */}
+        {drillDown === 'month' && !loading && (filterParam || controllersParam) && (
+          <Box mt="3" p="3" className="oc-section-box">
+            <Flex justify="between" align="center" mb="3">
+              <Text variant="body-medium" weight="bold">
+                Pod Breakdown{activePreset ? ` (${activePreset.title})` : ''}
+              </Text>
+              <Flex align="center" gap="2">
+                <span className="oc-count-badge">{monthPods?.length ?? 0}</span>
+                <Text variant="body-small" color="secondary">pods</Text>
+                {monthPods && monthPods.length > 0 && (
+                  <button className="oc-export-btn" onClick={() => downloadCsv(
+                    ['Cluster', 'Month', 'Namespace', 'Kind', 'Workload', 'Pod', 'Days', 'CPU', 'RAM', 'GPU', 'PV', 'Network', 'Total', 'Carbon'],
+                    monthPods.map(r => [clusterAlias, monthLabel, r.namespace, r.controllerKind ?? '', r.controller ?? '', r.pod, r.daysCovered, r.cpuCost, r.ramCost, r.gpuCost, r.pvCost, r.networkCost, r.totalCost, r.carbonCost]),
+                    `cost-${selectedCluster}-pods-${monthLabel}${filterParam ? `-${filterParam}` : ''}-${csvTimestamp()}.csv`,
+                  )}>{'\u2913'} Export CSV</button>
+                )}
+              </Flex>
+            </Flex>
+            {monthPodsLoading && <Skeleton width="100%" height={120} />}
+            {!monthPodsLoading && (!monthPods || monthPods.length === 0) && (
+              <div className="oc-empty-state">
+                <Text variant="body-medium" color="secondary">No pods match the current filter for {monthLabel}</Text>
+              </div>
+            )}
+            {!monthPodsLoading && monthPods && monthPods.length > 0 && (
+              <div className="oc-table-wrapper">
+                <table className="oc-table">
+                  <thead>
+                    <tr>
+                      <th>Namespace</th>
+                      <th>Kind</th>
+                      <th>Workload</th>
+                      <th>Pod</th>
+                      <th>Days</th>
+                      <th>CPU</th>
+                      <th>RAM</th>
+                      <th>PV</th>
+                      <th>Network</th>
+                      <th>Total</th>
+                      <th>Carbon</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {monthPods.map(r => (
+                      <tr key={`${r.namespace}/${r.pod}`}>
+                        <td>{r.namespace}</td>
+                        <td>{r.controllerKind ?? '-'}</td>
+                        <td>{r.controller ?? '-'}</td>
+                        <td className="oc-pod-name">{r.pod}</td>
+                        <td>{r.daysCovered}</td>
+                        <td className="oc-cost">{formatCost(r.cpuCost)}</td>
+                        <td className="oc-cost">{formatCost(r.ramCost)}</td>
+                        <td className="oc-cost">{formatCost(r.pvCost)}</td>
+                        <td className="oc-cost">{formatCost(r.networkCost)}</td>
+                        <td className="oc-cost oc-cost-total">{formatCost(r.totalCost)}</td>
+                        <td className="oc-cost oc-carbon">{formatCarbon(r.carbonCost)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr>
+                      <td colSpan={5}><strong>Total</strong></td>
+                      <td className="oc-cost"><strong>{formatCost(monthPods.reduce((a, r) => a + r.cpuCost, 0))}</strong></td>
+                      <td className="oc-cost"><strong>{formatCost(monthPods.reduce((a, r) => a + r.ramCost, 0))}</strong></td>
+                      <td className="oc-cost"><strong>{formatCost(monthPods.reduce((a, r) => a + r.pvCost, 0))}</strong></td>
+                      <td className="oc-cost"><strong>{formatCost(monthPods.reduce((a, r) => a + r.networkCost, 0))}</strong></td>
+                      <td className="oc-cost oc-cost-total"><strong>{formatCost(monthPods.reduce((a, r) => a + r.totalCost, 0))}</strong></td>
+                      <td className="oc-cost oc-carbon"><strong>{formatCarbon(monthPods.reduce((a, r) => a + r.carbonCost, 0))}</strong></td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            )}
+          </Box>
         )}
 
         {/* ═══════════════════════════════════
@@ -1849,8 +2080,8 @@ export const OpenCostPage = () => {
                   <Text variant="body-small" color="secondary">pods</Text>
                   {sortedDayData.length > 0 && (
                     <button className="oc-export-btn" onClick={() => downloadCsv(
-                      ['Namespace', 'Kind', 'Workload', 'Pod', 'CPU', 'RAM', 'PV', 'Network', 'Total', 'Carbon'],
-                      sortedDayData.map(r => [r.namespace, r.controllerKind ?? '', r.controller ?? '', r.pod, r.cpuCost, r.ramCost, r.pvCost, r.networkCost, r.totalCost, r.carbonCost]),
+                      ['Cluster', 'Namespace', 'Kind', 'Workload', 'Pod', 'CPU', 'RAM', 'PV', 'Network', 'Total', 'Carbon'],
+                      sortedDayData.map(r => [clusterAlias, r.namespace, r.controllerKind ?? '', r.controller ?? '', r.pod, r.cpuCost, r.ramCost, r.pvCost, r.networkCost, r.totalCost, r.carbonCost]),
                       `cost-${selectedCluster}-pods-${selectedDate}-${csvTimestamp()}.csv`,
                     )}>{'\u2913'} Export CSV</button>
                   )}
@@ -2018,8 +2249,8 @@ export const OpenCostPage = () => {
                   <Text variant="body-small" color="secondary">days</Text>
                   {podDailyData.length > 0 && (
                     <button className="oc-export-btn" onClick={() => downloadCsv(
-                      ['Date', 'CPU', 'RAM', 'GPU', 'PV', 'Network', 'Total', 'Carbon'],
-                      podDailyData.map(r => [r.date, r.cpuCost, r.ramCost, r.gpuCost, r.pvCost, r.networkCost, r.totalCost, r.carbonCost]),
+                      ['Cluster', 'Date', 'CPU', 'RAM', 'GPU', 'PV', 'Network', 'Total', 'Carbon'],
+                      podDailyData.map(r => [clusterAlias, r.date, r.cpuCost, r.ramCost, r.gpuCost, r.pvCost, r.networkCost, r.totalCost, r.carbonCost]),
                       `cost-${selectedCluster}-pod-daily-${selectedPod}-${csvTimestamp()}.csv`,
                     )}>{'\u2913'} Export CSV</button>
                   )}
@@ -2093,6 +2324,19 @@ export const OpenCostPage = () => {
           </>
         )}
       </Container>
+      {presetManagerOpen && (
+        <FilterPresetManager
+          baseUrl={baseUrl}
+          fetchFn={fetchApi.fetch}
+          clusters={clusters}
+          previewCluster={selectedCluster}
+          previewYear={selectedYear}
+          previewMonth={drillDown === 'year' ? (selectedYear === now.getFullYear() ? now.getMonth() + 1 : 12) : selectedMonth}
+          presets={presets}
+          onChanged={reloadPresets}
+          onClose={() => setPresetManagerOpen(false)}
+        />
+      )}
     </>
   );
 };

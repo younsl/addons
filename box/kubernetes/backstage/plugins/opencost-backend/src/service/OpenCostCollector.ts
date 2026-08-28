@@ -9,7 +9,7 @@ import {
 
 interface ClusterConfig {
   name: string;
-  title: string;
+  alias: string;
   url: string;
 }
 
@@ -200,7 +200,7 @@ export class OpenCostCollector {
 
   private async seedClusters(): Promise<void> {
     for (const cluster of this.clusters) {
-      await this.store.ensureCluster(cluster.name, cluster.title);
+      await this.store.ensureCluster(cluster.name, cluster.alias);
     }
     this.logger.info(`Seeded ${this.clusters.length} cluster(s) into DB`);
   }
@@ -210,10 +210,10 @@ export class OpenCostCollector {
     const result: ClusterConfig[] = [];
     for (const c of clusterConfigs) {
       const name = c.getString('name');
-      const title = c.getOptionalString('title') ?? name;
+      const alias = c.getOptionalString('alias') ?? name;
       const url = c.getOptionalString('url');
       if (url) {
-        result.push({ name, title, url });
+        result.push({ name, alias, url });
       }
     }
     return result;
@@ -451,7 +451,7 @@ export class OpenCostCollector {
     dateStr: string,
     taskType: CollectionTaskType = 'daily',
   ): Promise<void> {
-    const clusterId = await this.store.ensureCluster(cluster.name, cluster.title);
+    const clusterId = await this.store.ensureCluster(cluster.name, cluster.alias);
 
     const startedAt = new Date().toISOString();
     const runId = await this.store.insertCollectionRun({

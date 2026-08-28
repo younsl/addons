@@ -9,8 +9,8 @@ export interface Config {
     clusters?: Array<{
       /** Cluster identifier used in API calls */
       name: string;
-      /** Display name for the cluster */
-      title?: string;
+      /** Operator-facing cluster name shown in the UI and written to the Cluster column of CSV exports */
+      alias?: string;
       /** OpenCost API base URL (e.g. http://opencost.example.com:9090) */
       url?: string;
     }>;
