@@ -6,6 +6,10 @@
 
 **I**nfra **J**anitor - EC2 operations CLI for SSM connect and AMI cleanup. Scans AWS regions in parallel with fuzzy search. Inspired by [gossm](https://github.com/gjbae1212/gossm).
 
+![ij architecture](./docs/architecture.svg)
+
+`ij` resolves MFA credentials once via STS, scans every region in parallel with EC2 DescribeInstances, lets you pick an instance in a fuzzy-search TUI, then spawns `aws ssm start-session` inside a PTY as a shell or a port-forwarding tunnel.
+
 ## Features
 
 - Multi-region parallel scanning (22 AWS regions)
