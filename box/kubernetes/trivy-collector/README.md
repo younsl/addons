@@ -128,7 +128,7 @@ Verify both objects, confirm a known token still authenticates and a known note 
 
 Open `/admin/clusters` and use the two-step wizard:
 
-**Step 1 — Bootstrap**: copy the generated YAML and apply it on the Edge
+**Step 1 (Bootstrap)**: copy the generated YAML and apply it on the Edge
 cluster with an admin kubeconfig. It installs:
 
 - `ServiceAccount: trivy-collector-reader`
@@ -138,12 +138,12 @@ cluster with an admin kubeconfig. It installs:
 - `Secret` of type `kubernetes.io/service-account-token` that populates a
   long-lived SA token
 
-**Step 2 — Register**: run the copy-paste bash block on the Edge cluster to
+**Step 2 (Register)**: run the copy-paste bash block on the Edge cluster to
 extract the SA token, CA, and API server URL, paste them into the form, and
 click **Register cluster**. The scraper attaches within a few seconds and
 the table flips to **Synced**.
 
-No collector pod is deployed on the Edge cluster — only the four RBAC
+No collector pod is deployed on the Edge cluster, only the four RBAC
 resources above.
 
 ### 3. GitOps-based registration (optional)

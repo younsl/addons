@@ -79,8 +79,8 @@ Query `performance_schema.events_statements_summary_by_digest` directly via MySQ
 
 ### Reference
 
-- [DescribeDimensionKeys API](https://docs.aws.amazon.com/performance-insights/latest/APIReference/API_DescribeDimensionKeys.html) — `AdditionalMetrics` parameter specification
-- [Aurora MySQL SQL statistics](https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/USER_PerfInsights.UsingDashboard.AnalyzeDBLoad.AdditionalMetrics.MySQL.html) — 45 metrics documented but not available via API
-- [Aurora PostgreSQL SQL statistics](https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/USER_PerfInsights.UsingDashboard.AnalyzeDBLoad.AdditionalMetrics.PostgreSQL.html) — 43 metrics available via `AdditionalMetrics`
-- [pg_stat_statements](https://www.postgresql.org/docs/current/pgstatstatements.html) — Source of PostgreSQL per-SQL statistics
+- [DescribeDimensionKeys API](https://docs.aws.amazon.com/performance-insights/latest/APIReference/API_DescribeDimensionKeys.html): `AdditionalMetrics` parameter specification
+- [Aurora MySQL SQL statistics](https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/USER_PerfInsights.UsingDashboard.AnalyzeDBLoad.AdditionalMetrics.MySQL.html): 45 metrics documented but not available via API
+- [Aurora PostgreSQL SQL statistics](https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/USER_PerfInsights.UsingDashboard.AnalyzeDBLoad.AdditionalMetrics.PostgreSQL.html): 43 metrics available via `AdditionalMetrics`
+- [pg_stat_statements](https://www.postgresql.org/docs/current/pgstatstatements.html): Source of PostgreSQL per-SQL statistics
 - Verified on Aurora MySQL 3.x, ap-northeast-2, 2026-04-06

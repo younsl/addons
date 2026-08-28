@@ -25,8 +25,8 @@ Backstage version is pinned in `backstage.json` (currently 1.54.4). Yarn is mana
 
 Two files hold local-only settings and are git-ignored, so they never leave the machine:
 
-- `.env` — secrets and host endpoints, loaded by the `make dev*` targets.
-- `app-config.local.yaml` — local overrides merged on top of `app-config.yaml`.
+- `.env`: secrets and host endpoints, loaded by the `make dev*` targets.
+- `app-config.local.yaml`: local overrides merged on top of `app-config.yaml`.
 
 The `.env` keys consumed by this instance:
 
@@ -60,8 +60,8 @@ role_arn = arn:aws:iam::123456789012:role/backstage-iam-user-audit-role
 source_profile = default
 ```
 
-- `source_profile = default` — your everyday credentials act as the base identity, the same way the node/Pod Identity does in the cluster.
-- `role_arn` — the same audit role the workload assumes in production, so you exercise the real permission boundary, not your own broader access.
+- `source_profile = default`: your everyday credentials act as the base identity, the same way the node/Pod Identity does in the cluster.
+- `role_arn`: the same audit role the workload assumes in production, so you exercise the real permission boundary, not your own broader access.
 
 Wire it into the running app one of two ways:
 
@@ -106,7 +106,7 @@ Variants for narrower work:
 
 Guest login skips the Keycloak round-trip, which is convenient while developing. It requires a change in both the frontend and the backend; config alone does not toggle it.
 
-1. Frontend — add `'guest'` to the `providers` array of `CustomSignInPage` in `packages/app/src/App.tsx`:
+1. Frontend: add `'guest'` to the `providers` array of `CustomSignInPage` in `packages/app/src/App.tsx`:
 
 ```tsx
 const CustomSignInPage = (props: any) => (
@@ -126,7 +126,7 @@ const CustomSignInPage = (props: any) => (
 );
 ```
 
-2. Backend — declare the `guest` provider under `auth.providers`. With `auth.environment: development` (the default in `app-config.yaml`) it works as-is; `app-config.local.yaml` makes it explicit:
+2. Backend: declare the `guest` provider under `auth.providers`. With `auth.environment: development` (the default in `app-config.yaml`) it works as-is; `app-config.local.yaml` makes it explicit:
 
 ```yaml
 auth:

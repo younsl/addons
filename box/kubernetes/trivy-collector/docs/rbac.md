@@ -27,8 +27,8 @@ g, platform-team, role:admin
 
 | Role | Permissions | Use Case |
 |------|-------------|----------|
-| `role:readonly` | `reports:get`, `clusters:get`, `stats:get`, `tokens:get`, `tokens:create`, `alerts:get` | Security engineers — view reports and alert rules, create personal API tokens |
-| `role:admin` | `*:*` (all resources, all actions) | Administrators — full access including admin console, alert rule management, and destructive operations |
+| `role:readonly` | `reports:get`, `clusters:get`, `stats:get`, `tokens:get`, `tokens:create`, `alerts:get` | Security engineers: view reports and alert rules, create personal API tokens |
+| `role:admin` | `*:*` (all resources, all actions) | Administrators: full access including admin console, alert rule management, and destructive operations |
 
 ## Resources and Actions
 
@@ -107,7 +107,7 @@ g, platform-team, role:admin
 
 With `RBAC_DEFAULT_POLICY=role:readonly`, any authenticated user not in `platform-team` gets readonly access.
 
-### Example 2: Strict access — deny by default
+### Example 2: Strict access, deny by default
 
 Only explicitly mapped groups get access. All other users are denied.
 

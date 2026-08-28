@@ -57,15 +57,15 @@ alert path already owns.
 
 Relevant properties of the current binary:
 
-- `internal/gateway` serves exactly one route, `POST {WEBHOOK_PATH}`, plus the
+- `src/gateway` serves exactly one route, `POST {WEBHOOK_PATH}`, plus the
   health endpoints. There is no inbound Slack path.
-- `internal/slack` is a hand written Web API client over `net/http` with
+- `src/slack` is a hand written Web API client over `reqwest` with
   `chat.postMessage`, `conversations.list`, `conversations.history`, and the
   reactions calls. The module depends on Prometheus client libraries only.
-- `internal/a2a` submits `message/send` and polls `tasks/get`. The response
-  already carries `contextId` and it is already parsed into `a2a.Result`, but
-  `Send` never sends one back, so every run gets a fresh session.
-- `internal/gateway/store.go` is a mutex guarded map with a TTL, used for alert
+- `src/a2a` submits `message/send` and polls `tasks/get`. The response
+  already carries `contextId` and it is already parsed into `a2a::Reply`, but
+  `send` never sends one back, so every run gets a fresh session.
+- `src/gateway/store.rs` is a mutex guarded map with a TTL, used for alert
   deduplication. The same shape fits both new stores below.
 
 ### Controller timeout ceiling
@@ -119,33 +119,33 @@ listener rather than replacing it. The lifecycle is:
 
 ### New package
 
-`internal/socket` owns the connection and the envelope loop, and knows nothing
-about agents. It exposes a handler interface that `internal/gateway` implements,
+`src/slack/socket.rs` owns the connection and the envelope loop, and knows nothing
+about agents. It exposes a handler trait that `src/gateway` implements,
 which keeps the routing, gating, and A2A logic in one place and leaves the
 transport testable against a local WebSocket server.
 
-The chat turn itself lives in `internal/gateway` as `handleMention`, next to
+The chat turn itself lives in `src/gateway/chat.rs`, next to
 `analyze`, reusing the same Slack client, A2A client, metrics, and logger.
 
 ### WebSocket dependency
 
 The module has no WebSocket code and no HTTP framework. Options considered:
 
-- `github.com/slack-go/slack`: brings a full Slack SDK and its Socket Mode
+- `slack-morphism`: brings a full Slack SDK and its Socket Mode
   implementation, and duplicates the Web API client the gateway already owns.
-- `github.com/coder/websocket`: a small RFC 6455 client with no transitive
-  dependencies, used directly against the envelope JSON.
+- `tokio-tungstenite`: a small RFC 6455 client on the runtime the gateway
+  already uses, used directly against the envelope JSON.
 - Hand rolled framing: not worth the maintenance for ping, pong, close, and
   fragmentation.
 
-Recommendation: `github.com/coder/websocket`. It keeps the "own the wire
+Recommendation: `tokio-tungstenite`. It keeps the "own the wire
 format, borrow only the transport" shape the Slack client already has, and
 keeps the image dependency surface close to what it is today.
 
 Note that `SLACK_API_URL` only redirects Web API calls. A deployment that
 routes egress through a proxy needs the WebSocket dial to honour the standard
-proxy environment variables as well, which `net/http` transport handles when
-the dialer is built from it.
+proxy environment variables as well, which the dialer has to honour on its
+own since the WebSocket does not go through the `reqwest` client.
 
 ## Event handling
 
@@ -208,7 +208,7 @@ or an edit subtype has no reader waiting on an answer, and a DM would need a
 hint nobody could have triggered.
 
 Hints cost no agent run, so a burst of them spends Slack calls and nothing else.
-`internal/slack` gains one call for both, `chat.postEphemeral`, and a rejected
+`src/slack` gains one call for both, `chat.postEphemeral`, and a rejected
 ephemeral is logged rather than retried. Each hint has its own setting,
 `CHAT_THREAD_HINT` and `CHAT_DENIED_HINT`, and an empty value restores the
 silent drop for that case alone.
@@ -233,21 +233,23 @@ idle for longer than `CHAT_SESSION_TTL` (default `2h`) falls out and the next
 mention starts a fresh context, which is the same trade the dedupe store makes:
 losing an entry costs one cold turn, not correctness.
 
-`a2a.Client.Send` gains a request struct rather than another positional
+`a2a::Client::send` gains a request struct rather than another positional
 argument:
 
-```go
-type Request struct {
-    Agent     string
-    Text      string
-    ContextID string // empty starts a new session
+```rust
+pub struct Request {
+    pub agent: String,
+    pub text: String,
+    pub context_id: Option<String>, // None starts a new session
 }
 
-func (c *Client) Send(ctx context.Context, req Request) (Result, error)
+impl Client {
+    pub async fn send(&self, req: Request) -> Result<Reply, Error>;
+}
 ```
 
-`message.contextId` is set when `ContextID` is non empty. The alert path passes
-an empty one and keeps its current behaviour exactly. The returned `ContextID`
+`message.contextId` is set when `context_id` is present. The alert path passes
+`None` and keeps its current behaviour exactly. The returned `context_id`
 is written back to the store after every successful turn.
 
 Restarts drop the map, so an in flight conversation loses its history and the

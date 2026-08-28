@@ -50,7 +50,7 @@ commands:
   - "cd /var/log"
 ```
 
-**Workaround 1** — Place `sudo su -` last (root shell only, no post-login setup):
+**Workaround 1**: Place `sudo su -` last (root shell only, no post-login setup):
 
 ```yaml
 commands:
@@ -58,7 +58,7 @@ commands:
   - "sudo su -"
 ```
 
-**Workaround 2** — Use `sudo -i bash -c` (run commands inside root shell):
+**Workaround 2**: Use `sudo -i bash -c` (run commands inside root shell):
 
 ```yaml
 commands:

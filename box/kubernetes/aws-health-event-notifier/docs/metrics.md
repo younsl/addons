@@ -4,7 +4,7 @@
 
 This document is the reference for every Prometheus metric the daemon exports:
 its name, labels, meaning, and the queries that turn them into alerts and
-dashboards. It is written for **operators and SREs** running the service —
+dashboards. It is written for **operators and SREs** running the service,
 those building Grafana panels, writing alert rules, or debugging delivery
 issues. Familiarity with PromQL is assumed.
 
@@ -40,7 +40,7 @@ The daemon exposes metrics at `GET /metrics` on the admin port
 
 ## Example queries
 
-**Slack delivery error rate (5m)** — fraction of webhook posts that failed.
+**Slack delivery error rate (5m)**: fraction of webhook posts that failed.
 Alert when sustained above a threshold; the primary signal that notifications
 are not reaching the channel.
 
@@ -49,14 +49,14 @@ sum(rate(aws_health_event_slack_posts_total{outcome="error"}[5m]))
   / sum(rate(aws_health_event_slack_posts_total[5m]))
 ```
 
-**Poll cycle failures** — rate of failed AWS Health API polls. Non-zero means
+**Poll cycle failures**: rate of failed AWS Health API polls. Non-zero means
 the daemon is not ingesting events (throttling, auth, or connectivity).
 
 ```promql
 sum(rate(aws_health_event_poll_cycles_total{outcome="error"}[5m]))
 ```
 
-**Events received by service** — hourly intake broken down by AWS service.
+**Events received by service**: hourly intake broken down by AWS service.
 Useful for spotting which services drive volume and for dashboard breakdowns.
 
 ```promql

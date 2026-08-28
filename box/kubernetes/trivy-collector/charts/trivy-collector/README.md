@@ -75,7 +75,7 @@ The following table lists the configurable parameters and their default values.
 |-----|------|---------|-------------|
 | nameOverride | string | `""` | Override the name of the chart |
 | fullnameOverride | string | `""` | Override the full name of the chart |
-| replicaCount | int | `1` | Default replica count (deprecated — use server.replicaCount for UI pods; scraper always runs as a single replica to avoid split-brain writes). |
+| replicaCount | int | `1` | Default replica count (deprecated, use server.replicaCount for UI pods; scraper always runs as a single replica to avoid split-brain writes). |
 | revisionHistoryLimit | int | `10` | Number of old ReplicaSets to retain for rollback |
 | image | object | `{"pullPolicy":"IfNotPresent","registry":"ghcr.io","repository":"younsl/trivy-collector","tag":""}` | Container image configuration |
 | image.registry | string | `"ghcr.io"` | Container image registry host |
@@ -105,7 +105,7 @@ The following table lists the configurable parameters and their default values.
 | scraper.collect | object | `{"sbomReports":true,"vulnerabilityReports":true}` | Report kinds to watch. Applies to the Hub and to every registered edge cluster. Disabling a kind stops its watch everywhere and excludes it from hydration accounting, so readiness still clears. SbomReports are the bulk of the data, so turning them off is the main lever on database size. |
 | scraper.collect.vulnerabilityReports | bool | `true` | Watch VulnerabilityReports. |
 | scraper.collect.sbomReports | bool | `true` | Watch SbomReports. |
-| scraper.storage | object | `{"medium":"","mountPath":"/data","sizeLimit":"2Gi"}` | Ephemeral storage for the report database. Reports are a mirror of the CRs that exist right now, so an empty start costs one relist and nothing else — and it prunes the rows a deleted CR used to leave behind forever. |
+| scraper.storage | object | `{"medium":"","mountPath":"/data","sizeLimit":"2Gi"}` | Ephemeral storage for the report database. Reports are a mirror of the CRs that exist right now, so an empty start costs one relist and nothing else, and it prunes the rows a deleted CR used to leave behind forever. |
 | scraper.storage.mountPath | string | `"/data"` | Where the database lives inside the container. |
 | scraper.storage.sizeLimit | string | `"2Gi"` | emptyDir sizeLimit. Must cover the database plus the WAL and rebuild churn that can briefly double it. Keep it in step with the container's ephemeral-storage limit below. |
 | scraper.storage.medium | string | `""` | emptyDir medium. Empty uses node disk; "Memory" trades node memory for speed and counts against the pod's memory limit. |
@@ -200,7 +200,7 @@ The following table lists the configurable parameters and their default values.
 | readinessProbe.failureThreshold | int | `3` | Number of failures before marking not ready |
 | dnsPolicy | string | "" | DNS policy for the pod (ClusterFirst, ClusterFirstWithHostNet, Default, None) |
 | dnsConfig | object | {} | DNS configuration for the pod |
-| migration | object | `{"exportState":{"affinity":{},"backoffLimit":2,"dbPath":"/data/trivy.db","dryRun":false,"enabled":false,"existingClaim":"","nodeSelector":{},"resources":{"limits":{"memory":"128Mi"},"requests":{"cpu":"50m","memory":"64Mi"}},"tolerations":[],"ttlSecondsAfterFinished":3600}}` | One-shot migration off the PersistentVolume. Reports need no export — the next scraper start relists them — but API tokens and report notes are unrecoverable, so they are read out of the legacy database and written to a Secret and a ConfigMap before the volume goes away.  Run with exportState.enabled and the old PVC name, verify both objects, then disable it and delete the PVC. Until then the PVC is the rollback. |
+| migration | object | `{"exportState":{"affinity":{},"backoffLimit":2,"dbPath":"/data/trivy.db","dryRun":false,"enabled":false,"existingClaim":"","nodeSelector":{},"resources":{"limits":{"memory":"128Mi"},"requests":{"cpu":"50m","memory":"64Mi"}},"tolerations":[],"ttlSecondsAfterFinished":3600}}` | One-shot migration off the PersistentVolume. Reports need no export, the next scraper start relists them, but API tokens and report notes are unrecoverable, so they are read out of the legacy database and written to a Secret and a ConfigMap before the volume goes away.  Run with exportState.enabled and the old PVC name, verify both objects, then disable it and delete the PVC. Until then the PVC is the rollback. |
 | migration.exportState.enabled | bool | `false` | Run the export as a pre-install/pre-upgrade hook Job. |
 | migration.exportState.existingClaim | string | `""` | Name of the existing PVC holding the legacy database. |
 | migration.exportState.dbPath | string | `"/data/trivy.db"` | Path to the legacy database inside that volume. |

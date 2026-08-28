@@ -112,7 +112,7 @@ The verdict code is deliberately absent from the Event. It names a state rather 
 
 This is the only thing the gate writes to the cluster, and the chart's Role grants `create` and `patch` on `events` for it. Grant the same two verbs if you run with `rbac.create: false` and your own Role. Without them the verdict is unaffected and the write failure is logged, so a missing rule costs the record rather than the enforcement.
 
-Delivery is asynchronous, so a denial is never slowed down by the write. client-go aggregates a repeated Event onto the existing object and drops the rest under its own per-object spam filter, which is what keeps a sync retry loop from filling etcd.
+Delivery is asynchronous, so a denial is never slowed down by the write. Each verdict writes its own Event and the API server's event TTL deletes it within the hour, which is what keeps a sync retry loop from filling etcd.
 
 A dry run writes nothing. The API server is asking what would happen, and answering by writing would let the question change the answer, which is what the webhook's `sideEffects: NoneOnDryRun` commits to.
 

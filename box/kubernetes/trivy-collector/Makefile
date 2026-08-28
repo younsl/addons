@@ -53,7 +53,7 @@ dev-scraper: ## Run scraper with debug logging (watchers, database, internal API
 dev-all: ## Run server (UI :3000) + scraper (internal API :8081) in one process group; Ctrl+C stops both
 	@echo "==> Building once"
 	@cargo build
-	@echo "==> Starting server (UI :3000) + scraper (internal API :8081, health :8090) — Ctrl+C stops both"
+	@echo "==> Starting server (UI :3000) + scraper (internal API :8081, health :8090), Ctrl+C stops both"
 	@trap 'kill 0' INT TERM EXIT; \
 	{ \
 	  STORAGE_PATH=/tmp/trivy-data \

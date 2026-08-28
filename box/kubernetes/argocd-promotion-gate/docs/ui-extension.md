@@ -2,7 +2,7 @@
 
 ## Overview
 
-What the panel shows, why it is JavaScript rather than Go, and the four pieces of argocd-server configuration it needs. The wiring is the bulk of it.
+What the panel shows, why it is JavaScript rather than server side code, and the four pieces of argocd-server configuration it needs. The wiring is the bulk of it.
 
 For Argo CD operators adding the panel to an existing install.
 
@@ -29,7 +29,7 @@ Ungated environments render no tile on purpose. A permanent "not gated" badge on
 
 ## Why the script is a script
 
-Argo CD's extension contract is browser side only. argocd-server serves static files from its extensions directory, the SPA loads them, and each script registers a React component through `window.extensionsAPI`. There is no server side plugin ABI, so no amount of Go can render into that page. The only real choice is how the JavaScript is produced, not whether it exists.
+Argo CD's extension contract is browser side only. argocd-server serves static files from its extensions directory, the SPA loads them, and each script registers a React component through `window.extensionsAPI`. There is no server side plugin ABI, so no amount of server side code can render into that page. The only real choice is how the JavaScript is produced, not whether it exists.
 
 This one is hand written against the `window.React` that Argo CD already exposes, so there is no build step, no bundler, and no 5 MB bundle. It lives at `assets/extension.js` and is compiled into the gate binary with `include_str!`.
 

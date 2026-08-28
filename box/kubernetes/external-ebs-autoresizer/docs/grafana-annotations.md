@@ -191,7 +191,7 @@ config:
     enabled: true
     # Grafana base URL. The addon appends /api/annotations.
     url: http://grafana.monitoring:3000
-    # Timeout for each annotation POST, as a Go duration.
+    # Timeout for each annotation POST, as a duration (5s, 1m).
     timeout: 5s
     # Base tags merged into every annotation and subscribed to by dashboards.
     tags: event:ebs-resize

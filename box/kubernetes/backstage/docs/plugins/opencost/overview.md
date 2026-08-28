@@ -92,9 +92,9 @@ opencost:
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `timezone` | `string` | `UTC` | IANA timezone for billing day boundaries |
-| `clusters[].name` | `string` | — | Cluster identifier (used in API calls) |
-| `clusters[].alias` | `string` | — | Operator-facing cluster name shown in the UI and written to the Cluster column of CSV exports |
-| `clusters[].url` | `string` | — | OpenCost API base URL |
+| `clusters[].name` | `string` | - | Cluster identifier (used in API calls) |
+| `clusters[].alias` | `string` | - | Operator-facing cluster name shown in the UI and written to the Cluster column of CSV exports |
+| `clusters[].url` | `string` | - | OpenCost API base URL |
 
 ### Controller Filter Presets
 

@@ -16,7 +16,7 @@ Inventory of plugins enabled in this Backstage instance, grouped by source. Use 
 
 ### Frontend design system
 
-New custom plugins are written against [`@backstage/ui`](https://www.npmjs.com/package/@backstage/ui) (BUI) — Backstage's CSS-first design system that replaces the Material UI dependency, exposing tokens via `--bui-*` CSS variables. Some legacy code and most native/community plugins still use Material UI v4, so the migration is incremental. Progress is shown under **Settings → Build Info**.
+New custom plugins are written against [`@backstage/ui`](https://www.npmjs.com/package/@backstage/ui) (BUI), Backstage's CSS-first design system that replaces the Material UI dependency, exposing tokens via `--bui-*` CSS variables. Some legacy code and most native/community plugins still use Material UI v4, so the migration is incremental. Progress is shown under **Settings → Build Info**.
 
 ### Frontend/backend plugin pairs
 
@@ -60,4 +60,4 @@ Most custom plugins ship as `<name>` (frontend) plus `<name>-backend` (backend).
 | GitLab Token Audit | `gitlab-token-audit` | Audit GitLab personal/project/group access tokens with expiry alerts via Slack webhook |
 | OpenSearch | `opensearch-account` | Self-service OpenSearch Security internal user create/list/delete/modify with admin approval, RBAC, and audit trail |
 | Capacity | `opensearch-scaling` | Self-service reserved scaling of OpenSearch Service domains (instance type, node count, EBS) at a scheduled time with in-progress pre-validation |
-| Build Info | — | Settings page showing build metadata, installed plugins, BUI migration progress |
+| Build Info | - | Settings page showing build metadata, installed plugins, BUI migration progress |

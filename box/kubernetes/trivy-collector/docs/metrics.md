@@ -47,8 +47,8 @@ Both are derived from watch caches, so they are in-memory reads refreshed every 
 
 | Metric | Type | Labels | Description |
 |--------|------|--------|-------------|
-| `trivy_collector_notes_configmap_bytes` | Gauge | — | Serialized size of the notes ConfigMap |
-| `trivy_collector_api_tokens` | Gauge | — | API tokens held in the tokens Secret |
+| `trivy_collector_notes_configmap_bytes` | Gauge | - | Serialized size of the notes ConfigMap |
+| `trivy_collector_api_tokens` | Gauge | - | API tokens held in the tokens Secret |
 
 A ConfigMap caps at roughly 1MiB and the write path rejects anything past 800KiB, so the notes gauge is the headroom warning. Alert on it rather than discovering the wall.
 
@@ -60,7 +60,7 @@ Registered whether or not `/mcp` is mounted.
 |--------|------|--------|-------------|
 | `trivy_collector_mcp_tool_calls_total` | Counter | `tool`, `result` | MCP tool invocations by outcome |
 | `trivy_collector_mcp_tool_duration_seconds` | Histogram | `tool` | Tool execution time, including queueing for a concurrency slot |
-| `trivy_collector_mcp_tool_calls_in_flight` | Gauge | — | Tool invocations currently executing |
+| `trivy_collector_mcp_tool_calls_in_flight` | Gauge | - | Tool invocations currently executing |
 
 ## Scraper Mode Metrics
 
@@ -70,7 +70,7 @@ Refreshed every **60 seconds** by a background task.
 
 | Metric | Type | Labels | Description |
 |--------|------|--------|-------------|
-| `trivy_collector_db_size_bytes` | Gauge | — | SQLite file size on the scraper's `emptyDir` |
+| `trivy_collector_db_size_bytes` | Gauge | - | SQLite file size on the scraper's `emptyDir` |
 | `trivy_collector_db_reports` | Gauge | `report_type` | Reports currently mirrored into the database |
 
 The database starts empty on every restart and is rebuilt from the clusters that own the reports, so `trivy_collector_db_size_bytes` sawtooths across restarts by design. Watch it against the volume's `sizeLimit` rather than as a growth trend.
@@ -79,8 +79,8 @@ The database starts empty on every restart and is rebuilt from the clusters that
 
 | Metric | Type | Labels | Description |
 |--------|------|--------|-------------|
-| `trivy_collector_clusters` | Gauge | — | Clusters registered with the scraper |
-| `trivy_collector_fleet_hydrated` | Gauge | — | `1` once every registered cluster has finished its initial sync |
+| `trivy_collector_clusters` | Gauge | - | Clusters registered with the scraper |
+| `trivy_collector_fleet_hydrated` | Gauge | - | `1` once every registered cluster has finished its initial sync |
 
 `trivy_collector_fleet_hydrated == 0` is expected for the first minutes after a restart, and `/readyz` fails for exactly that window. Sustained `0` means a cluster is unreachable and its slice of the data is missing.
 

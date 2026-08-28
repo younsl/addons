@@ -41,7 +41,7 @@ excludes by default (`excludeEKSNodes: true`).
 One pass makes four calls for the first 200 nodes: two instant queries, one
 `DescribeVolumes`, one `DescribeInstanceTypes` (cached for the process lifetime, so
 a steady cluster settles into three). The queries are batched at 200 node names, so
-a 1000-node cluster issues ten of them, sequentially — never in parallel, so only one
+a 1000-node cluster issues ten of them, sequentially, never in parallel, so only one
 query is ever in flight against the metrics backend. Per-node work is pure
 computation plus, at most, one `PATCH`.
 
@@ -125,7 +125,7 @@ The threshold is derived from the same fraction as the sample gate
 (`0.3 × lookbackWindow`, about 2 days at the default), which is what makes it free of
 accuracy loss: a node below it could not have passed the sample gate anyway. The
 converse does not hold, so the sample gate still runs for every node that passes the
-age gate — an old node whose node exporter was down for days has the age but not the
+age gate: an old node whose node exporter was down for days has the age but not the
 history.
 
 Such a node reports `node_younger_than_window` rather than `no_metrics_for_node`.
@@ -177,7 +177,7 @@ handled in the client:
 - **API prefix.** Prometheus serves `<base>/api/v1`; a Mimir query-frontend or
   gateway usually serves `<base>/prometheus/api/v1`. The startup preflight probes
   both and pins whichever answers, so `prometheusUrl` may include the prefix or
-  omit it. A prefix is only rejected on 404/405 — a 401 or a connection failure is
+  omit it. A prefix is only rejected on 404/405. A 401 or a connection failure is
   reported as itself, not misreported as a path problem.
 - **Tenant.** `prometheusTenantId` is sent as `X-Scope-OrgID`, which Mimir requires
   when multi-tenancy is enabled and Prometheus ignores.
@@ -209,7 +209,7 @@ operator:
    `4 × throughput` when the ratio demands it.
 2. **The instance caps the volume.** `DescribeInstanceTypes` reports EBS bandwidth
    in decimal **MB/s**, while gp3 throughput is provisioned in binary **MiB/s**.
-   Comparing the two directly overstates headroom by about 4.9% — enough to
+   Comparing the two directly overstates headroom by about 4.9%, enough to
    recommend a throughput the instance cannot drive. m5.large's 593.75 MB/s burst
    is 566 MiB/s.
 3. **Hysteresis, not a deadband percentage.** A decrease needs the target to be a
@@ -384,8 +384,8 @@ volume requires mapping a node exporter `device` label back to a volume ID, whic
 on Nitro means reading `/dev/disk/by-id/nvme-Amazon_Elastic_Block_Store_vol*`,
 which means a privileged DaemonSet on every node. That is a different deployment
 shape than a single controller Deployment, so the ambiguous case is reported rather
-than guessed at. Nodes with only a root volume — the common EKS and Karpenter
-shape — are unaffected.
+than guessed at. Nodes with only a root volume, the common EKS and Karpenter
+shape, are unaffected.
 
 ## Startup
 
@@ -439,7 +439,7 @@ throughputRecommendation:
   prometheusUrl: ""         # Prometheus, or a Mimir query-frontend/gateway
   prometheusTenantId: ""    # X-Scope-OrgID; empty for Prometheus
   metricNodeNameLabel: node           # "instance" for a plain node exporter scrape
-  lookbackWindow: 7d        # a Prometheus duration, not a Go duration
+  lookbackWindow: 7d        # a Prometheus duration (7d, 12h)
   interval: 30m             # separate from reconcileInterval
   applyOnResize: true       # piggyback an increase onto a size expansion; false = advisory-only
 ```
@@ -486,7 +486,7 @@ whatever window is configured, so shortening `lookbackWindow` shortens the
 confidence gate with it.
 
 `lookbackWindow` is validated against the Prometheus duration grammar rather than
-parsed as a Go duration: `7d` is valid PromQL and invalid Go, `1.5h` is the reverse.
+parsed like the other intervals: `7d` is valid PromQL and invalid there, `1.5h` is the reverse.
 That validation is also what keeps an operator-supplied value from injecting PromQL,
 as is the label-name check on `metricNodeNameLabel`.
 

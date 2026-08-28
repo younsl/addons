@@ -15,25 +15,25 @@ aurora-database-insights-exporter and [mysqld_exporter](https://github.com/prome
 
 | Metric area | aurora-database-insights-exporter | mysqld_exporter |
 |-------------|---|---|
-| DB Load (AAS) | O | — |
-| Wait events (CPU, IO, Lock) | O | — |
-| Top SQL by load | O | — |
-| Load by client host | O | — |
-| Load by database user | O | — |
-| Load by database schema | O | — |
-| Connections | — | O (`mysql_global_status_threads_connected`) |
-| QPS / Queries | — | O (`mysql_global_status_queries`) |
-| InnoDB buffer pool | — | O (`mysql_global_status_innodb_buffer_pool_*`) |
-| Replication lag | — | O (`mysql_slave_status_seconds_behind_master`) |
-| Table locks | — | O (`mysql_global_status_table_locks_*`) |
-| Slow queries | — | O (`mysql_global_status_slow_queries`) |
-| Process list | — | O (`mysql_info_schema_processlist_*`) |
+| DB Load (AAS) | O | - |
+| Wait events (CPU, IO, Lock) | O | - |
+| Top SQL by load | O | - |
+| Load by client host | O | - |
+| Load by database user | O | - |
+| Load by database schema | O | - |
+| Connections | - | O (`mysql_global_status_threads_connected`) |
+| QPS / Queries | - | O (`mysql_global_status_queries`) |
+| InnoDB buffer pool | - | O (`mysql_global_status_innodb_buffer_pool_*`) |
+| Replication lag | - | O (`mysql_slave_status_seconds_behind_master`) |
+| Table locks | - | O (`mysql_global_status_table_locks_*`) |
+| Slow queries | - | O (`mysql_global_status_slow_queries`) |
+| Process list | - | O (`mysql_info_schema_processlist_*`) |
 
 ## When to use which
 
 | Scenario | Recommended tool |
 |----------|-----------------|
-| DB Load spike — identify which SQL or wait event | aurora-database-insights-exporter |
+| DB Load spike: identify which SQL or wait event | aurora-database-insights-exporter |
 | Connection pool exhaustion | mysqld_exporter |
 | InnoDB buffer pool hit ratio degradation | mysqld_exporter |
 | Replication lag monitoring | mysqld_exporter |

@@ -153,7 +153,7 @@ mfa_serial = arn:aws:iam::123456789012:mfa/your-device
 ```
 
 Profiles without `mfa_serial` continue to use the standard provider chain
-unchanged. Credentials are cached in-memory only — a fresh `ij` invocation
+unchanged. Credentials are cached in-memory only, a fresh `ij` invocation
 prompts again.
 
 ## Requirements

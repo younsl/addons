@@ -9,18 +9,18 @@ Kubernetes Upgrade Operator for EKS clusters. Watches `EKSUpgrade` custom resour
 
 ## Features
 
-- **Sequential control plane upgrades** — Automatically steps through 1 minor version at a time (e.g., 1.30 → 1.31 → 1.32)
-- **Version rollback** — `upgradeMode: Rollback` reverts a cluster to the previous minor version (N-1) in reverse order (node groups → add-ons → control plane), matching AWS EKS rollback semantics
-- **Add-on version management** — Resolves and applies compatible add-on versions per upgrade step
-- **Managed node group rolling updates** — Triggers rolling updates after control plane and add-on upgrades
-- **Karpenter NodePool replacement** — Rolls Karpenter-managed nodes after managed node groups by deleting stale NodeClaims and waiting for workloads to recover, with per-NodePool concurrency and dual timeouts. See [docs/designs/karpenter-nodepool-replacement.md](docs/designs/karpenter-nodepool-replacement.md)
-- **Preflight validation** — EKS Cluster Insights, Deletion Protection, PDB drain deadlock checks before upgrade (plus Karpenter v1 API and AMI-selector checks when Karpenter replacement is enabled)
-- **Cross-account support** — Hub & Spoke model via STS AssumeRole
-- **Crash recovery** — Persists AWS update IDs in CRD status for resuming interrupted operations
-- **Dry-run mode** — Generate upgrade plan without executing
-- **Sync mode** — Update only add-ons and node groups without control plane upgrade (when target version equals current)
-- **Slack notifications** — Opt-in Slack Incoming Webhook alerts for Started, Completed, and Failed events with dry-run/live mode distinction
-- **Grafana annotations** — Opt-in phase markers pushed to the Grafana Annotations API: a point per phase start and a region spanning each finished run, so operators can read upgrade phase boundaries off their existing dashboards. See [docs/grafana-annotations.md](docs/grafana-annotations.md)
+- **Sequential control plane upgrades**: Automatically steps through 1 minor version at a time (e.g., 1.30 → 1.31 → 1.32)
+- **Version rollback**: `upgradeMode: Rollback` reverts a cluster to the previous minor version (N-1) in reverse order (node groups → add-ons → control plane), matching AWS EKS rollback semantics
+- **Add-on version management**: Resolves and applies compatible add-on versions per upgrade step
+- **Managed node group rolling updates**: Triggers rolling updates after control plane and add-on upgrades
+- **Karpenter NodePool replacement**: Rolls Karpenter-managed nodes after managed node groups by deleting stale NodeClaims and waiting for workloads to recover, with per-NodePool concurrency and dual timeouts. See [docs/designs/karpenter-nodepool-replacement.md](docs/designs/karpenter-nodepool-replacement.md)
+- **Preflight validation**: EKS Cluster Insights, Deletion Protection, PDB drain deadlock checks before upgrade (plus Karpenter v1 API and AMI-selector checks when Karpenter replacement is enabled)
+- **Cross-account support**: Hub & Spoke model via STS AssumeRole
+- **Crash recovery**: Persists AWS update IDs in CRD status for resuming interrupted operations
+- **Dry-run mode**: Generate upgrade plan without executing
+- **Sync mode**: Update only add-ons and node groups without control plane upgrade (when target version equals current)
+- **Slack notifications**: Opt-in Slack Incoming Webhook alerts for Started, Completed, and Failed events with dry-run/live mode distinction
+- **Grafana annotations**: Opt-in phase markers pushed to the Grafana Annotations API: a point per phase start and a region spanning each finished run, so operators can read upgrade phase boundaries off their existing dashboards. See [docs/grafana-annotations.md](docs/grafana-annotations.md)
 
 ## Architecture
 
@@ -34,19 +34,19 @@ kubernetes-upgrade-operator is a Kubernetes operator that runs in a central (hub
 
 kuo operates in one of two upgrade modes, selected by the required `spec.upgradeMode` field:
 
-- **Forward** — Upgrades a cluster to a higher minor version. Runs control plane → add-ons → node groups, so worker nodes never run a version newer than the control plane.
-- **Rollback** — Reverts a cluster to the previous minor version (N-1) within the [AWS 7-day rollback window](https://docs.aws.amazon.com/eks/latest/userguide/rollback-cluster.html). Runs the same phases in reverse order (node groups → add-ons → control plane). See [Rollback Mode](#rollback-mode).
+- **Forward**: Upgrades a cluster to a higher minor version. Runs control plane → add-ons → node groups, so worker nodes never run a version newer than the control plane.
+- **Rollback**: Reverts a cluster to the previous minor version (N-1) within the [AWS 7-day rollback window](https://docs.aws.amazon.com/eks/latest/userguide/rollback-cluster.html). Runs the same phases in reverse order (node groups → add-ons → control plane). See [Rollback Mode](#rollback-mode).
 
 The Forward flow proceeds through the following phases:
 
-1. **Pending** — CR created, waiting for reconciliation
-2. **Planning** — Resolve upgrade path, addon targets, nodegroup targets
-3. **PreflightChecking** — EKS Insights, Deletion Protection, PDB drain deadlock checks
-4. **UpgradingControlPlane** — Step through 1 minor version at a time
-5. **UpgradingAddons** — Update add-ons to compatible versions
-6. **UpgradingNodeGroups** — Trigger managed node group rolling updates
-7. **UpgradingKarpenterNodePools** — Replace stale Karpenter nodes (only when `karpenterNodePools.enabled`; skipped otherwise)
-8. **Completed** — All upgrades finished successfully
+1. **Pending**: CR created, waiting for reconciliation
+2. **Planning**: Resolve upgrade path, addon targets, nodegroup targets
+3. **PreflightChecking**: EKS Insights, Deletion Protection, PDB drain deadlock checks
+4. **UpgradingControlPlane**: Step through 1 minor version at a time
+5. **UpgradingAddons**: Update add-ons to compatible versions
+6. **UpgradingNodeGroups**: Trigger managed node group rolling updates
+7. **UpgradingKarpenterNodePools**: Replace stale Karpenter nodes (only when `karpenterNodePools.enabled`; skipped otherwise)
+8. **Completed**: All upgrades finished successfully
 
 > Any phase can transition to **Failed** on error. Mandatory preflight check failures also result in **Failed**. `UpgradingKarpenterNodePools` is forward-only and is not part of the rollback path.
 
@@ -54,10 +54,10 @@ The Forward flow proceeds through the following phases:
 
 When `dryRun: true` is set, the operator executes planning and preflight validation but skips all infrastructure changes (control plane upgrade, add-on updates, node group rolling updates):
 
-1. **Pending** — CR created, waiting for reconciliation
-2. **Planning** — Resolve upgrade path, addon targets, nodegroup targets
-3. **PreflightChecking** — EKS Insights, Deletion Protection, PDB drain deadlock checks
-4. **Completed** (DryRunCompleted) — Plan generated, no infrastructure changes applied
+1. **Pending**: CR created, waiting for reconciliation
+2. **Planning**: Resolve upgrade path, addon targets, nodegroup targets
+3. **PreflightChecking**: EKS Insights, Deletion Protection, PDB drain deadlock checks
+4. **Completed** (DryRunCompleted): Plan generated, no infrastructure changes applied
 
 > Mandatory preflight check failures result in **Failed** regardless of the dry-run flag. On success, the full upgrade plan (upgrade path, addon targets, nodegroup targets) is available in `status.phases` for review.
 
@@ -104,9 +104,9 @@ Preflight check PDB Drain Deadlock flagged kube-system/coredns-pdb as resource 2
 Setting `upgradeMode: Rollback` reverts a cluster to the previous minor version, mirroring [AWS EKS version rollback](https://docs.aws.amazon.com/eks/latest/userguide/rollback-cluster.html). The phases run in the reverse order of a forward upgrade so worker nodes never run a version newer than the control plane:
 
 1. **Pending** → **Planning** → **PreflightChecking** (insights queried under the `ROLLBACK_READINESS` category instead of `UPGRADE_READINESS`; Deletion Protection and PDB drain deadlock checks still apply)
-2. **RollingBackNodeGroups** — Roll managed node groups back to N-1 first
-3. **RollingBackAddons** — Downgrade add-ons: a version pinned in `addonVersions` wins; any unpinned add-on is auto-rolled-back to the default version compatible with the target minor, but only when that is a downgrade (raw EKS does not roll add-ons back automatically, so kuo fills this gap)
-4. **RollingBackControlPlane** — Roll the control plane back to N-1 last (`UpdateClusterVersion`, reported by AWS as a `VersionRollback` update)
+2. **RollingBackNodeGroups**: Roll managed node groups back to N-1 first
+3. **RollingBackAddons**: Downgrade add-ons: a version pinned in `addonVersions` wins; any unpinned add-on is auto-rolled-back to the default version compatible with the target minor, but only when that is a downgrade (raw EKS does not roll add-ons back automatically, so kuo fills this gap)
+4. **RollingBackControlPlane**: Roll the control plane back to N-1 last (`UpdateClusterVersion`, reported by AWS as a `VersionRollback` update)
 5. **Completed**
 
 Constraints (enforced to match the EKS API):
@@ -203,11 +203,11 @@ spec:
 
 | Field | Required | Default | Description |
 |-------|----------|---------|-------------|
-| `clusterName` | Yes | — | EKS cluster name |
-| `targetVersion` | Yes | — | Target Kubernetes version (e.g., `"1.34"`) |
-| `region` | Yes | — | AWS region |
-| `upgradeMode` | Yes | — | `Forward` to upgrade, `Rollback` to revert one minor version (N-1). Must be set explicitly |
-| `assumeRoleArn` | No | — | IAM Role ARN for cross-account access |
+| `clusterName` | Yes | - | EKS cluster name |
+| `targetVersion` | Yes | - | Target Kubernetes version (e.g., `"1.34"`) |
+| `region` | Yes | - | AWS region |
+| `upgradeMode` | Yes | - | `Forward` to upgrade, `Rollback` to revert one minor version (N-1). Must be set explicitly |
+| `assumeRoleArn` | No | - | IAM Role ARN for cross-account access |
 | `addonVersions` | No | auto-resolve | Add-on version overrides (`addon-name: version`). On rollback, unpinned add-ons auto-roll-back to the target minor's default compatible version when that is a downgrade |
 | `dryRun` | No | `false` | Plan only, do not execute |
 | `timeouts.controlPlaneMinutes` | No | `30` | Control plane upgrade timeout |

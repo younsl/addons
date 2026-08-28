@@ -25,10 +25,10 @@ Focused on **DB Load analysis**: which wait events cause bottlenecks, which SQL 
 
 ## Documentation
 
-- [Configuration](docs/configuration.md) — Config file, CLI flags, IAM permissions
-- [Metrics](docs/metrics.md) — Metric list, label structure, cardinality estimate
-- [Helm](docs/helm.md) — Chart installation and OCI registry usage
-- [Comparison](docs/comparison.md) — Differences from mysqld_exporter
+- [Configuration](docs/configuration.md): Config file, CLI flags, IAM permissions
+- [Metrics](docs/metrics.md): Metric list, label structure, cardinality estimate
+- [Helm](docs/helm.md): Chart installation and OCI registry usage
+- [Comparison](docs/comparison.md): Differences from mysqld_exporter
 
 ## Development
 
@@ -42,5 +42,5 @@ make release   # Release build
 
 ## Related
 
-- [awslabs/prometheus-cloudwatch-database-insights-exporter](https://github.com/awslabs/prometheus-cloudwatch-database-insights-exporter) — AWS official exporter (Go, all PI metrics)
-- [qonto/prometheus-rds-exporter](https://github.com/qonto/prometheus-rds-exporter) — RDS CloudWatch metrics exporter
+- [awslabs/prometheus-cloudwatch-database-insights-exporter](https://github.com/awslabs/prometheus-cloudwatch-database-insights-exporter): AWS official exporter (all PI metrics)
+- [qonto/prometheus-rds-exporter](https://github.com/qonto/prometheus-rds-exporter): RDS CloudWatch metrics exporter

@@ -103,7 +103,7 @@ RUN yarn workspaces focus --all --production && \
     rm -rf .yarn/cache .yarn/releases .yarn/install-state.gz
 
 # ------------------------------------------------------------------------------
-# Stage 3: Production image (lean — no build tools)
+# Stage 3: Production image (lean, no build tools)
 # ------------------------------------------------------------------------------
 FROM node:25-bookworm-slim AS runner
 
@@ -113,7 +113,7 @@ LABEL org.opencontainers.image.title="Backstage with GitLab Discovery" \
       org.opencontainers.image.source="https://github.com/younsl/o" \
       org.opencontainers.image.deprecated="false"
 
-# Runtime dependencies only — no build tools
+# Runtime dependencies only, no build tools
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         ca-certificates \

@@ -123,12 +123,12 @@ jobs:
               # GHCR refuses to delete the last tagged version of a package, so
               # overwriting the tag is the only way to re-release one.
               if [[ "${FORCE}" != "true" ]]; then
-                echo "✅ ${project}:${version} already exists on GHCR — skip"
+                echo "✅ ${project}:${version} already exists on GHCR, skip"
                 continue
               fi
-              echo "♻️ ${project}:${version} exists on GHCR — forced rebuild, the tag will be overwritten"
+              echo "♻️ ${project}:${version} exists on GHCR, forced rebuild, the tag will be overwritten"
             else
-              echo "🆕 ${project}:${version} not found on GHCR — will release"
+              echo "🆕 ${project}:${version} not found on GHCR, will release"
             fi
 
             project_base_dir="box/kubernetes/${project_dir}"

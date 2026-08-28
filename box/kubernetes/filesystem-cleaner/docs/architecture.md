@@ -57,7 +57,7 @@ filesystem-cleaner follows the Unix philosophy: **"Do one thing and do it well"*
 
 Answers one question: *"Does this relative path match the configured glob patterns?"*
 
-Glob patterns are translated into anchored regular expressions at startup. The semantics mirror the Rust globset crate (default settings) used before the Go port: `*` and `?` match across `/`, and `**` as a full component matches zero or more path components.
+Glob patterns are translated into anchored regular expressions at startup. The semantics mirror the Rust globset crate (default settings) the tool originally shipped with: `*` and `?` match across `/`, and `**` as a full component matches zero or more path components.
 
 **Key Methods**:
 - `ShouldExclude(path) bool` - Check if path matches exclude patterns

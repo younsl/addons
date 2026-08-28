@@ -97,7 +97,7 @@ The following table lists the configurable parameters and their default values.
 | poller.intervalSeconds | int | `60` | Poll interval in seconds. |
 | poller.initialLookbackSeconds | int | `3600` | On cold start, fetch events updated within this many seconds. |
 | poller.coldStartSuppress | bool | `true` | On cold start, populate dedup without sending. Prevents replay floods on restart. |
-| poller.eventLocale | string | `"en"` | Locale passed to `DescribeEventDetails` (AWS accepts en, ja, zh — not en_US). |
+| poller.eventLocale | string | `"en"` | Locale passed to `DescribeEventDetails` (AWS accepts en, ja, zh, not en_US). |
 | poller.reminderOffsetsHours | list | `[24]` | Reminder offsets in hours before `startTime`. A reminder fires once per `(eventArn, offset)` when `startTime - now <= offset`. Reminders only fire for events that have an `endTime` set (i.e., scheduled-window events). Empty list disables reminders. |
 | rbac.create | bool | `true` | Create a Role + RoleBinding granting create/patch on Events. Disable to manage the RBAC yourself (the SA still needs those verbs). |
 | podDisruptionBudget.enabled | bool | `true` | Whether to create a PodDisruptionBudget. |

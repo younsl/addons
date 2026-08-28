@@ -3,7 +3,7 @@ name = "vlt"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.98.0"
-description = "vlt — local-first password manager TUI"
+description = "vlt: local-first password manager TUI"
 authors = ["younsl"]
 license = "Apache-2.0"
 
@@ -29,7 +29,7 @@ open = "5"
 unicode-width = "0.2.2"
 
 # Per-platform native credential store. Default features in keyring 3.x do
-# not pull in any backend automatically — each target must enable one.
+# not pull in any backend automatically, each target must enable one.
 [target.'cfg(target_os = "macos")'.dependencies]
 keyring = { version = "3", features = ["apple-native"] }
 

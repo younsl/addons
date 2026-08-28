@@ -2,7 +2,6 @@
 
 [![GitHub Container Registry](https://img.shields.io/badge/ghcr.io-external--ebs--autoresizer-black?style=flat-square&logo=docker&logoColor=white)](https://github.com/younsl/o/pkgs/container/external-ebs-autoresizer)
 [![Helm Chart](https://img.shields.io/badge/ghcr.io-charts%2Fexternal--ebs--autoresizer-black?style=flat-square&logo=helm&logoColor=white)](https://github.com/younsl/o/pkgs/container/charts%2Fexternal-ebs-autoresizer)
-[![Go](https://img.shields.io/badge/go-1.27.0-black?style=flat-square&logo=go&logoColor=white)](https://go.dev/)
 [![GitHub license](https://img.shields.io/github/license/younsl/o?style=flat-square&color=black)](https://github.com/younsl/o/blob/main/LICENSE)
 
 Automatically grows the [root filesystem][ebs-extend-fs] (ext2/3/4 or XFS) of
@@ -93,7 +92,7 @@ ConfigMap.
 region: ap-northeast-2                 # required
 tagFilters: ""                         # "Key=Value,Key2=Value2"; empty scans all instances in the account/region
 excludeEKSNodes: true                  # drop EKS nodes (managed node groups, self-managed, Karpenter)
-reconcileInterval: 5m                  # Go duration: 30s, 5m, 1h, 1h30m
+reconcileInterval: 5m                  # duration: 30s, 5m, 1h, 1h30m
 reconcileConcurrency: 10               # max instances reconciled in parallel per pass
 defaultPolicy:                         # volume-expansion settings for instances matching no named policy (see Per-group resize policies)
   usageThresholdPercent: 80            # REQUIRED. usage that triggers a resize
@@ -128,7 +127,7 @@ throughputRecommendation:              # node gp3 throughput recommendations; se
   prometheusUrl: ""                    # Prometheus, or a Mimir query-frontend/gateway
   prometheusTenantId: ""               # X-Scope-OrgID; empty for Prometheus
   metricNodeNameLabel: node                      # metric label carrying the Node name; "instance" for a plain node exporter scrape
-  lookbackWindow: 7d                   # a Prometheus duration (7d, 12h), not a Go duration
+  lookbackWindow: 7d                   # a Prometheus duration (7d, 12h), unlike the other intervals
   interval: 30m                        # separate from reconcileInterval
   applyOnResize: true                  # piggyback an increase onto a size expansion; false keeps recommendations advisory-only
 policies: []                           # per-instance-group overrides; see below
@@ -159,7 +158,7 @@ policies:
     instanceSelector:
       tags:                            # every tag must match exactly
         Role: database
-      nameRegex: "^prod-db-.*"         # Go (RE2) regex on the Name tag; tags and nameRegex are ANDed
+      nameRegex: "^prod-db-.*"         # RE2 regex on the Name tag; tags and nameRegex are ANDed
     resize:
       usageThresholdPercent: 70
       growMode: absolute
@@ -559,9 +558,9 @@ Target instances must have the SSM Agent running and the
 
 ```bash
 make build          # local binary into bin/
-make test           # go test -race
+make test           # race-enabled unit tests
 make coverage       # enforce minimum line coverage (70%)
-make lint           # gofmt check + go vet
+make lint           # format check + vet
 make docker-build   # multi-arch image (linux/amd64, linux/arm64)
 ```
 

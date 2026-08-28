@@ -33,7 +33,7 @@ strategy:
 slack:
   # -- (string) How the thread parent is obtained. `lookup` leaves the alert notification to Alertmanager and finds it in channel history to reply under, which needs `channels:history` and `channels:read` (plus the `groups:*` equivalents for private channels). `post` makes the gateway publish the alert itself and needs only `chat:write`.
   parentMode: "lookup"
-  # -- (string) How far back channel history is searched for the alert notification, as a Go duration. Only used in `lookup` mode.
+  # -- (string) How far back channel history is searched for the alert notification, as a duration (30s, 5m, 1h). Only used in `lookup` mode.
   lookupWindow: "15m"
   # -- (int) How many times to re-search before giving up. Alertmanager delivers the Slack notification and the webhook independently, so the first attempt can miss. Only used in `lookup` mode.
   lookupAttempts: 3
@@ -79,11 +79,11 @@ chat:
     # - U01234567
   # -- (string) Instructions appended to every mention prompt. Empty uses the built-in English instructions, which are separate from `analysis.instructions` because a question has no alert sections to fill.
   instructions: ""
-  # -- (string) Deadline for one whole turn including queueing, as a Go duration. The kagent controller caps a turn at 3 minutes in the v0.9.x line, so raising this above `180s` buys nothing; lowering it makes the gateway's own expiry fire first and cancel the task.
+  # -- (string) Deadline for one whole turn including queueing, as a duration (30s, 5m, 1h). The kagent controller caps a turn at 3 minutes in the v0.9.x line, so raising this above `180s` buys nothing; lowering it makes the gateway's own expiry fire first and cancel the task.
   timeout: "180s"
-  # -- (string) How long a thread keeps its A2A `contextId` after its last turn, as a Go duration. Within it a follow-up mention continues the same agent session. `0s` makes every mention a cold turn.
+  # -- (string) How long a thread keeps its A2A `contextId` after its last turn, as a duration (30s, 5m, 1h). Within it a follow-up mention continues the same agent session. `0s` makes every mention a cold turn.
   sessionTTL: "2h"
-  # -- (string) How often the in-thread status message is rewritten while the agent works, as a Go duration. Each rewrite is one `chat.update` call, so a short interval buys a livelier status line at the cost of Slack rate limit budget.
+  # -- (string) How often the in-thread status message is rewritten while the agent works, as a duration (30s, 5m, 1h). Each rewrite is one `chat.update` call, so a short interval buys a livelier status line at the cost of Slack rate limit budget.
   statusInterval: "10s"
   # -- (string) Ephemeral hint sent when the bot is mentioned at channel level instead of in a thread. `null` keeps the built-in text; an empty string drops the mention silently.
   threadHint: null
@@ -107,11 +107,11 @@ kagent:
     # security-alerts: security-alert-triage-agent
   # -- (string) Identity sent as X-User-Id, which owns the kagent sessions the gateway creates
   userID: "gateway@kagent.dev"
-  # -- (string) Deadline for one whole analysis (queueing, parent lookup, and the polled agent run), as a Go duration. On expiry the task is cancelled on the controller so it stops consuming model tokens.
+  # -- (string) Deadline for one whole analysis (queueing, parent lookup, and the polled agent run), as a duration (30s, 5m, 1h). On expiry the task is cancelled on the controller so it stops consuming model tokens.
   timeout: "120s"
-  # -- (string) Timeout for a single HTTP call to the controller (submit, poll, or cancel), as a Go duration
+  # -- (string) Timeout for a single HTTP call to the controller (submit, poll, or cancel), as a duration (30s, 5m, 1h)
   requestTimeout: "30s"
-  # -- (string) Wait between two task status polls, as a Go duration
+  # -- (string) Wait between two task status polls, as a duration (30s, 5m, 1h)
   pollInterval: "5s"
 
 analysis:
@@ -121,7 +121,7 @@ analysis:
   label: "analyze"
   # -- (bool) Analyse resolved notifications as well as firing ones
   resolved: false
-  # -- (string) How long a group stays suppressed after being analysed, as a Go duration. Should cover the Alertmanager repeat_interval. "0s" disables deduplication.
+  # -- (string) How long a group stays suppressed after being analysed, as a duration (30s, 5m, 1h). Should cover the Alertmanager repeat_interval. "0s" disables deduplication.
   dedupeTTL: "12h"
   # -- (int) Maximum alerts rendered into one prompt
   maxAlerts: 5

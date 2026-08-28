@@ -84,13 +84,13 @@ jobs:
             # bumping the version from re-cutting a release. A manual run asking
             # for force is a statement of intent.
             if [[ "${FORCE}" != "true" ]]; then
-              echo "✅ ${TAG} already released — skip"
+              echo "✅ ${TAG} already released, skip"
               HAS_RELEASE="false"
             else
-              echo "♻️ ${TAG} already released — forced re-release, the existing release will be overwritten"
+              echo "♻️ ${TAG} already released, forced re-release, the existing release will be overwritten"
             fi
           else
-            echo "🆕 ${TAG} not released yet — will release"
+            echo "🆕 ${TAG} not released yet, will release"
           fi
 
           {

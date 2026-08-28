@@ -35,7 +35,7 @@ function discoverRefs() {
           refs.push({ path: `${top}/${name}` });
         }
       } catch {
-        // missing or unreadable — skip
+        // missing or unreadable, skip
       }
     }
   }

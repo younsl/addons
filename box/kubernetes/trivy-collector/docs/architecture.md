@@ -47,7 +47,7 @@ by the `--mode` CLI flag:
 | `trivy-collector-server` | `--mode=server` | HTTP UI + API. Holds no database and mounts no volume; reads reports through the scraper's internal API. No watchers. |
 | `trivy-collector-scraper` | `--mode=scraper` | Runs all watchers, owns the only database, evaluates alert rules, and serves the internal read API on `:8081`. No UI (only `/healthz`, `/readyz`, `/metrics`). |
 
-The split follows data ownership rather than read and write roles. The scraper owns the SQLite file on its own `emptyDir` and nothing else can see it, which is what makes the server disposable — and a disposable server is the point, since image bumps, config changes, and replica changes on the UI tier are frequent while scraper restarts are rare and self-healing.
+The split follows data ownership rather than read and write roles. The scraper owns the SQLite file on its own `emptyDir` and nothing else can see it, which is what makes the server disposable, and a disposable server is the point, since image bumps, config changes, and replica changes on the UI tier are frequent while scraper restarts are rare and self-healing.
 
 The scraper runs one replica by choice, not by constraint: a second would double the watch load on every registered cluster for no benefit. Its rollout is a `RollingUpdate`, because the incoming pod reports unready until the fleet is hydrated and the outgoing pod keeps serving reads for the whole rebuild. The server scales horizontally.
 
@@ -82,13 +82,13 @@ It answers with every report in the fleet and no per-user filtering, because RBA
 
 The scraper in turn runs three kinds of watchers:
 
-1. **Local watcher** — watches Trivy CRDs on the Hub's own cluster via the pod's
+1. **Local watcher**: watches Trivy CRDs on the Hub's own cluster via the pod's
    own in-cluster ServiceAccount (no Secret needed). Toggled with
    `scraper.watchLocal`.
-2. **Secret watcher** — watches `Secret` resources in the Hub namespace
+2. **Secret watcher**: watches `Secret` resources in the Hub namespace
    labelled `trivy-collector.io/secret-type=cluster`. On `Apply` it spawns a
    per-cluster watcher; on `Delete` it stops one.
-3. **Per-cluster watchers** — one per registered Edge cluster. Each one holds a
+3. **Per-cluster watchers**: one per registered Edge cluster. Each one holds a
    `kube::Client` built from the Secret's `bearerToken` + `caData` and watches
    the Edge's Trivy CRDs directly.
 
@@ -165,14 +165,14 @@ tagged with `clusterName` (chart value).
 Keeping watchers and the HTTP UI in separate processes makes several concerns
 simpler:
 
-- **Resource profile** — the scraper needs more memory (long-running watch
+- **Resource profile**: the scraper needs more memory (long-running watch
   streams, per-cluster kube clients, report JSON buffers) while the server is
   I/O light. Per-component `resources` blocks let the two be sized independently.
-- **Scaling** — the server can run multiple replicas behind a Service for HA of
+- **Scaling**: the server can run multiple replicas behind a Service for HA of
   the UI without risking duplicate DB writers.
-- **Failure isolation** — a crash in a per-cluster watcher can't bring the UI
+- **Failure isolation**: a crash in a per-cluster watcher can't bring the UI
   down and vice versa.
-- **Deployment auditability** — a single image with one of two CLI flags is
+- **Deployment auditability**: a single image with one of two CLI flags is
   easy to reason about (`--mode=server` vs `--mode=scraper`).
 
 ## Deletion semantics
@@ -197,7 +197,7 @@ three things:
 Only four Kubernetes resources, installed once:
 
 1. `ServiceAccount: trivy-collector-reader`
-2. `ClusterRole` — `get / list / watch` on `aquasecurity.github.io`
+2. `ClusterRole`: `get / list / watch` on `aquasecurity.github.io`
    `vulnerabilityreports` and `sbomreports` (no write, no wildcards)
 3. `ClusterRoleBinding`
 4. `Secret` of type `kubernetes.io/service-account-token` holding the long-
@@ -211,11 +211,11 @@ All other logic lives on the central cluster.
 
 `/admin/clusters` runs a two-step wizard:
 
-1. **Bootstrap** — Copy the generated YAML (SA + ClusterRole +
+1. **Bootstrap**: Copy the generated YAML (SA + ClusterRole +
    ClusterRoleBinding + token Secret) and `kubectl apply` on the Edge cluster
    with an admin kubeconfig. Then run the provided bash block to extract the
    SA token, CA, and API server URL.
-2. **Register** — Paste the three extracted values into the form. Submitting
+2. **Register**: Paste the three extracted values into the form. Submitting
    calls `POST /api/v1/hub/clusters`, which creates the Hub Secret. The
    scraper attaches within seconds and the table flips to **Synced**.
 
@@ -272,8 +272,8 @@ shared ServiceAccount:
 
 | Object | Scope | Permissions |
 |---|---|---|
-| `ClusterRole` | cluster-wide | Read-only (`get / list / watch`) on `aquasecurity.github.io` `vulnerabilityreports` and `sbomreports` — used by the local watcher on the Hub's own cluster |
-| `Role` | release namespace | `configmaps + secrets` `get / list / watch / create / update / patch / delete` — covers both alerts ConfigMap CRUD and cluster-registration Secret CRUD |
+| `ClusterRole` | cluster-wide | Read-only (`get / list / watch`) on `aquasecurity.github.io` `vulnerabilityreports` and `sbomreports`, used by the local watcher on the Hub's own cluster |
+| `Role` | release namespace | `configmaps + secrets` `get / list / watch / create / update / patch / delete`, covers both alerts ConfigMap CRUD and cluster-registration Secret CRUD |
 | `RoleBinding` | release namespace | Binds the above `Role` to the chart ServiceAccount |
 
 The Role is deliberately namespaced to the release namespace to limit blast
@@ -289,7 +289,7 @@ radius if the Hub is ever compromised.
 - If an Edge cluster becomes unreachable, the watcher logs the error and keeps
   retrying. Other clusters are unaffected.
 - SA tokens for Edge clusters are long-lived by default. For stricter
-  rotation, rotate the Secret periodically — the scraper reconnects
+  rotation, rotate the Secret periodically, the scraper reconnects
   automatically when the Secret's `resourceVersion` changes.
 - SQLite lives on the scraper's `emptyDir` in WAL mode, opened by that process
   alone. Because an `emptyDir` draws from the node's ephemeral storage, the

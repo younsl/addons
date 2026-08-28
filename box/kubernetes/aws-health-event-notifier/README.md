@@ -15,7 +15,7 @@ One Pod polls the AWS Health API, filters events in process, and posts them to S
 
 ## Overview
 
-A pull-model daemon: the pod queries the AWS Health [DescribeEvents](https://docs.aws.amazon.com/health/latest/APIReference/API_DescribeEvents.html) API on an interval and forwards new events to a Slack Incoming Webhook — no EventBridge rule or push endpoint required. On cold start it suppresses the backlog by default, so a restart never floods the channel with already-seen events. Every published alarm also produces a Kubernetes Event on the daemon's own Pod (resolved via the Downward API), making AWS Health activity visible to kubectl get events and cluster event pipelines.
+A pull-model daemon: the pod queries the AWS Health [DescribeEvents](https://docs.aws.amazon.com/health/latest/APIReference/API_DescribeEvents.html) API on an interval and forwards new events to a Slack Incoming Webhook, no EventBridge rule or push endpoint required. On cold start it suppresses the backlog by default, so a restart never floods the channel with already-seen events. Every published alarm also produces a Kubernetes Event on the daemon's own Pod (resolved via the Downward API), making AWS Health activity visible to kubectl get events and cluster event pipelines.
 
 ## Features
 
@@ -30,9 +30,9 @@ A pull-model daemon: the pod queries the AWS Health [DescribeEvents](https://doc
 
 ## Documentation
 
-- [Region filtering design](docs/designs/region-filtering.md) — why region is a filter dimension, and its semantics
-- [Metrics](docs/metrics.md) — Prometheus metric list, label values, example queries
-- [Helm values](charts/aws-health-event-notifier/values.yaml) — Chart configuration reference
+- [Region filtering design](docs/designs/region-filtering.md): why region is a filter dimension, and its semantics
+- [Metrics](docs/metrics.md): Prometheus metric list, label values, example queries
+- [Helm values](charts/aws-health-event-notifier/values.yaml): Chart configuration reference
 
 ## IAM permissions
 
@@ -98,4 +98,4 @@ make local-run # Run daemon locally (cold-start suppress ON)
 ## Related
 
 - [AWS Health API reference](https://docs.aws.amazon.com/health/latest/APIReference/Welcome.html)
-- [aws-samples/aws-health-aware](https://github.com/aws-samples/aws-health-aware) — AWS official, EventBridge push model (Python/Lambda)
+- [aws-samples/aws-health-aware](https://github.com/aws-samples/aws-health-aware): AWS official, EventBridge push model (Python/Lambda)

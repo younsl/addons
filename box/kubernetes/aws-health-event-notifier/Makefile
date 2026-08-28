@@ -116,7 +116,7 @@ local-check-aws:
 	    --aggregate-field eventTypeCategory \
 	    --output table
 
-## Run daemon locally (poll 30s, cold-start suppress ON — safe, no replay flood)
+## Run daemon locally (poll 30s, cold-start suppress ON, safe, no replay flood)
 local-run:
 	@test -n "$(SLACK_WEBHOOK_URL)" || (echo "SLACK_WEBHOOK_URL not set; pass via make var or env" >&2; exit 1)
 	@AWS_PROFILE=$(AWS_PROFILE) \
@@ -127,7 +127,7 @@ local-run:
 	 LOG_LEVEL=debug \
 	 PATH="$(TOOLCHAIN_PATH):$$PATH" cargo run -- run
 
-## Run daemon locally with cold-start REPLAY (sends recent open events to Slack — for demos)
+## Run daemon locally with cold-start REPLAY (sends recent open events to Slack, for demos)
 local-run-replay:
 	@test -n "$(SLACK_WEBHOOK_URL)" || (echo "SLACK_WEBHOOK_URL not set" >&2; exit 1)
 	@AWS_PROFILE=$(AWS_PROFILE) \

@@ -59,8 +59,8 @@ new policy entry.
 
 ### policies
 
-Prints each named policy and its **effective** settings — what an instance
-matching it actually gets after inheriting unset fields from `defaultPolicy` —
+Prints each named policy and its **effective** settings, what an instance
+matching it actually gets after inheriting unset fields from `defaultPolicy`,
 sorted by precedence (highest weight first), with the default policy last.
 Never contacts AWS unless `--count` is set.
 
@@ -181,9 +181,9 @@ The Makefile wraps each command against it; override the file with
 `CONFIG=path`:
 
 ```bash
-make validate     # go run ... validate  --config config.example.yaml
-make policies     # go run ... policies   --config config.example.yaml
-make instances    # go run ... instances  --config config.example.yaml (needs AWS credentials)
+make validate     # validate  --config config.example.yaml
+make policies     # policies   --config config.example.yaml
+make instances    # instances  --config config.example.yaml (needs AWS credentials)
 ```
 
 `unused` has no local equivalent: it reads the Kubernetes API through the

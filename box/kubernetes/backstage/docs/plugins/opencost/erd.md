@@ -195,6 +195,6 @@ Schema version 3 added this table and the `opencost_daily_costs (pod_id)`, `open
 
 **3NF normalization**: Pod metadata (`namespace`, `controller_kind`, `controller`) lives only in `opencost_pods`. Fact tables (`daily_costs`, `monthly_summaries`) reference via `pod_id` FK, eliminating daily/monthly duplication.
 
-**Namespace in unique constraint**: `opencost_pods.UNIQUE(cluster_id, namespace, pod)` prevents same-name pods in different namespaces from colliding — a bug in the V1 schema where namespace was absent from the unique key.
+**Namespace in unique constraint**: `opencost_pods.UNIQUE(cluster_id, namespace, pod)` prevents same-name pods in different namespaces from colliding, a bug in the V1 schema where namespace was absent from the unique key.
 
 **Timestamp semantics**: `created_at` records first insertion; `updated_at` records last upsert. V1's `collected_at` was overwritten on every upsert, losing the original collection timestamp.

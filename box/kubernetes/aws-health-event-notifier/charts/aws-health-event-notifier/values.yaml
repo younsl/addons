@@ -73,7 +73,7 @@ service:
   # -- (string) Traffic routing preference (e.g., `PreferClose` for topology-aware routing). Empty omits the field.
   trafficDistribution: ""
 
-# Polling daemon configuration (pull model — pod queries AWS Health API directly).
+# Polling daemon configuration (pull model, pod queries AWS Health API directly).
 poller:
   # -- (int) Poll interval in seconds.
   intervalSeconds: 60
@@ -81,7 +81,7 @@ poller:
   initialLookbackSeconds: 3600
   # -- (bool) On cold start, populate dedup without sending. Prevents replay floods on restart.
   coldStartSuppress: true
-  # -- (string) Locale passed to `DescribeEventDetails` (AWS accepts en, ja, zh — not en_US).
+  # -- (string) Locale passed to `DescribeEventDetails` (AWS accepts en, ja, zh, not en_US).
   eventLocale: en
   # -- (list) Reminder offsets in hours before `startTime`. A reminder fires once
   # per `(eventArn, offset)` when `startTime - now <= offset`. Reminders only fire

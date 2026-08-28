@@ -9,8 +9,8 @@ target lists, or per-tool feature summaries here; read the code or the tool's ow
 ## Overview
 
 Monorepo of Kubernetes addons, operators, CLI tools, runtime container images, and a Zola blog.
-Most applications are Rust. Exceptions: `backstage` (Node.js/React) and the Go applications:
-`external-ebs-autoresizer`, `filesystem-cleaner`.
+Most applications are Rust. Exceptions: `backstage` (Node.js/React), `external-ebs-autoresizer`, and
+`filesystem-cleaner`.
 
 Each addon follows the Unix philosophy of doing one thing well. Prefer a new small component over
 extending an existing one past its purpose.
@@ -72,7 +72,7 @@ with `cargo llvm-cov`. Check before releasing, not after.
   stay untracked and CI fails on a missing module.
 - Unit tests in a `#[cfg(test)]` module in the same file; integration tests in `tests/`.
 - Container images are `scratch` with statically linked binaries built via cargo-zigbuild.
-- Cross-compilation needs a target C toolchain and linker configuration, unlike Go. The working setup
+- Cross-compilation needs a target C toolchain and linker configuration. The working setup
   lives in `.github/workflows/_release-rust-scratch-containers.yml`.
 
 ## Documentation

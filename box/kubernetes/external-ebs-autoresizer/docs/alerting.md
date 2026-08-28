@@ -238,7 +238,7 @@ config:
     enabled: true
     # Alertmanager v2 base URL. The addon appends /api/v2/alerts.
     url: http://alertmanager-operated.monitoring:9093
-    # Timeout for each alert POST, as a Go duration.
+    # Timeout for each alert POST, as a duration (5s, 1m).
     timeout: 5s
     # Which outcomes to alert: all, success, or failure.
     notifyOn: all

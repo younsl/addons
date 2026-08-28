@@ -4,12 +4,12 @@ This guide covers the IAM prerequisites and Helm installation for kubernetes-upg
 
 ## Prerequisites: Hub & Spoke IAM Permissions
 
-### Hub Account (Central — where kubernetes-upgrade-operator runs)
+### Hub Account (Central, where kubernetes-upgrade-operator runs)
 
 The operator pod needs base credentials via **IRSA** or **EKS Pod Identity**.
 
 <details>
-<summary>Hub Policy — for same-account clusters</summary>
+<summary>Hub Policy for same-account clusters</summary>
 
 ```json
 {
@@ -73,7 +73,7 @@ The operator pod needs base credentials via **IRSA** or **EKS Pod Identity**.
 </details>
 
 <details>
-<summary>Spoke Policy — for cross-account clusters</summary>
+<summary>Spoke Policy for cross-account clusters</summary>
 
 ```json
 {
@@ -98,7 +98,7 @@ The operator pod needs base credentials via **IRSA** or **EKS Pod Identity**.
 >
 > ⚠️ **Important:** `sts:TagSession` is required in both Hub Policy and Spoke Policy. EKS Pod Identity and IRSA attach session tags when issuing credentials. Without this permission, the hub role cannot obtain credentials and all API calls will fail with `AccessDenied`.
 
-### Spoke Account (Target — EKS clusters to upgrade)
+### Spoke Account (Target, EKS clusters to upgrade)
 
 <details>
 <summary>IAM Policy for Spoke Role</summary>
@@ -229,16 +229,16 @@ Hub Account (111111111111)           Spoke Account (222222222222)
 │ kuo-hub-role             │        │ kuo-spoke-role           │
 │                          │        │                          │
 │ Hub Policy:              │        │ Permissions:             │
-│  · eks:* (same-account)  │        │  · eks:* (cluster ops)   │
-│  · sts:GetCallerIdentity │        │  · sts:GetCallerIdentity │
+│  - eks:* (same-account)  │        │  - eks:* (cluster ops)   │
+│  - sts:GetCallerIdentity │        │  - sts:GetCallerIdentity │
 │                          │        │                          │
 │ Spoke Policy:            │        │ Trust policy:            │
-│  · sts:AssumeRole ───────┼───────→│  · Hub role (AssumeRole) │
+│  - sts:AssumeRole ───────┼───────→│  - Hub role (AssumeRole) │
 │                          │        │                          │
 │ Credential source:       │        │ EKS Pod Identity: NO     │
-│  · IRSA or               │        │                          │
-│  · EKS Pod Identity      │        │ EKS Access Entry: YES    │
-│                          │        │  · AmazonEKSViewPolicy   │
+│  - IRSA or               │        │                          │
+│  - EKS Pod Identity      │        │ EKS Access Entry: YES    │
+│                          │        │  - AmazonEKSViewPolicy   │
 │ EKS Pod Identity: YES    │        │                          │
 └──────────────────────────┘        └──────────────────────────┘
 ```

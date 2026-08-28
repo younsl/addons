@@ -86,7 +86,7 @@ The following table lists the configurable parameters and their default values.
 | strategy.rollingUpdate.maxSurge | string|int | `"25%"` | Max Pods created above desired count during an update |
 | strategy.rollingUpdate.maxUnavailable | string|int | `"25%"` | Max Pods unavailable during an update |
 | slack.parentMode | string | `"lookup"` | How the thread parent is obtained. `lookup` leaves the alert notification to Alertmanager and finds it in channel history to reply under, which needs `channels:history` and `channels:read` (plus the `groups:*` equivalents for private channels). `post` makes the gateway publish the alert itself and needs only `chat:write`. |
-| slack.lookupWindow | string | `"15m"` | How far back channel history is searched for the alert notification, as a Go duration. Only used in `lookup` mode. |
+| slack.lookupWindow | string | `"15m"` | How far back channel history is searched for the alert notification, as a duration (30s, 5m, 1h). Only used in `lookup` mode. |
 | slack.lookupAttempts | int | `3` | How many times to re-search before giving up. Alertmanager delivers the Slack notification and the webhook independently, so the first attempt can miss. Only used in `lookup` mode. |
 | slack.investigatingReaction | string | `"telescope"` | Emoji (without colons) placed on the alert notification while the agent investigates and removed when the analysis lands. Needs `reactions:write`. Empty string disables it. |
 | slack.completedReaction | string | `"white_check_mark"` | Emoji (without colons) that replaces the investigating reaction once the analysis has been posted. Needs `reactions:write`. Empty string disables it. |
@@ -106,9 +106,9 @@ The following table lists the configurable parameters and their default values.
 | chat.channels | list | `[]` | Channel names or IDs allowed to invoke the bot. Empty allows every channel the bot is a member of. |
 | chat.allowedUsers | list | `[]` | Slack member IDs allowed to invoke the bot. Empty allows everyone in the allowed channels. |
 | chat.instructions | string | `""` | Instructions appended to every mention prompt. Empty uses the built-in English instructions, which are separate from `analysis.instructions` because a question has no alert sections to fill. |
-| chat.timeout | string | `"180s"` | Deadline for one whole turn including queueing, as a Go duration. The kagent controller caps a turn at 3 minutes in the v0.9.x line, so raising this above `180s` buys nothing; lowering it makes the gateway's own expiry fire first and cancel the task. |
-| chat.sessionTTL | string | `"2h"` | How long a thread keeps its A2A `contextId` after its last turn, as a Go duration. Within it a follow-up mention continues the same agent session. `0s` makes every mention a cold turn. |
-| chat.statusInterval | string | `"10s"` | How often the in-thread status message is rewritten while the agent works, as a Go duration. Each rewrite is one `chat.update` call, so a short interval buys a livelier status line at the cost of Slack rate limit budget. |
+| chat.timeout | string | `"180s"` | Deadline for one whole turn including queueing, as a duration (30s, 5m, 1h). The kagent controller caps a turn at 3 minutes in the v0.9.x line, so raising this above `180s` buys nothing; lowering it makes the gateway's own expiry fire first and cancel the task. |
+| chat.sessionTTL | string | `"2h"` | How long a thread keeps its A2A `contextId` after its last turn, as a duration (30s, 5m, 1h). Within it a follow-up mention continues the same agent session. `0s` makes every mention a cold turn. |
+| chat.statusInterval | string | `"10s"` | How often the in-thread status message is rewritten while the agent works, as a duration (30s, 5m, 1h). Each rewrite is one `chat.update` call, so a short interval buys a livelier status line at the cost of Slack rate limit budget. |
 | chat.threadHint | string | `nil` | Ephemeral hint sent when the bot is mentioned at channel level instead of in a thread. `null` keeps the built-in text; an empty string drops the mention silently. |
 | chat.deniedHint | string | `nil` | Ephemeral hint sent when the bot is mentioned in a channel outside `chat.channels`. `null` keeps the built-in text; an empty string drops the mention silently. |
 | chat.maxConcurrent | int | `2` | Maximum mention turns running at once. Separate from `analysis.maxConcurrent` so a burst of questions cannot starve alert analysis of model concurrency. |
@@ -118,13 +118,13 @@ The following table lists the configurable parameters and their default values.
 | kagent.agentRoutingLabel | string | `""` | Alert label that routes an alert to an agent. Defaults to `slack.channelLabel` when empty, so one label can split both the channel and the agent. |
 | kagent.agentRoutingMap | object | `{}` | Routing table from label value to the Agent resource that handles it, so one gateway can feed several specialised agents. Unlike `slack.channelMap` this is not an alias table: a value it does not carry falls back to `kagent.agent` instead of being used as an agent name. |
 | kagent.userID | string | `"gateway@kagent.dev"` | Identity sent as X-User-Id, which owns the kagent sessions the gateway creates |
-| kagent.timeout | string | `"120s"` | Deadline for one whole analysis (queueing, parent lookup, and the polled agent run), as a Go duration. On expiry the task is cancelled on the controller so it stops consuming model tokens. |
-| kagent.requestTimeout | string | `"30s"` | Timeout for a single HTTP call to the controller (submit, poll, or cancel), as a Go duration |
-| kagent.pollInterval | string | `"5s"` | Wait between two task status polls, as a Go duration |
+| kagent.timeout | string | `"120s"` | Deadline for one whole analysis (queueing, parent lookup, and the polled agent run), as a duration (30s, 5m, 1h). On expiry the task is cancelled on the controller so it stops consuming model tokens. |
+| kagent.requestTimeout | string | `"30s"` | Timeout for a single HTTP call to the controller (submit, poll, or cancel), as a duration (30s, 5m, 1h) |
+| kagent.pollInterval | string | `"5s"` | Wait between two task status polls, as a duration (30s, 5m, 1h) |
 | analysis.severities | string | `"critical"` | Comma-separated severities to analyse; empty analyses every alert |
 | analysis.label | string | `"analyze"` | Alert label that opts a rule in ("true") or out ("false") regardless of severity |
 | analysis.resolved | bool | `false` | Analyse resolved notifications as well as firing ones |
-| analysis.dedupeTTL | string | `"12h"` | How long a group stays suppressed after being analysed, as a Go duration. Should cover the Alertmanager repeat_interval. "0s" disables deduplication. |
+| analysis.dedupeTTL | string | `"12h"` | How long a group stays suppressed after being analysed, as a duration (30s, 5m, 1h). Should cover the Alertmanager repeat_interval. "0s" disables deduplication. |
 | analysis.maxAlerts | int | `5` | Maximum alerts rendered into one prompt |
 | analysis.maxConcurrent | int | `2` | Maximum analyses running at once, which bounds concurrent model spend |
 | analysis.instructions | string | `""` | Instructions appended to every prompt. Empty uses the built-in English instructions; override to change the output language or sections. |

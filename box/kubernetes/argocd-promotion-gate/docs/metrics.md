@@ -8,7 +8,7 @@ For whoever builds the dashboard or the alerts. [docs/configuration.md](configur
 
 The admin listener serves `/metrics` on port 8080, alongside `/healthz`, `/readyz`, and the UI extension API. The webhook port serves admission and nothing else, so a scrape never touches it.
 
-The registry is the gate's own rather than the client library default, so the exposed series are limited to what this binary owns plus the standard Go runtime and process collectors.
+The registry is the gate's own rather than the client library default, so the exposed series are limited to what this binary owns.
 
 ```yaml
 serviceMonitor:

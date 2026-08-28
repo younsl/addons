@@ -99,14 +99,14 @@ jobs:
               # GHCR refuses to delete the last tagged version of a package, so
               # overwriting the tag is the only way to re-release one.
               if [[ "${FORCE}" == "true" ]]; then
-                echo "♻️ ${container}:${version} exists on GHCR — forced rebuild, the tag will be overwritten"
+                echo "♻️ ${container}:${version} exists on GHCR, forced rebuild, the tag will be overwritten"
                 echo "${var}_release=true" >> "$GITHUB_OUTPUT"
               else
-                echo "✅ ${container}:${version} already exists on GHCR — skip"
+                echo "✅ ${container}:${version} already exists on GHCR, skip"
                 echo "${var}_release=false" >> "$GITHUB_OUTPUT"
               fi
             else
-              echo "🆕 ${container}:${version} not found on GHCR — will release"
+              echo "🆕 ${container}:${version} not found on GHCR, will release"
               echo "${var}_release=true" >> "$GITHUB_OUTPUT"
             fi
             echo "${var}_version=${version}" >> "$GITHUB_OUTPUT"

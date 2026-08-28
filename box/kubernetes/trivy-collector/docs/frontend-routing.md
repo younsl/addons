@@ -8,7 +8,7 @@ bookmarking, link sharing, and browser back/forward navigation.
 
 | Path | View | Description |
 |------|------|-------------|
-| `/` | — | Redirects to `/vulnerabilities` |
+| `/` | - | Redirects to `/vulnerabilities` |
 | `/vulnerabilities` | Reports list | Vulnerability reports with filtering and sorting |
 | `/vulnerabilities?cluster=X&namespace=Y&app=Z` | Filtered list | Vulnerability reports filtered by query params |
 | `/vulnerabilities/search` | Search | Full-text CVE search across all clusters |
@@ -19,10 +19,10 @@ bookmarking, link sharing, and browser back/forward navigation.
 | `/sbom/:cluster/:namespace/:name` | Detail | Single SBOM report detail |
 | `/dashboard` | Dashboard | Security trends dashboard with charts |
 | `/auth` | Auth | OIDC login status and self-issued API token management |
-| `/admin` | — | Redirects to `/admin/clusters` |
+| `/admin` | - | Redirects to `/admin/clusters` |
 | `/admin/clusters` | Clusters | Registered cluster list + two-step registration wizard (admin only) |
 | `/version` | Version | Build and runtime version information |
-| `*` | — | Any unknown path redirects to `/vulnerabilities` |
+| `*` | - | Any unknown path redirects to `/vulnerabilities` |
 
 ## Admin sub-navigation
 

@@ -40,7 +40,7 @@ config:
   tagFilters: ""
   # -- (bool) Exclude EKS cluster nodes (managed node groups, self-managed, Karpenter) so only standalone EC2 instances are managed
   excludeEKSNodes: true
-  # -- (string) Reconcile loop interval as a Go duration; supports h, m, s and combinations (e.g. 30s, 5m, 1h, 1h30m)
+  # -- (string) Reconcile loop interval as a duration; supports h, m, s and combinations (e.g. 30s, 5m, 1h, 1h30m)
   reconcileInterval: "5m"
   # -- (int) Max instances reconciled in parallel per pass
   reconcileConcurrency: 10
@@ -85,11 +85,11 @@ config:
     #     # mute Alertmanager alerts for this group only
     #     alertEnabled: false
     #     growPercent: 30
-  # -- (string) SSM command poll timeout as a Go duration
+  # -- (string) SSM command poll timeout as a duration (30s, 5m, 1h)
   ssmCommandTimeout: "5m"
-  # -- (string) Delay between SSM command and volume modification status polls as a Go duration
+  # -- (string) Delay between SSM command and volume modification status polls as a duration (30s, 5m, 1h)
   ssmPollInterval: "1s"
-  # -- (string) ModifyVolume optimizing-wait timeout as a Go duration
+  # -- (string) ModifyVolume optimizing-wait timeout as a duration (30s, 5m, 1h)
   volumeModifyTimeout: "10m"
   # -- (bool) Measure and decide only, never modify resources
   dryRun: false
@@ -102,7 +102,7 @@ config:
     enabled: false
     # -- (string) Alertmanager v2 base URL, e.g. http://alertmanager-operated.monitoring:9093; required when enabled
     url: ""
-    # -- (string) Timeout for each Alertmanager POST as a Go duration
+    # -- (string) Timeout for each Alertmanager POST as a duration (30s, 5m, 1h)
     timeout: "5s"
     # -- (object) Static Key: Value labels merged into every alert for routing (e.g. cluster: prod)
     labels: {}
@@ -115,7 +115,7 @@ config:
     enabled: false
     # -- (string) Grafana base URL; required when enabled
     url: "http://grafana.monitoring:3000"
-    # -- (string) Timeout for each Grafana annotation POST as a Go duration
+    # -- (string) Timeout for each Grafana annotation POST as a duration (30s, 5m, 1h)
     timeout: "5s"
     # -- (list) Base tags merged into every annotation and subscribed to by dashboards
     tags:
@@ -138,9 +138,9 @@ config:
     prometheusTenantId: ""
     # -- (string) Metric label carrying the Kubernetes node name. kube-prometheus-stack relabels it to "node"; a plain node exporter scrape leaves only "instance". There is no default that is right for both.
     metricNodeNameLabel: "node"
-    # -- (string) How far back the observation window reaches, as a Prometheus duration (7d, 12h), not a Go duration. Bounded by the metrics backend's retention.
+    # -- (string) How far back the observation window reaches, as a Prometheus duration (7d, 12h), unlike the other intervals. Bounded by the metrics backend's retention.
     lookbackWindow: "7d"
-    # -- (string) How often recommendations are recomputed, as a Go duration. Separate from reconcileInterval and higher on purpose: the observation window spans days, so a much shorter interval only re-runs the most expensive query the addon issues.
+    # -- (string) How often recommendations are recomputed, as a duration (30s, 5m, 1h). Separate from reconcileInterval and higher on purpose: the observation window spans days, so a much shorter interval only re-runs the most expensive query the addon issues.
     interval: "30m"
 # -- (list) Additional environment variables for the container (raw EnvVar entries)
 extraEnv: []

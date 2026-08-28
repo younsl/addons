@@ -4,7 +4,7 @@ nameOverride: ""
 # -- (string) Override the full name of the chart
 fullnameOverride: ""
 
-# -- (int) Default replica count (deprecated — use server.replicaCount for UI pods;
+# -- (int) Default replica count (deprecated, use server.replicaCount for UI pods;
 # scraper always runs as a single replica to avoid split-brain writes).
 replicaCount: 1
 
@@ -89,7 +89,7 @@ scraper:
     sbomReports: true
   # -- Ephemeral storage for the report database. Reports are a mirror of the
   # CRs that exist right now, so an empty start costs one relist and nothing
-  # else — and it prunes the rows a deleted CR used to leave behind forever.
+  # else, and it prunes the rows a deleted CR used to leave behind forever.
   storage:
     # -- (string) Where the database lives inside the container.
     mountPath: /data
@@ -392,8 +392,8 @@ dnsConfig: {}
   #   - name: ndots
   #     value: "2"
 
-# -- One-shot migration off the PersistentVolume. Reports need no export — the
-# next scraper start relists them — but API tokens and report notes are
+# -- One-shot migration off the PersistentVolume. Reports need no export, the
+# next scraper start relists them, but API tokens and report notes are
 # unrecoverable, so they are read out of the legacy database and written to a
 # Secret and a ConfigMap before the volume goes away.
 #

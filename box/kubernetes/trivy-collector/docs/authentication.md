@@ -118,9 +118,9 @@ wget -qO- --header="Authorization: Bearer tc_<your_token>" https://trivy.example
 
 When a request contains authentication credentials, the server validates in this order:
 
-1. **Session cookie** (`trivy_session`) — browser-based SSO
-2. **Bearer token** with `tc_` prefix — self-issued API token (validated against SQLite)
-3. **Bearer token** without `tc_` prefix — Keycloak JWT (validated against JWKS endpoint)
+1. **Session cookie** (`trivy_session`): browser-based SSO
+2. **Bearer token** with `tc_` prefix, self-issued API token (validated against SQLite)
+3. **Bearer token** without `tc_` prefix, Keycloak JWT (validated against JWKS endpoint)
 
 ### Security Best Practices
 

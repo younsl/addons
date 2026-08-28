@@ -38,10 +38,10 @@ CLI flags override config file values.
 | Flag | Env | Default | Description |
 |------|-----|---------|-------------|
 | `-c, --config` | `ADIE_CONFIG` | `/etc/adie/config.yaml` | Config file path |
-| `-p, --port` | `ADIE_PORT` | — | Listen port override |
-| `--region` | `ADIE_AWS_REGION` | — | AWS region override |
-| `--log-level` | `ADIE_LOG_LEVEL` | — | Log level override |
-| `--log-format` | `ADIE_LOG_FORMAT` | — | Log format override (json/text) |
+| `-p, --port` | `ADIE_PORT` | - | Listen port override |
+| `--region` | `ADIE_AWS_REGION` | - | AWS region override |
+| `--log-level` | `ADIE_LOG_LEVEL` | - | Log level override |
+| `--log-format` | `ADIE_LOG_FORMAT` | - | Log format override (json/text) |
 
 ## Run locally
 
