@@ -67,6 +67,9 @@ with `cargo llvm-cov`. Check before releasing, not after.
 ## Rust Conventions
 
 - 2018+ module style: `foo.rs` alongside a `foo/` directory. Never `foo/mod.rs`.
+- The root `.gitignore` ignores every path named `config` (AWS credentials). `**/src/config` is
+  whitelisted there; a `config/` directory anywhere else needs its own exception or its files silently
+  stay untracked and CI fails on a missing module.
 - Unit tests in a `#[cfg(test)]` module in the same file; integration tests in `tests/`.
 - Container images are `scratch` with statically linked binaries built via cargo-zigbuild.
 - Cross-compilation needs a target C toolchain and linker configuration, unlike Go. The working setup

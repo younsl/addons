@@ -56,6 +56,7 @@ credentials
 # Ignore AWS config file
 config
 !**/internal/config
+!**/src/config
 
 #----------------------------------
 # Terraform
