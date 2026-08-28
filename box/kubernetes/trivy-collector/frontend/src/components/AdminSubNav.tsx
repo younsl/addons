@@ -25,13 +25,6 @@ const tabs: Tab[] = [
       'Define ConfigMap-backed alert rules and route matching findings to Slack receivers.',
     visible: (p) => !!p?.can_view_alerts,
   },
-  {
-    to: '/admin/audit',
-    label: 'API Audit',
-    description:
-      'Inspect recent API requests, latency, and error rates for operator-driven actions.',
-    visible: (p) => !!p?.can_admin,
-  },
 ]
 
 export default function AdminSubNav() {

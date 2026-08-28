@@ -12,17 +12,21 @@ the central (Hub) cluster; Edge clusters host only a small read-only
               ┌─ Central (Hub) cluster ────────────────────────┐
               │                                                │
               │  trivy-collector-server   (--mode=server)      │
-              │    └─ HTTP UI / API on :3000                   │
+              │    ├─ HTTP UI / API on :3000                   │
+              │    ├─ no database, no volume                   │
+              │    └─ reads via scraper :8081 (internal API)   │
               │                                                │
               │  trivy-collector-scraper  (--mode=scraper)     │
               │    ├─ local Trivy watcher (Hub's own cluster)  │
               │    ├─ Secret watcher      (Hub namespace)      │
               │    │    └─ spawns per-cluster watchers         │
-              │    └─ per-cluster watchers (one per Edge)      │
+              │    ├─ per-cluster watchers (one per Edge)      │
+              │    ├─ alert evaluator     (on the write path)  │
+              │    ├─ SQLite on emptyDir  (sole reader/writer) │
+              │    └─ internal read API on :8081              │
               │                                                │
-              │  Shared PVC ─── SQLite DB (WAL mode)           │
-              │    ↑ scraper writes                            │
-              │    ↓ server reads                              │
+              │  ConfigMap {release}-notes      (report notes) │
+              │  Secret    {release}-api-tokens (API tokens)   │
               │                                                │
               └────────────┬──────────────────┬────────────────┘
                            │ kube-apiserver   │ kube-apiserver
@@ -40,11 +44,41 @@ by the `--mode` CLI flag:
 
 | Pod | Mode | Role |
 |---|---|---|
-| `trivy-collector-server` | `--mode=server` | HTTP UI + API. Reads the shared SQLite DB. No watchers. |
-| `trivy-collector-scraper` | `--mode=scraper` | Runs all watchers. Writes to the shared SQLite DB. No HTTP UI (only `/healthz` and `/metrics`). |
+| `trivy-collector-server` | `--mode=server` | HTTP UI + API. Holds no database and mounts no volume; reads reports through the scraper's internal API. No watchers. |
+| `trivy-collector-scraper` | `--mode=scraper` | Runs all watchers, owns the only database, evaluates alert rules, and serves the internal read API on `:8081`. No UI (only `/healthz`, `/readyz`, `/metrics`). |
 
-The scraper is always a single replica (`strategy: Recreate`) to avoid split-
-brain SQLite writers. The server can be scaled horizontally.
+The split follows data ownership rather than read and write roles. The scraper owns the SQLite file on its own `emptyDir` and nothing else can see it, which is what makes the server disposable — and a disposable server is the point, since image bumps, config changes, and replica changes on the UI tier are frequent while scraper restarts are rare and self-healing.
+
+The scraper runs one replica by choice, not by constraint: a second would double the watch load on every registered cluster for no benefit. Its rollout is a `RollingUpdate`, because the incoming pod reports unready until the fleet is hydrated and the outgoing pod keeps serving reads for the whole rebuild. The server scales horizontally.
+
+## Where state lives
+
+Every table that used to sit on the PersistentVolume falls into one of three durability classes, and only one of them needs anything durable.
+
+| State | Class | Origin | Home |
+|---|---|---|---|
+| `reports` | derived | `VulnerabilityReport` / `SbomReport` CRs in each watched cluster | scraper `emptyDir` SQLite |
+| report notes | authored | a human typing in the UI | ConfigMap `{release}-notes` |
+| API tokens | authored | a human minting a token | Secret `{release}-api-tokens` |
+| request logs | observational | the server's own request handler | stdout |
+| alert rules | authored | a human | ConfigMap `{release}-alerts` |
+| sessions | derived | the OIDC flow | encrypted cookie |
+
+`reports` is almost all of the bytes and none of the irreplaceable data. Each watcher's stream begins with a full paginated list, so a scraper starting against an empty database rebuilds the complete report set from the source of truth with no extra code and no extra API calls beyond the ones it already makes on every restart. Starting empty also prunes what the old cache accumulated: a CR deleted while the scraper was down used to leave its row behind forever.
+
+## Hydration
+
+Between scraper start and the last initial sync the report set is legitimately incomplete, and an empty dashboard right after a restart would otherwise be indistinguishable from a real answer. Hydration is tracked per cluster and per report type, and surfaced three ways:
+
+- the scraper's `/readyz` stays failing until every registered cluster reports done, so the server is never routed to a partial set
+- the UI renders a rebuilding banner instead of empty tables, from `GET /api/v1/hydration`
+- alert evaluation stays suppressed until hydration completes, otherwise a rebuild would re-fire every finding in the fleet as net-new
+
+## The internal API
+
+The scraper exposes a versioned read API under `/internal/v1` on `:8081`, mirroring the storage methods the server actually calls rather than inventing a second query language. Response bodies are the same `serde` models the local store returns, so the two implementations cannot drift.
+
+It answers with every report in the fleet and no per-user filtering, because RBAC is applied above it in the server. Reachable unauthenticated it would be a straight downgrade from the filesystem permission that used to protect the database, so it is fenced two ways: a shared token compared in constant time on every request, and a NetworkPolicy admitting only the server pods. The port is never added to the HTTPRoute or either ServiceMonitor.
 
 The scraper in turn runs three kinds of watchers:
 
@@ -110,14 +144,16 @@ Edge Trivy Operator
 scraper's per-cluster watcher
   receives watch event
   tags report with Secret's `name` field (e.g. "edge-a")
-  writes row to SQLite (cluster, namespace, name, report JSON)
+  writes row to SQLite on its own emptyDir
+  evaluates alert rules against the previous revision
         │
         ▼
-shared PVC (SQLite WAL)
+scraper's internal API on :8081
+  shared-token auth, NetworkPolicy-fenced
         │
         ▼
-server reads rows
-  filters by cluster / namespace / severity
+server proxies the read
+  applies RBAC, joins notes from the ConfigMap
   renders Dashboard, Vulnerabilities, SBOM pages
 ```
 
@@ -255,7 +291,10 @@ radius if the Hub is ever compromised.
 - SA tokens for Edge clusters are long-lived by default. For stricter
   rotation, rotate the Secret periodically — the scraper reconnects
   automatically when the Secret's `resourceVersion` changes.
-- SQLite is kept in WAL mode on a shared PVC. The server reads, the scraper
-  writes. For `ReadWriteOnce` storage classes both pods should be scheduled
-  to the same node via `affinity`; for `ReadWriteMany` (e.g. EFS) they can
-  spread freely.
+- SQLite lives on the scraper's `emptyDir` in WAL mode, opened by that process
+  alone. Because an `emptyDir` draws from the node's ephemeral storage, the
+  scraper declares `ephemeral-storage` requests and limits alongside the
+  volume's `sizeLimit` so the kubelet can schedule honestly and evict this pod
+  rather than a neighbour if the estimate is wrong.
+- Neither pod is pinned to a node or an availability zone any more, and node
+  loss no longer waits on a CSI detach and reattach.

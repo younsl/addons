@@ -15,8 +15,10 @@ use anyhow::{Context, Result};
 use std::sync::Arc;
 use tracing::info;
 
+use crate::alerts::AlertEvaluator;
+use crate::collector::status::WatcherStatus;
+use crate::collector::watcher::WatchScope;
 use crate::storage::Database;
-use crate::web::state::WatcherStatus;
 
 pub use cluster_manager::ClusterManager;
 pub use secret_watcher::SecretWatcher;
@@ -27,6 +29,8 @@ pub async fn run(
     hub_config: HubConfig,
     db: Arc<Database>,
     watcher_status: Arc<WatcherStatus>,
+    alerts: Option<Arc<AlertEvaluator>>,
+    scope: WatchScope,
     shutdown: tokio::sync::watch::Receiver<bool>,
 ) -> Result<()> {
     info!(
@@ -35,7 +39,7 @@ pub async fn run(
         "Starting hub-pull mode"
     );
 
-    let manager = Arc::new(ClusterManager::new(db, watcher_status));
+    let manager = Arc::new(ClusterManager::new(db, watcher_status, alerts, scope));
 
     let secret_watcher = SecretWatcher::new(hub_config, manager.clone())
         .await

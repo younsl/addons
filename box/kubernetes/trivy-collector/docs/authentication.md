@@ -48,9 +48,6 @@ helm install trivy-collector oci://ghcr.io/younsl/charts/trivy-collector \
   --set auth.sso.redirectUrl=https://trivy.example.com/auth/callback \
   --set auth.sso.clientId.name=trivy-oidc \
   --set auth.sso.clientSecret.name=trivy-oidc \
-  --set server.persistence.enabled=true \
-  --set server.ingress.enabled=true \
-  --set server.ingress.hosts[0].host=trivy.example.com
 ```
 
 ### Environment Variables

@@ -1,4 +1,9 @@
 //! Prometheus metrics for the trivy-collector.
+//!
+//! The two pods measure different things and only register what they own. The
+//! scraper owns the database, so the database gauges live there; the server
+//! owns request handling and the authored-state caches, so those live there.
+//! Registering a metric a pod can never move would publish a permanent zero.
 
 use std::sync::Arc;
 
@@ -10,6 +15,7 @@ use prometheus_client::metrics::histogram::Histogram;
 use prometheus_client::registry::Registry;
 
 use crate::config::Mode;
+use crate::storage::Database;
 
 // ============================================
 // Label types
@@ -44,23 +50,6 @@ pub struct ReportTypeLabels {
 }
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq, EncodeLabelSet)]
-pub struct SendLabels {
-    pub report_type: String,
-    pub result: String,
-}
-
-#[derive(Clone, Debug, Hash, PartialEq, Eq, EncodeLabelSet)]
-pub struct WatcherLabels {
-    pub report_type: String,
-    pub event_type: String,
-}
-
-#[derive(Clone, Debug, Hash, PartialEq, Eq, EncodeLabelSet)]
-pub struct CleanupResultLabels {
-    pub result: String,
-}
-
-#[derive(Clone, Debug, Hash, PartialEq, Eq, EncodeLabelSet)]
 pub struct McpToolLabels {
     pub tool: String,
     pub result: String,
@@ -72,12 +61,14 @@ pub struct McpToolDurationLabels {
 }
 
 // ============================================
-// Histogram bucket constants
+// Histogram buckets
 // ============================================
 
 const HTTP_DURATION_BUCKETS: &[f64] = &[0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0];
 
-const SEND_DURATION_BUCKETS: &[f64] = &[0.01, 0.05, 0.1, 0.5, 1.0, 5.0, 10.0, 30.0];
+/// The two report types, used to pre-initialize per-type families so a fresh
+/// scrape shows zeros rather than "no data".
+pub const REPORT_TYPES: [&str; 2] = ["vulnerabilityreport", "sbomreport"];
 
 // ============================================
 // Metrics struct
@@ -85,8 +76,8 @@ const SEND_DURATION_BUCKETS: &[f64] = &[0.01, 0.05, 0.1, 0.5, 1.0, 5.0, 10.0, 30
 
 /// All Prometheus metrics for trivy-collector.
 ///
-/// Server-only and collector-only fields are wrapped in `Option`
-/// so that only the relevant metrics are registered per mode.
+/// Fields are wrapped in `Option` so that only the metrics belonging to the
+/// running mode are registered.
 pub struct Metrics {
     // -- Metadata --
     registered_count: usize,
@@ -98,31 +89,31 @@ pub struct Metrics {
     pub http_requests_total: Option<Family<HttpLabels, Counter>>,
     pub http_request_duration_seconds: Option<Family<HttpDurationLabels, Histogram>>,
     pub reports_received_total: Option<Family<ReportReceivedLabels, Counter>>,
-    pub db_size_bytes: Option<Gauge>,
-    pub db_reports_total: Option<Family<ReportTypeLabels, Gauge>>,
-    pub api_logs_total: Option<Gauge>,
-    pub api_logs_cleanup_runs_total: Option<Family<CleanupResultLabels, Counter>>,
-    pub api_logs_cleanup_deleted_total: Option<Counter>,
+    /// Serialized size of the notes ConfigMap. A ConfigMap caps at roughly
+    /// 1MiB, so its headroom is worth watching rather than discovering.
+    pub notes_configmap_bytes: Option<Gauge>,
+    /// API tokens currently held in the Secret-backed store.
+    pub api_tokens_total: Option<Gauge>,
     pub mcp_tool_calls_total: Option<Family<McpToolLabels, Counter>>,
     pub mcp_tool_duration_seconds: Option<Family<McpToolDurationLabels, Histogram>>,
     pub mcp_tool_calls_in_flight: Option<Gauge>,
 
-    // -- Collector mode --
-    pub reports_sent_total: Option<Family<SendLabels, Counter>>,
-    pub reports_send_duration_seconds: Option<Family<ReportTypeLabels, Histogram>>,
-    pub watcher_events_total: Option<Family<WatcherLabels, Counter>>,
-    pub send_retries_total: Option<Family<ReportTypeLabels, Counter>>,
-    pub server_up: Option<Gauge>,
+    // -- Scraper mode --
+    pub db_size_bytes: Option<Gauge>,
+    pub db_reports_total: Option<Family<ReportTypeLabels, Gauge>>,
+    /// Clusters registered with the scraper.
+    pub clusters_total: Option<Gauge>,
+    /// 1 once every registered cluster has replayed its initial list. Reads on
+    /// an unhydrated fleet are legitimately partial.
+    pub fleet_hydrated: Option<Gauge>,
 }
 
 impl Metrics {
     /// Create and register metrics based on mode.
     pub fn new(registry: &mut Registry, mode: Mode) -> Arc<Self> {
-        // -- Common --
         let info = Family::<InfoLabels, Gauge>::default();
         registry.register("trivy_collector_info", "Build information", info.clone());
 
-        // Set info gauge immediately
         info.get_or_create(&InfoLabels {
             version: env!("CARGO_PKG_VERSION").to_string(),
             mode: mode.to_string(),
@@ -135,34 +126,27 @@ impl Metrics {
             http_requests_total: None,
             http_request_duration_seconds: None,
             reports_received_total: None,
-            db_size_bytes: None,
-            db_reports_total: None,
-            api_logs_total: None,
-            api_logs_cleanup_runs_total: None,
-            api_logs_cleanup_deleted_total: None,
+            notes_configmap_bytes: None,
+            api_tokens_total: None,
             mcp_tool_calls_total: None,
             mcp_tool_duration_seconds: None,
             mcp_tool_calls_in_flight: None,
-            reports_sent_total: None,
-            reports_send_duration_seconds: None,
-            watcher_events_total: None,
-            send_retries_total: None,
-            server_up: None,
+            db_size_bytes: None,
+            db_reports_total: None,
+            clusters_total: None,
+            fleet_hydrated: None,
         };
 
-        let mode_count = match mode {
+        metrics.registered_count += match mode {
             Mode::Server => metrics.register_server(registry),
-            Mode::Scraper => metrics.register_collector(registry),
+            Mode::Scraper => metrics.register_scraper(registry),
         };
-        metrics.registered_count += mode_count;
 
         let metrics = Arc::new(metrics);
-
         match mode {
             Mode::Server => metrics.init_for_server(),
-            Mode::Scraper => metrics.init_for_collector(),
+            Mode::Scraper => metrics.init_for_scraper(),
         }
-
         metrics
     }
 
@@ -171,10 +155,7 @@ impl Metrics {
         self.registered_count
     }
 
-    /// Returns the number of metrics registered for server mode.
     fn register_server(&mut self, registry: &mut Registry) -> usize {
-        let mut count = 0;
-
         let http_requests_total = Family::<HttpLabels, Counter>::default();
         registry.register(
             "trivy_collector_http_requests",
@@ -182,7 +163,6 @@ impl Metrics {
             http_requests_total.clone(),
         );
         self.http_requests_total = Some(http_requests_total);
-        count += 1;
 
         let http_request_duration_seconds =
             Family::<HttpDurationLabels, Histogram>::new_with_constructor(|| {
@@ -194,61 +174,30 @@ impl Metrics {
             http_request_duration_seconds.clone(),
         );
         self.http_request_duration_seconds = Some(http_request_duration_seconds);
-        count += 1;
 
         let reports_received_total = Family::<ReportReceivedLabels, Counter>::default();
         registry.register(
             "trivy_collector_reports_received",
-            "Total reports received from collectors",
+            "Total reports received on the push ingest route",
             reports_received_total.clone(),
         );
         self.reports_received_total = Some(reports_received_total);
-        count += 1;
 
-        let db_size_bytes = Gauge::default();
+        let notes_configmap_bytes = Gauge::default();
         registry.register(
-            "trivy_collector_db_size_bytes",
-            "SQLite database file size in bytes",
-            db_size_bytes.clone(),
+            "trivy_collector_notes_configmap_bytes",
+            "Serialized size of the notes ConfigMap in bytes",
+            notes_configmap_bytes.clone(),
         );
-        self.db_size_bytes = Some(db_size_bytes);
-        count += 1;
+        self.notes_configmap_bytes = Some(notes_configmap_bytes);
 
-        let db_reports_total = Family::<ReportTypeLabels, Gauge>::default();
+        let api_tokens_total = Gauge::default();
         registry.register(
-            "trivy_collector_db_reports",
-            "Total reports stored in database",
-            db_reports_total.clone(),
+            "trivy_collector_api_tokens",
+            "API tokens held in the tokens Secret",
+            api_tokens_total.clone(),
         );
-        self.db_reports_total = Some(db_reports_total);
-        count += 1;
-
-        let api_logs_total = Gauge::default();
-        registry.register(
-            "trivy_collector_api_logs",
-            "Total API log entries in database",
-            api_logs_total.clone(),
-        );
-        self.api_logs_total = Some(api_logs_total);
-        count += 1;
-
-        let api_logs_cleanup_runs_total = Family::<CleanupResultLabels, Counter>::default();
-        registry.register(
-            "trivy_collector_api_logs_cleanup_runs",
-            "Total API log cleanup runs",
-            api_logs_cleanup_runs_total.clone(),
-        );
-        self.api_logs_cleanup_runs_total = Some(api_logs_cleanup_runs_total);
-        count += 1;
-
-        let api_logs_cleanup_deleted_total = Counter::default();
-        registry.register(
-            "trivy_collector_api_logs_cleanup_deleted",
-            "Total API log entries deleted by cleanup",
-            api_logs_cleanup_deleted_total.clone(),
-        );
-        self.api_logs_cleanup_deleted_total = Some(api_logs_cleanup_deleted_total);
-        count += 1;
+        self.api_tokens_total = Some(api_tokens_total);
 
         let mcp_tool_calls_total = Family::<McpToolLabels, Counter>::default();
         registry.register(
@@ -257,7 +206,6 @@ impl Metrics {
             mcp_tool_calls_total.clone(),
         );
         self.mcp_tool_calls_total = Some(mcp_tool_calls_total);
-        count += 1;
 
         let mcp_tool_duration_seconds =
             Family::<McpToolDurationLabels, Histogram>::new_with_constructor(|| {
@@ -269,7 +217,6 @@ impl Metrics {
             mcp_tool_duration_seconds.clone(),
         );
         self.mcp_tool_duration_seconds = Some(mcp_tool_duration_seconds);
-        count += 1;
 
         let mcp_tool_calls_in_flight = Gauge::default();
         registry.register(
@@ -278,66 +225,47 @@ impl Metrics {
             mcp_tool_calls_in_flight.clone(),
         );
         self.mcp_tool_calls_in_flight = Some(mcp_tool_calls_in_flight);
-        count += 1;
 
-        count
+        8
     }
 
-    fn register_collector(&mut self, registry: &mut Registry) -> usize {
-        let mut count = 0;
-
-        let reports_sent_total = Family::<SendLabels, Counter>::default();
+    fn register_scraper(&mut self, registry: &mut Registry) -> usize {
+        let db_size_bytes = Gauge::default();
         registry.register(
-            "trivy_collector_reports_sent",
-            "Total reports sent to server",
-            reports_sent_total.clone(),
+            "trivy_collector_db_size_bytes",
+            "SQLite database file size in bytes",
+            db_size_bytes.clone(),
         );
-        self.reports_sent_total = Some(reports_sent_total);
-        count += 1;
+        self.db_size_bytes = Some(db_size_bytes);
 
-        let reports_send_duration_seconds =
-            Family::<ReportTypeLabels, Histogram>::new_with_constructor(|| {
-                Histogram::new(SEND_DURATION_BUCKETS.iter().copied())
-            });
+        let db_reports_total = Family::<ReportTypeLabels, Gauge>::default();
         registry.register(
-            "trivy_collector_reports_send_duration_seconds",
-            "Report send duration in seconds",
-            reports_send_duration_seconds.clone(),
+            "trivy_collector_db_reports",
+            "Reports currently mirrored into the database",
+            db_reports_total.clone(),
         );
-        self.reports_send_duration_seconds = Some(reports_send_duration_seconds);
-        count += 1;
+        self.db_reports_total = Some(db_reports_total);
 
-        let watcher_events_total = Family::<WatcherLabels, Counter>::default();
+        let clusters_total = Gauge::default();
         registry.register(
-            "trivy_collector_watcher_events",
-            "Total Kubernetes watcher events",
-            watcher_events_total.clone(),
+            "trivy_collector_clusters",
+            "Clusters registered with the scraper",
+            clusters_total.clone(),
         );
-        self.watcher_events_total = Some(watcher_events_total);
-        count += 1;
+        self.clusters_total = Some(clusters_total);
 
-        let send_retries_total = Family::<ReportTypeLabels, Counter>::default();
+        let fleet_hydrated = Gauge::default();
         registry.register(
-            "trivy_collector_send_retries",
-            "Total report send retries",
-            send_retries_total.clone(),
+            "trivy_collector_fleet_hydrated",
+            "1 when every registered cluster has finished its initial sync",
+            fleet_hydrated.clone(),
         );
-        self.send_retries_total = Some(send_retries_total);
-        count += 1;
+        self.fleet_hydrated = Some(fleet_hydrated);
 
-        let server_up = Gauge::default();
-        registry.register(
-            "trivy_collector_server_up",
-            "Central server connectivity (1=up, 0=down)",
-            server_up.clone(),
-        );
-        self.server_up = Some(server_up);
-        count += 1;
-
-        count
+        4
     }
 
-    /// Pre-initialize server counters to avoid No data on first scrape.
+    /// Pre-initialize server counters so a first scrape shows zeros.
     fn init_for_server(&self) {
         if let Some(ref http) = self.http_requests_total {
             for method in &["GET", "POST", "PUT", "DELETE"] {
@@ -351,53 +279,54 @@ impl Metrics {
         }
 
         if let Some(ref received) = self.reports_received_total {
-            for rt in &["vulnerabilityreport", "sbomreport"] {
+            for rt in REPORT_TYPES {
                 let _ = received.get_or_create(&ReportReceivedLabels {
                     cluster: String::new(),
                     report_type: rt.to_string(),
                 });
             }
         }
+    }
 
-        if let Some(ref cleanup) = self.api_logs_cleanup_runs_total {
-            for result in &["success", "error"] {
-                let _ = cleanup.get_or_create(&CleanupResultLabels {
-                    result: result.to_string(),
+    /// Pre-initialize scraper gauges so a first scrape shows zeros.
+    fn init_for_scraper(&self) {
+        if let Some(ref reports) = self.db_reports_total {
+            for rt in REPORT_TYPES {
+                let _ = reports.get_or_create(&ReportTypeLabels {
+                    report_type: rt.to_string(),
                 });
             }
         }
     }
 
-    /// Pre-initialize collector counters to avoid No data on first scrape.
-    fn init_for_collector(&self) {
-        if let Some(ref sent) = self.reports_sent_total {
-            for rt in &["vulnerabilityreport", "sbomreport"] {
-                for result in &["success", "error"] {
-                    let _ = sent.get_or_create(&SendLabels {
-                        report_type: rt.to_string(),
-                        result: result.to_string(),
-                    });
+    /// Refresh the gauges that describe the scraper's database.
+    pub async fn refresh_db_gauges(&self, db: &Database, db_path: &str) {
+        if let Some(ref gauge) = self.db_size_bytes
+            && let Ok(metadata) = std::fs::metadata(db_path)
+        {
+            gauge.set(metadata.len() as i64);
+        }
+
+        if let Some(ref family) = self.db_reports_total {
+            for rt in REPORT_TYPES {
+                if let Ok(count) = db.count_reports(rt).await {
+                    family
+                        .get_or_create(&ReportTypeLabels {
+                            report_type: rt.to_string(),
+                        })
+                        .set(count);
                 }
             }
         }
+    }
 
-        if let Some(ref events) = self.watcher_events_total {
-            for rt in &["vulnerabilityreport", "sbomreport"] {
-                for et in &["apply", "init_apply", "delete", "init", "init_done"] {
-                    let _ = events.get_or_create(&WatcherLabels {
-                        report_type: rt.to_string(),
-                        event_type: et.to_string(),
-                    });
-                }
-            }
+    /// Publish the fleet's hydration state.
+    pub fn record_hydration(&self, clusters: usize, hydrated: bool) {
+        if let Some(ref gauge) = self.clusters_total {
+            gauge.set(clusters as i64);
         }
-
-        if let Some(ref retries) = self.send_retries_total {
-            for rt in &["vulnerabilityreport", "sbomreport"] {
-                let _ = retries.get_or_create(&ReportTypeLabels {
-                    report_type: rt.to_string(),
-                });
-            }
+        if let Some(ref gauge) = self.fleet_hydrated {
+            gauge.set(i64::from(hydrated));
         }
     }
 }
@@ -407,139 +336,120 @@ mod tests {
     use super::*;
     use prometheus_client::encoding::text::encode;
 
+    fn scrape(registry: &Registry) -> String {
+        let mut buf = String::new();
+        encode(&mut buf, registry).unwrap();
+        buf
+    }
+
     #[test]
-    fn test_server_metrics_registration() {
+    fn server_mode_registers_only_server_metrics() {
         let mut registry = Registry::default();
         let metrics = Metrics::new(&mut registry, Mode::Server);
 
         assert!(metrics.http_requests_total.is_some());
         assert!(metrics.reports_received_total.is_some());
-        assert!(metrics.db_size_bytes.is_some());
-        assert!(metrics.api_logs_total.is_some());
-        // Collector-only fields should be None
-        assert!(metrics.reports_sent_total.is_none());
-        assert!(metrics.server_up.is_none());
+        assert!(metrics.notes_configmap_bytes.is_some());
+        assert!(metrics.api_tokens_total.is_some());
+        assert!(metrics.mcp_tool_calls_total.is_some());
+
+        // The server owns no database, so it publishes no database gauges.
+        assert!(metrics.db_size_bytes.is_none());
+        assert!(metrics.db_reports_total.is_none());
+        assert!(metrics.fleet_hydrated.is_none());
     }
 
     #[test]
-    fn test_collector_metrics_registration() {
+    fn scraper_mode_registers_only_scraper_metrics() {
         let mut registry = Registry::default();
         let metrics = Metrics::new(&mut registry, Mode::Scraper);
 
-        assert!(metrics.reports_sent_total.is_some());
-        assert!(metrics.watcher_events_total.is_some());
-        assert!(metrics.server_up.is_some());
-        // Server-only fields should be None
+        assert!(metrics.db_size_bytes.is_some());
+        assert!(metrics.db_reports_total.is_some());
+        assert!(metrics.clusters_total.is_some());
+        assert!(metrics.fleet_hydrated.is_some());
+
         assert!(metrics.http_requests_total.is_none());
-        assert!(metrics.db_size_bytes.is_none());
+        assert!(metrics.notes_configmap_bytes.is_none());
+        assert!(metrics.mcp_tool_calls_total.is_none());
     }
 
     #[test]
-    fn test_info_gauge_set_on_creation() {
+    fn count_matches_what_was_registered() {
         let mut registry = Registry::default();
-        let _metrics = Metrics::new(&mut registry, Mode::Server);
+        assert_eq!(Metrics::new(&mut registry, Mode::Server).count(), 9);
 
-        let mut buf = String::new();
-        encode(&mut buf, &registry).unwrap();
-        assert!(buf.contains("trivy_collector_info"));
-        assert!(buf.contains(env!("CARGO_PKG_VERSION")));
-        assert!(buf.contains("server"));
-    }
-
-    #[test]
-    fn test_server_pre_initialization() {
         let mut registry = Registry::default();
-        let _metrics = Metrics::new(&mut registry, Mode::Server);
-
-        let mut buf = String::new();
-        encode(&mut buf, &registry).unwrap();
-
-        // HTTP counters should exist with 0 values
-        assert!(
-            buf.contains(r#"trivy_collector_http_requests_total{method="GET",status="200"} 0"#),
-            "missing pre-initialized GET 200"
-        );
-        assert!(
-            buf.contains(r#"trivy_collector_http_requests_total{method="POST",status="500"} 0"#),
-            "missing pre-initialized POST 500"
-        );
-
-        // Cleanup counters should exist
-        assert!(
-            buf.contains(r#"trivy_collector_api_logs_cleanup_runs_total{result="success"} 0"#),
-            "missing pre-initialized cleanup success"
-        );
+        assert_eq!(Metrics::new(&mut registry, Mode::Scraper).count(), 5);
     }
 
     #[test]
-    fn test_collector_pre_initialization() {
+    fn info_carries_the_running_mode() {
         let mut registry = Registry::default();
-        let _metrics = Metrics::new(&mut registry, Mode::Scraper);
-
-        let mut buf = String::new();
-        encode(&mut buf, &registry).unwrap();
-
-        // Send counters should exist with 0 values
-        assert!(
-            buf.contains(r#"trivy_collector_reports_sent_total{report_type="vulnerabilityreport",result="success"} 0"#),
-            "missing pre-initialized sent success"
-        );
-
-        // Watcher events should exist
-        assert!(
-            buf.contains(r#"trivy_collector_watcher_events_total{report_type="vulnerabilityreport",event_type="apply"} 0"#),
-            "missing pre-initialized watcher apply"
-        );
+        let _ = Metrics::new(&mut registry, Mode::Scraper);
+        let out = scrape(&registry);
+        assert!(out.contains(r#"mode="scraper""#));
+        assert!(out.contains(env!("CARGO_PKG_VERSION")));
     }
 
     #[test]
-    fn test_counter_increment() {
+    fn server_counters_start_at_zero_rather_than_absent() {
+        let mut registry = Registry::default();
+        let _ = Metrics::new(&mut registry, Mode::Server);
+        let out = scrape(&registry);
+
+        assert!(
+            out.contains(r#"trivy_collector_http_requests_total{method="GET",status="200"} 0"#)
+        );
+        assert!(out.contains(
+            r#"trivy_collector_reports_received_total{cluster="",report_type="sbomreport"} 0"#
+        ));
+        assert!(out.contains("trivy_collector_notes_configmap_bytes 0"));
+    }
+
+    #[test]
+    fn scraper_gauges_start_at_zero_rather_than_absent() {
+        let mut registry = Registry::default();
+        let _ = Metrics::new(&mut registry, Mode::Scraper);
+        let out = scrape(&registry);
+
+        assert!(out.contains(r#"trivy_collector_db_reports{report_type="sbomreport"} 0"#));
+        assert!(out.contains("trivy_collector_fleet_hydrated 0"));
+    }
+
+    #[test]
+    fn record_hydration_publishes_cluster_count_and_state() {
+        let mut registry = Registry::default();
+        let metrics = Metrics::new(&mut registry, Mode::Scraper);
+        metrics.record_hydration(3, true);
+
+        let out = scrape(&registry);
+        assert!(out.contains("trivy_collector_clusters 3"));
+        assert!(out.contains("trivy_collector_fleet_hydrated 1"));
+    }
+
+    #[test]
+    fn record_hydration_is_a_noop_in_server_mode() {
         let mut registry = Registry::default();
         let metrics = Metrics::new(&mut registry, Mode::Server);
-
-        metrics
-            .http_requests_total
-            .as_ref()
-            .unwrap()
-            .get_or_create(&HttpLabels {
-                method: "GET".to_string(),
-                status: "200".to_string(),
-            })
-            .inc();
-
-        let mut buf = String::new();
-        encode(&mut buf, &registry).unwrap();
-        assert!(
-            buf.contains(r#"trivy_collector_http_requests_total{method="GET",status="200"} 1"#)
-        );
+        // Must not panic on the mode that never registered these gauges.
+        metrics.record_hydration(3, true);
+        assert!(!scrape(&registry).contains("trivy_collector_fleet_hydrated"));
     }
 
-    #[test]
-    fn test_histogram_observe() {
+    #[tokio::test]
+    async fn refresh_db_gauges_reads_report_counts() {
         let mut registry = Registry::default();
-        let metrics = Metrics::new(&mut registry, Mode::Server);
+        let metrics = Metrics::new(&mut registry, Mode::Scraper);
+        let db = Database::new(":memory:").await.unwrap();
 
         metrics
-            .http_request_duration_seconds
-            .as_ref()
-            .unwrap()
-            .get_or_create(&HttpDurationLabels {
-                method: "GET".to_string(),
-            })
-            .observe(0.042);
+            .refresh_db_gauges(&db, "/nonexistent/trivy.db")
+            .await;
 
-        let mut buf = String::new();
-        encode(&mut buf, &registry).unwrap();
-        assert!(buf.contains("trivy_collector_http_request_duration_seconds_count{"));
-    }
-
-    #[test]
-    fn test_encoding_has_eof() {
-        let mut registry = Registry::default();
-        let _metrics = Metrics::new(&mut registry, Mode::Server);
-
-        let mut buf = String::new();
-        encode(&mut buf, &registry).unwrap();
-        assert!(buf.ends_with("# EOF\n"), "missing EOF marker");
+        let out = scrape(&registry);
+        assert!(out.contains(r#"trivy_collector_db_reports{report_type="vulnerabilityreport"} 0"#));
+        // A missing file leaves the size gauge untouched rather than lying.
+        assert!(out.contains("trivy_collector_db_size_bytes 0"));
     }
 }

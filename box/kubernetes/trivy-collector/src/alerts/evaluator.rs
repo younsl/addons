@@ -19,7 +19,7 @@ use super::notifier::{AlertContext, SlackNotifier, TestDeliveryResult};
 use super::store::AlertStore;
 use super::types::AlertRule;
 use crate::collector::types::{ReportPayload, SbomReportData};
-use crate::storage::{Database, SbomComponentMatch};
+use crate::storage::{ReportStore, SbomComponentMatch};
 
 const DEFAULT_COOLDOWN_SECS: u64 = 3600;
 
@@ -59,7 +59,7 @@ impl AlertEvaluator {
     pub async fn test_with_rule(
         &self,
         rule: AlertRule,
-        db: &Database,
+        db: &dyn ReportStore,
     ) -> Result<Vec<TestDeliveryResult>, TestRunError> {
         let (contexts, other_workloads) = build_test_contexts(db, &rule).await?;
         Ok(self
@@ -77,7 +77,7 @@ impl AlertEvaluator {
         &self,
         payload: &ReportPayload,
         prev_data_json: Option<&str>,
-        db: &Database,
+        db: &dyn ReportStore,
     ) {
         if !payload.report_type.eq_ignore_ascii_case("sbomreport") {
             return;
@@ -116,7 +116,7 @@ impl AlertEvaluator {
         rule: &AlertRule,
         payload: &ReportPayload,
         prev_keys: &HashSet<String>,
-        db: &Database,
+        db: &dyn ReportStore,
     ) {
         let parsed: serde_json::Result<SbomReportEnvelope> =
             serde_json::from_str(&payload.data_json);
@@ -239,7 +239,7 @@ pub enum TestRunError {
 /// silently dropped components living in older SBOMs from the rule
 /// editor's preview, test, and fleet-count surfaces.
 async fn fetch_component_matches(
-    db: &Database,
+    db: &dyn ReportStore,
     rule: &AlertRule,
 ) -> Result<(Vec<SbomComponentMatch>, Option<VersionExpr>), TestRunError> {
     let expr = match rule.matchers.version_expr.as_deref() {
@@ -267,7 +267,7 @@ async fn fetch_component_matches(
 /// `list_sbom_component_matches`; we lock onto the first workload key we
 /// encounter and treat the rest as "would also match".
 async fn build_test_contexts(
-    db: &Database,
+    db: &dyn ReportStore,
     rule: &AlertRule,
 ) -> Result<(Vec<AlertContext>, usize), TestRunError> {
     let (rows, expr) = fetch_component_matches(db, rule).await?;
@@ -341,7 +341,7 @@ async fn build_test_contexts(
 /// Errors are swallowed (caller defaults to 0) — the scope hint is best-
 /// effort context, not a hard requirement of dispatch.
 async fn count_other_matching_workloads(
-    db: &Database,
+    db: &dyn ReportStore,
     rule: &AlertRule,
     exclude_cluster: &str,
     exclude_namespace: &str,
@@ -394,6 +394,7 @@ pub(crate) fn extract_finding_keys(data_json: &str) -> HashSet<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::storage::Database;
 
     #[test]
     fn extract_sbom_keys_roundtrip() {

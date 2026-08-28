@@ -164,6 +164,30 @@ pub struct WatcherInfo {
     pub initial_sync_done: bool,
 }
 
+impl From<&crate::storage::HydrationStatus> for WatcherStatusResponse {
+    /// Flatten per-cluster hydration onto the fleet-wide shape this endpoint
+    /// has always returned: a watcher is "running" if it runs anywhere, and
+    /// "synced" only once it has synced everywhere.
+    fn from(hydration: &crate::storage::HydrationStatus) -> Self {
+        let clusters = &hydration.clusters;
+        let all = |f: fn(&crate::storage::ClusterSync) -> bool| {
+            !clusters.is_empty() && clusters.values().all(f)
+        };
+        let any = |f: fn(&crate::storage::ClusterSync) -> bool| clusters.values().any(f);
+
+        Self {
+            vuln_watcher: WatcherInfo {
+                running: any(|c| c.vuln_watcher_running),
+                initial_sync_done: all(|c| c.vuln_initial_sync_done),
+            },
+            sbom_watcher: WatcherInfo {
+                running: any(|c| c.sbom_watcher_running),
+                initial_sync_done: all(|c| c.sbom_initial_sync_done),
+            },
+        }
+    }
+}
+
 /// Version info response (build-time information)
 #[derive(Serialize, ToSchema)]
 pub struct VersionResponse {

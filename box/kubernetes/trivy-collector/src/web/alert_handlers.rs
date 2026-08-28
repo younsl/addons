@@ -228,7 +228,7 @@ pub async fn preview_alert(
     State(state): State<AppState>,
     Json(req): Json<PreviewRequest>,
 ) -> impl IntoResponse {
-    match preview::run(&state.db, &req.matchers).await {
+    match preview::run(state.store.as_ref(), &req.matchers).await {
         Ok(result) => Json(result).into_response(),
         Err(e) => (
             StatusCode::BAD_REQUEST,
@@ -288,7 +288,7 @@ pub async fn test_alert_draft(
         updated_by: None,
     };
     let rule_name = draft.name.clone();
-    match evaluator.test_with_rule(draft, state.db.as_ref()).await {
+    match evaluator.test_with_rule(draft, state.store.as_ref()).await {
         Ok(results) => {
             let total = results.len();
             let succeeded = results.iter().filter(|r| r.success).count();
@@ -405,5 +405,219 @@ fn store_error_response(err: AlertStoreError) -> axum::response::Response {
             )
                 .into_response()
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::alerts::types::SlackReceiver;
+    use crate::web::test_support;
+    use axum::Router;
+    use axum::body::Body;
+    use axum::http::Request;
+    use axum::routing::{get, post};
+    use http_body_util::BodyExt;
+    use tower::ServiceExt;
+
+    /// Alert rules live in a ConfigMap, so every route needs a Kubernetes
+    /// client. Without one `state.alerts` is `None`, which is the path these
+    /// tests pin: the API must say the subsystem is unavailable rather than
+    /// answer as if there were no rules.
+    async fn router_without_alerts() -> Router {
+        let state = test_support::app_state().await;
+        assert!(state.alerts.is_none());
+        Router::new()
+            .route("/api/v1/alerts", get(list_alerts).post(create_alert))
+            .route("/api/v1/alerts/preview", post(preview_alert))
+            .route("/api/v1/alerts/test", post(test_alert_draft))
+            .route(
+                "/api/v1/alerts/{name}",
+                get(get_alert).put(update_alert).delete(delete_alert),
+            )
+            .with_state(state)
+    }
+
+    fn slack_receiver(name: &str, webhook_url: &str) -> Receiver {
+        Receiver {
+            name: name.to_string(),
+            slack: Some(SlackReceiver {
+                webhook_url: webhook_url.to_string(),
+                channel: None,
+                title: None,
+            }),
+        }
+    }
+
+    async fn send(method: &str, uri: &str, body: Option<&str>) -> axum::response::Response {
+        let builder = Request::builder().method(method).uri(uri);
+        let request = match body {
+            Some(b) => builder
+                .header("content-type", "application/json")
+                .body(Body::from(b.to_string()))
+                .unwrap(),
+            None => builder.body(Body::empty()).unwrap(),
+        };
+        router_without_alerts()
+            .await
+            .oneshot(request)
+            .await
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn every_route_reports_unavailable_without_a_kubernetes_client() {
+        let draft = serde_json::json!({
+            "name": "log4j",
+            "description": "",
+            "enabled": true,
+            "matchers": {"package_name": "log4j-core"},
+            "labels": {},
+            "annotations": {},
+            "receivers": [{
+                "name": "sec",
+                "slack": {"webhook_url": "https://hooks.slack.com/services/T0/B0/x"}
+            }],
+            "cooldown_secs": null
+        })
+        .to_string();
+
+        for (method, uri, body) in [
+            ("GET", "/api/v1/alerts", None),
+            ("GET", "/api/v1/alerts/log4j", None),
+            ("POST", "/api/v1/alerts", Some(draft.as_str())),
+            ("PUT", "/api/v1/alerts/log4j", Some(draft.as_str())),
+            ("DELETE", "/api/v1/alerts/log4j", None),
+            ("POST", "/api/v1/alerts/test", Some(draft.as_str())),
+        ] {
+            let resp = send(method, uri, body).await;
+            assert_eq!(
+                resp.status(),
+                StatusCode::SERVICE_UNAVAILABLE,
+                "{method} {uri}"
+            );
+            let bytes = resp.into_body().collect().await.unwrap().to_bytes();
+            let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+            assert!(
+                json["error"].as_str().unwrap().contains("unavailable"),
+                "{method} {uri} must explain why"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn preview_runs_off_the_report_store_not_the_alert_store() {
+        // Preview only reads reports, so it works even with no Kubernetes API.
+        let resp = send(
+            "POST",
+            "/api/v1/alerts/preview",
+            Some(r#"{"matchers":{"package_name":"log4j-core"}}"#),
+        )
+        .await;
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let bytes = resp.into_body().collect().await.unwrap().to_bytes();
+        let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(json["total"], 0);
+        assert_eq!(json["scanned_reports"], 0);
+    }
+
+    #[tokio::test]
+    async fn preview_rejects_an_unparseable_version_expression() {
+        let resp = send(
+            "POST",
+            "/api/v1/alerts/preview",
+            Some(r#"{"matchers":{"package_name":"axios","version_expr":">="}}"#),
+        )
+        .await;
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+
+        let bytes = resp.into_body().collect().await.unwrap().to_bytes();
+        let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert!(json["error"].as_str().unwrap().contains("version_expr"));
+    }
+
+    #[test]
+    fn receiver_validation_names_the_offending_receiver() {
+        let receivers = vec![
+            slack_receiver("good", "https://hooks.slack.com/services/T0/B0/x"),
+            slack_receiver("bad", "http://evil.example.com/hook"),
+        ];
+        let (name, msg) = validate_receivers(&receivers).expect_err("must reject");
+        assert_eq!(name, "bad");
+        assert!(msg.contains("hooks.slack.com"));
+    }
+
+    #[test]
+    fn receiver_validation_accepts_canonical_webhooks_and_no_slack_block() {
+        assert!(
+            validate_receivers(&[slack_receiver(
+                "sec",
+                "https://hooks.slack.com/services/T0/B0/x"
+            )])
+            .is_ok()
+        );
+        // A receiver with no Slack block has no URL to validate.
+        assert!(
+            validate_receivers(&[Receiver {
+                name: "noop".to_string(),
+                slack: None,
+            }])
+            .is_ok()
+        );
+        assert!(validate_receivers(&[]).is_ok());
+    }
+
+    #[test]
+    fn receiver_validation_rejects_an_empty_webhook() {
+        let (name, msg) =
+            validate_receivers(&[slack_receiver("sec", "")]).expect_err("must reject");
+        assert_eq!(name, "sec");
+        assert!(msg.contains("empty"));
+    }
+
+    #[tokio::test]
+    async fn webhook_errors_identify_the_receiver() {
+        let resp = webhook_validation_error("sec", "webhook URL must not be empty");
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+
+        let bytes = resp.into_body().collect().await.unwrap().to_bytes();
+        let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert!(
+            json["error"]
+                .as_str()
+                .unwrap()
+                .starts_with("receiver 'sec'")
+        );
+    }
+
+    #[tokio::test]
+    async fn store_errors_map_onto_their_status_codes() {
+        for (err, expected) in [
+            (
+                AlertStoreError::NotFound("log4j".into()),
+                StatusCode::NOT_FOUND,
+            ),
+            (
+                AlertStoreError::Invalid("bad matcher".into()),
+                StatusCode::BAD_REQUEST,
+            ),
+        ] {
+            assert_eq!(store_error_response(err).status(), expected);
+        }
+
+        // Anything else is ours, not the caller's.
+        let serde_err = serde_json::from_str::<AlertRule>("{").unwrap_err();
+        assert_eq!(
+            store_error_response(AlertStoreError::Serde(serde_err)).status(),
+            StatusCode::INTERNAL_SERVER_ERROR
+        );
+    }
+
+    #[test]
+    fn an_absent_session_is_attributed_to_anonymous() {
+        // Audit fields must never be blank, so the fallback is explicit.
+        let jar = PrivateCookieJar::new(cookie::Key::generate());
+        assert_eq!(current_user(&jar), "anonymous");
     }
 }

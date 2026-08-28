@@ -496,7 +496,7 @@ pub async fn delete_registered_cluster(
         Ok(_) => {
             // Also wipe this cluster's reports from the DB so it disappears
             // from Dashboard / Vulnerabilities / SBOM views immediately.
-            match state.db.delete_reports_for_cluster(&name).await {
+            match state.store.delete_reports_for_cluster(&name).await {
                 Ok(n) => {
                     info!(
                         cluster = %name,

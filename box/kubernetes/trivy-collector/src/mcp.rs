@@ -187,10 +187,7 @@ mod tests {
     // ───── HTTP transport tests (full axum router, auth + RBAC middleware) ─────
 
     use crate::auth::AuthMode;
-    use crate::auth::rbac::RbacPolicy;
-    use crate::metrics::Metrics;
-    use crate::storage::Database;
-    use crate::web::state::{ConfigInfo, RuntimeInfo, WatcherStatus};
+    use crate::web::test_support;
 
     const INIT: &str = r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"kagent","version":"test"}}}"#;
     const INITIALIZED: &str = r#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#;
@@ -202,23 +199,15 @@ mod tests {
         default_policy: &str,
         stateless: bool,
     ) -> (String, CancellationToken) {
-        let db = Arc::new(Database::new(":memory:").await.unwrap());
-        let mut registry = prometheus_client::registry::Registry::default();
-        let mut config = crate::config::Config::try_parse_from(["trivy-collector"]).unwrap();
+        let mut config = crate::config::Config::for_test(crate::config::Mode::Server);
         config.mcp_enabled = true;
         config.mcp_stateless = stateless;
-        let state = AppState {
-            db,
-            watcher_status: Arc::new(WatcherStatus::new()),
-            config: Arc::new(ConfigInfo::from(&config)),
-            runtime: Arc::new(RuntimeInfo::new()),
-            auth: None,
-            rbac: Arc::new(
-                RbacPolicy::from_csv(RbacPolicy::default_csv(), default_policy).unwrap(),
-            ),
-            metrics: Metrics::new(&mut registry, crate::config::Mode::Server),
-            alerts: None,
-        };
+        let mut state = test_support::state_with(
+            crate::storage::Database::new(":memory:").await.unwrap(),
+            crate::auth::rbac::RbacPolicy::default_csv(),
+            default_policy,
+        );
+        state.config = Arc::new(crate::web::state::ConfigInfo::from(&config));
         let ct = CancellationToken::new();
         let mcp = router(state.clone(), &McpOptions::from_config(&config), ct.clone());
         let app = crate::web::build_router(state, auth_mode, Some(mcp));

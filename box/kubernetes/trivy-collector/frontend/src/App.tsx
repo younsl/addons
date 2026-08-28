@@ -8,7 +8,6 @@ import ComponentSearchPage from './pages/ComponentSearchPage'
 import VulnSearchPage from './pages/VulnSearchPage'
 import DashboardView from './components/DashboardView'
 import VersionView from './components/VersionView'
-import AdminPage from './pages/AdminPage'
 import AlertsPage from './pages/AlertsPage'
 import ClustersPage from './pages/ClustersPage'
 
@@ -31,7 +30,6 @@ export default function App() {
               <Route path="admin" element={<Navigate to="/admin/clusters" replace />} />
               <Route path="admin/clusters" element={<ClustersPage />} />
               <Route path="admin/alerts" element={<AlertsPage />} />
-              <Route path="admin/audit" element={<AdminPage />} />
               <Route path="version" element={<VersionView />} />
               <Route path="*" element={<Navigate to="/vulnerabilities" replace />} />
             </Route>

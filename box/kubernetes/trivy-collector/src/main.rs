@@ -6,24 +6,16 @@ use tracing::{error, info};
 use trivy_collector::config::{Command, Config, Mode};
 use trivy_collector::health::HealthServer;
 use trivy_collector::metrics::Metrics;
-use trivy_collector::{collector, logging, web};
+use trivy_collector::{collector, logging, migrate, web};
 
 #[tokio::main]
 async fn main() -> Result<()> {
     let config = Config::from_args();
 
-    // Handle version subcommand
-    if let Some(Command::Version) = &config.command {
-        println!(
-            "trivy-collector {}, commit: {}, build_date: {}",
-            env!("CARGO_PKG_VERSION"),
-            env!("VERGEN_GIT_SHA"),
-            env!("VERGEN_BUILD_TIMESTAMP"),
-        );
-        return Ok(());
+    if let Some(command) = config.command.clone() {
+        return run_command(command, &config).await;
     }
 
-    // Initialize logging
     logging::init(&config.log_format, &config.log_level);
 
     info!(
@@ -36,20 +28,21 @@ async fn main() -> Result<()> {
         "trivy-collector starting"
     );
 
-    // Validate configuration
     if let Err(e) = config.validate() {
         error!(error = %e, "Configuration validation failed");
         std::process::exit(1);
     }
 
-    // Initialize Prometheus metrics registry
     info!(mode = %config.mode, "Initializing Prometheus metrics registry");
     let mut registry = Registry::default();
     let metrics = Metrics::new(&mut registry, config.mode);
     let registry = Arc::new(registry);
-    info!(mode = %config.mode, metrics_count = metrics.count(), "Prometheus metrics registered successfully");
+    info!(
+        mode = %config.mode,
+        metrics_count = metrics.count(),
+        "Prometheus metrics registered successfully"
+    );
 
-    // Start health check server (with /metrics endpoint)
     let health_port = config.health_port;
     let health_server = HealthServer::new(registry);
     let health_server_clone = health_server.clone();
@@ -69,7 +62,6 @@ async fn main() -> Result<()> {
         }
     });
 
-    // Wait for health server to be ready
     health_ready_rx.await.ok();
     info!(
         port = health_port,
@@ -77,10 +69,8 @@ async fn main() -> Result<()> {
         "Prometheus metrics endpoint is ready"
     );
 
-    // Create shutdown channel
     let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
 
-    // Run based on mode
     let result = tokio::select! {
         result = run_mode(config, health_server, shutdown_rx, metrics) => result,
         _ = tokio::signal::ctrl_c() => {
@@ -99,6 +89,36 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
+/// One-shot subcommands, which run instead of a server and exit.
+async fn run_command(command: Command, config: &Config) -> Result<()> {
+    match command {
+        Command::Version => {
+            println!(
+                "trivy-collector {}, commit: {}, build_date: {}",
+                env!("CARGO_PKG_VERSION"),
+                env!("VERGEN_GIT_SHA"),
+                env!("VERGEN_BUILD_TIMESTAMP"),
+            );
+            Ok(())
+        }
+        Command::ExportState {
+            db_path,
+            namespace,
+            dry_run,
+        } => {
+            logging::init(&config.log_format, &config.log_level);
+            migrate::export_state(migrate::ExportRequest {
+                db_path,
+                namespace,
+                notes_configmap: config.notes_configmap.clone(),
+                api_tokens_secret: config.api_tokens_secret.clone(),
+                dry_run,
+            })
+            .await
+        }
+    }
+}
+
 async fn run_mode(
     config: Config,
     health_server: HealthServer,
@@ -111,14 +131,14 @@ async fn run_mode(
                 cluster = %config.get_cluster_name(),
                 storage_path = %config.storage_path,
                 hub_secret_namespace = %config.hub_secret_namespace,
-                "Running in scraper mode (hub-pull + local watcher)"
+                "Running in scraper mode (watchers + database owner)"
             );
             collector::run(config, health_server, shutdown_rx, metrics).await
         }
         Mode::Server => {
             info!(
                 port = config.server_port,
-                storage_path = %config.storage_path,
+                scraper_url = %config.scraper_url,
                 "Running in server mode (UI/API only)"
             );
             web::run(config, health_server, shutdown_rx, metrics).await

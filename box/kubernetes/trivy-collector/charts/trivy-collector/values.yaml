@@ -67,8 +67,10 @@ securityContext:
 # -- (string) Cluster name identifier recorded on the Hub's own reports.
 clusterName: "local"
 
-# -- Scraper pod settings. Runs --mode=scraper. Writes Trivy reports to the
-# shared PVC. Always a single replica to avoid split-brain SQLite writers.
+# -- Scraper pod settings. Runs --mode=scraper and owns the only database in
+# the release, on its own emptyDir. Also serves the internal read API the
+# server pods proxy through, and evaluates alert rules on the ingest path.
+# One replica by choice: a second would double the watch load for no benefit.
 scraper:
   # -- (list) Namespaces the local watcher scans on the Hub's own cluster
   # (empty = all).
@@ -76,13 +78,60 @@ scraper:
   # -- (bool) Enable the local-cluster watcher (Hub itself). Set to false if
   # Trivy Operator is not installed on the central cluster.
   watchLocal: true
-  # -- (object) Resource requests and limits.
+  # -- Report kinds to watch. Applies to the Hub and to every registered edge
+  # cluster. Disabling a kind stops its watch everywhere and excludes it from
+  # hydration accounting, so readiness still clears. SbomReports are the bulk
+  # of the data, so turning them off is the main lever on database size.
+  collect:
+    # -- (bool) Watch VulnerabilityReports.
+    vulnerabilityReports: true
+    # -- (bool) Watch SbomReports.
+    sbomReports: true
+  # -- Ephemeral storage for the report database. Reports are a mirror of the
+  # CRs that exist right now, so an empty start costs one relist and nothing
+  # else — and it prunes the rows a deleted CR used to leave behind forever.
+  storage:
+    # -- (string) Where the database lives inside the container.
+    mountPath: /data
+    # -- (string) emptyDir sizeLimit. Must cover the database plus the WAL and
+    # rebuild churn that can briefly double it. Keep it in step with the
+    # container's ephemeral-storage limit below.
+    sizeLimit: 2Gi
+    # -- (string) emptyDir medium. Empty uses node disk; "Memory" trades node
+    # memory for speed and counts against the pod's memory limit.
+    medium: ""
+  # -- (object) Deployment strategy. RollingUpdate is safe now that each pod
+  # owns its own emptyDir and reports unready until the fleet is hydrated:
+  # the outgoing pod keeps serving reads for the whole rebuild.
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  # -- (object) Readiness probe. Stays failing until every registered cluster
+  # has replayed its initial list, so the server is never routed to a partial
+  # report set. failureThreshold is generous because a large fleet's first
+  # sync takes minutes.
+  readinessProbe:
+    httpGet:
+      path: /readyz
+      port: health
+    initialDelaySeconds: 5
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 60
+  # -- (object) Resource requests and limits. The scraper now holds the SQLite
+  # page cache and builds query results, so memory moved here from the server.
+  # ephemeral-storage must be declared because the database sits on an
+  # emptyDir drawn from the node.
   resources:
     limits:
-      memory: 128Mi
+      memory: 512Mi
+      ephemeral-storage: 2Gi
     requests:
       cpu: 50m
-      memory: 64Mi
+      memory: 256Mi
+      ephemeral-storage: 2Gi
   # -- (list) Container resize policy for in-place resource updates.
   resizePolicy: []
   # -- (object) Node selector.
@@ -106,23 +155,38 @@ scraper:
     # -- (object) Annotations to attach to the ServiceMonitor.
     annotations: {}
 
-# -- Server pod settings. Runs --mode=server. Reads the shared SQLite DB.
+# -- Server pod settings. Runs --mode=server. Holds no database and mounts no
+# volume: reports come from the scraper's internal API, notes and API tokens
+# from a watched ConfigMap and Secret, request logs from stdout. Scale it
+# freely.
 server:
-  # -- (int) Replica count for the UI / API pod.
+  # -- (int) Replica count for the UI / API pod. More than one is supported
+  # now that this tier is stateless; set server.mcp.stateless when raising it.
   replicaCount: 1
+  # -- PodDisruptionBudget for the UI tier. Only meaningful with more than one
+  # replica, and skipped otherwise.
+  podDisruptionBudget:
+    # -- (bool) Create a PodDisruptionBudget.
+    enabled: true
+    # -- (string) Minimum available pods. Takes precedence when set.
+    minAvailable: ""
+    # -- (int) Maximum unavailable pods.
+    maxUnavailable: 1
   # -- (int) HTTP server port
   port: 3000
   # -- (string) Explicit external URL used to render "View report" deep
   # links in outbound notifications (e.g. `https://trivy.example.com`).
-  # Leave empty to auto-derive from gateway.hostnames or ingress.hosts.
+  # Leave empty to auto-derive from gateway.hostnames.
   externalUrl: ""
-  # -- (object) Resource requests and limits.
+  # -- (object) Resource requests and limits. Lower than before: this pod no
+  # longer holds a connection pool or materializes query results from a local
+  # file, so that memory moved to the scraper.
   resources:
     limits:
-      memory: 64Mi
+      memory: 96Mi
     requests:
       cpu: 20m
-      memory: 32Mi
+      memory: 48Mi
   # -- (list) Container resize policy for in-place resource updates.
   resizePolicy: []
   # -- (object) Node selector.
@@ -157,46 +221,8 @@ server:
     # -- (object) Annotations to attach to the ServiceMonitor.
     annotations: {}
 
-  # -- Persistent volume configuration
-  persistence:
-    # -- (bool) Enable persistent storage
-    enabled: true
-    # -- (string) Use existing PVC instead of creating one
-    existingClaim: ""
-    # -- (string) Storage class for dynamic provisioning
-    storageClass: ""
-    # -- (string) PVC access mode
-    accessMode: ReadWriteOnce
-    # -- (string) Storage size
-    size: 1Gi
-    # -- (object) Labels to add to the PVC
-    labels: {}
-    # -- (object) Annotations to add to the PVC
-    annotations: {}
-
-  # -- Ingress configuration
-  ingress:
-    # -- (bool) Enable Ingress
-    enabled: false
-    # -- (string) Ingress class name
-    className: ""
-    # -- (object) Annotations to add to the Ingress
-    annotations: {}
-      # kubernetes.io/ingress.class: nginx
-      # cert-manager.io/cluster-issuer: letsencrypt-prod
-    # -- (list) Ingress hosts configuration
-    hosts:
-      - host: trivy.example.com
-        paths:
-          - path: /
-            pathType: Prefix
-    # -- (list) TLS configuration for Ingress
-    tls: []
-    #  - secretName: trivy-tls
-    #    hosts:
-    #      - trivy.example.com
-
-  # -- Gateway API HTTPRoute configuration (alternative to Ingress)
+  # -- Gateway API HTTPRoute configuration. The only ingress path this chart
+  # supports; plain Ingress was removed in favour of Gateway API.
   gateway:
     # -- (bool) Enable HTTPRoute
     enabled: false
@@ -286,6 +312,31 @@ service:
   # -- (object) Annotations to add to the Service
   annotations: {}
 
+# -- Internal API between the scraper (which owns the database) and the server
+# pods. It returns every report in the fleet with no per-user filtering,
+# because RBAC is applied above it in the server, so it is never exposed
+# through the Ingress, the HTTPRoute, or a ServiceMonitor.
+internal:
+  # -- (int) Port the scraper serves the internal read API on.
+  port: 8081
+  # -- (string) Shared token, compared in constant time on every internal
+  # request. Leave empty to generate one on first install and keep it across
+  # upgrades. A GitOps controller that renders without cluster access cannot
+  # read the existing value, so set this (or internal.existingSecret) there.
+  token: ""
+  # -- (string) Use an existing Secret for the token instead of managing one.
+  existingSecret: ""
+  # -- (string) Key inside the token Secret.
+  secretKey: token
+  # -- NetworkPolicy fencing the internal port to the server pods. A second
+  # fence alongside the shared token.
+  networkPolicy:
+    # -- (bool) Create the NetworkPolicy. On a cluster whose CNI does not
+    # enforce policy this is inert rather than harmful, so it defaults on.
+    enabled: true
+    # -- (list) Additional `from` selectors allowed to reach the internal port.
+    extraFrom: []
+
 # -- Health check configuration
 health:
   # -- (int) Health check server port
@@ -340,6 +391,35 @@ dnsConfig: {}
   # options:
   #   - name: ndots
   #     value: "2"
+
+# -- One-shot migration off the PersistentVolume. Reports need no export — the
+# next scraper start relists them — but API tokens and report notes are
+# unrecoverable, so they are read out of the legacy database and written to a
+# Secret and a ConfigMap before the volume goes away.
+#
+# Run with exportState.enabled and the old PVC name, verify both objects, then
+# disable it and delete the PVC. Until then the PVC is the rollback.
+migration:
+  exportState:
+    # -- (bool) Run the export as a pre-install/pre-upgrade hook Job.
+    enabled: false
+    # -- (string) Name of the existing PVC holding the legacy database.
+    existingClaim: ""
+    # -- (string) Path to the legacy database inside that volume.
+    dbPath: /data/trivy.db
+    # -- (bool) Report what would be written without writing it.
+    dryRun: false
+    # -- (int) Job backoff limit.
+    backoffLimit: 2
+    # -- (int) Seconds to keep the finished Job.
+    ttlSecondsAfterFinished: 3600
+    # -- (object) Resource requests and limits.
+    resources:
+      limits:
+        memory: 128Mi
+      requests:
+        cpu: 50m
+        memory: 64Mi
 
 # -- (list) Extra Kubernetes objects to deploy alongside the chart
 # @default -- []

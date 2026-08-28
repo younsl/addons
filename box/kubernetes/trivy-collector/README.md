@@ -81,8 +81,9 @@ For detailed architecture documentation, see [Architecture](docs/architecture.md
 - **No Edge-side pod**: Edge clusters need only a read-only `ServiceAccount` (installed once via the UI wizard or `kubectl apply`)
 - **Two-pod split** (SRP): `server` serves the UI, `scraper` owns all watchers
 - **ArgoCD-compatible cluster Secrets**: managed via the Hub UI, kubectl, or GitOps
-- **Web UI**: dashboard, vulnerability and SBOM browsers, cluster registration wizard, API audit log
-- **SQLite storage**: lightweight shared PVC between server and scraper
+- **Web UI**: dashboard, vulnerability and SBOM browsers, cluster registration wizard
+- **No PersistentVolume**: the scraper owns SQLite on its own `emptyDir` and rebuilds it from the source of truth on restart; notes live in a ConfigMap and API tokens in a Secret
+- **Stateless UI tier**: the server holds no database and scales past one replica
 - **VulnerabilityReports + SbomReports** collection from any registered cluster
 - **Keycloak OIDC authentication**: `none` or `keycloak` auth modes, with self-issued API tokens for programmatic access
 - **Embedded MCP server**: opt-in `/mcp` endpoint (Streamable HTTP) so LLM agents such as [kagent](https://kagent.dev/) can query reports with the same auth and RBAC as the API
@@ -99,17 +100,29 @@ For detailed architecture documentation, see [Architecture](docs/architecture.md
 helm install trivy-collector ./charts/trivy-collector \
   --namespace trivy-system \
   --create-namespace \
-  --set server.persistence.enabled=true \
-  --set server.ingress.enabled=true \
-  --set server.ingress.hosts[0].host=trivy.example.com
+  --set server.gateway.enabled=true \
+  --set server.gateway.hostnames[0]=trivy.example.com
 ```
 
-This creates **two Deployments**:
+The UI is exposed through a Gateway API `HTTPRoute`. Plain `Ingress` is not supported.
 
-- `trivy-collector-server`  (default `replicaCount: 1`, UI on port 3000)
-- `trivy-collector-scraper` (always 1 replica, owns all watchers)
+This creates **two Deployments** and no PersistentVolumeClaim:
 
-Both share a single PVC that holds the SQLite database.
+- `trivy-collector-server` (UI on port 3000, no database, scale it freely)
+- `trivy-collector-scraper` (one replica, owns all watchers and the database)
+
+The scraper keeps SQLite on its own `emptyDir` and serves it back to the server pods over an internal API on port 8081, guarded by a shared token and a NetworkPolicy. Report rows are a mirror of the CRs that exist right now, so an empty start costs one relist and nothing else. State that a human authored lives in Kubernetes objects instead: report notes in `{release}-notes` (ConfigMap) and API tokens in `{release}-api-tokens` (Secret).
+
+Upgrading from a release that used a PVC? Export the authored state first, since tokens and notes are unrecoverable:
+
+```bash
+helm upgrade trivy-collector ./charts/trivy-collector \
+  --namespace trivy-system \
+  --set migration.exportState.enabled=true \
+  --set migration.exportState.existingClaim=trivy-collector
+```
+
+Verify both objects, confirm a known token still authenticates and a known note still renders, and only then delete the old PVC. Until that last step the PVC is the rollback.
 
 ### 2. Register an Edge cluster via the UI
 
@@ -195,6 +208,7 @@ CRDs on the central cluster itself. See [RBAC](docs/rbac.md).
 - [Configuration](docs/configuration.md): CLI options, environment variables, and API endpoints
 - [MCP](docs/mcp.md): Embedded MCP server, tool reference, and kagent `RemoteMCPServer` setup
 - [Helm Chart](docs/helm-chart.md): Helm values reference and installation examples
+- [Upgrading](docs/upgrading.md): Breaking changes and the migration off the PersistentVolume
 - [Development](docs/development.md): Build commands, local testing (`make dev-all`), and release workflow
 - [Troubleshooting](docs/troubleshooting.md): Common issues and solutions
 

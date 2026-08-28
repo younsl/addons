@@ -1,5 +1,6 @@
 //! Data models for the storage layer
 
+use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 /// Query parameters for filtering reports
@@ -17,7 +18,7 @@ pub struct QueryParams {
 }
 
 /// Summary of vulnerability counts
-#[derive(Debug, Clone, serde::Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct VulnSummary {
     /// Critical severity count
     pub critical: i64,
@@ -32,7 +33,7 @@ pub struct VulnSummary {
 }
 
 /// Report metadata for listing
-#[derive(Debug, Clone, serde::Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct ReportMeta {
     /// Report ID
     pub id: i64,
@@ -61,11 +62,15 @@ pub struct ReportMeta {
     pub received_at: String,
     /// Last updated timestamp
     pub updated_at: String,
-    /// User notes
+    /// User notes. Joined in by the server from the notes ConfigMap; the
+    /// scraper never sees them, so the wire form defaults to empty.
+    #[serde(default)]
     pub notes: String,
     /// Notes creation timestamp
+    #[serde(default)]
     pub notes_created_at: Option<String>,
     /// Notes update timestamp
+    #[serde(default)]
     pub notes_updated_at: Option<String>,
 }
 
@@ -96,8 +101,26 @@ impl serde::Serialize for FullReport {
     }
 }
 
+impl<'de> serde::Deserialize<'de> for FullReport {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct Wire {
+            meta: ReportMeta,
+            data: serde_json::Value,
+        }
+        let wire = Wire::deserialize(deserializer)?;
+        Ok(FullReport {
+            meta: wire.meta,
+            data_json: wire.data.to_string(),
+        })
+    }
+}
+
 /// Cluster info
-#[derive(Debug, Clone, serde::Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct ClusterInfo {
     /// Cluster name
     #[schema(example = "prod-cluster")]
@@ -111,7 +134,7 @@ pub struct ClusterInfo {
 }
 
 /// Overall statistics
-#[derive(Debug, Clone, serde::Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct Stats {
     /// Total cluster count
     pub total_clusters: i64,
@@ -140,10 +163,8 @@ pub struct Stats {
 }
 
 /// API token info (without the hash)
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TokenInfo {
-    /// Token ID
-    pub id: i64,
     /// User-given name for the token
     pub name: String,
     /// User-given description for the token
@@ -159,7 +180,7 @@ pub struct TokenInfo {
 }
 
 /// SBOM component search result (one row per matching component)
-#[derive(Debug, Clone, serde::Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct ComponentSearchResult {
     /// Cluster name
     #[schema(example = "prod-cluster")]
@@ -191,7 +212,7 @@ pub struct ComponentSearchResult {
 /// One SBOM component row joined with its parent workload, used by the
 /// alerts subsystem (preview/test/fleet count) to evaluate rule matchers
 /// at SQL level and avoid scanning a row-capped sample of reports.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SbomComponentMatch {
     pub cluster: String,
     pub namespace: String,
@@ -203,7 +224,7 @@ pub struct SbomComponentMatch {
 }
 
 /// Vulnerability search result (one row per matching vulnerability)
-#[derive(Debug, Clone, serde::Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct VulnSearchResult {
     /// Cluster name
     #[schema(example = "prod-cluster")]
@@ -238,55 +259,6 @@ pub struct VulnSearchResult {
     pub fixed_version: String,
     /// Last updated timestamp
     pub updated_at: String,
-}
-
-/// API log entry
-#[derive(Debug, Clone, serde::Serialize)]
-pub struct ApiLogEntry {
-    pub id: Option<i64>,
-    pub method: String,
-    pub path: String,
-    pub status_code: u16,
-    pub duration_ms: u64,
-    pub user_sub: String,
-    pub user_email: String,
-    pub remote_addr: String,
-    pub user_agent: String,
-    pub created_at: String,
-}
-
-/// Query parameters for API log listing
-#[derive(Debug, Default)]
-pub struct ApiLogQuery {
-    pub method: Option<String>,
-    pub path_prefix: Option<String>,
-    pub status_min: Option<u16>,
-    pub status_max: Option<u16>,
-    pub user: Option<String>,
-    pub limit: i64,
-    pub offset: i64,
-}
-
-/// Cleanup history entry
-#[derive(Debug, Clone, serde::Serialize, utoipa::ToSchema)]
-pub struct CleanupHistoryEntry {
-    pub id: i64,
-    pub retention_days: u32,
-    pub deleted_count: i64,
-    pub triggered_by: String,
-    pub cleaned_at: String,
-}
-
-/// API log statistics
-#[derive(Debug, Clone, serde::Serialize)]
-pub struct ApiLogStats {
-    pub total_requests: i64,
-    pub requests_today: i64,
-    pub avg_duration_ms: f64,
-    pub error_count: i64,
-    pub unique_users: i64,
-    pub top_paths: Vec<(String, i64, i64)>,
-    pub last_cleanup: Option<CleanupHistoryEntry>,
 }
 
 #[cfg(test)]

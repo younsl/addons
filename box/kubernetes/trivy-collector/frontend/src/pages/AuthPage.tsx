@@ -101,7 +101,7 @@ export default function AuthPage() {
 
   const handleDelete = async () => {
     if (!deleteTarget) return
-    await deleteToken(deleteTarget.id)
+    await deleteToken(deleteTarget.token_prefix)
     setDeleteTarget(null)
     setDeleteConfirmName('')
     loadTokens()
@@ -278,7 +278,7 @@ export default function AuthPage() {
               </thead>
               <tbody>
                 {tokens.map((t) => (
-                  <tr key={t.id}>
+                  <tr key={t.token_prefix}>
                     <td>
                       <div>{t.name}</div>
                       {t.description && (

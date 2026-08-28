@@ -54,11 +54,11 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 Role-specific names: one pod per responsibility.
 */}}
 {{- define "trivy-collector.serverName" -}}
-{{ include "trivy-collector.fullname" . }}-server
+{{- printf "%s-server" (include "trivy-collector.fullname" .) -}}
 {{- end }}
 
 {{- define "trivy-collector.scraperName" -}}
-{{ include "trivy-collector.fullname" . }}-scraper
+{{- printf "%s-scraper" (include "trivy-collector.fullname" .) -}}
 {{- end }}
 
 {{- define "trivy-collector.serverSelectorLabels" -}}
@@ -71,6 +71,70 @@ app.kubernetes.io/component: server
 app.kubernetes.io/component: scraper
 {{- end }}
 
+
+{{/*
+Name of the Secret holding the shared internal-API token.
+*/}}
+{{- define "trivy-collector.internalSecretName" -}}
+{{- if .Values.internal.existingSecret -}}
+{{- .Values.internal.existingSecret -}}
+{{- else -}}
+{{- printf "%s-internal" (include "trivy-collector.fullname" .) -}}
+{{- end -}}
+{{- end }}
+
+{{/*
+Names of the Kubernetes objects holding authored state. Reports live on the
+scraper's emptyDir and are regenerated on every restart; these two hold what a
+human typed and cannot be.
+*/}}
+{{- define "trivy-collector.notesConfigMapName" -}}
+{{- printf "%s-notes" (include "trivy-collector.fullname" .) -}}
+{{- end }}
+
+{{- define "trivy-collector.apiTokensSecretName" -}}
+{{- printf "%s-api-tokens" (include "trivy-collector.fullname" .) -}}
+{{- end }}
+
+{{/*
+Base URL the server uses to reach the scraper's internal API.
+*/}}
+{{- define "trivy-collector.scraperUrl" -}}
+{{- printf "http://%s.%s.svc:%v" (include "trivy-collector.scraperName" .) .Release.Namespace .Values.internal.port -}}
+{{- end }}
+
+{{/*
+External base URL used to render "View report" deep links in outbound
+notifications. Both pods need it: the server renders links, and the scraper
+now owns alert dispatch. Resolution order:
+  1. server.externalUrl (explicit override, full URL)
+  2. gateway.hostnames[0] when gateway.enabled
+Empty when neither yields a value.
+*/}}
+{{- define "trivy-collector.externalUrl" -}}
+{{- if .Values.server.externalUrl -}}
+{{- .Values.server.externalUrl -}}
+{{- else if and .Values.server.gateway.enabled .Values.server.gateway.hostnames -}}
+{{- printf "https://%s" (index .Values.server.gateway.hostnames 0) -}}
+{{- end -}}
+{{- end }}
+
+{{/*
+Environment shared by both pods: log settings and the internal-API token.
+*/}}
+{{- define "trivy-collector.commonEnv" -}}
+- name: LOG_FORMAT
+  value: {{ .Values.logging.format | quote }}
+- name: LOG_LEVEL
+  value: {{ .Values.logging.level | quote }}
+- name: HEALTH_PORT
+  value: {{ .Values.health.port | quote }}
+- name: INTERNAL_TOKEN
+  valueFrom:
+    secretKeyRef:
+      name: {{ include "trivy-collector.internalSecretName" . }}
+      key: {{ .Values.internal.secretKey }}
+{{- end }}
 
 {{/*
 Create the name of the service account to use

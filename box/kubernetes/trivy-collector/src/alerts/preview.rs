@@ -1,7 +1,7 @@
 //! Run a rule's matchers against already-stored SBOM reports without firing
 //! receivers. Used by the rule editor to show what current data would match.
 //!
-//! Matching is delegated to SQL (`Database::list_sbom_component_matches`),
+//! Matching is delegated to SQL (`ReportStore::list_sbom_component_matches`),
 //! so every stored SBOM contributes — earlier revisions of this code only
 //! scanned the 200 most-recently-updated reports, which silently hid
 //! components in older SBOMs from rule authors.
@@ -11,7 +11,7 @@ use utoipa::ToSchema;
 
 use super::expr::VersionExpr;
 use super::types::Matchers;
-use crate::storage::Database;
+use crate::storage::ReportStore;
 
 const MAX_MATCHES: usize = 50;
 
@@ -37,7 +37,7 @@ pub struct PreviewResult {
     pub matched_workloads: usize,
 }
 
-pub async fn run(db: &Database, matchers: &Matchers) -> Result<PreviewResult, String> {
+pub async fn run(db: &dyn ReportStore, matchers: &Matchers) -> Result<PreviewResult, String> {
     let expr = match matchers.version_expr.as_deref() {
         Some(s) => Some(VersionExpr::parse(s).map_err(|e| format!("version_expr: {}", e))?),
         None => None,
@@ -91,6 +91,7 @@ pub async fn run(db: &Database, matchers: &Matchers) -> Result<PreviewResult, St
 mod tests {
     use super::*;
     use crate::collector::types::ReportPayload;
+    use crate::storage::Database;
     use serde_json::json;
 
     fn sbom_payload(

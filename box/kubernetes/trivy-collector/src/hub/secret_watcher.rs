@@ -127,7 +127,7 @@ impl SecretWatcher {
     }
 
     async fn handle_upsert(&self, secret: Secret) {
-        // In-cluster (self) Secret is display-only; the LocalWatcher on this
+        // In-cluster (self) Secret is display-only; the ClusterWatcher on this
         // pod already watches the Hub's own Trivy CRDs, so spawning another
         // per-cluster watcher against https://kubernetes.default.svc would
         // duplicate every report.
@@ -168,4 +168,88 @@ fn cluster_name_from_secret(secret: &Secret) -> Option<String> {
         return Some(s.to_string());
     }
     secret.metadata.name.clone()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use k8s_openapi::apimachinery::pkg::apis::meta::v1::ObjectMeta;
+    use std::collections::BTreeMap;
+
+    fn named(name: &str) -> Secret {
+        Secret {
+            metadata: ObjectMeta {
+                name: Some(name.to_string()),
+                ..Default::default()
+            },
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn the_cluster_name_comes_from_string_data_first() {
+        // A freshly applied Secret carries stringData, which is the operator's
+        // own spelling of the cluster name.
+        let mut secret = named("edge-a-secret");
+        secret.string_data = Some(BTreeMap::from([("name".to_string(), "edge-a".to_string())]));
+
+        assert_eq!(cluster_name_from_secret(&secret).as_deref(), Some("edge-a"));
+    }
+
+    #[test]
+    fn base64_data_is_read_when_string_data_is_absent() {
+        // The API server returns the same Secret with data instead, so a
+        // Delete event has to be readable from that form too.
+        let mut secret = named("edge-b-secret");
+        secret.data = Some(BTreeMap::from([(
+            "name".to_string(),
+            k8s_openapi::ByteString(b"edge-b".to_vec()),
+        )]));
+
+        assert_eq!(cluster_name_from_secret(&secret).as_deref(), Some("edge-b"));
+    }
+
+    #[test]
+    fn string_data_wins_over_data() {
+        let mut secret = named("edge-secret");
+        secret.string_data = Some(BTreeMap::from([(
+            "name".to_string(),
+            "authoritative".to_string(),
+        )]));
+        secret.data = Some(BTreeMap::from([(
+            "name".to_string(),
+            k8s_openapi::ByteString(b"stale".to_vec()),
+        )]));
+
+        assert_eq!(
+            cluster_name_from_secret(&secret).as_deref(),
+            Some("authoritative")
+        );
+    }
+
+    #[test]
+    fn the_object_name_is_the_last_resort() {
+        // Without a name key there is nothing better to remove the cluster by,
+        // and guessing nothing would leak a watcher on every Delete.
+        assert_eq!(
+            cluster_name_from_secret(&named("edge-c")).as_deref(),
+            Some("edge-c")
+        );
+    }
+
+    #[test]
+    fn non_utf8_data_falls_back_to_the_object_name() {
+        let mut secret = named("edge-d");
+        secret.data = Some(BTreeMap::from([(
+            "name".to_string(),
+            k8s_openapi::ByteString(vec![0xff, 0xfe]),
+        )]));
+
+        assert_eq!(cluster_name_from_secret(&secret).as_deref(), Some("edge-d"));
+    }
+
+    #[test]
+    fn a_nameless_secret_yields_nothing() {
+        assert!(cluster_name_from_secret(&Secret::default()).is_none());
+    }
 }

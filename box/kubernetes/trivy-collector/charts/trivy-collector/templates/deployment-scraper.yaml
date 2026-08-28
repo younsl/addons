@@ -1,3 +1,13 @@
+{{- /*
+    The scraper owns the only database in the release, on an emptyDir that
+    starts empty on every restart. Nothing is lost: each watcher's initial list
+    rebuilds `reports` from the clusters that own the CRs, and the authored
+    state that cannot be rebuilt lives in a ConfigMap and a Secret instead.
+
+    Losing the PersistentVolume is what unpins this pod from one node and one
+    availability zone, and what lets a rollout be a rollout rather than an
+    outage of the write path.
+*/}}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -11,11 +21,18 @@ metadata:
     {{- end }}
     app.kubernetes.io/managed-by: {{ .Release.Service }}
 spec:
-  # Only one writer at a time — SQLite tolerates multiple readers with WAL,
-  # but a single writer keeps things simple.
+  # One replica by choice, not by constraint: a second scraper would double the
+  # watch load on every registered cluster for no benefit. The old comment here
+  # was really about the shared volume, which no longer exists.
   replicas: 1
   strategy:
-    type: Recreate
+    {{- /*
+        A rolling update is now safe. Each pod has its own emptyDir, and the
+        new pod reports unready until every registered cluster has replayed its
+        initial list, so the old pod keeps serving reads for the whole rebuild.
+        Surging costs one extra relist; `Recreate` would cost an outage.
+    */}}
+    {{- toYaml .Values.scraper.strategy | nindent 4 }}
   revisionHistoryLimit: {{ .Values.revisionHistoryLimit }}
   selector:
     matchLabels:
@@ -50,14 +67,11 @@ spec:
           env:
             - name: MODE
               value: "scraper"
-            - name: LOG_FORMAT
-              value: {{ .Values.logging.format | quote }}
-            - name: LOG_LEVEL
-              value: {{ .Values.logging.level | quote }}
-            - name: HEALTH_PORT
-              value: {{ .Values.health.port | quote }}
+            {{- include "trivy-collector.commonEnv" . | nindent 12 }}
             - name: STORAGE_PATH
-              value: "/data"
+              value: {{ .Values.scraper.storage.mountPath | quote }}
+            - name: INTERNAL_PORT
+              value: {{ .Values.internal.port | quote }}
             - name: CLUSTER_NAME
               value: {{ .Values.clusterName | quote }}
             {{- if .Values.scraper.namespaces }}
@@ -66,19 +80,51 @@ spec:
             {{- end }}
             - name: WATCH_LOCAL
               value: {{ .Values.scraper.watchLocal | quote }}
+            - name: COLLECT_VULN
+              value: {{ .Values.scraper.collect.vulnerabilityReports | quote }}
+            - name: COLLECT_SBOM
+              value: {{ .Values.scraper.collect.sbomReports | quote }}
             - name: HUB_SECRET_NAMESPACE
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.namespace
+            {{- /*
+                Alert evaluation lives here, on the write path, where the
+                previous revision of a report is in hand and a finding can be
+                told apart from one already reported.
+            */ -}}
+            {{- $externalUrl := include "trivy-collector.externalUrl" . }}
+            {{- if $externalUrl }}
+            - name: EXTERNAL_URL
+              value: {{ $externalUrl | quote }}
+            {{- end }}
           ports:
             - name: health
               containerPort: {{ .Values.health.port }}
               protocol: TCP
+            - name: internal
+              containerPort: {{ .Values.internal.port }}
+              protocol: TCP
           livenessProbe:
             {{- toYaml .Values.livenessProbe | nindent 12 }}
           readinessProbe:
-            {{- toYaml .Values.readinessProbe | nindent 12 }}
+            {{- /*
+                Readiness follows fleet hydration, so the server is never
+                routed to a scraper whose report set is still being rebuilt.
+                The initial sync of a large fleet takes minutes, hence the
+                generous failureThreshold.
+            */}}
+            {{- toYaml .Values.scraper.readinessProbe | nindent 12 }}
           resources:
+            {{- /*
+                An emptyDir draws from the node's ephemeral storage, so it has
+                to be declared: the kubelet can then schedule honestly and evict
+                this pod rather than a neighbour if the estimate is wrong. The
+                scraper also serves queries now, including the JSON scans behind
+                component and vulnerability search, so its memory limit covers
+                SQLite page cache and result construction — headroom the server
+                no longer needs.
+            */}}
             {{- toYaml .Values.scraper.resources | nindent 12 }}
           {{- with .Values.scraper.resizePolicy }}
           resizePolicy:
@@ -86,15 +132,14 @@ spec:
           {{- end }}
           volumeMounts:
             - name: data
-              mountPath: /data
+              mountPath: {{ .Values.scraper.storage.mountPath }}
       volumes:
         - name: data
-          {{- if .Values.server.persistence.enabled }}
-          persistentVolumeClaim:
-            claimName: {{ .Values.server.persistence.existingClaim | default (include "trivy-collector.fullname" .) }}
-          {{- else }}
-          emptyDir: {}
-          {{- end }}
+          emptyDir:
+            sizeLimit: {{ .Values.scraper.storage.sizeLimit }}
+            {{- with .Values.scraper.storage.medium }}
+            medium: {{ . }}
+            {{- end }}
       {{- with .Values.scraper.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

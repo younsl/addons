@@ -1,6 +1,8 @@
 # Prometheus Metrics
 
-trivy-collector exposes Prometheus metrics via OpenMetrics format at the health server's `/metrics` endpoint (default port `8080`). Metrics are mode-specific — Server and Collector register different metrics based on their operational role.
+trivy-collector exposes Prometheus metrics in OpenMetrics format at the health server's `/metrics` endpoint (default port `8080`).
+
+Metrics are mode-specific, and follow ownership rather than convenience: the scraper owns the database, so the database gauges live there, while the server owns request handling and the authored-state caches. Registering a metric a pod can never move would publish a permanent zero.
 
 **Target audience**: Platform Engineers and SREs configuring monitoring and alerting for trivy-collector.
 
@@ -10,11 +12,11 @@ trivy-collector exposes Prometheus metrics via OpenMetrics format at the health 
 |------|------|--------|
 | `/metrics` | `8080` (health port) | OpenMetrics text |
 
-The `/metrics` endpoint shares the same health server as `/healthz` and `/readyz`. No separate port is required.
+The `/metrics` endpoint shares the same health server as `/healthz` and `/readyz`. No separate port is required, and the scraper's internal API port (`8081`) is never scraped.
 
 ## Common Metrics
 
-Available in both Server and Collector modes.
+Available in both modes.
 
 | Metric | Type | Labels | Description |
 |--------|------|--------|-------------|
@@ -37,91 +39,91 @@ Excluded paths (not counted): `/healthz`, `/readyz`, `/metrics`, `/assets/*`, `/
 
 | Metric | Type | Labels | Description |
 |--------|------|--------|-------------|
-| `trivy_collector_reports_received_total` | Counter | `cluster`, `report_type` | Reports received from collectors |
+| `trivy_collector_reports_received_total` | Counter | `cluster`, `report_type` | Reports accepted on the push ingest route and forwarded to the scraper |
+
+### Authored state
+
+Both are derived from watch caches, so they are in-memory reads refreshed every **60 seconds**.
+
+| Metric | Type | Labels | Description |
+|--------|------|--------|-------------|
+| `trivy_collector_notes_configmap_bytes` | Gauge | — | Serialized size of the notes ConfigMap |
+| `trivy_collector_api_tokens` | Gauge | — | API tokens held in the tokens Secret |
+
+A ConfigMap caps at roughly 1MiB and the write path rejects anything past 800KiB, so the notes gauge is the headroom warning. Alert on it rather than discovering the wall.
+
+### MCP
+
+Registered whether or not `/mcp` is mounted.
+
+| Metric | Type | Labels | Description |
+|--------|------|--------|-------------|
+| `trivy_collector_mcp_tool_calls_total` | Counter | `tool`, `result` | MCP tool invocations by outcome |
+| `trivy_collector_mcp_tool_duration_seconds` | Histogram | `tool` | Tool execution time, including queueing for a concurrency slot |
+| `trivy_collector_mcp_tool_calls_in_flight` | Gauge | — | Tool invocations currently executing |
+
+## Scraper Mode Metrics
 
 ### Database
 
-| Metric | Type | Labels | Description |
-|--------|------|--------|-------------|
-| `trivy_collector_db_size_bytes` | Gauge | — | SQLite database file size |
-| `trivy_collector_db_reports_total` | Gauge | `report_type` | Stored report count per type |
-| `trivy_collector_api_logs_total` | Gauge | — | API log entry count |
-
-Database gauges are refreshed every **60 seconds** by a background task.
-
-### Log Cleanup
+Refreshed every **60 seconds** by a background task.
 
 | Metric | Type | Labels | Description |
 |--------|------|--------|-------------|
-| `trivy_collector_api_logs_cleanup_runs_total` | Counter | `result` | Cleanup executions (`success`/`error`) |
-| `trivy_collector_api_logs_cleanup_deleted_total` | Counter | — | Cumulative deleted log entries |
+| `trivy_collector_db_size_bytes` | Gauge | — | SQLite file size on the scraper's `emptyDir` |
+| `trivy_collector_db_reports` | Gauge | `report_type` | Reports currently mirrored into the database |
 
-Log cleanup runs every **6 hours** (retention: 7 days).
+The database starts empty on every restart and is rebuilt from the clusters that own the reports, so `trivy_collector_db_size_bytes` sawtooths across restarts by design. Watch it against the volume's `sizeLimit` rather than as a growth trend.
 
-## Collector Mode Metrics
-
-### Report Sending
+### Hydration
 
 | Metric | Type | Labels | Description |
 |--------|------|--------|-------------|
-| `trivy_collector_reports_sent_total` | Counter | `report_type`, `result` | Reports sent to server (`success`/`error`) |
-| `trivy_collector_reports_send_duration_seconds` | Histogram | `report_type` | Send duration per report |
-| `trivy_collector_send_retries_total` | Counter | `report_type` | Send retry count |
+| `trivy_collector_clusters` | Gauge | — | Clusters registered with the scraper |
+| `trivy_collector_fleet_hydrated` | Gauge | — | `1` once every registered cluster has finished its initial sync |
 
-Histogram buckets: `0.01, 0.05, 0.1, 0.5, 1.0, 5.0, 10.0, 30.0`
-
-### Kubernetes Watcher
-
-| Metric | Type | Labels | Description |
-|--------|------|--------|-------------|
-| `trivy_collector_watcher_events_total` | Counter | `report_type`, `event_type` | K8s watcher events |
-
-`event_type` values: `apply`, `init_apply`, `delete`, `init`, `init_done`
-
-### Server Connectivity
-
-| Metric | Type | Labels | Description |
-|--------|------|--------|-------------|
-| `trivy_collector_server_up` | Gauge | — | Central server status (`1`=up, `0`=down) |
-
-Updated by periodic health checker. Not registered when `HEALTH_CHECK_INTERVAL_SECS=0`.
+`trivy_collector_fleet_hydrated == 0` is expected for the first minutes after a restart, and `/readyz` fails for exactly that window. Sustained `0` means a cluster is unreachable and its slice of the data is missing.
 
 ## ServiceMonitor
 
-Enable Prometheus Operator scraping via Helm values:
+Enable Prometheus Operator scraping per component:
 
 ```yaml
-serviceMonitor:
-  enabled: true
-  interval: 30s
-  scrapeTimeout: ""
-  additionalLabels: {}
+server:
+  serviceMonitor:
+    enabled: true
+    interval: 30s
+scraper:
+  serviceMonitor:
+    enabled: true
+    interval: 30s
 ```
 
-The chart creates:
-- A **Service** (both modes) with a `metrics` port (8080) targeting the health server
-- A **ServiceMonitor** resource pointing to `port: metrics`, `path: /metrics`
+The chart creates a Service per component with a `metrics` port (8080) targeting the health server, and a ServiceMonitor pointing at `port: metrics`, `path: /metrics`. The scraper Service also carries the `internal` port, which no ServiceMonitor selects.
 
-Requires `monitoring.coreos.com/v1` API (Prometheus Operator CRD) to be present in the cluster.
+Requires the `monitoring.coreos.com/v1` API (Prometheus Operator CRDs) in the cluster.
 
 ## No Data Prevention
 
-All counters are pre-initialized with zero values at startup to ensure Prometheus time series exist from the first scrape. This prevents "No data" in Grafana dashboards when no events have occurred yet.
+Counters and per-type gauges are pre-initialized with zeros at startup so the time series exist from the first scrape. This prevents "No data" in Grafana when no events have occurred yet.
 
 ## Example PromQL
 
 ```promql
-# HTTP error rate (server mode)
+# HTTP error rate
 sum(rate(trivy_collector_http_requests_total{status=~"5.."}[5m]))
 / sum(rate(trivy_collector_http_requests_total[5m]))
 
-# Report send failure rate (collector mode)
-sum(rate(trivy_collector_reports_sent_total{result="error"}[5m]))
-/ sum(rate(trivy_collector_reports_sent_total[5m]))
+# Fleet has been unhydrated for more than 10 minutes: a cluster is unreachable
+min_over_time(trivy_collector_fleet_hydrated[10m]) == 0
 
-# Server connectivity (collector mode)
-trivy_collector_server_up == 0
+# Database against the emptyDir sizeLimit (2Gi by default)
+trivy_collector_db_size_bytes / (2 * 1024 * 1024 * 1024)
 
-# Database growth rate (server mode)
-deriv(trivy_collector_db_size_bytes[1h])
+# Notes ConfigMap approaching the write-path ceiling (800KiB)
+trivy_collector_notes_configmap_bytes / (800 * 1024) > 0.8
+
+# MCP tool error rate
+sum(rate(trivy_collector_mcp_tool_calls_total{result!="success"}[5m]))
+/ sum(rate(trivy_collector_mcp_tool_calls_total[5m]))
 ```

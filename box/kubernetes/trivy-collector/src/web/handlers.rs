@@ -4,16 +4,15 @@ use axum::{
     Json,
     extract::{Path, Query, State},
     http::StatusCode,
-    response::IntoResponse,
+    response::{IntoResponse, Response},
 };
-use std::sync::atomic::Ordering;
 use tracing::{debug, error, info};
 
 use crate::collector::types::{ReportEvent, ReportEventType};
 use crate::config::env;
 use crate::metrics::ReportReceivedLabels;
 use crate::storage::{
-    ClusterInfo, ComponentSearchResult, FullReport, ReportMeta, Stats, TrendResponse,
+    ClusterInfo, ComponentSearchResult, FullReport, NotesError, ReportMeta, Stats, TrendResponse,
     VulnSearchResult,
 };
 
@@ -21,7 +20,7 @@ use super::state::AppState;
 use super::types::{
     ComponentSearchQuery, ComponentSuggestQuery, ConfigItem, ConfigResponse, ErrorResponse,
     HealthResponse, ListQuery, ListResponse, StatusResponse, TrendQuery, UpdateNotesRequest,
-    VersionResponse, VulnSearchQuery, VulnSuggestQuery, WatcherInfo, WatcherStatusResponse,
+    VersionResponse, VulnSearchQuery, VulnSuggestQuery, WatcherStatusResponse,
 };
 
 /// Health check endpoint for collectors
@@ -62,119 +61,141 @@ pub async fn healthz(
     )
 }
 
-/// Receive report from collector
+/// Receive a pushed report and forward it to the scraper.
+///
+/// The server holds no database, so this route is a thin proxy onto the
+/// internal ingest endpoint. Any remaining pusher keeps working, and its
+/// writes go through the same alert-evaluating path as a watch event.
 #[utoipa::path(
     post,
     path = "/api/v1/reports",
     tag = "Reports",
     request_body = ReportEvent,
     responses(
-        (status = 200, description = "Report received successfully"),
-        (status = 500, description = "Internal server error", body = ErrorResponse)
+        (status = 200, description = "Report accepted"),
+        (status = 502, description = "Scraper unreachable", body = ErrorResponse)
     )
 )]
 pub async fn receive_report(
     State(state): State<AppState>,
     Json(event): Json<ReportEvent>,
 ) -> impl IntoResponse {
+    let payload = &event.payload;
     debug!(
-        cluster = %event.payload.cluster,
-        report_type = %event.payload.report_type,
-        namespace = %event.payload.namespace,
-        name = %event.payload.name,
-        "Received report event"
+        cluster = %payload.cluster,
+        report_type = %payload.report_type,
+        namespace = %payload.namespace,
+        name = %payload.name,
+        event = ?event.event_type,
+        "Forwarding report event to the scraper"
     );
 
-    // Record reports_received_total metric
     if let Some(ref counter) = state.metrics.reports_received_total {
         counter
             .get_or_create(&ReportReceivedLabels {
-                cluster: event.payload.cluster.clone(),
-                report_type: event.payload.report_type.clone(),
+                cluster: payload.cluster.clone(),
+                report_type: payload.report_type.clone(),
             })
             .inc();
     }
 
-    match event.event_type {
-        ReportEventType::Apply => {
-            // Fetch the previous report (if any) BEFORE upserting so the
-            // alert evaluator can diff old vs new findings and only fire on
-            // net-new ones. We only care about data_json for diffing.
-            let prev_data_json = state
-                .db
-                .get_report(
-                    &event.payload.cluster,
-                    &event.payload.namespace,
-                    &event.payload.name,
-                    &event.payload.report_type,
-                )
-                .await
-                .ok()
-                .flatten()
-                .map(|r| r.data_json);
-
-            match state.db.upsert_report(&event.payload).await {
-                Ok(()) => {
-                    info!(
-                        cluster = %event.payload.cluster,
-                        report_type = %event.payload.report_type,
-                        namespace = %event.payload.namespace,
-                        name = %event.payload.name,
-                        "Report stored"
-                    );
-                    if let Some(evaluator) = state.alerts.clone() {
-                        let payload = event.payload.clone();
-                        let db = state.db.clone();
-                        tokio::spawn(async move {
-                            evaluator
-                                .evaluate(&payload, prev_data_json.as_deref(), db.as_ref())
-                                .await;
-                        });
-                    }
-                    (StatusCode::OK, Json(serde_json::json!({"status": "ok"})))
-                }
-                Err(e) => {
-                    error!(error = %e, "Failed to store report");
-                    (
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        Json(serde_json::json!({"error": e.to_string()})),
-                    )
-                }
-            }
-        }
+    let result = match event.event_type {
+        ReportEventType::Apply => state.store.upsert_report(payload).await.map(|()| true),
         ReportEventType::Delete => {
-            match state
-                .db
+            state
+                .store
                 .delete_report(
-                    &event.payload.cluster,
-                    &event.payload.namespace,
-                    &event.payload.name,
-                    &event.payload.report_type,
+                    &payload.cluster,
+                    &payload.namespace,
+                    &payload.name,
+                    &payload.report_type,
                 )
                 .await
-            {
-                Ok(deleted) => {
-                    info!(
-                        cluster = %event.payload.cluster,
-                        report_type = %event.payload.report_type,
-                        namespace = %event.payload.namespace,
-                        name = %event.payload.name,
-                        deleted = deleted,
-                        "Report delete processed"
-                    );
-                    (
-                        StatusCode::OK,
-                        Json(serde_json::json!({"status": "ok", "deleted": deleted})),
-                    )
-                }
-                Err(e) => {
-                    error!(error = %e, "Failed to delete report");
-                    (
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        Json(serde_json::json!({"error": e.to_string()})),
-                    )
-                }
-            }
+        }
+    };
+
+    match result {
+        Ok(applied) => (
+            StatusCode::OK,
+            Json(serde_json::json!({"status": "ok", "applied": applied})),
+        ),
+        Err(e) => {
+            error!(error = %e, "Failed to forward report to the scraper");
+            (
+                StatusCode::BAD_GATEWAY,
+                Json(serde_json::json!({"error": e.to_string()})),
+            )
+        }
+    }
+}
+
+/// `report_type` values the storage layer stores reports under.
+pub const VULNERABILITY_REPORT: &str = "vulnerabilityreport";
+pub const SBOM_REPORT: &str = "sbomreport";
+
+/// List one report type, joining stored notes onto the page.
+///
+/// Both report types answer with the same envelope, so they share one body;
+/// the only difference is which `report_type` is queried.
+async fn list_reports(state: AppState, query: ListQuery, report_type: &str) -> Response {
+    let params = query.to_query_params();
+
+    match state.store.query_reports(report_type, &params).await {
+        Ok((mut reports, total)) => {
+            state.merge_notes(&mut reports);
+            (
+                StatusCode::OK,
+                Json(ListResponse {
+                    items: reports,
+                    total: total as usize,
+                }),
+            )
+                .into_response()
+        }
+        Err(e) => {
+            error!(error = %e, report_type = report_type, "Failed to query reports");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ListResponse::<ReportMeta> {
+                    items: vec![],
+                    total: 0,
+                }),
+            )
+                .into_response()
+        }
+    }
+}
+
+/// Fetch one report with its full data, joining its stored note onto the
+/// metadata.
+async fn report_detail(
+    state: AppState,
+    cluster: &str,
+    namespace: &str,
+    name: &str,
+    report_type: &str,
+) -> Response {
+    match state
+        .store
+        .get_report(cluster, namespace, name, report_type)
+        .await
+    {
+        Ok(Some(mut report)) => {
+            state.merge_note(&mut report.meta);
+            Json(report).into_response()
+        }
+        Ok(None) => (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({"error": "Report not found"})),
+        )
+            .into_response(),
+        Err(e) => {
+            error!(error = %e, report_type = report_type, "Failed to get report");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({"error": e.to_string()})),
+            )
+                .into_response()
         }
     }
 }
@@ -194,27 +215,7 @@ pub async fn list_vulnerability_reports(
     State(state): State<AppState>,
     Query(query): Query<ListQuery>,
 ) -> impl IntoResponse {
-    let params = query.to_query_params();
-
-    match state.db.query_reports("vulnerabilityreport", &params).await {
-        Ok((reports, total)) => (
-            StatusCode::OK,
-            Json(ListResponse {
-                items: reports,
-                total: total as usize,
-            }),
-        ),
-        Err(e) => {
-            error!(error = %e, "Failed to query vulnerability reports");
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ListResponse {
-                    items: vec![],
-                    total: 0,
-                }),
-            )
-        }
-    }
+    list_reports(state, query, VULNERABILITY_REPORT).await
 }
 
 /// Get specific vulnerability report
@@ -237,33 +238,7 @@ pub async fn get_vulnerability_report(
     State(state): State<AppState>,
     Path((cluster, namespace, name)): Path<(String, String, String)>,
 ) -> impl IntoResponse {
-    match state
-        .db
-        .get_report(&cluster, &namespace, &name, "vulnerabilityreport")
-        .await
-    {
-        Ok(Some(report)) => match serde_json::to_value(report) {
-            Ok(json) => (StatusCode::OK, Json(json)),
-            Err(e) => {
-                error!(error = %e, "Failed to serialize vulnerability report");
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(serde_json::json!({"error": "Failed to serialize report"})),
-                )
-            }
-        },
-        Ok(None) => (
-            StatusCode::NOT_FOUND,
-            Json(serde_json::json!({"error": "Report not found"})),
-        ),
-        Err(e) => {
-            error!(error = %e, "Failed to get vulnerability report");
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::json!({"error": e.to_string()})),
-            )
-        }
-    }
+    report_detail(state, &cluster, &namespace, &name, VULNERABILITY_REPORT).await
 }
 
 /// Search vulnerabilities across all reports
@@ -293,7 +268,7 @@ pub async fn search_vulnerabilities(
     let limit = query.limit.unwrap_or(500);
     let offset = query.offset.unwrap_or(0);
 
-    match state.db.search_vulnerabilities(q, limit, offset).await {
+    match state.store.search_vulnerabilities(q, limit, offset).await {
         Ok((results, total)) => (
             StatusCode::OK,
             Json(serde_json::json!({
@@ -333,7 +308,7 @@ pub async fn suggest_vulnerabilities(
 
     let limit = query.limit.unwrap_or(20);
 
-    match state.db.suggest_vulnerability_ids(q, limit).await {
+    match state.store.suggest_vulnerability_ids(q, limit).await {
         Ok(names) => (StatusCode::OK, Json(serde_json::json!(names))),
         Err(e) => {
             error!(error = %e, "Failed to suggest vulnerability IDs");
@@ -360,27 +335,7 @@ pub async fn list_sbom_reports(
     State(state): State<AppState>,
     Query(query): Query<ListQuery>,
 ) -> impl IntoResponse {
-    let params = query.to_query_params();
-
-    match state.db.query_reports("sbomreport", &params).await {
-        Ok((reports, total)) => (
-            StatusCode::OK,
-            Json(ListResponse {
-                items: reports,
-                total: total as usize,
-            }),
-        ),
-        Err(e) => {
-            error!(error = %e, "Failed to query SBOM reports");
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ListResponse {
-                    items: vec![],
-                    total: 0,
-                }),
-            )
-        }
-    }
+    list_reports(state, query, SBOM_REPORT).await
 }
 
 /// Search SBOM components across all reports
@@ -411,7 +366,7 @@ pub async fn search_sbom_components(
     let offset = query.offset.unwrap_or(0);
 
     match state
-        .db
+        .store
         .search_sbom_components(component, limit, offset)
         .await
     {
@@ -455,7 +410,7 @@ pub async fn suggest_sbom_components(
 
     let limit = query.limit.unwrap_or(20);
 
-    match state.db.suggest_component_names(q, limit).await {
+    match state.store.suggest_component_names(q, limit).await {
         Ok(names) => (StatusCode::OK, Json(serde_json::json!(names))),
         Err(e) => {
             error!(error = %e, "Failed to suggest component names");
@@ -487,33 +442,7 @@ pub async fn get_sbom_report(
     State(state): State<AppState>,
     Path((cluster, namespace, name)): Path<(String, String, String)>,
 ) -> impl IntoResponse {
-    match state
-        .db
-        .get_report(&cluster, &namespace, &name, "sbomreport")
-        .await
-    {
-        Ok(Some(report)) => match serde_json::to_value(report) {
-            Ok(json) => (StatusCode::OK, Json(json)),
-            Err(e) => {
-                error!(error = %e, "Failed to serialize SBOM report");
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(serde_json::json!({"error": "Failed to serialize report"})),
-                )
-            }
-        },
-        Ok(None) => (
-            StatusCode::NOT_FOUND,
-            Json(serde_json::json!({"error": "Report not found"})),
-        ),
-        Err(e) => {
-            error!(error = %e, "Failed to get SBOM report");
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::json!({"error": e.to_string()})),
-            )
-        }
-    }
+    report_detail(state, &cluster, &namespace, &name, SBOM_REPORT).await
 }
 
 /// List clusters
@@ -527,7 +456,7 @@ pub async fn get_sbom_report(
     )
 )]
 pub async fn list_clusters(State(state): State<AppState>) -> impl IntoResponse {
-    match state.db.list_clusters().await {
+    match state.store.list_clusters().await {
         Ok(clusters) => {
             let total = clusters.len();
             (
@@ -562,7 +491,7 @@ pub async fn list_clusters(State(state): State<AppState>) -> impl IntoResponse {
     )
 )]
 pub async fn get_stats(State(state): State<AppState>) -> impl IntoResponse {
-    match state.db.get_stats().await {
+    match state.store.get_stats().await {
         Ok(stats) => (StatusCode::OK, Json(stats)),
         Err(e) => {
             error!(error = %e, "Failed to get stats");
@@ -603,7 +532,7 @@ pub async fn list_namespaces(
     State(state): State<AppState>,
     Query(query): Query<ListQuery>,
 ) -> impl IntoResponse {
-    match state.db.list_namespaces(query.cluster.as_deref()).await {
+    match state.store.list_namespaces(query.cluster.as_deref()).await {
         Ok(namespaces) => {
             let total = namespaces.len();
             (
@@ -649,7 +578,7 @@ pub async fn delete_report(
     Path((cluster, report_type, namespace, name)): Path<(String, String, String, String)>,
 ) -> impl IntoResponse {
     match state
-        .db
+        .store
         .delete_report(&cluster, &namespace, &name, &report_type)
         .await
     {
@@ -677,6 +606,9 @@ pub async fn delete_report(
 }
 
 /// Update report notes
+///
+/// Notes live in a ConfigMap rather than alongside the report row: the report
+/// is a regenerable mirror, the note is authored and irreplaceable.
 #[utoipa::path(
     put,
     path = "/api/v1/reports/{cluster}/{report_type}/{namespace}/{name}/notes",
@@ -691,7 +623,8 @@ pub async fn delete_report(
     responses(
         (status = 200, description = "Notes updated successfully"),
         (status = 404, description = "Report not found", body = ErrorResponse),
-        (status = 500, description = "Internal server error", body = ErrorResponse)
+        (status = 413, description = "Note too large, or the notes store is full", body = ErrorResponse),
+        (status = 503, description = "Notes store unavailable", body = ErrorResponse),
     )
 )]
 pub async fn update_notes(
@@ -699,42 +632,79 @@ pub async fn update_notes(
     Path((cluster, report_type, namespace, name)): Path<(String, String, String, String)>,
     Json(request): Json<UpdateNotesRequest>,
 ) -> impl IntoResponse {
+    let Some(notes) = state.notes.clone() else {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(serde_json::json!({
+                "error": "Notes are unavailable (Kubernetes API not reachable)"
+            })),
+        )
+            .into_response();
+    };
+
+    // A note on a report nobody has is a note nobody will ever see again.
     match state
-        .db
-        .update_notes(&cluster, &namespace, &name, &report_type, &request.notes)
+        .store
+        .get_report(&cluster, &namespace, &name, &report_type)
         .await
     {
-        Ok(updated) => {
-            if updated {
-                info!(
-                    cluster = %cluster,
-                    report_type = %report_type,
-                    namespace = %namespace,
-                    name = %name,
-                    "Report notes updated"
-                );
-                (
-                    StatusCode::OK,
-                    Json(serde_json::json!({"status": "updated"})),
-                )
-            } else {
-                (
-                    StatusCode::NOT_FOUND,
-                    Json(serde_json::json!({"error": "Report not found"})),
-                )
-            }
+        Ok(Some(_)) => {}
+        Ok(None) => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(serde_json::json!({"error": "Report not found"})),
+            )
+                .into_response();
         }
+        Err(e) => {
+            error!(error = %e, "Failed to verify report before writing notes");
+            return (
+                StatusCode::BAD_GATEWAY,
+                Json(serde_json::json!({"error": e.to_string()})),
+            )
+                .into_response();
+        }
+    }
+
+    match notes
+        .upsert(&cluster, &report_type, &namespace, &name, &request.notes)
+        .await
+    {
+        Ok(()) => {
+            info!(
+                cluster = %cluster,
+                report_type = %report_type,
+                namespace = %namespace,
+                name = %name,
+                "Report notes updated"
+            );
+            state.record_notes_size();
+            (
+                StatusCode::OK,
+                Json(serde_json::json!({"status": "updated"})),
+            )
+                .into_response()
+        }
+        Err(e @ (NotesError::NoteTooLarge | NotesError::StoreFull)) => (
+            StatusCode::PAYLOAD_TOO_LARGE,
+            Json(serde_json::json!({"error": e.to_string()})),
+        )
+            .into_response(),
         Err(e) => {
             error!(error = %e, "Failed to update notes");
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(serde_json::json!({"error": e.to_string()})),
             )
+                .into_response()
         }
     }
 }
 
 /// Get watcher status
+///
+/// Watchers run in the scraper pod, so this reports the scraper's per-cluster
+/// hydration state, flattened to the fleet-wide shape the UI has always read.
 #[utoipa::path(
     get,
     path = "/api/v1/watcher/status",
@@ -744,29 +714,38 @@ pub async fn update_notes(
     )
 )]
 pub async fn get_watcher_status(State(state): State<AppState>) -> impl IntoResponse {
-    let status = WatcherStatusResponse {
-        vuln_watcher: WatcherInfo {
-            running: state
-                .watcher_status
-                .vuln_watcher_running
-                .load(Ordering::SeqCst),
-            initial_sync_done: state
-                .watcher_status
-                .vuln_initial_sync_done
-                .load(Ordering::SeqCst),
-        },
-        sbom_watcher: WatcherInfo {
-            running: state
-                .watcher_status
-                .sbom_watcher_running
-                .load(Ordering::SeqCst),
-            initial_sync_done: state
-                .watcher_status
-                .sbom_initial_sync_done
-                .load(Ordering::SeqCst),
-        },
-    };
-    (StatusCode::OK, Json(status))
+    let hydration = state.store.hydration().await.unwrap_or_default();
+    (
+        StatusCode::OK,
+        Json(WatcherStatusResponse::from(&hydration)),
+    )
+}
+
+/// Get fleet hydration status
+///
+/// The report set is legitimately incomplete between scraper start and the
+/// last `InitDone`, because the database now starts empty on every restart.
+/// The UI reads this to render a rebuilding banner instead of empty tables.
+#[utoipa::path(
+    get,
+    path = "/api/v1/hydration",
+    tag = "Watcher",
+    responses(
+        (status = 200, description = "Per-cluster hydration status"),
+        (status = 502, description = "Scraper unreachable", body = ErrorResponse)
+    )
+)]
+pub async fn get_hydration(State(state): State<AppState>) -> impl IntoResponse {
+    match state.store.hydration().await {
+        Ok(status) => (StatusCode::OK, Json(serde_json::json!(status))),
+        Err(e) => {
+            error!(error = %e, "Failed to read hydration status");
+            (
+                StatusCode::BAD_GATEWAY,
+                Json(serde_json::json!({"error": e.to_string()})),
+            )
+        }
+    }
 }
 
 /// Get version info (build-time information)
@@ -804,7 +783,7 @@ pub async fn get_version() -> impl IntoResponse {
 )]
 pub async fn get_status(State(state): State<AppState>) -> impl IntoResponse {
     let collectors = state
-        .db
+        .store
         .list_clusters()
         .await
         .map(|c| c.len() as i64)
@@ -849,7 +828,7 @@ pub async fn get_config(State(state): State<AppState>) -> impl IntoResponse {
         ConfigItem::public(env::NAMESPACES, &namespaces_str),
         ConfigItem::public(env::SERVER_PORT, c.server_port),
         ConfigItem::public(env::HEALTH_PORT, c.health_port),
-        ConfigItem::public(env::STORAGE_PATH, &c.storage_path),
+        ConfigItem::public(env::SCRAPER_URL, &c.scraper_url),
         ConfigItem::public(env::LOG_LEVEL, &c.log_level),
         ConfigItem::public(env::LOG_FORMAT, &c.log_format),
         ConfigItem::public(env::WATCH_LOCAL, c.watch_local),
@@ -882,7 +861,7 @@ pub async fn get_dashboard_trends(
 
     // Get data range for metadata from reports table (matches live trends data source)
     let (actual_from, actual_to) = state
-        .db
+        .store
         .get_reports_data_range()
         .await
         .unwrap_or((None, None));
@@ -898,7 +877,7 @@ pub async fn get_dashboard_trends(
     // Always use live trends for consistent point-in-time (cumulative) values
     debug!("Using live trends for {} granularity", granularity);
     match state
-        .db
+        .store
         .get_live_trends(
             &start_date,
             &end_date,
@@ -938,57 +917,13 @@ mod tests {
     use axum::Router;
     use axum::routing::{delete, get, post, put};
     use http_body_util::BodyExt;
-    use std::sync::Arc;
     use tower::ServiceExt;
 
     use crate::collector::types::{ReportEvent, ReportEventType, ReportPayload};
-    use crate::storage::Database;
-    use crate::web::state::{ConfigInfo, RuntimeInfo, WatcherStatus};
+    use crate::web::test_support;
 
     async fn create_test_state() -> AppState {
-        let db = Arc::new(
-            Database::new(":memory:")
-                .await
-                .expect("Failed to create test database"),
-        );
-        let watcher_status = Arc::new(WatcherStatus::new());
-        let config = Arc::new(ConfigInfo {
-            mode: "server".to_string(),
-            log_format: "json".to_string(),
-            log_level: "info".to_string(),
-            health_port: 8080,
-            cluster_name: "test-cluster".to_string(),
-            namespaces: vec![],
-            collect_vulnerability_reports: true,
-            collect_sbom_reports: true,
-            server_port: 3000,
-            storage_path: ":memory:".to_string(),
-            watch_local: false,
-            hub_secret_namespace: String::new(),
-            auth_mode: None,
-            mcp_enabled: false,
-        });
-        let runtime = Arc::new(RuntimeInfo::new());
-
-        let mut registry = prometheus_client::registry::Registry::default();
-        let metrics = crate::metrics::Metrics::new(&mut registry, crate::config::Mode::Server);
-
-        AppState {
-            db,
-            watcher_status,
-            config,
-            runtime,
-            auth: None,
-            rbac: Arc::new(
-                crate::auth::rbac::RbacPolicy::from_csv(
-                    crate::auth::rbac::RbacPolicy::default_csv(),
-                    "role:readonly",
-                )
-                .unwrap(),
-            ),
-            metrics,
-            alerts: None,
-        }
+        test_support::app_state().await
     }
 
     fn create_test_router(state: AppState) -> Router {
@@ -1069,7 +1004,7 @@ mod tests {
     /// Seed 3 vulnerability reports + 1 SBOM report across 2 clusters
     async fn seed_test_data(state: &AppState) {
         state
-            .db
+            .store
             .upsert_report(&create_test_payload(
                 "prod",
                 "default",
@@ -1079,7 +1014,7 @@ mod tests {
             .await
             .unwrap();
         state
-            .db
+            .store
             .upsert_report(&create_test_payload(
                 "prod",
                 "kube-system",
@@ -1089,7 +1024,7 @@ mod tests {
             .await
             .unwrap();
         state
-            .db
+            .store
             .upsert_report(&create_test_payload(
                 "staging",
                 "default",
@@ -1099,7 +1034,7 @@ mod tests {
             .await
             .unwrap();
         state
-            .db
+            .store
             .upsert_report(&create_test_payload(
                 "prod",
                 "default",
@@ -1146,7 +1081,7 @@ mod tests {
         assert_eq!(json["status"], "ok");
 
         let report = state
-            .db
+            .store
             .get_report("prod", "default", "app1", "vulnerabilityreport")
             .await
             .unwrap();
@@ -1157,7 +1092,7 @@ mod tests {
     async fn test_receive_report_delete() {
         let state = create_test_state().await;
         state
-            .db
+            .store
             .upsert_report(&create_test_payload(
                 "prod",
                 "default",
@@ -1189,7 +1124,7 @@ mod tests {
 
         assert_eq!(response.status(), StatusCode::OK);
         let json = response_json(response).await;
-        assert_eq!(json["deleted"], true);
+        assert_eq!(json["applied"], true);
     }
 
     #[tokio::test]
@@ -1218,7 +1153,7 @@ mod tests {
 
         assert_eq!(response.status(), StatusCode::OK);
         let json = response_json(response).await;
-        assert_eq!(json["deleted"], false);
+        assert_eq!(json["applied"], false);
     }
 
     // ===== list_vulnerability_reports =====
@@ -1597,12 +1532,12 @@ mod tests {
     // ===== update_notes =====
 
     #[tokio::test]
-    async fn test_update_notes_success() {
+    async fn notes_are_unavailable_without_a_configmap_store() {
+        // Notes live in a ConfigMap now, so a server that cannot reach the
+        // Kubernetes API says so instead of accepting a write it cannot keep.
         let state = create_test_state().await;
         seed_test_data(&state).await;
         let app = create_test_router(state);
-
-        let body = serde_json::json!({"notes": "Reviewed, patch scheduled"});
 
         let response = app
             .oneshot(
@@ -1610,41 +1545,13 @@ mod tests {
                     .method("PUT")
                     .uri("/api/v1/reports/prod/vulnerabilityreport/default/nginx-vuln/notes")
                     .header("content-type", "application/json")
-                    .body(axum::body::Body::from(
-                        serde_json::to_string(&body).unwrap(),
-                    ))
+                    .body(axum::body::Body::from(r#"{"notes":"Reviewed"}"#))
                     .unwrap(),
             )
             .await
             .unwrap();
 
-        assert_eq!(response.status(), StatusCode::OK);
-        let json = response_json(response).await;
-        assert_eq!(json["status"], "updated");
-    }
-
-    #[tokio::test]
-    async fn test_update_notes_not_found() {
-        let state = create_test_state().await;
-        let app = create_test_router(state);
-
-        let body = serde_json::json!({"notes": "test"});
-
-        let response = app
-            .oneshot(
-                axum::http::Request::builder()
-                    .method("PUT")
-                    .uri("/api/v1/reports/prod/vulnerabilityreport/default/nonexistent/notes")
-                    .header("content-type", "application/json")
-                    .body(axum::body::Body::from(
-                        serde_json::to_string(&body).unwrap(),
-                    ))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-
-        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
     }
 
     // ===== get_watcher_status =====
@@ -1673,26 +1580,48 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_get_watcher_status_running() {
+    async fn watcher_status_reports_the_scrapers_hydration() {
+        // A direct-Database store is its own source of truth, so it reports a
+        // hydrated fleet with no clusters — flattened to "nothing running".
         let state = create_test_state().await;
-        state.watcher_status.set_vuln_running(true);
-        state.watcher_status.set_sbom_sync_done(true);
-        let app = create_test_router(state);
+        let hydration = state.store.hydration().await.unwrap();
+        let flattened = WatcherStatusResponse::from(&hydration);
 
-        let response = app
-            .oneshot(
-                axum::http::Request::builder()
-                    .uri("/api/v1/watcher/status")
-                    .body(axum::body::Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
+        assert!(hydration.hydrated);
+        assert!(!flattened.vuln_watcher.running);
+        assert!(!flattened.sbom_watcher.initial_sync_done);
+    }
 
-        assert_eq!(response.status(), StatusCode::OK);
-        let json = response_json(response).await;
-        assert_eq!(json["vuln_watcher"]["running"], true);
-        assert_eq!(json["sbom_watcher"]["initial_sync_done"], true);
+    #[test]
+    fn watcher_status_flattens_a_partially_synced_fleet() {
+        use crate::storage::{ClusterSync, HydrationStatus};
+
+        let mut hydration = HydrationStatus::default();
+        hydration.clusters.insert(
+            "prod".to_string(),
+            ClusterSync {
+                vuln_watcher_running: true,
+                sbom_watcher_running: true,
+                vuln_initial_sync_done: true,
+                sbom_initial_sync_done: true,
+            },
+        );
+        hydration.clusters.insert(
+            "stage".to_string(),
+            ClusterSync {
+                vuln_watcher_running: true,
+                sbom_watcher_running: true,
+                vuln_initial_sync_done: true,
+                sbom_initial_sync_done: false,
+            },
+        );
+
+        let flattened = WatcherStatusResponse::from(&hydration);
+        // Running anywhere is running; synced only once synced everywhere.
+        assert!(flattened.vuln_watcher.running);
+        assert!(flattened.vuln_watcher.initial_sync_done);
+        assert!(flattened.sbom_watcher.running);
+        assert!(!flattened.sbom_watcher.initial_sync_done);
     }
 
     // ===== get_version =====

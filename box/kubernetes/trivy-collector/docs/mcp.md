@@ -38,7 +38,7 @@ Environment variables (when not using Helm):
 
 ### Host validation
 
-The MCP transport ships with DNS-rebinding protection that only accepts loopback `Host` headers. trivy-collector disables that check by default because in-cluster clients reach the pod through a Service DNS name such as `trivy-collector.trivy-system.svc.cluster.local:3000`. If `/mcp` is exposed through an Ingress or Gateway and you want the check back, set `server.mcp.allowedHosts` to the public hostnames.
+The MCP transport ships with DNS-rebinding protection that only accepts loopback `Host` headers. trivy-collector disables that check by default because in-cluster clients reach the pod through a Service DNS name such as `trivy-collector.trivy-system.svc.cluster.local:3000`. If `/mcp` is exposed through a Gateway and you want the check back, set `server.mcp.allowedHosts` to the public hostnames.
 
 ### Sessions and replicas
 

@@ -7,6 +7,7 @@
 
 use std::future::Future;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
 
 use axum::http::request::Parts;
@@ -20,12 +21,12 @@ use rmcp::{ErrorData as McpError, ServerHandler, tool, tool_handler, tool_router
 use serde::Serialize;
 use serde_json::Value;
 use tokio::sync::Semaphore;
-use tracing::warn;
+use tracing::info;
 
 use super::authz;
 use super::params::*;
 use crate::metrics::{McpToolDurationLabels, McpToolLabels};
-use crate::storage::{ApiLogEntry, QueryParams};
+use crate::storage::QueryParams;
 use crate::web::AppState;
 
 const INSTRUCTIONS: &str = "Read-only access to Trivy Operator VulnerabilityReports and SbomReports \
@@ -70,6 +71,10 @@ pub struct TrivyMcp {
     state: AppState,
     limiter: ToolLimiter,
     tool_router: ToolRouter<Self>,
+    /// Latches once the fleet has been observed hydrated, so the common path
+    /// costs nothing. A scraper restart is a new process for the agent to
+    /// discover through an error, not something to poll for.
+    hydrated: Arc<AtomicBool>,
 }
 
 impl TrivyMcp {
@@ -78,6 +83,50 @@ impl TrivyMcp {
             state,
             limiter,
             tool_router: Self::tool_router(),
+            hydrated: Arc::new(AtomicBool::new(false)),
+        }
+    }
+
+    /// Refuse a query while the report set is still being rebuilt.
+    ///
+    /// An agent cannot tell an empty answer from an incomplete one, and a
+    /// confidently empty result is worse than a retryable error: it reads as
+    /// "no findings in the fleet". The scraper's database starts empty on every
+    /// restart, so this window is real and recurring.
+    async fn require_hydrated(&self) -> Result<(), McpError> {
+        if self.hydrated.load(Ordering::Relaxed) {
+            return Ok(());
+        }
+        match self.state.store.hydration().await {
+            Ok(status) if status.hydrated => {
+                self.hydrated.store(true, Ordering::Relaxed);
+                Ok(())
+            }
+            Ok(status) => {
+                let pending = status
+                    .clusters
+                    .iter()
+                    .filter(|(_, c)| !c.is_hydrated())
+                    .map(|(name, _)| name.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                Err(McpError::internal_error(
+                    format!(
+                        "report data is still being rebuilt (waiting on: {}); \
+                         retry shortly rather than treating an empty result as an answer",
+                        if pending.is_empty() {
+                            "cluster registration".to_string()
+                        } else {
+                            pending
+                        }
+                    ),
+                    None,
+                ))
+            }
+            Err(e) => Err(McpError::internal_error(
+                format!("cannot reach the report store: {e}"),
+                None,
+            )),
         }
     }
 
@@ -104,7 +153,10 @@ impl TrivyMcp {
         if let Some(ref g) = self.state.metrics.mcp_tool_calls_in_flight {
             g.inc();
         }
-        let result = body.await;
+        let result = match self.require_hydrated().await {
+            Ok(()) => body.await,
+            Err(e) => Err(e),
+        };
         if let Some(ref g) = self.state.metrics.mcp_tool_calls_in_flight {
             g.dec();
         }
@@ -129,13 +181,7 @@ impl TrivyMcp {
             .observe(elapsed.as_secs_f64());
         }
 
-        let entry = audit_entry(ext, tool, &result, elapsed.as_millis() as u64);
-        let db = self.state.db.clone();
-        tokio::spawn(async move {
-            if let Err(e) = db.insert_api_log(&entry).await {
-                warn!(error = %e, "Failed to log MCP tool call");
-            }
-        });
+        log_tool_call(ext, tool, &result, elapsed.as_millis() as u64);
 
         result
     }
@@ -218,35 +264,70 @@ fn status_for(result: &Result<CallToolResult, McpError>) -> u16 {
     }
 }
 
-fn audit_entry(
+/// One audited tool call, in the same shape as the HTTP access log so both
+/// land in the cluster's log pipeline as comparable records.
+#[derive(Debug, PartialEq, Eq)]
+struct AuditRecord {
+    path: String,
+    status: u16,
+    duration_ms: u64,
+    user_sub: String,
+    user_email: String,
+    remote_addr: String,
+    user_agent: String,
+}
+
+impl AuditRecord {
+    fn build(
+        ext: &Extensions,
+        tool: &str,
+        result: &Result<CallToolResult, McpError>,
+        duration_ms: u64,
+    ) -> Self {
+        let parts = ext.get::<Parts>();
+        let header = |name: &str| -> String {
+            parts
+                .and_then(|p| p.headers.get(name))
+                .and_then(|v| v.to_str().ok())
+                .unwrap_or("")
+                .to_string()
+        };
+        let (user_sub, user_email) = authz::session_from(ext)
+            .map(|s| (s.sub, s.email.unwrap_or_default()))
+            .unwrap_or_default();
+
+        Self {
+            path: format!("{}/tools/call/{tool}", super::MCP_PATH),
+            status: status_for(result),
+            duration_ms,
+            user_sub,
+            user_email,
+            remote_addr: header("x-forwarded-for"),
+            user_agent: header("user-agent"),
+        }
+    }
+}
+
+/// Emit one structured audit line per tool call.
+fn log_tool_call(
     ext: &Extensions,
     tool: &str,
     result: &Result<CallToolResult, McpError>,
     duration_ms: u64,
-) -> ApiLogEntry {
-    let parts = ext.get::<Parts>();
-    let header = |name: &str| -> String {
-        parts
-            .and_then(|p| p.headers.get(name))
-            .and_then(|v| v.to_str().ok())
-            .unwrap_or("")
-            .to_string()
-    };
-    let (user_sub, user_email) = authz::session_from(ext)
-        .map(|s| (s.sub, s.email.unwrap_or_default()))
-        .unwrap_or_default();
-    ApiLogEntry {
-        id: None,
-        method: "MCP".to_string(),
-        path: format!("{}/tools/call/{tool}", super::MCP_PATH),
-        status_code: status_for(result),
-        duration_ms,
-        user_sub,
-        user_email,
-        remote_addr: header("x-forwarded-for"),
-        user_agent: header("user-agent"),
-        created_at: chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string(),
-    }
+) {
+    let record = AuditRecord::build(ext, tool, result, duration_ms);
+    info!(
+        target: "trivy_collector::access",
+        method = "MCP",
+        path = %record.path,
+        status = record.status,
+        duration_ms = record.duration_ms,
+        user_sub = %record.user_sub,
+        user_email = %record.user_email,
+        remote_addr = %record.remote_addr,
+        user_agent = %record.user_agent,
+        "mcp tool call"
+    );
 }
 
 #[tool_router]
@@ -260,7 +341,7 @@ impl TrivyMcp {
             self.authorize(&ext, "clusters", "get")?;
             let clusters = self
                 .state
-                .db
+                .store
                 .list_clusters()
                 .await
                 .map_err(Self::db_error)?;
@@ -282,7 +363,7 @@ impl TrivyMcp {
             self.authorize(&ext, "clusters", "get")?;
             let namespaces = self
                 .state
-                .db
+                .store
                 .list_namespaces(p.cluster.as_deref())
                 .await
                 .map_err(Self::db_error)?;
@@ -300,7 +381,7 @@ impl TrivyMcp {
     async fn get_stats(&self, ext: Extensions) -> Result<CallToolResult, McpError> {
         self.observed(&ext, "get_stats", async {
             self.authorize(&ext, "stats", "get")?;
-            let stats = self.state.db.get_stats().await.map_err(Self::db_error)?;
+            let stats = self.state.store.get_stats().await.map_err(Self::db_error)?;
             Self::json_result(&stats)
         })
         .await
@@ -354,7 +435,7 @@ findings (id, severity, score, package, installed/fixed version, title). Filter 
             self.authorize(&ext, "reports", "get")?;
             let report = self
                 .state
-                .db
+                .store
                 .get_report(&p.cluster, &p.namespace, &p.name, "vulnerabilityreport")
                 .await
                 .map_err(Self::db_error)?
@@ -420,7 +501,7 @@ type, purl). Filter by component name substring.",
             self.authorize(&ext, "reports", "get")?;
             let report = self
                 .state
-                .db
+                .store
                 .get_report(&p.cluster, &p.namespace, &p.name, "sbomreport")
                 .await
                 .map_err(Self::db_error)?
@@ -483,7 +564,7 @@ type, purl). Filter by component name substring.",
             let offset = clamp_offset(p.offset);
             let (items, total) = self
                 .state
-                .db
+                .store
                 .search_vulnerabilities(query, limit, offset)
                 .await
                 .map_err(Self::db_error)?;
@@ -523,7 +604,7 @@ optionally pinned to an exact version. Returns one row per image containing the 
                 None => {
                     let (items, total) = self
                         .state
-                        .db
+                        .store
                         .search_sbom_components(component, limit, offset)
                         .await
                         .map_err(Self::db_error)?;
@@ -536,7 +617,7 @@ optionally pinned to an exact version. Returns one row per image containing the 
                     const VERSION_SCAN_CAP: i64 = 5_000;
                     let (rows, name_total) = self
                         .state
-                        .db
+                        .store
                         .search_sbom_components(component, VERSION_SCAN_CAP, 0)
                         .await
                         .map_err(Self::db_error)?;
@@ -585,7 +666,7 @@ impl TrivyMcp {
         };
         let (items, total) = self
             .state
-            .db
+            .store
             .query_reports(report_type, &params)
             .await
             .map_err(Self::db_error)?;
@@ -608,28 +689,13 @@ impl ServerHandler for TrivyMcp {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::alerts::AlertEvaluator;
     use crate::auth::rbac::RbacPolicy;
     use crate::collector::types::ReportPayload;
-    use crate::metrics::Metrics;
     use crate::storage::Database;
-    use crate::web::state::{ConfigInfo, RuntimeInfo, WatcherStatus};
-    use clap::Parser;
-    use std::sync::Arc;
+    use crate::web::test_support;
 
     async fn state_with(db: Database, rbac_csv: &str, default_policy: &str) -> AppState {
-        let config = crate::config::Config::try_parse_from(["trivy-collector"]).unwrap();
-        let mut registry = prometheus_client::registry::Registry::default();
-        AppState {
-            db: Arc::new(db),
-            watcher_status: Arc::new(WatcherStatus::new()),
-            config: Arc::new(ConfigInfo::from(&config)),
-            runtime: Arc::new(RuntimeInfo::new()),
-            auth: None,
-            rbac: Arc::new(RbacPolicy::from_csv(rbac_csv, default_policy).unwrap()),
-            metrics: Metrics::new(&mut registry, crate::config::Mode::Server),
-            alerts: None::<Arc<AlertEvaluator>>,
-        }
+        test_support::state_with(db, rbac_csv, default_policy)
     }
 
     fn vuln_payload(cluster: &str, ns: &str, name: &str) -> ReportPayload {
@@ -1102,7 +1168,7 @@ mod tests {
     }
 
     #[test]
-    fn audit_entry_reads_session_and_headers() {
+    fn audit_records_read_session_and_headers() {
         let (mut parts, _) = axum::http::Request::builder()
             .header("user-agent", "kagent/1.0")
             .header("x-forwarded-for", "10.0.0.9")
@@ -1119,23 +1185,23 @@ mod tests {
         });
         let mut ext = Extensions::new();
         ext.insert(parts);
-        let entry = audit_entry(&ext, "get_stats", &Ok(CallToolResult::success(vec![])), 12);
-        assert_eq!(entry.method, "MCP");
-        assert_eq!(entry.path, "/mcp/tools/call/get_stats");
-        assert_eq!(entry.status_code, 200);
-        assert_eq!(entry.duration_ms, 12);
-        assert_eq!(entry.user_sub, "alice");
-        assert_eq!(entry.user_email, "alice@example.com");
-        assert_eq!(entry.user_agent, "kagent/1.0");
-        assert_eq!(entry.remote_addr, "10.0.0.9");
+        let record =
+            AuditRecord::build(&ext, "get_stats", &Ok(CallToolResult::success(vec![])), 12);
+        assert_eq!(record.path, "/mcp/tools/call/get_stats");
+        assert_eq!(record.status, 200);
+        assert_eq!(record.duration_ms, 12);
+        assert_eq!(record.user_sub, "alice");
+        assert_eq!(record.user_email, "alice@example.com");
+        assert_eq!(record.user_agent, "kagent/1.0");
+        assert_eq!(record.remote_addr, "10.0.0.9");
 
-        let anon = audit_entry(
+        let anon = AuditRecord::build(
             &Extensions::new(),
             "x",
             &Err(McpError::invalid_request("d", None)),
             1,
         );
-        assert_eq!(anon.status_code, 403);
+        assert_eq!(anon.status, 403);
         assert!(anon.user_sub.is_empty());
     }
 
@@ -1170,10 +1236,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn observed_records_metrics_and_audit_log() {
+    async fn observed_records_metrics_per_tool_and_outcome() {
         let mcp = seeded().await;
-        let db = mcp.state.db.clone();
-        let before = db.count_api_logs().await.unwrap();
 
         mcp.get_stats(Extensions::new()).await.unwrap();
         mcp.search_vulnerabilities(
@@ -1206,6 +1270,7 @@ mod tests {
                 .get(),
             1
         );
+        // The in-flight gauge must return to zero, including on the error path.
         assert_eq!(
             mcp.state
                 .metrics
@@ -1215,27 +1280,158 @@ mod tests {
                 .get(),
             0
         );
+    }
 
-        // Audit rows are written on a spawned task. Poll briefly.
-        let mut after = before;
-        for _ in 0..50 {
-            after = db.count_api_logs().await.unwrap();
-            if after >= before + 2 {
-                break;
+    #[tokio::test]
+    async fn tools_refuse_to_answer_while_the_fleet_rebuilds() {
+        use crate::storage::{HydrationStatus, ReportStore};
+        use async_trait::async_trait;
+
+        /// A store whose report data is still being rebuilt.
+        struct Rebuilding(Database);
+
+        #[async_trait]
+        impl ReportStore for Rebuilding {
+            async fn query_reports(
+                &self,
+                report_type: &str,
+                params: &QueryParams,
+            ) -> anyhow::Result<(Vec<crate::storage::ReportMeta>, i64)> {
+                self.0.query_reports(report_type, params).await
             }
-            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            async fn get_report(
+                &self,
+                cluster: &str,
+                namespace: &str,
+                name: &str,
+                report_type: &str,
+            ) -> anyhow::Result<Option<crate::storage::FullReport>> {
+                self.0
+                    .get_report(cluster, namespace, name, report_type)
+                    .await
+            }
+            async fn get_stats(&self) -> anyhow::Result<crate::storage::Stats> {
+                self.0.get_stats().await
+            }
+            async fn list_clusters(&self) -> anyhow::Result<Vec<crate::storage::ClusterInfo>> {
+                self.0.list_clusters().await
+            }
+            async fn list_namespaces(&self, cluster: Option<&str>) -> anyhow::Result<Vec<String>> {
+                self.0.list_namespaces(cluster).await
+            }
+            async fn search_vulnerabilities(
+                &self,
+                query: &str,
+                limit: i64,
+                offset: i64,
+            ) -> anyhow::Result<(Vec<crate::storage::VulnSearchResult>, i64)> {
+                self.0.search_vulnerabilities(query, limit, offset).await
+            }
+            async fn search_sbom_components(
+                &self,
+                component: &str,
+                limit: i64,
+                offset: i64,
+            ) -> anyhow::Result<(Vec<crate::storage::ComponentSearchResult>, i64)> {
+                self.0
+                    .search_sbom_components(component, limit, offset)
+                    .await
+            }
+            async fn suggest_vulnerability_ids(
+                &self,
+                query: &str,
+                limit: i64,
+            ) -> anyhow::Result<Vec<String>> {
+                self.0.suggest_vulnerability_ids(query, limit).await
+            }
+            async fn suggest_component_names(
+                &self,
+                query: &str,
+                limit: i64,
+            ) -> anyhow::Result<Vec<String>> {
+                self.0.suggest_component_names(query, limit).await
+            }
+            async fn list_sbom_component_matches(
+                &self,
+                clusters: &[String],
+                namespace: Option<&str>,
+                package_name: Option<&str>,
+            ) -> anyhow::Result<Vec<crate::storage::SbomComponentMatch>> {
+                self.0
+                    .list_sbom_component_matches(clusters, namespace, package_name)
+                    .await
+            }
+            async fn get_live_trends(
+                &self,
+                start_date: &str,
+                end_date: &str,
+                cluster: Option<&str>,
+                granularity: &str,
+            ) -> anyhow::Result<crate::storage::TrendResponse> {
+                self.0
+                    .get_live_trends(start_date, end_date, cluster, granularity)
+                    .await
+            }
+            async fn get_reports_data_range(
+                &self,
+            ) -> anyhow::Result<(Option<String>, Option<String>)> {
+                self.0.get_reports_data_range().await
+            }
+            async fn hydration(&self) -> anyhow::Result<HydrationStatus> {
+                // Never hydrated: one cluster registered, neither watcher done.
+                let mut status = HydrationStatus::default();
+                status
+                    .clusters
+                    .insert("prod".to_string(), Default::default());
+                Ok(status)
+            }
+            async fn upsert_report(
+                &self,
+                payload: &crate::collector::types::ReportPayload,
+            ) -> anyhow::Result<()> {
+                self.0.upsert_report(payload).await
+            }
+            async fn delete_report(
+                &self,
+                cluster: &str,
+                namespace: &str,
+                name: &str,
+                report_type: &str,
+            ) -> anyhow::Result<bool> {
+                self.0
+                    .delete_report(cluster, namespace, name, report_type)
+                    .await
+            }
+            async fn delete_reports_for_cluster(&self, cluster: &str) -> anyhow::Result<u64> {
+                self.0.delete_reports_for_cluster(cluster).await
+            }
         }
-        assert_eq!(after, before + 2);
-        let logs = db
-            .list_api_logs(&crate::storage::ApiLogQuery {
-                path_prefix: Some("/mcp/tools/call/".into()),
-                limit: 50,
-                ..Default::default()
-            })
-            .await
-            .unwrap();
-        assert!(logs.0.iter().all(|l| l.method == "MCP"));
-        assert!(logs.0.iter().any(|l| l.status_code == 400));
+
+        let mut state = test_support::state_with(
+            Database::new(":memory:").await.unwrap(),
+            RbacPolicy::default_csv(),
+            "role:admin",
+        );
+        state.store = Arc::new(Rebuilding(Database::new(":memory:").await.unwrap()));
+        let mcp = TrivyMcp::new(state, ToolLimiter::unlimited());
+
+        let err = mcp.get_stats(Extensions::new()).await.unwrap_err();
+        assert!(
+            err.message.contains("still being rebuilt"),
+            "unexpected message: {}",
+            err.message
+        );
+        assert!(err.message.contains("prod"));
+    }
+
+    #[test]
+    fn status_for_maps_error_codes_onto_http_statuses() {
+        assert_eq!(status_for(&Ok(CallToolResult::success(vec![]))), 200);
+        assert_eq!(status_for(&Err(McpError::invalid_params("bad", None))), 400);
+        assert_eq!(
+            status_for(&Err(McpError::internal_error("boom", None))),
+            500
+        );
     }
 
     #[tokio::test]

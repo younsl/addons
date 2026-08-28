@@ -1,48 +1,45 @@
-//! API request logging middleware
+//! API request logging and HTTP metrics.
+//!
+//! Requests are emitted as one structured line on stdout, which the cluster's
+//! log pipeline already collects and can already query. The previous design
+//! wrote a row per request into SQLite; with the database owned by the scraper
+//! that would mean an HTTP write from the server on every request, which is
+//! worse than the feature it powered.
 
 use axum::{body::Body, extract::State, http::Request, middleware::Next, response::Response};
 use std::time::Instant;
-use tracing::warn;
+use tracing::info;
 
 use crate::auth::session::AuthSession;
 use crate::metrics::{HttpDurationLabels, HttpLabels};
 use crate::web::AppState;
 
-/// Middleware that logs API requests to SQLite and records Prometheus metrics
+/// Paths excluded from the access log: infrastructure endpoints and the
+/// unauthenticated identity probe the UI polls.
+fn skip_access_log(path: &str) -> bool {
+    !path.starts_with("/api/") || path.starts_with("/api/v1/auth/me")
+}
+
+/// Paths excluded from HTTP metrics: probes and static assets, which would
+/// otherwise dominate the histograms.
+fn skip_metrics(path: &str) -> bool {
+    matches!(path, "/healthz" | "/readyz" | "/metrics")
+        || path.starts_with("/assets/")
+        || path.starts_with("/static/")
+}
+
+/// Log API requests to stdout and record Prometheus metrics.
 pub async fn api_request_logger(
     State(state): State<AppState>,
     request: Request<Body>,
     next: Next,
 ) -> Response {
     let path = request.uri().path().to_string();
-
-    // Skip non-API paths and collector report ingestion for DB logging
-    let skip_db_log = !path.starts_with("/api/")
-        || path == "/api/v1/reports"
-        || path.starts_with("/api/v1/auth/me");
-
-    // Skip infrastructure paths for metrics
-    let skip_metrics = path == "/healthz"
-        || path == "/readyz"
-        || path == "/metrics"
-        || path.starts_with("/assets/")
-        || path.starts_with("/static/");
-
     let method = request.method().to_string();
-    let user_agent = request
-        .headers()
-        .get("user-agent")
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("")
-        .to_string();
-    let remote_addr = request
-        .headers()
-        .get("x-forwarded-for")
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("")
-        .to_string();
+    let user_agent = header_string(&request, "user-agent");
+    let remote_addr = header_string(&request, "x-forwarded-for");
 
-    // Extract user info from extensions (set by require_auth middleware)
+    // Set by require_auth; absent for unauthenticated routes.
     let (user_sub, user_email) = request
         .extensions()
         .get::<AuthSession>()
@@ -52,11 +49,9 @@ pub async fn api_request_logger(
     let start = Instant::now();
     let response = next.run(request).await;
     let duration_secs = start.elapsed().as_secs_f64();
-    let duration_ms = (duration_secs * 1000.0) as u64;
     let status_code = response.status().as_u16();
 
-    // Record Prometheus metrics
-    if !skip_metrics {
+    if !skip_metrics(&path) {
         if let Some(ref counter) = state.metrics.http_requests_total {
             counter
                 .get_or_create(&HttpLabels {
@@ -74,28 +69,62 @@ pub async fn api_request_logger(
         }
     }
 
-    // Async DB write to avoid blocking response
-    if !skip_db_log {
-        let db = state.db.clone();
-        let entry = crate::storage::ApiLogEntry {
-            id: None,
-            method,
-            path,
-            status_code,
-            duration_ms,
-            user_sub,
-            user_email,
-            remote_addr,
-            user_agent,
-            created_at: chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string(),
-        };
-
-        tokio::spawn(async move {
-            if let Err(e) = db.insert_api_log(&entry).await {
-                warn!(error = %e, "Failed to log API request");
-            }
-        });
+    if !skip_access_log(&path) {
+        info!(
+            target: "trivy_collector::access",
+            method = %method,
+            path = %path,
+            status = status_code,
+            duration_ms = (duration_secs * 1000.0) as u64,
+            user_sub = %user_sub,
+            user_email = %user_email,
+            remote_addr = %remote_addr,
+            user_agent = %user_agent,
+            "api request"
+        );
     }
 
     response
+}
+
+fn header_string(request: &Request<Body>, name: &str) -> String {
+    request
+        .headers()
+        .get(name)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or_default()
+        .to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_api_paths_are_access_logged() {
+        assert!(!skip_access_log("/api/v1/stats"));
+        assert!(!skip_access_log("/api/v1/reports"));
+        assert!(skip_access_log("/"));
+        assert!(skip_access_log("/assets/app.js"));
+        assert!(skip_access_log("/swagger-ui"));
+    }
+
+    #[test]
+    fn the_identity_probe_is_not_access_logged() {
+        // The UI polls it continuously; logging it drowns the real traffic.
+        assert!(skip_access_log("/api/v1/auth/me"));
+    }
+
+    #[test]
+    fn probes_and_assets_are_excluded_from_metrics() {
+        for path in ["/healthz", "/readyz", "/metrics", "/assets/x", "/static/y"] {
+            assert!(skip_metrics(path), "{path}");
+        }
+    }
+
+    #[test]
+    fn api_paths_are_included_in_metrics() {
+        assert!(!skip_metrics("/api/v1/stats"));
+        assert!(!skip_metrics("/"));
+    }
 }

@@ -1,6 +1,6 @@
 [package]
 name = "trivy-collector"
-version = "1.6.0"
+version = "1.7.0"
 edition = "2024"
 rust-version = "1.98.0"
 authors = ["younsl <cysl@kakao.com>"]
@@ -41,6 +41,9 @@ serde_json = "1.0"
 
 # CLI
 clap = { version = "4.5", features = ["derive", "env"] }
+
+# Trait objects with async methods (ReportStore)
+async-trait = "0.1"
 
 # Error handling
 anyhow = "1.0"

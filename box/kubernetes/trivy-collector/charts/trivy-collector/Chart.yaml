@@ -3,8 +3,8 @@ name: trivy-collector
 description: Multi-cluster Trivy report collector and viewer
 type: application
 deprecated: false
-version: 0.10.0
-appVersion: "1.6.0"
+version: 0.11.0
+appVersion: "1.7.0"
 keywords:
   - trivy
   - security
@@ -20,15 +20,29 @@ maintainers:
     url: https://github.com/younsl
 annotations:
   artifacthub.io/changes: |
+    - kind: removed
+      description: "Remove the PersistentVolumeClaim: the scraper owns the report database on its own emptyDir"
+    - kind: removed
+      description: "Remove server.persistence — the server pod holds no database and mounts no volume"
+    - kind: removed
+      description: "Remove the API log table and the Admin Console log page; requests are structured stdout lines"
+    - kind: changed
+      description: "Report notes move to a ConfigMap and API tokens to a Secret, both watched into memory"
+    - kind: changed
+      description: "Scraper serves an internal read API on port 8081, guarded by a shared token and an optional NetworkPolicy"
+    - kind: changed
+      description: "Scraper /readyz follows per-cluster hydration, so a rebuild is never served as a complete answer"
+    - kind: changed
+      description: "Scraper rollout is RollingUpdate instead of Recreate, and gains ephemeral-storage requests and limits"
+    - kind: changed
+      description: "Alert evaluation moves to the scraper's ingest path, where it can fire on net-new findings"
     - kind: added
-      description: "Add embedded MCP server at /mcp (server.mcp.enabled) for kagent and other Streamable HTTP clients"
+      description: "Add server.podDisruptionBudget, now that the UI tier is stateless and scales past one replica"
     - kind: added
-      description: "Add MCP_ENABLED, MCP_ALLOWED_HOSTS and MCP_STATELESS env vars"
-    - kind: added
-      description: "Add ArgoCD-style RBAC with CSV policy support"
-    - kind: added
-      description: "Add API request logging middleware with SQLite storage"
-    - kind: added
-      description: "Add Admin Console page for API log viewing and cleanup"
-    - kind: added
-      description: "Add RBAC_POLICY_CSV and RBAC_DEFAULT_POLICY env vars"
+      description: "Add trivy-collector export-state for the one-shot migration off the PersistentVolume"
+    - kind: removed
+      description: "Remove Ingress support; expose the UI through Gateway API HTTPRoute (server.gateway) instead"
+    - kind: fixed
+      description: "COLLECT_VULN and COLLECT_SBOM now actually gate their watchers, exposed as scraper.collect"
+    - kind: fixed
+      description: "Server readiness now probes the scraper, so an unreachable scraper no longer rolls out green"

@@ -48,10 +48,10 @@ make docker-push
 
 ```bash
 # Terminal 1: Run server
-MODE=server STORAGE_PATH=/tmp/trivy-data LOG_FORMAT=pretty ./target/debug/trivy-collector
+MODE=server SCRAPER_URL=http://localhost:8081 INTERNAL_TOKEN=dev LOG_FORMAT=pretty ./target/debug/trivy-collector
 
 # Terminal 2: Run collector (requires Trivy Operator in cluster)
-MODE=collector SERVER_URL=http://localhost:3000 CLUSTER_NAME=local-test LOG_FORMAT=pretty ./target/debug/trivy-collector
+MODE=scraper STORAGE_PATH=/tmp/trivy-data INTERNAL_TOKEN=dev INTERNAL_PORT=8081 HEALTH_PORT=8090 LOG_FORMAT=pretty ./target/debug/trivy-collector
 ```
 
 ## Release Workflow

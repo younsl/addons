@@ -25,8 +25,14 @@ spec:
   selector:
     {{- include "trivy-collector.serverSelectorLabels" . | nindent 4 }}
 ---
-# Headless service for the scraper pod — only /metrics is exposed since there
-# is no UI. Useful for Prometheus scraping and in-cluster debugging.
+# Service for the scraper pod. Carries metrics for Prometheus and the internal
+# read API the server pods proxy through.
+#
+# The internal port is deliberately absent from the HTTPRoute and
+# both ServiceMonitors: it answers with every report in the fleet and no
+# per-user filtering, because RBAC is applied above it in the server. It is
+# fenced by the shared token and, when enabled, by a NetworkPolicy admitting
+# only the server pods.
 apiVersion: v1
 kind: Service
 metadata:
@@ -41,5 +47,9 @@ spec:
       targetPort: health
       protocol: TCP
       name: metrics
+    - port: {{ .Values.internal.port }}
+      targetPort: internal
+      protocol: TCP
+      name: internal
   selector:
     {{- include "trivy-collector.scraperSelectorLabels" . | nindent 4 }}

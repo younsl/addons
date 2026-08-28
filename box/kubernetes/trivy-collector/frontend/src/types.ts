@@ -117,7 +117,6 @@ export interface TrendResponse {
 }
 
 export interface TokenInfo {
-  id: number
   name: string
   description: string
   token_prefix: string
@@ -277,37 +276,23 @@ export interface AuthStatus {
   policies?: EffectivePolicy
 }
 
-export interface ApiLogEntry {
-  id: number
-  method: string
-  path: string
-  status_code: number
-  duration_ms: number
-  user_sub: string
-  user_email: string
-  remote_addr: string
-  user_agent: string
-  created_at: string
+/** Initial-sync state of one watched cluster. */
+export interface ClusterSync {
+  vuln_watcher_running: boolean
+  sbom_watcher_running: boolean
+  vuln_initial_sync_done: boolean
+  sbom_initial_sync_done: boolean
 }
 
-export interface CleanupHistoryEntry {
-  id: number
-  retention_days: number
-  deleted_count: number
-  triggered_by: string
-  cleaned_at: string
+/**
+ * Fleet hydration. `hydrated` is true only once every registered cluster has
+ * replayed its initial list; until then any empty result is a rebuild in
+ * progress rather than an answer.
+ */
+export interface HydrationStatus {
+  hydrated: boolean
+  clusters: Record<string, ClusterSync>
 }
-
-export interface ApiLogStats {
-  total_requests: number
-  requests_today: number
-  avg_duration_ms: number
-  error_count: number
-  unique_users: number
-  top_paths: [string, number, number][]
-  last_cleanup: CleanupHistoryEntry | null
-}
-
 
 export interface Filters {
   cluster: string

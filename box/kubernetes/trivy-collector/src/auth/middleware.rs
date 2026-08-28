@@ -51,9 +51,10 @@ pub async fn require_auth(
         && let Some(token) = auth_value.strip_prefix("Bearer ")
     {
         if token.starts_with("tc_") {
-            // trivy-collector self-issued API token
-            match state.db.validate_token(token).await {
-                Ok(Some(validated)) => {
+            // trivy-collector self-issued API token, validated against the
+            // watched Secret cache rather than an API server GET per request.
+            match state.tokens.as_ref().and_then(|t| t.validate(token)) {
+                Some(validated) => {
                     debug!(user_sub = %validated.user_sub, groups = ?validated.groups, "Authenticated via API token");
                     // Minimal session for RBAC. Groups are the snapshot frozen
                     // at token creation, so the token carries the issuer's roles.
@@ -68,11 +69,8 @@ pub async fn require_auth(
                     request.extensions_mut().insert(session);
                     return next.run(request).await;
                 }
-                Ok(None) => {
-                    warn!("API token validation failed: invalid or expired");
-                }
-                Err(e) => {
-                    warn!(error = %e, "API token validation error");
+                None => {
+                    warn!("API token validation failed: unknown, revoked, or expired");
                 }
             }
         } else {

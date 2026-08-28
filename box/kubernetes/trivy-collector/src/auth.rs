@@ -14,7 +14,7 @@ pub mod session;
 use serde::{Deserialize, Serialize};
 
 /// Authentication mode
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum AuthMode {
     /// No authentication (default)

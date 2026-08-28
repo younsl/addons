@@ -21,7 +21,6 @@ bookmarking, link sharing, and browser back/forward navigation.
 | `/auth` | Auth | OIDC login status and self-issued API token management |
 | `/admin` | — | Redirects to `/admin/clusters` |
 | `/admin/clusters` | Clusters | Registered cluster list + two-step registration wizard (admin only) |
-| `/admin/audit` | API Audit | HTTP API audit log viewer (admin only) |
 | `/version` | Version | Build and runtime version information |
 | `*` | — | Any unknown path redirects to `/vulnerabilities` |
 
@@ -30,7 +29,6 @@ bookmarking, link sharing, and browser back/forward navigation.
 `/admin/*` pages share a tab-style sub-nav (`AdminSubNav`) with two entries:
 
 - **Clusters** → `/admin/clusters`
-- **API Audit** → `/admin/audit`
 
 Both views are gated by the `can_admin` RBAC permission. Users without
 `can_admin` hit the route but render an "Access denied" message. `/admin`

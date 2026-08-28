@@ -9,7 +9,7 @@ pub const SECRET_TYPE_VALUE: &str = "cluster";
 
 /// Label marking a cluster Secret that represents the Hub's own cluster.
 /// When `true`, the Secret is display-only — the per-cluster watcher is
-/// skipped (the LocalWatcher already covers in-cluster Trivy CRDs) and the
+/// skipped (the ClusterWatcher already covers in-cluster Trivy CRDs) and the
 /// Delete action is guarded so the Hub's own reports cannot be wiped.
 pub const IN_CLUSTER_LABEL: &str = "trivy-collector.io/in-cluster";
 /// Sentinel API server URL for the Hub's own cluster.

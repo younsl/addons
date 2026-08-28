@@ -33,16 +33,16 @@ If using the Helm chart, RBAC resources are created when `serviceAccount.create:
 
 - Verify Trivy Operator is installed and generating reports
 - Check RBAC permissions for watching CRDs
-- Verify `SERVER_URL` is reachable from collector pod
+- Verify `SCRAPER_URL` is reachable from the server pod, and that `INTERNAL_TOKEN` matches on both pods (a mismatch shows as 401 from the internal API and keeps the server not-ready)
 
 ## Server not storing reports
 
-- Check storage path permissions (`/data` directory)
+- Check storage path permissions (`/data`, the scraper's `emptyDir` mount)
 - Verify SQLite database is writable
 - Check logs for database errors
 
 ## Web UI not loading
 
 - Verify server is running on correct port (default: 3000)
-- Check ingress/service configuration
+- Check HTTPRoute/service configuration
 - Access server pod directly: `kubectl port-forward svc/trivy-collector 3000:3000`

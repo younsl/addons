@@ -15,7 +15,7 @@ interface LayoutContext {
 }
 import { SyntaxHighlight } from '../components/SyntaxHighlight'
 import AdminSubNav from '../components/AdminSubNav'
-import styles from './AdminPage.module.css'
+import styles from './AdminLayout.module.css'
 
 const CODE_BLOCK_STYLE: React.CSSProperties = {
   background: 'var(--bg-tertiary)',
@@ -487,7 +487,7 @@ export default function ClustersPage() {
                   // Priority: if the live probe reported the cluster
                   // unreachable, surface that first. Otherwise fall back to
                   // the DB-derived Synced / Awaiting first sync state.
-                  // In-cluster row is the Hub itself — LocalWatcher on this
+                  // In-cluster row is the Hub itself — ClusterWatcher on this
                   // pod is always active, so treat it as Synced regardless of
                   // whether the DB has accumulated reports yet.
                   const baseStatus = !dbLoaded

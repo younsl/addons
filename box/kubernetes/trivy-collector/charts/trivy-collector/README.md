@@ -1,6 +1,6 @@
 # trivy-collector
 
-![Version: 0.10.0](https://img.shields.io/badge/Version-0.10.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 1.6.0](https://img.shields.io/badge/AppVersion-1.6.0-informational?style=flat-square)
+![Version: 0.11.0](https://img.shields.io/badge/Version-0.11.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 1.7.0](https://img.shields.io/badge/AppVersion-1.7.0-informational?style=flat-square)
 
 Multi-cluster Trivy report collector and viewer
 
@@ -39,7 +39,7 @@ helm install trivy-collector oci://ghcr.io/younsl/charts/trivy-collector -f valu
 Install a specific version:
 
 ```console
-helm install trivy-collector oci://ghcr.io/younsl/charts/trivy-collector --version 0.10.0
+helm install trivy-collector oci://ghcr.io/younsl/charts/trivy-collector --version 0.11.0
 ```
 
 ### Install from local chart
@@ -47,7 +47,7 @@ helm install trivy-collector oci://ghcr.io/younsl/charts/trivy-collector --versi
 Download trivy-collector chart and install from local directory:
 
 ```console
-helm pull oci://ghcr.io/younsl/charts/trivy-collector --untar --version 0.10.0
+helm pull oci://ghcr.io/younsl/charts/trivy-collector --untar --version 0.11.0
 helm install trivy-collector ./trivy-collector
 ```
 
@@ -102,7 +102,16 @@ The following table lists the configurable parameters and their default values.
 | clusterName | string | `"local"` | Cluster name identifier recorded on the Hub's own reports. |
 | scraper.namespaces | list | `[]` | Namespaces the local watcher scans on the Hub's own cluster (empty = all). |
 | scraper.watchLocal | bool | `true` | Enable the local-cluster watcher (Hub itself). Set to false if Trivy Operator is not installed on the central cluster. |
-| scraper.resources | object | `{"limits":{"memory":"128Mi"},"requests":{"cpu":"50m","memory":"64Mi"}}` | Resource requests and limits. |
+| scraper.collect | object | `{"sbomReports":true,"vulnerabilityReports":true}` | Report kinds to watch. Applies to the Hub and to every registered edge cluster. Disabling a kind stops its watch everywhere and excludes it from hydration accounting, so readiness still clears. SbomReports are the bulk of the data, so turning them off is the main lever on database size. |
+| scraper.collect.vulnerabilityReports | bool | `true` | Watch VulnerabilityReports. |
+| scraper.collect.sbomReports | bool | `true` | Watch SbomReports. |
+| scraper.storage | object | `{"medium":"","mountPath":"/data","sizeLimit":"2Gi"}` | Ephemeral storage for the report database. Reports are a mirror of the CRs that exist right now, so an empty start costs one relist and nothing else — and it prunes the rows a deleted CR used to leave behind forever. |
+| scraper.storage.mountPath | string | `"/data"` | Where the database lives inside the container. |
+| scraper.storage.sizeLimit | string | `"2Gi"` | emptyDir sizeLimit. Must cover the database plus the WAL and rebuild churn that can briefly double it. Keep it in step with the container's ephemeral-storage limit below. |
+| scraper.storage.medium | string | `""` | emptyDir medium. Empty uses node disk; "Memory" trades node memory for speed and counts against the pod's memory limit. |
+| scraper.strategy | object | `{"rollingUpdate":{"maxSurge":1,"maxUnavailable":0},"type":"RollingUpdate"}` | Deployment strategy. RollingUpdate is safe now that each pod owns its own emptyDir and reports unready until the fleet is hydrated: the outgoing pod keeps serving reads for the whole rebuild. |
+| scraper.readinessProbe | object | `{"failureThreshold":60,"httpGet":{"path":"/readyz","port":"health"},"initialDelaySeconds":5,"periodSeconds":10,"timeoutSeconds":5}` | Readiness probe. Stays failing until every registered cluster has replayed its initial list, so the server is never routed to a partial report set. failureThreshold is generous because a large fleet's first sync takes minutes. |
+| scraper.resources | object | `{"limits":{"ephemeral-storage":"2Gi","memory":"512Mi"},"requests":{"cpu":"50m","ephemeral-storage":"2Gi","memory":"256Mi"}}` | Resource requests and limits. The scraper now holds the SQLite page cache and builds query results, so memory moved here from the server. ephemeral-storage must be declared because the database sits on an emptyDir drawn from the node. |
 | scraper.resizePolicy | list | `[]` | Container resize policy for in-place resource updates. |
 | scraper.nodeSelector | object | `{}` | Node selector. |
 | scraper.tolerations | list | `[]` | Tolerations. |
@@ -114,10 +123,14 @@ The following table lists the configurable parameters and their default values.
 | scraper.serviceMonitor.scrapeTimeout | string | `""` | Scrape timeout (defaults to Prometheus global when empty). |
 | scraper.serviceMonitor.additionalLabels | object | `{}` | Additional labels to attach to the ServiceMonitor. |
 | scraper.serviceMonitor.annotations | object | `{}` | Annotations to attach to the ServiceMonitor. |
-| server.replicaCount | int | `1` | Replica count for the UI / API pod. |
+| server.replicaCount | int | `1` | Replica count for the UI / API pod. More than one is supported now that this tier is stateless; set server.mcp.stateless when raising it. |
+| server.podDisruptionBudget | object | `{"enabled":true,"maxUnavailable":1,"minAvailable":""}` | PodDisruptionBudget for the UI tier. Only meaningful with more than one replica, and skipped otherwise. |
+| server.podDisruptionBudget.enabled | bool | `true` | Create a PodDisruptionBudget. |
+| server.podDisruptionBudget.minAvailable | string | `""` | Minimum available pods. Takes precedence when set. |
+| server.podDisruptionBudget.maxUnavailable | int | `1` | Maximum unavailable pods. |
 | server.port | int | `3000` | HTTP server port |
-| server.externalUrl | string | `""` | Explicit external URL used to render "View report" deep links in outbound notifications (e.g. `https://trivy.example.com`). Leave empty to auto-derive from gateway.hostnames or ingress.hosts. |
-| server.resources | object | `{"limits":{"memory":"64Mi"},"requests":{"cpu":"20m","memory":"32Mi"}}` | Resource requests and limits. |
+| server.externalUrl | string | `""` | Explicit external URL used to render "View report" deep links in outbound notifications (e.g. `https://trivy.example.com`). Leave empty to auto-derive from gateway.hostnames. |
+| server.resources | object | `{"limits":{"memory":"96Mi"},"requests":{"cpu":"20m","memory":"48Mi"}}` | Resource requests and limits. Lower than before: this pod no longer holds a connection pool or materializes query results from a local file, so that memory moved to the scraper. |
 | server.resizePolicy | list | `[]` | Container resize policy for in-place resource updates. |
 | server.nodeSelector | object | `{}` | Node selector. |
 | server.tolerations | list | `[]` | Tolerations. |
@@ -133,21 +146,7 @@ The following table lists the configurable parameters and their default values.
 | server.serviceMonitor.scrapeTimeout | string | `""` | Scrape timeout (defaults to Prometheus global when empty). |
 | server.serviceMonitor.additionalLabels | object | `{}` | Additional labels to attach to the ServiceMonitor. |
 | server.serviceMonitor.annotations | object | `{}` | Annotations to attach to the ServiceMonitor. |
-| server.persistence | object | `{"accessMode":"ReadWriteOnce","annotations":{},"enabled":true,"existingClaim":"","labels":{},"size":"1Gi","storageClass":""}` | Persistent volume configuration |
-| server.persistence.enabled | bool | `true` | Enable persistent storage |
-| server.persistence.existingClaim | string | `""` | Use existing PVC instead of creating one |
-| server.persistence.storageClass | string | `""` | Storage class for dynamic provisioning |
-| server.persistence.accessMode | string | `"ReadWriteOnce"` | PVC access mode |
-| server.persistence.size | string | `"1Gi"` | Storage size |
-| server.persistence.labels | object | `{}` | Labels to add to the PVC |
-| server.persistence.annotations | object | `{}` | Annotations to add to the PVC |
-| server.ingress | object | `{"annotations":{},"className":"","enabled":false,"hosts":[{"host":"trivy.example.com","paths":[{"path":"/","pathType":"Prefix"}]}],"tls":[]}` | Ingress configuration |
-| server.ingress.enabled | bool | `false` | Enable Ingress |
-| server.ingress.className | string | `""` | Ingress class name |
-| server.ingress.annotations | object | `{}` | Annotations to add to the Ingress |
-| server.ingress.hosts | list | `[{"host":"trivy.example.com","paths":[{"path":"/","pathType":"Prefix"}]}]` | Ingress hosts configuration |
-| server.ingress.tls | list | `[]` | TLS configuration for Ingress |
-| server.gateway | object | `{"enabled":false,"hostnames":["trivy.example.com"],"name":"","parentRefs":[{"group":"gateway.networking.k8s.io","kind":"Gateway","name":"main-gateway","namespace":"gateway-system","sectionName":"https"}],"rules":[{"backendRefs":[{"group":"","kind":"Service","name":"","port":3000,"weight":1}],"filters":[],"matches":[{"path":{"type":"PathPrefix","value":"/"}}]}]}` | Gateway API HTTPRoute configuration (alternative to Ingress) |
+| server.gateway | object | `{"enabled":false,"hostnames":["trivy.example.com"],"name":"","parentRefs":[{"group":"gateway.networking.k8s.io","kind":"Gateway","name":"main-gateway","namespace":"gateway-system","sectionName":"https"}],"rules":[{"backendRefs":[{"group":"","kind":"Service","name":"","port":3000,"weight":1}],"filters":[],"matches":[{"path":{"type":"PathPrefix","value":"/"}}]}]}` | Gateway API HTTPRoute configuration. The only ingress path this chart supports; plain Ingress was removed in favour of Gateway API. |
 | server.gateway.enabled | bool | `false` | Enable HTTPRoute |
 | server.gateway.name | string | `""` | HTTPRoute name (defaults to fullname) |
 | server.gateway.parentRefs | list | `[{"group":"gateway.networking.k8s.io","kind":"Gateway","name":"main-gateway","namespace":"gateway-system","sectionName":"https"}]` | Parent Gateway references |
@@ -176,6 +175,14 @@ The following table lists the configurable parameters and their default values.
 | service.type | string | `"ClusterIP"` | Service type |
 | service.port | int | `3000` | Service port |
 | service.annotations | object | `{}` | Annotations to add to the Service |
+| internal | object | `{"existingSecret":"","networkPolicy":{"enabled":true,"extraFrom":[]},"port":8081,"secretKey":"token","token":""}` | Internal API between the scraper (which owns the database) and the server pods. It returns every report in the fleet with no per-user filtering, because RBAC is applied above it in the server, so it is never exposed through the Ingress, the HTTPRoute, or a ServiceMonitor. |
+| internal.port | int | `8081` | Port the scraper serves the internal read API on. |
+| internal.token | string | `""` | Shared token, compared in constant time on every internal request. Leave empty to generate one on first install and keep it across upgrades. A GitOps controller that renders without cluster access cannot read the existing value, so set this (or internal.existingSecret) there. |
+| internal.existingSecret | string | `""` | Use an existing Secret for the token instead of managing one. |
+| internal.secretKey | string | `"token"` | Key inside the token Secret. |
+| internal.networkPolicy | object | `{"enabled":true,"extraFrom":[]}` | NetworkPolicy fencing the internal port to the server pods. A second fence alongside the shared token. |
+| internal.networkPolicy.enabled | bool | `true` | Create the NetworkPolicy. On a cluster whose CNI does not enforce policy this is inert rather than harmful, so it defaults on. |
+| internal.networkPolicy.extraFrom | list | `[]` | Additional `from` selectors allowed to reach the internal port. |
 | health | object | `{"port":8080}` | Health check configuration |
 | health.port | int | `8080` | Health check server port |
 | logging | object | `{"format":"json","level":"info"}` | Logging configuration |
@@ -193,6 +200,14 @@ The following table lists the configurable parameters and their default values.
 | readinessProbe.failureThreshold | int | `3` | Number of failures before marking not ready |
 | dnsPolicy | string | "" | DNS policy for the pod (ClusterFirst, ClusterFirstWithHostNet, Default, None) |
 | dnsConfig | object | {} | DNS configuration for the pod |
+| migration | object | `{"exportState":{"backoffLimit":2,"dbPath":"/data/trivy.db","dryRun":false,"enabled":false,"existingClaim":"","resources":{"limits":{"memory":"128Mi"},"requests":{"cpu":"50m","memory":"64Mi"}},"ttlSecondsAfterFinished":3600}}` | One-shot migration off the PersistentVolume. Reports need no export — the next scraper start relists them — but API tokens and report notes are unrecoverable, so they are read out of the legacy database and written to a Secret and a ConfigMap before the volume goes away.  Run with exportState.enabled and the old PVC name, verify both objects, then disable it and delete the PVC. Until then the PVC is the rollback. |
+| migration.exportState.enabled | bool | `false` | Run the export as a pre-install/pre-upgrade hook Job. |
+| migration.exportState.existingClaim | string | `""` | Name of the existing PVC holding the legacy database. |
+| migration.exportState.dbPath | string | `"/data/trivy.db"` | Path to the legacy database inside that volume. |
+| migration.exportState.dryRun | bool | `false` | Report what would be written without writing it. |
+| migration.exportState.backoffLimit | int | `2` | Job backoff limit. |
+| migration.exportState.ttlSecondsAfterFinished | int | `3600` | Seconds to keep the finished Job. |
+| migration.exportState.resources | object | `{"limits":{"memory":"128Mi"},"requests":{"cpu":"50m","memory":"64Mi"}}` | Resource requests and limits. |
 | extraObjects | list | [] | Extra Kubernetes objects to deploy alongside the chart |
 
 ## Source Code

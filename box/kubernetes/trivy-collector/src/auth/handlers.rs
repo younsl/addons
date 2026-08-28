@@ -353,6 +353,50 @@ fn extract_user_sub(cookie_jar: &PrivateCookieJar) -> Option<String> {
     extract_session(cookie_jar).map(|s| s.sub)
 }
 
+/// Tokens live in a Secret rather than a database row, so a token is
+/// addressed by its prefix — the same `tc_` + 8 hex characters the UI already
+/// displays — instead of a rowid that no longer exists.
+fn token_store(state: &AppState) -> Option<&crate::storage::TokenStore> {
+    state.tokens.as_deref()
+}
+
+fn tokens_unavailable() -> axum::response::Response {
+    (
+        StatusCode::SERVICE_UNAVAILABLE,
+        axum::Json(serde_json::json!({
+            "error": "API tokens are unavailable (Kubernetes API not reachable)"
+        })),
+    )
+        .into_response()
+}
+
+fn unauthenticated() -> axum::response::Response {
+    (
+        StatusCode::UNAUTHORIZED,
+        axum::Json(serde_json::json!({"error": "Authentication required"})),
+    )
+        .into_response()
+}
+
+/// Validate a user-supplied token name: 4-64 characters of letters, digits,
+/// hyphens, and underscores. The value also becomes part of a Secret's
+/// contents, so it is checked rather than trusted.
+fn validate_token_name(name: &str) -> Result<(), &'static str> {
+    if name.len() < 4 || name.len() > 64 {
+        return Err("Token name must be 4-64 characters");
+    }
+    if !name
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    {
+        return Err("Token name may contain only letters, digits, hyphens, and underscores");
+    }
+    Ok(())
+}
+
+/// Allowed token lifetimes, in days.
+const TOKEN_EXPIRY_CHOICES: [u32; 6] = [1, 7, 30, 90, 180, 365];
+
 /// GET /api/v1/auth/tokens — List current user's API tokens
 #[utoipa::path(
     get,
@@ -361,34 +405,21 @@ fn extract_user_sub(cookie_jar: &PrivateCookieJar) -> Option<String> {
     responses(
         (status = 200, description = "List of user's API tokens"),
         (status = 401, description = "Authentication required"),
+        (status = 503, description = "Token store unavailable"),
     )
 )]
 pub async fn list_tokens(
     State(state): State<AppState>,
     cookie_jar: PrivateCookieJar,
 ) -> impl IntoResponse {
-    let user_sub = match extract_user_sub(&cookie_jar) {
-        Some(sub) => sub,
-        None => {
-            return (
-                StatusCode::UNAUTHORIZED,
-                axum::Json(serde_json::json!({"error": "Authentication required"})),
-            )
-                .into_response();
-        }
+    let Some(user_sub) = extract_user_sub(&cookie_jar) else {
+        return unauthenticated();
+    };
+    let Some(store) = token_store(&state) else {
+        return tokens_unavailable();
     };
 
-    match state.db.list_tokens(&user_sub).await {
-        Ok(tokens) => axum::Json(serde_json::json!({ "tokens": tokens })).into_response(),
-        Err(e) => {
-            error!(error = %e, "Failed to list tokens");
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                axum::Json(serde_json::json!({"error": "Failed to list tokens"})),
-            )
-                .into_response()
-        }
-    }
+    axum::Json(serde_json::json!({ "tokens": store.list(&user_sub) })).into_response()
 }
 
 /// POST /api/v1/auth/tokens — Create a new API token
@@ -401,6 +432,7 @@ pub async fn list_tokens(
         (status = 400, description = "Invalid request"),
         (status = 401, description = "Authentication required"),
         (status = 409, description = "Token name already exists"),
+        (status = 503, description = "Token store unavailable"),
     )
 )]
 pub async fn create_token(
@@ -408,133 +440,104 @@ pub async fn create_token(
     cookie_jar: PrivateCookieJar,
     axum::Json(body): axum::Json<CreateTokenRequest>,
 ) -> impl IntoResponse {
-    let session = match extract_session(&cookie_jar) {
-        Some(session) => session,
-        None => {
-            return (
-                StatusCode::UNAUTHORIZED,
-                axum::Json(serde_json::json!({"error": "Authentication required"})),
-            )
-                .into_response();
-        }
+    let Some(session) = extract_session(&cookie_jar) else {
+        return unauthenticated();
+    };
+    let Some(store) = token_store(&state) else {
+        return tokens_unavailable();
     };
 
-    let user_sub = session.sub.clone();
     let name = body.name.trim();
-    if name.len() < 4
-        || name.len() > 64
-        || !name
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
-    {
-        return (
-            StatusCode::BAD_REQUEST,
-            axum::Json(serde_json::json!({"error": "Token name must be 4-64 characters (letters, digits, hyphens, underscores only)"})),
-        )
-            .into_response();
+    if let Err(msg) = validate_token_name(name) {
+        return bad_request(msg);
+    }
+    if !TOKEN_EXPIRY_CHOICES.contains(&body.expires_days) {
+        return bad_request(&format!(
+            "expires_days must be one of: {}",
+            TOKEN_EXPIRY_CHOICES
+                .iter()
+                .map(u32::to_string)
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
     }
 
-    if let Ok(existing) = state.db.list_tokens(&user_sub).await
-        && existing.len() >= 5
-    {
-        return (
-            StatusCode::BAD_REQUEST,
-            axum::Json(
-                serde_json::json!({"error": "Maximum 5 tokens per user. Delete an existing token first."}),
-            ),
-        )
-            .into_response();
-    }
-
-    if !matches!(body.expires_days, 1 | 7 | 30 | 90 | 180 | 365) {
-        return (
-            StatusCode::BAD_REQUEST,
-            axum::Json(
-                serde_json::json!({"error": "expires_days must be one of: 1, 7, 30, 90, 180, 365"}),
-            ),
-        )
-            .into_response();
-    }
-
-    let description = body.description.trim();
-
-    match state
-        .db
-        .create_token(
-            &user_sub,
+    match store
+        .create(
+            &session.sub,
             name,
-            description,
+            body.description.trim(),
             body.expires_days,
             &session.groups,
         )
         .await
     {
         Ok((plaintext, info)) => {
-            info!(user_sub = %user_sub, token_name = %name, "API token created");
-            axum::Json(serde_json::json!({
-                "token": plaintext,
-                "info": info,
-            }))
-            .into_response()
+            state.record_token_count();
+            axum::Json(serde_json::json!({ "token": plaintext, "info": info })).into_response()
         }
+        Err(crate::storage::TokenError::DuplicateName(name)) => (
+            StatusCode::CONFLICT,
+            axum::Json(serde_json::json!({
+                "error": format!("A token named '{}' already exists. Please choose a different name.", name)
+            })),
+        )
+            .into_response(),
+        Err(e @ crate::storage::TokenError::TooMany) => bad_request(&format!(
+            "{e}. Delete an existing token first."
+        )),
         Err(e) => {
-            let msg = format!("{e:#}");
-            if msg.contains("UNIQUE constraint") {
-                (
-                    StatusCode::CONFLICT,
-                    axum::Json(
-                        serde_json::json!({"error": format!("A token named '{}' already exists. Please choose a different name.", name)}),
-                    ),
-                )
-                    .into_response()
-            } else {
-                error!(error = format!("{e:#}"), "Failed to create token");
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    axum::Json(serde_json::json!({"error": "Failed to create token"})),
-                )
-                    .into_response()
-            }
+            error!(error = %e, "Failed to create token");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                axum::Json(serde_json::json!({"error": "Failed to create token"})),
+            )
+                .into_response()
         }
     }
 }
 
-/// DELETE /api/v1/auth/tokens/{id} — Delete one of the current user's tokens
+fn bad_request(message: &str) -> axum::response::Response {
+    (
+        StatusCode::BAD_REQUEST,
+        axum::Json(serde_json::json!({"error": message})),
+    )
+        .into_response()
+}
+
+/// DELETE /api/v1/auth/tokens/{prefix} — Delete one of the current user's tokens
 #[utoipa::path(
     delete,
-    path = "/api/v1/auth/tokens/{id}",
+    path = "/api/v1/auth/tokens/{prefix}",
     tag = "Auth",
     params(
-        ("id" = i64, Path, description = "Token ID to delete"),
+        ("prefix" = String, Path, description = "Token prefix to delete, e.g. tc_ab12cd34"),
     ),
     responses(
         (status = 204, description = "Token deleted"),
         (status = 401, description = "Authentication required"),
         (status = 404, description = "Token not found"),
+        (status = 503, description = "Token store unavailable"),
     )
 )]
 pub async fn delete_token(
     State(state): State<AppState>,
     cookie_jar: PrivateCookieJar,
-    Path(token_id): Path<i64>,
+    Path(prefix): Path<String>,
 ) -> impl IntoResponse {
-    let user_sub = match extract_user_sub(&cookie_jar) {
-        Some(sub) => sub,
-        None => {
-            return (
-                StatusCode::UNAUTHORIZED,
-                axum::Json(serde_json::json!({"error": "Authentication required"})),
-            )
-                .into_response();
-        }
+    let Some(user_sub) = extract_user_sub(&cookie_jar) else {
+        return unauthenticated();
+    };
+    let Some(store) = token_store(&state) else {
+        return tokens_unavailable();
     };
 
-    match state.db.delete_token(&user_sub, token_id).await {
-        Ok(true) => {
-            info!(user_sub = %user_sub, token_id = token_id, "API token deleted");
+    match store.delete(&user_sub, &prefix).await {
+        Ok(()) => {
+            state.record_token_count();
             StatusCode::NO_CONTENT.into_response()
         }
-        Ok(false) => (
+        Err(crate::storage::TokenError::NotFound) => (
             StatusCode::NOT_FOUND,
             axum::Json(serde_json::json!({"error": "Token not found"})),
         )

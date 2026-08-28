@@ -1,0 +1,78 @@
+{{- if .Values.migration.exportState.enabled }}
+{{- /*
+    One-shot migration off the PersistentVolume.
+
+    Reports need no export: the next scraper start relists them from the
+    clusters that own the CRs. Tokens and notes are hashed or typed by a human
+    and cannot be regenerated, so this Job reads them out of the legacy database
+    and writes them to the Secret and the ConfigMap the new deployment reads.
+
+    Order matters. Run this Job and verify both objects, then upgrade, then
+    confirm hydration completes and that a known token still authenticates and
+    a known note still renders — and only then delete the PVC. Until that last
+    step the PVC is the rollback.
+*/}}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "trivy-collector.fullname" . }}-export-state
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "trivy-collector.labels" . | nindent 4 }}
+  annotations:
+    # Runs before the rest of the release so the objects exist by the time the
+    # server pod starts watching them.
+    helm.sh/hook: pre-install,pre-upgrade
+    helm.sh/hook-weight: "-5"
+    helm.sh/hook-delete-policy: before-hook-creation
+spec:
+  backoffLimit: {{ .Values.migration.exportState.backoffLimit }}
+  ttlSecondsAfterFinished: {{ .Values.migration.exportState.ttlSecondsAfterFinished }}
+  template:
+    metadata:
+      labels:
+        {{- include "trivy-collector.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: export-state
+    spec:
+      restartPolicy: Never
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "trivy-collector.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: export-state
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          image: "{{ .Values.image.registry }}/{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args:
+            - export-state
+            - --db-path={{ .Values.migration.exportState.dbPath }}
+            - --namespace={{ .Release.Namespace }}
+            {{- if .Values.migration.exportState.dryRun }}
+            - --dry-run=true
+            {{- end }}
+          env:
+            - name: LOG_FORMAT
+              value: {{ .Values.logging.format | quote }}
+            - name: LOG_LEVEL
+              value: {{ .Values.logging.level | quote }}
+            - name: NOTES_CONFIGMAP
+              value: {{ include "trivy-collector.notesConfigMapName" . | quote }}
+            - name: API_TOKENS_SECRET
+              value: {{ include "trivy-collector.apiTokensSecretName" . | quote }}
+          resources:
+            {{- toYaml .Values.migration.exportState.resources | nindent 12 }}
+          volumeMounts:
+            - name: legacy-data
+              mountPath: {{ dir .Values.migration.exportState.dbPath }}
+              readOnly: true
+      volumes:
+        - name: legacy-data
+          persistentVolumeClaim:
+            claimName: {{ required "migration.exportState.existingClaim is required" .Values.migration.exportState.existingClaim }}
+            readOnly: true
+{{- end }}

@@ -10,17 +10,23 @@ pub mod env {
     pub const LOG_FORMAT: &str = "LOG_FORMAT";
     pub const LOG_LEVEL: &str = "LOG_LEVEL";
     pub const HEALTH_PORT: &str = "HEALTH_PORT";
-    pub const SERVER_URL: &str = "SERVER_URL";
     pub const CLUSTER_NAME: &str = "CLUSTER_NAME";
     pub const NAMESPACES: &str = "NAMESPACES";
     pub const COLLECT_VULN: &str = "COLLECT_VULN";
     pub const COLLECT_SBOM: &str = "COLLECT_SBOM";
-    pub const RETRY_ATTEMPTS: &str = "RETRY_ATTEMPTS";
-    pub const RETRY_DELAY_SECS: &str = "RETRY_DELAY_SECS";
-    pub const HEALTH_CHECK_INTERVAL_SECS: &str = "HEALTH_CHECK_INTERVAL_SECS";
     pub const SERVER_PORT: &str = "SERVER_PORT";
     pub const STORAGE_PATH: &str = "STORAGE_PATH";
     pub const WATCH_LOCAL: &str = "WATCH_LOCAL";
+
+    // Internal API between the scraper (sole database owner) and the
+    // stateless server pods.
+    pub const INTERNAL_PORT: &str = "INTERNAL_PORT";
+    pub const INTERNAL_TOKEN: &str = "INTERNAL_TOKEN";
+    pub const SCRAPER_URL: &str = "SCRAPER_URL";
+
+    // Kubernetes objects holding authored state (server-mode only).
+    pub const NOTES_CONFIGMAP: &str = "NOTES_CONFIGMAP";
+    pub const API_TOKENS_SECRET: &str = "API_TOKENS_SECRET";
 
     // Hub-pull mode (server-mode only). Hub is always on in server mode; no toggle.
     pub const HUB_SECRET_NAMESPACE: &str = "HUB_SECRET_NAMESPACE";
@@ -41,17 +47,18 @@ pub mod env {
 /// Deployment role. The binary ships as a single image but runs as one of
 /// two pods on the central cluster, distinguished by `--mode` / `MODE=`:
 ///
-/// - `server` — HTTP UI + API. Read-only access to the shared SQLite DB.
-///   No watchers. Default for new installs.
+/// - `server` — HTTP UI + API. Holds no database and no volume; reads reports
+///   through the scraper's internal API. No watchers. Default for new installs.
 /// - `scraper` — Hub-pull watchers (Secret watcher + per-cluster watchers +
-///   optional local Trivy CRD watcher). Writes to the shared DB.
-///   No UI/API (only /healthz and /metrics).
+///   optional local Trivy CRD watcher). Sole owner of the SQLite file on its
+///   own `emptyDir`, and serves it back over the internal API.
+///   No UI (only the internal API, /healthz, /readyz and /metrics).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Mode {
-    /// UI / API only — reads the shared DB, no watchers.
+    /// UI / API only — proxies reads to the scraper, no database, no watchers.
     Server,
-    /// Hub-pull scraper — runs all watchers, writes to the shared DB.
+    /// Hub-pull scraper — runs all watchers and owns the database.
     Scraper,
 }
 
@@ -68,6 +75,23 @@ impl std::fmt::Display for Mode {
 pub enum Command {
     /// Show version information
     Version,
+    /// One-shot migration off a PersistentVolume: read an existing SQLite
+    /// database and write its authored state (API tokens, report notes) to a
+    /// Secret and a ConfigMap through the API server.
+    ///
+    /// Reports need no export — the next scraper start relists them from the
+    /// clusters that own the CRs.
+    ExportState {
+        /// Path to the legacy database file, e.g. `/data/trivy.db`.
+        #[arg(long)]
+        db_path: String,
+        /// Namespace to write the objects into. Empty = auto-detect.
+        #[arg(long, default_value = "")]
+        namespace: String,
+        /// Report only what would be written, without writing it.
+        #[arg(long, default_value = "false")]
+        dry_run: bool,
+    },
 }
 
 #[derive(Parser, Debug, Clone)]
@@ -97,12 +121,8 @@ pub struct Config {
     pub health_port: u16,
 
     // ============================================
-    // Collector mode settings
+    // Scraper mode settings
     // ============================================
-    /// Central server URL (collector mode only)
-    #[arg(long, env = env::SERVER_URL)]
-    pub server_url: Option<String>,
-
     /// Cluster identifier
     #[arg(long, env = env::CLUSTER_NAME, default_value = "local")]
     pub cluster_name: String,
@@ -119,18 +139,6 @@ pub struct Config {
     #[arg(long, env = env::COLLECT_SBOM, default_value = "true")]
     pub collect_sbom_reports: bool,
 
-    /// Retry attempts on failure
-    #[arg(long, env = env::RETRY_ATTEMPTS, default_value = "3")]
-    pub retry_attempts: u32,
-
-    /// Retry delay in seconds
-    #[arg(long, env = env::RETRY_DELAY_SECS, default_value = "5")]
-    pub retry_delay_secs: u64,
-
-    /// Health check interval in seconds (0 to disable)
-    #[arg(long, env = env::HEALTH_CHECK_INTERVAL_SECS, default_value = "30")]
-    pub health_check_interval_secs: u64,
-
     // ============================================
     // Server mode settings
     // ============================================
@@ -138,13 +146,40 @@ pub struct Config {
     #[arg(long, env = env::SERVER_PORT, default_value = "3000")]
     pub server_port: u16,
 
-    /// Storage path for SQLite database (server mode only)
+    /// Directory holding the SQLite database (scraper mode only). Backed by an
+    /// `emptyDir`, so its contents are rebuilt from the watched clusters on
+    /// every start.
     #[arg(long, env = env::STORAGE_PATH, default_value = "/data")]
     pub storage_path: String,
 
-    /// Enable local Kubernetes API watching in server mode
+    /// Enable the local-cluster watcher (scraper mode only)
     #[arg(long, env = env::WATCH_LOCAL, default_value = "true")]
     pub watch_local: bool,
+
+    // ============================================
+    // Internal API (scraper <-> server)
+    // ============================================
+    /// Port the scraper serves its internal read API on. Never exposed
+    /// through an HTTPRoute or ServiceMonitor.
+    #[arg(long, env = env::INTERNAL_PORT, default_value = "8081")]
+    pub internal_port: u16,
+
+    /// Shared token guarding the internal API, mounted into both pods from the
+    /// same Secret. An empty value makes the scraper reject every request.
+    #[arg(long, env = env::INTERNAL_TOKEN, default_value = "")]
+    pub internal_token: String,
+
+    /// Base URL of the scraper's internal API (server mode only).
+    #[arg(long, env = env::SCRAPER_URL, default_value = "http://localhost:8081")]
+    pub scraper_url: String,
+
+    /// ConfigMap holding report notes (server mode only).
+    #[arg(long, env = env::NOTES_CONFIGMAP, default_value = "trivy-collector-notes")]
+    pub notes_configmap: String,
+
+    /// Secret holding API tokens (server mode only).
+    #[arg(long, env = env::API_TOKENS_SECRET, default_value = "trivy-collector-api-tokens")]
+    pub api_tokens_secret: String,
 
     /// Namespace where cluster-registration Secrets live. Empty = auto-detect from
     /// the in-cluster ServiceAccount mount. Hub-pull mode is always active in server mode.
@@ -231,6 +266,12 @@ impl Config {
                 // (warns and skips the Secret watcher).
             }
             Mode::Server => {
+                if self.scraper_url.trim().is_empty() {
+                    return Err(format!(
+                        "{} is required in server mode — the server holds no database",
+                        env::SCRAPER_URL
+                    ));
+                }
                 if self.auth_mode == "keycloak" {
                     crate::auth::config::validate_keycloak_config(
                         &self.oidc_issuer_url,
@@ -244,11 +285,6 @@ impl Config {
         Ok(())
     }
 
-    /// Get server URL (collector mode)
-    pub fn get_server_url(&self) -> &str {
-        self.server_url.as_deref().unwrap_or("")
-    }
-
     /// Get cluster name
     pub fn get_cluster_name(&self) -> &str {
         &self.cluster_name
@@ -260,28 +296,30 @@ impl Config {
     }
 }
 
+/// Fully-defaulted configuration for tests, independent of the ambient
+/// environment — clap's `env` fallbacks would otherwise leak whatever the
+/// developer or CI has exported into every test in the crate.
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn default_config(mode: Mode) -> Config {
-        Config {
+impl Config {
+    pub fn for_test(mode: Mode) -> Self {
+        Self {
             command: None,
             mode,
             log_format: "json".to_string(),
             log_level: "info".to_string(),
             health_port: 8080,
-            server_url: None,
             cluster_name: "local".to_string(),
             namespaces: vec![],
             collect_vulnerability_reports: true,
             collect_sbom_reports: true,
-            retry_attempts: 3,
-            retry_delay_secs: 5,
-            health_check_interval_secs: 30,
             server_port: 3000,
             storage_path: "/data".to_string(),
             watch_local: true,
+            internal_port: 8081,
+            internal_token: "test-token".to_string(),
+            scraper_url: "http://localhost:8081".to_string(),
+            notes_configmap: "trivy-collector-notes".to_string(),
+            api_tokens_secret: "trivy-collector-api-tokens".to_string(),
             hub_secret_namespace: String::new(),
             external_url: String::new(),
             mcp_enabled: false,
@@ -298,42 +336,34 @@ mod tests {
             rbac_default_policy: "role:readonly".to_string(),
         }
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
 
     #[test]
     fn test_validate_scraper_mode() {
         // Scraper needs no mandatory config; empty hub namespace just warns.
-        let config = default_config(Mode::Scraper);
+        let config = Config::for_test(Mode::Scraper);
         assert!(config.validate().is_ok());
     }
 
     #[test]
     fn test_validate_server_mode() {
-        let config = default_config(Mode::Server);
+        let config = Config::for_test(Mode::Server);
         assert!(config.validate().is_ok());
     }
 
     #[test]
-    fn test_get_server_url_present() {
-        let mut config = default_config(Mode::Scraper);
-        config.server_url = Some("http://server:3000".to_string());
-        assert_eq!(config.get_server_url(), "http://server:3000");
-    }
-
-    #[test]
-    fn test_get_server_url_absent() {
-        let config = default_config(Mode::Scraper);
-        assert_eq!(config.get_server_url(), "");
-    }
-
-    #[test]
     fn test_get_db_path() {
-        let config = default_config(Mode::Server);
+        let config = Config::for_test(Mode::Server);
         assert_eq!(config.get_db_path(), "/data/trivy.db");
     }
 
     #[test]
     fn test_get_db_path_custom() {
-        let mut config = default_config(Mode::Server);
+        let mut config = Config::for_test(Mode::Server);
         config.storage_path = "/tmp/custom".to_string();
         assert_eq!(config.get_db_path(), "/tmp/custom/trivy.db");
     }
@@ -346,13 +376,13 @@ mod tests {
 
     #[test]
     fn test_get_cluster_name() {
-        let config = default_config(Mode::Scraper);
+        let config = Config::for_test(Mode::Scraper);
         assert_eq!(config.get_cluster_name(), "local");
     }
 
     #[test]
     fn test_validate_server_keycloak_missing_oidc() {
-        let mut config = default_config(Mode::Server);
+        let mut config = Config::for_test(Mode::Server);
         config.auth_mode = "keycloak".to_string();
         let result = config.validate();
         assert!(result.is_err());
@@ -361,7 +391,7 @@ mod tests {
 
     #[test]
     fn test_validate_server_keycloak_all_present() {
-        let mut config = default_config(Mode::Server);
+        let mut config = Config::for_test(Mode::Server);
         config.auth_mode = "keycloak".to_string();
         config.oidc_issuer_url = Some("https://keycloak.example.com/realms/test".to_string());
         config.oidc_client_id = Some("trivy-collector".to_string());
@@ -371,8 +401,24 @@ mod tests {
     }
 
     #[test]
+    fn test_validate_server_requires_a_scraper_url() {
+        let mut config = Config::for_test(Mode::Server);
+        config.scraper_url = "  ".to_string();
+        let result = config.validate();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("SCRAPER_URL"));
+    }
+
+    #[test]
+    fn test_validate_scraper_needs_no_scraper_url() {
+        let mut config = Config::for_test(Mode::Scraper);
+        config.scraper_url = String::new();
+        assert!(config.validate().is_ok());
+    }
+
+    #[test]
     fn test_validate_server_auth_none() {
-        let config = default_config(Mode::Server);
+        let config = Config::for_test(Mode::Server);
         assert!(config.validate().is_ok());
     }
 }

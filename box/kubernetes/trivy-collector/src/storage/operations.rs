@@ -17,6 +17,103 @@ use super::models::{
     Stats, VulnSearchResult, VulnSummary,
 };
 
+/// Page size used when a caller sets no limit.
+const DEFAULT_QUERY_LIMIT: i64 = 1000;
+
+/// JSON path to an SBOM's component array inside the stored report.
+const SBOM_COMPONENTS_PATH: &str = "$.report.components.components";
+
+/// Append the row-level filters shared by the count and the page of
+/// `query_reports`. `report_type` is already bound by the caller.
+fn push_report_filters(
+    builder: &mut QueryBuilder<'_, Sqlite>,
+    report_type: &str,
+    params: &QueryParams,
+) {
+    for (column, value) in [
+        ("cluster", &params.cluster),
+        ("namespace", &params.namespace),
+    ] {
+        if let Some(v) = value {
+            builder.push(format!(" AND {} = ", column));
+            builder.push_bind(v.clone());
+        }
+    }
+    for (column, value) in [("app", &params.app), ("image", &params.image)] {
+        if let Some(v) = value {
+            builder.push(format!(" AND {} LIKE ", column));
+            builder.push_bind(format!("%{}%", v));
+        }
+    }
+
+    // Component search only means anything for SBOM reports, which are the
+    // only rows carrying a component array.
+    if report_type == "sbomreport"
+        && let Some(component) = &params.component
+    {
+        builder.push(format!(
+            " AND EXISTS (SELECT 1 FROM json_each(json_extract(data, '{}')) WHERE json_extract(value, '$.name') LIKE ",
+            SBOM_COMPONENTS_PATH
+        ));
+        builder.push_bind(format!("%{}%", component));
+        builder.push(")");
+    }
+
+    // Severity filters read the denormalized counts, which only vulnerability
+    // reports populate.
+    if report_type == "vulnerabilityreport"
+        && let Some(severities) = &params.severity
+    {
+        let conditions: Vec<&str> = severities
+            .iter()
+            .filter_map(|s| severity_condition(s))
+            .collect();
+        if !conditions.is_empty() {
+            builder.push(format!(" AND ({})", conditions.join(" OR ")));
+        }
+    }
+}
+
+/// SQL predicate matching reports that contain at least one finding of the
+/// given severity. Unknown names are ignored rather than rejected, so a new
+/// severity in a query string cannot empty the result set.
+fn severity_condition(severity: &str) -> Option<&'static str> {
+    match severity.to_lowercase().as_str() {
+        "critical" => Some("critical_count > 0"),
+        "high" => Some("high_count > 0"),
+        "medium" => Some("medium_count > 0"),
+        "low" => Some("low_count > 0"),
+        _ => None,
+    }
+}
+
+/// Build `ReportMeta` from a row of the list projection. Notes are left empty:
+/// they live in a ConfigMap and are joined in by the server.
+fn report_meta_from_row(row: &sqlx::sqlite::SqliteRow) -> ReportMeta {
+    ReportMeta {
+        id: row.get::<i64, _>(0),
+        cluster: row.get::<String, _>(1),
+        namespace: row.get::<String, _>(2),
+        name: row.get::<String, _>(3),
+        app: row.get::<String, _>(4),
+        image: row.get::<String, _>(5),
+        report_type: row.get::<String, _>(6),
+        summary: Some(VulnSummary {
+            critical: row.get::<i64, _>(7),
+            high: row.get::<i64, _>(8),
+            medium: row.get::<i64, _>(9),
+            low: row.get::<i64, _>(10),
+            unknown: row.get::<i64, _>(11),
+        }),
+        components_count: row.get::<Option<i64>, _>(12),
+        received_at: row.get::<String, _>(13),
+        updated_at: row.get::<String, _>(14),
+        notes: String::new(),
+        notes_created_at: None,
+        notes_updated_at: None,
+    }
+}
+
 impl Database {
     /// Insert or update a report
     pub async fn upsert_report(&self, payload: &ReportPayload) -> Result<()> {
@@ -129,217 +226,38 @@ impl Database {
         Ok(affected > 0)
     }
 
-    /// Update notes for a report
-    pub async fn update_notes(
-        &self,
-        cluster: &str,
-        namespace: &str,
-        name: &str,
-        report_type: &str,
-        notes: &str,
-    ) -> Result<bool> {
-        let now = chrono::Utc::now().to_rfc3339();
-
-        // Check if notes_created_at already exists (to determine if this is create or update)
-        let existing_created_at: Option<String> = sqlx::query(
-            "SELECT notes_created_at FROM reports WHERE cluster = $1 AND namespace = $2 AND name = $3 AND report_type = $4",
-        )
-        .bind(cluster)
-        .bind(namespace)
-        .bind(name)
-        .bind(report_type)
-        .fetch_optional(&self.pool)
-        .await?
-        .and_then(|row| row.get::<Option<String>, _>(0));
-
-        let affected = if existing_created_at.is_none() {
-            // First time adding notes - set both created_at and updated_at
-            sqlx::query(
-                "UPDATE reports SET notes = $1, notes_created_at = $2, notes_updated_at = $2 WHERE cluster = $3 AND namespace = $4 AND name = $5 AND report_type = $6",
-            )
-            .bind(notes)
-            .bind(&now)
-            .bind(cluster)
-            .bind(namespace)
-            .bind(name)
-            .bind(report_type)
-            .execute(&self.pool)
-            .await?
-            .rows_affected()
-        } else {
-            // Updating existing notes - only update updated_at
-            sqlx::query(
-                "UPDATE reports SET notes = $1, notes_updated_at = $2 WHERE cluster = $3 AND namespace = $4 AND name = $5 AND report_type = $6",
-            )
-            .bind(notes)
-            .bind(&now)
-            .bind(cluster)
-            .bind(namespace)
-            .bind(name)
-            .bind(report_type)
-            .execute(&self.pool)
-            .await?
-            .rows_affected()
-        };
-
-        debug!(
-            cluster = %cluster,
-            namespace = %namespace,
-            name = %name,
-            report_type = %report_type,
-            updated = affected > 0,
-            "Report notes updated"
-        );
-
-        Ok(affected > 0)
-    }
-
     /// Query reports with filters
     pub async fn query_reports(
         &self,
         report_type: &str,
         params: &QueryParams,
     ) -> Result<(Vec<ReportMeta>, i64)> {
-        // COUNT query
+        // The count and the page must agree, so both get their WHERE clause
+        // from the same place. Two hand-maintained copies drifted before.
         let mut count_builder: QueryBuilder<Sqlite> =
             QueryBuilder::new("SELECT COUNT(*) FROM reports WHERE report_type = ");
         count_builder.push_bind(report_type.to_string());
-
-        if let Some(cluster) = &params.cluster {
-            count_builder.push(" AND cluster = ");
-            count_builder.push_bind(cluster.clone());
-        }
-        if let Some(namespace) = &params.namespace {
-            count_builder.push(" AND namespace = ");
-            count_builder.push_bind(namespace.clone());
-        }
-        if let Some(app) = &params.app {
-            count_builder.push(" AND app LIKE ");
-            count_builder.push_bind(format!("%{}%", app));
-        }
-        if let Some(image) = &params.image {
-            count_builder.push(" AND image LIKE ");
-            count_builder.push_bind(format!("%{}%", image));
-        }
-        if report_type == "sbomreport"
-            && let Some(component) = &params.component
-        {
-            count_builder.push(
-                " AND EXISTS (SELECT 1 FROM json_each(json_extract(data, '$.report.components.components')) WHERE json_extract(value, '$.name') LIKE ",
-            );
-            count_builder.push_bind(format!("%{}%", component));
-            count_builder.push(")");
-        }
-        if report_type == "vulnerabilityreport"
-            && let Some(severities) = &params.severity
-        {
-            let mut severity_conditions = Vec::new();
-            for severity in severities {
-                match severity.to_lowercase().as_str() {
-                    "critical" => severity_conditions.push("critical_count > 0"),
-                    "high" => severity_conditions.push("high_count > 0"),
-                    "medium" => severity_conditions.push("medium_count > 0"),
-                    "low" => severity_conditions.push("low_count > 0"),
-                    _ => {}
-                }
-            }
-            if !severity_conditions.is_empty() {
-                count_builder.push(format!(" AND ({})", severity_conditions.join(" OR ")));
-            }
-        }
-
+        push_report_filters(&mut count_builder, report_type, params);
         let (total,): (i64,) = count_builder.build_query_as().fetch_one(&self.pool).await?;
 
-        // Data query with the same WHERE conditions
         let mut data_builder: QueryBuilder<Sqlite> = QueryBuilder::new(
             r#"SELECT id, cluster, namespace, name, app, image, report_type,
                    critical_count, high_count, medium_count, low_count, unknown_count,
-                   components_count, received_at, updated_at, notes, notes_created_at, notes_updated_at
+                   components_count, received_at, updated_at
             FROM reports WHERE report_type = "#,
         );
         data_builder.push_bind(report_type.to_string());
+        push_report_filters(&mut data_builder, report_type, params);
 
-        if let Some(cluster) = &params.cluster {
-            data_builder.push(" AND cluster = ");
-            data_builder.push_bind(cluster.clone());
-        }
-        if let Some(namespace) = &params.namespace {
-            data_builder.push(" AND namespace = ");
-            data_builder.push_bind(namespace.clone());
-        }
-        if let Some(app) = &params.app {
-            data_builder.push(" AND app LIKE ");
-            data_builder.push_bind(format!("%{}%", app));
-        }
-        if let Some(image) = &params.image {
-            data_builder.push(" AND image LIKE ");
-            data_builder.push_bind(format!("%{}%", image));
-        }
-        if report_type == "sbomreport"
-            && let Some(component) = &params.component
-        {
-            data_builder.push(
-                " AND EXISTS (SELECT 1 FROM json_each(json_extract(data, '$.report.components.components')) WHERE json_extract(value, '$.name') LIKE ",
-            );
-            data_builder.push_bind(format!("%{}%", component));
-            data_builder.push(")");
-        }
-        if report_type == "vulnerabilityreport"
-            && let Some(severities) = &params.severity
-        {
-            let mut severity_conditions = Vec::new();
-            for severity in severities {
-                match severity.to_lowercase().as_str() {
-                    "critical" => severity_conditions.push("critical_count > 0"),
-                    "high" => severity_conditions.push("high_count > 0"),
-                    "medium" => severity_conditions.push("medium_count > 0"),
-                    "low" => severity_conditions.push("low_count > 0"),
-                    _ => {}
-                }
-            }
-            if !severity_conditions.is_empty() {
-                data_builder.push(format!(" AND ({})", severity_conditions.join(" OR ")));
-            }
-        }
-
-        data_builder.push(" ORDER BY updated_at DESC");
-
-        let limit = params.limit.unwrap_or(1000);
-        data_builder.push(" LIMIT ");
-        data_builder.push_bind(limit);
-
+        data_builder.push(" ORDER BY updated_at DESC LIMIT ");
+        data_builder.push_bind(params.limit.unwrap_or(DEFAULT_QUERY_LIMIT));
         if let Some(offset) = params.offset {
             data_builder.push(" OFFSET ");
             data_builder.push_bind(offset);
         }
 
         let rows = data_builder.build().fetch_all(&self.pool).await?;
-
-        let results: Vec<ReportMeta> = rows
-            .iter()
-            .map(|row| ReportMeta {
-                id: row.get::<i64, _>(0),
-                cluster: row.get::<String, _>(1),
-                namespace: row.get::<String, _>(2),
-                name: row.get::<String, _>(3),
-                app: row.get::<String, _>(4),
-                image: row.get::<String, _>(5),
-                report_type: row.get::<String, _>(6),
-                summary: Some(VulnSummary {
-                    critical: row.get::<i64, _>(7),
-                    high: row.get::<i64, _>(8),
-                    medium: row.get::<i64, _>(9),
-                    low: row.get::<i64, _>(10),
-                    unknown: row.get::<i64, _>(11),
-                }),
-                components_count: row.get::<Option<i64>, _>(12),
-                received_at: row.get::<String, _>(13),
-                updated_at: row.get::<String, _>(14),
-                notes: row.get::<Option<String>, _>(15).unwrap_or_default(),
-                notes_created_at: row.get::<Option<String>, _>(16),
-                notes_updated_at: row.get::<Option<String>, _>(17),
-            })
-            .collect();
+        let results: Vec<ReportMeta> = rows.iter().map(report_meta_from_row).collect();
 
         Ok((results, total))
     }
@@ -356,7 +274,7 @@ impl Database {
             r#"
             SELECT id, cluster, namespace, name, app, image, report_type,
                    critical_count, high_count, medium_count, low_count, unknown_count,
-                   components_count, received_at, updated_at, data, notes, notes_created_at, notes_updated_at
+                   components_count, received_at, updated_at, data
             FROM reports
             WHERE cluster = $1 AND namespace = $2 AND name = $3 AND report_type = $4
             "#,
@@ -392,9 +310,9 @@ impl Database {
                         components_count: row.get::<Option<i64>, _>(12),
                         received_at: row.get::<String, _>(13),
                         updated_at: row.get::<String, _>(14),
-                        notes: row.get::<Option<String>, _>(16).unwrap_or_default(),
-                        notes_created_at: row.get::<Option<String>, _>(17),
-                        notes_updated_at: row.get::<Option<String>, _>(18),
+                        notes: String::new(),
+                        notes_created_at: None,
+                        notes_updated_at: None,
                     },
                     data_json,
                 }))
@@ -801,6 +719,18 @@ impl Database {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn severity_conditions_map_known_names_and_ignore_the_rest() {
+        assert_eq!(severity_condition("critical"), Some("critical_count > 0"));
+        assert_eq!(severity_condition("HIGH"), Some("high_count > 0"));
+        assert_eq!(severity_condition("medium"), Some("medium_count > 0"));
+        assert_eq!(severity_condition("low"), Some("low_count > 0"));
+        // An unknown severity is dropped, not turned into a clause that
+        // matches nothing and empties the page.
+        assert_eq!(severity_condition("catastrophic"), None);
+        assert_eq!(severity_condition(""), None);
+    }
     use serde_json::json;
 
     fn create_test_payload(
@@ -1026,38 +956,6 @@ mod tests {
             .expect("Failed to query");
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].namespace, "default");
-    }
-
-    #[tokio::test]
-    async fn test_update_notes() {
-        let db = Database::new(":memory:")
-            .await
-            .expect("Failed to create database");
-        let payload = create_test_payload("prod", "default", "app1", "vulnerabilityreport");
-
-        db.upsert_report(&payload).await.expect("Failed to insert");
-
-        let updated = db
-            .update_notes(
-                "prod",
-                "default",
-                "app1",
-                "vulnerabilityreport",
-                "This is a test note",
-            )
-            .await
-            .expect("Failed to update notes");
-        assert!(updated);
-
-        let report = db
-            .get_report("prod", "default", "app1", "vulnerabilityreport")
-            .await
-            .expect("Failed to get report")
-            .unwrap();
-
-        assert_eq!(report.meta.notes, "This is a test note");
-        assert!(report.meta.notes_created_at.is_some());
-        assert!(report.meta.notes_updated_at.is_some());
     }
 
     #[tokio::test]
@@ -1342,73 +1240,6 @@ mod tests {
         let staging = clusters.iter().find(|c| c.name == "staging").unwrap();
         assert_eq!(staging.vuln_report_count, 1);
         assert_eq!(staging.sbom_report_count, 0);
-    }
-
-    #[tokio::test]
-    async fn test_update_notes_creates_then_updates() {
-        let db = Database::new(":memory:")
-            .await
-            .expect("Failed to create database");
-        let payload = create_test_payload("prod", "default", "app1", "vulnerabilityreport");
-        db.upsert_report(&payload).await.expect("Failed to insert");
-
-        // First update: creates notes
-        db.update_notes(
-            "prod",
-            "default",
-            "app1",
-            "vulnerabilityreport",
-            "first note",
-        )
-        .await
-        .expect("Failed to update notes");
-
-        let report = db
-            .get_report("prod", "default", "app1", "vulnerabilityreport")
-            .await
-            .unwrap()
-            .unwrap();
-        let created_at = report.meta.notes_created_at.clone();
-        assert_eq!(report.meta.notes, "first note");
-        assert!(created_at.is_some());
-
-        // Second update: updates notes, created_at should remain
-        db.update_notes(
-            "prod",
-            "default",
-            "app1",
-            "vulnerabilityreport",
-            "updated note",
-        )
-        .await
-        .expect("Failed to update notes");
-
-        let report = db
-            .get_report("prod", "default", "app1", "vulnerabilityreport")
-            .await
-            .unwrap()
-            .unwrap();
-        assert_eq!(report.meta.notes, "updated note");
-        assert_eq!(report.meta.notes_created_at, created_at);
-    }
-
-    #[tokio::test]
-    async fn test_update_notes_nonexistent_report() {
-        let db = Database::new(":memory:")
-            .await
-            .expect("Failed to create database");
-
-        let updated = db
-            .update_notes(
-                "prod",
-                "default",
-                "nonexistent",
-                "vulnerabilityreport",
-                "note",
-            )
-            .await
-            .expect("Failed to update notes");
-        assert!(!updated);
     }
 
     #[tokio::test]

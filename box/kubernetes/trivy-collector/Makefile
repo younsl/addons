@@ -1,4 +1,4 @@
-.PHONY: help build release run dev test fmt lint check clean install docker-build docker-push podman-build deps build-all frontend frontend-install frontend-dev
+.PHONY: help build release run dev dev-scraper dev-all export-state test fmt lint check clean install docker-build docker-push podman-build deps build-all frontend frontend-install frontend-dev
 
 BINARY_NAME := trivy-collector
 IMAGE_NAME := trivy-collector
@@ -17,53 +17,57 @@ build: ## Build debug binary
 release: ## Build optimized release binary
 	cargo build --release
 
-run: build ## Build and run (server mode)
-	MODE=server \
-	STORAGE_PATH=/tmp/trivy-data \
-	HUB_SECRET_NAMESPACE=trivy-system \
-	LOG_FORMAT=pretty \
-	./target/debug/$(BINARY_NAME)
+# Shared internal-API token for local runs. Both processes must agree on it or
+# the scraper rejects every request from the server.
+DEV_INTERNAL_TOKEN := dev-internal-token
 
-run-collector: build ## Build and run (collector mode)
-	MODE=collector \
-	SERVER_URL=http://localhost:3000 \
-	CLUSTER_NAME=local-test \
+run: build ## Build and run (server mode; needs a scraper on :8081)
+	MODE=server \
+	SCRAPER_URL=http://localhost:8081 \
+	INTERNAL_TOKEN=$(DEV_INTERNAL_TOKEN) \
+	HUB_SECRET_NAMESPACE=trivy-system \
 	LOG_FORMAT=pretty \
 	./target/debug/$(BINARY_NAME)
 
 dev: ## Run with debug logging (server mode = UI only; needs dev-scraper in another shell)
 	MODE=server \
-	STORAGE_PATH=/tmp/trivy-data \
+	SCRAPER_URL=http://localhost:8081 \
+	INTERNAL_TOKEN=$(DEV_INTERNAL_TOKEN) \
 	HUB_SECRET_NAMESPACE=trivy-system \
 	EXTERNAL_URL=http://localhost:3000 \
 	LOG_FORMAT=pretty \
 	LOG_LEVEL=debug \
 	cargo run -- --mode=server
 
-dev-scraper: ## Run scraper with debug logging (watchers + DB writes; required for Registered Clusters to flip to Synced)
+dev-scraper: ## Run scraper with debug logging (watchers, database, internal API :8081)
 	MODE=scraper \
 	STORAGE_PATH=/tmp/trivy-data \
+	INTERNAL_TOKEN=$(DEV_INTERNAL_TOKEN) \
+	INTERNAL_PORT=8081 \
 	HUB_SECRET_NAMESPACE=trivy-system \
-	HEALTH_PORT=8081 \
+	HEALTH_PORT=8090 \
 	LOG_FORMAT=pretty \
 	LOG_LEVEL=debug \
 	cargo run -- --mode=scraper
 
-dev-all: ## Run server (UI :3000) + scraper (watchers :8081) in one process group; Ctrl+C stops both
+dev-all: ## Run server (UI :3000) + scraper (internal API :8081) in one process group; Ctrl+C stops both
 	@echo "==> Building once"
 	@cargo build
-	@echo "==> Starting server (UI :3000) + scraper (watchers, health :8081) — Ctrl+C stops both"
+	@echo "==> Starting server (UI :3000) + scraper (internal API :8081, health :8090) — Ctrl+C stops both"
 	@trap 'kill 0' INT TERM EXIT; \
 	{ \
 	  STORAGE_PATH=/tmp/trivy-data \
+	  INTERNAL_TOKEN=$(DEV_INTERNAL_TOKEN) \
+	  INTERNAL_PORT=8081 \
 	  HUB_SECRET_NAMESPACE=trivy-system \
-	  HEALTH_PORT=8081 \
+	  HEALTH_PORT=8090 \
 	  LOG_FORMAT=pretty LOG_LEVEL=debug \
 	  ./target/debug/$(BINARY_NAME) --mode=scraper 2>&1 \
 	    | sed -u 's/^/[scraper] /' ; \
 	} & \
 	{ \
-	  STORAGE_PATH=/tmp/trivy-data \
+	  SCRAPER_URL=http://localhost:8081 \
+	  INTERNAL_TOKEN=$(DEV_INTERNAL_TOKEN) \
 	  HUB_SECRET_NAMESPACE=trivy-system \
 	  EXTERNAL_URL=http://localhost:3000 \
 	  LOG_FORMAT=pretty LOG_LEVEL=debug \
@@ -71,6 +75,9 @@ dev-all: ## Run server (UI :3000) + scraper (watchers :8081) in one process grou
 	    | sed -u 's/^/[server ] /' ; \
 	} & \
 	wait
+
+export-state: build ## Migrate authored state out of a legacy database (DB_PATH=/path/to/trivy.db)
+	./target/debug/$(BINARY_NAME) export-state --db-path=$(or $(DB_PATH),/tmp/trivy-data/trivy.db) --dry-run
 
 test: ## Run tests
 	cargo test --verbose

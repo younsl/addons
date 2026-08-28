@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
 import Header from './Header'
+import HydrationBanner from './HydrationBanner'
 import { getStats, getClusters, getNamespaces, getVersion } from '../api'
 import { usePolling } from '../hooks/usePolling'
 import type { Stats, ClusterInfo, VersionResponse } from '../types'
@@ -64,6 +65,7 @@ export default function Layout() {
     <>
       <Header version={version} />
       <main>
+        <HydrationBanner />
         <Outlet context={{ stats, clusterOptions, namespaceOptions, setFilterCluster }} />
       </main>
       <footer>

@@ -38,12 +38,11 @@ g, platform-team, role:admin
 | `reports` | `delete` | `DELETE /api/v1/reports/{cluster}/{type}/{namespace}/{name}` |
 | `reports` | `update` | `PUT /api/v1/reports/{...}/notes` |
 | `clusters` | `get` | `GET /api/v1/clusters`, `GET /api/v1/namespaces` |
-| `stats` | `get` | `GET /api/v1/stats`, `GET /api/v1/dashboard/trends`, `GET /api/v1/watcher/status`, `GET /api/v1/version`, `GET /api/v1/status`, `GET /api/v1/config` |
-| `admin` | `get` | `GET /api/v1/admin/logs`, `GET /api/v1/admin/logs/stats`, `GET /api/v1/admin/info` |
-| `admin` | `delete` | `DELETE /api/v1/admin/logs` |
+| `stats` | `get` | `GET /api/v1/stats`, `GET /api/v1/dashboard/trends`, `GET /api/v1/watcher/status`, `GET /api/v1/hydration`, `GET /api/v1/version`, `GET /api/v1/status`, `GET /api/v1/config` |
+| `admin` | `get` | `GET /api/v1/admin/info` |
 | `tokens` | `get` | `GET /api/v1/auth/tokens` |
 | `tokens` | `create` | `POST /api/v1/auth/tokens` |
-| `tokens` | `delete` | `DELETE /api/v1/auth/tokens/{id}` |
+| `tokens` | `delete` | `DELETE /api/v1/auth/tokens/{prefix}` |
 | `alerts` | `get` | `GET /api/v1/alerts`, `GET /api/v1/alerts/{name}`, `POST /api/v1/alerts/preview` |
 | `alerts` | `create` | `POST /api/v1/alerts` (create rule), `POST /api/v1/alerts/test` (send Slack test) |
 | `alerts` | `update` | `PUT /api/v1/alerts/{name}` |

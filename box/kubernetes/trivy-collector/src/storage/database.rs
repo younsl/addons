@@ -128,15 +128,6 @@ impl Database {
         Ok(count)
     }
 
-    /// Count API log entries (for metrics)
-    pub async fn count_api_logs(&self) -> Result<i64> {
-        let (count,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM api_logs")
-            .fetch_one(&self.pool)
-            .await
-            .unwrap_or((0,));
-        Ok(count)
-    }
-
     /// Format bytes into human-readable string
     pub(super) fn format_bytes(bytes: u64) -> String {
         const KB: u64 = 1024;

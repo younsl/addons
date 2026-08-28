@@ -1,7 +1,11 @@
-//! Application state and watcher status management
+//! Application state for the server tier.
+//!
+//! Nothing here owns a database. Reports arrive through a `ReportStore` (a
+//! `RemoteStore` in production), notes and API tokens come from watched
+//! Kubernetes objects, and request logs go to stdout. That is what makes the
+//! server pod disposable and lets it run more than one replica.
 
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
 
 use crate::alerts::AlertEvaluator;
@@ -9,38 +13,7 @@ use crate::auth::AuthState;
 use crate::auth::rbac::RbacPolicy;
 use crate::config::Config;
 use crate::metrics::Metrics;
-use crate::storage::Database;
-
-/// Watcher status shared across the application
-#[derive(Default)]
-pub struct WatcherStatus {
-    pub vuln_watcher_running: AtomicBool,
-    pub sbom_watcher_running: AtomicBool,
-    pub vuln_initial_sync_done: AtomicBool,
-    pub sbom_initial_sync_done: AtomicBool,
-}
-
-impl WatcherStatus {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    pub fn set_vuln_running(&self, running: bool) {
-        self.vuln_watcher_running.store(running, Ordering::SeqCst);
-    }
-
-    pub fn set_sbom_running(&self, running: bool) {
-        self.sbom_watcher_running.store(running, Ordering::SeqCst);
-    }
-
-    pub fn set_vuln_sync_done(&self, done: bool) {
-        self.vuln_initial_sync_done.store(done, Ordering::SeqCst);
-    }
-
-    pub fn set_sbom_sync_done(&self, done: bool) {
-        self.sbom_initial_sync_done.store(done, Ordering::SeqCst);
-    }
-}
+use crate::storage::{NotesStore, ReportStore, TokenStore};
 
 /// Runtime configuration info (subset of Config for API exposure)
 #[derive(Clone)]
@@ -54,7 +27,7 @@ pub struct ConfigInfo {
     pub collect_vulnerability_reports: bool,
     pub collect_sbom_reports: bool,
     pub server_port: u16,
-    pub storage_path: String,
+    pub scraper_url: String,
     pub watch_local: bool,
     pub hub_secret_namespace: String,
     pub auth_mode: Option<String>,
@@ -79,7 +52,7 @@ impl From<&Config> for ConfigInfo {
             collect_vulnerability_reports: config.collect_vulnerability_reports,
             collect_sbom_reports: config.collect_sbom_reports,
             server_port: config.server_port,
-            storage_path: config.storage_path.clone(),
+            scraper_url: config.scraper_url.clone(),
             watch_local: config.watch_local,
             hub_secret_namespace: config.hub_secret_namespace.clone(),
             auth_mode,
@@ -107,23 +80,25 @@ impl RuntimeInfo {
 
     /// Get uptime as human-readable string
     pub fn uptime_string(&self) -> String {
-        let duration = self.start_time.elapsed();
-        let total_secs = duration.as_secs();
+        format_uptime(self.start_time.elapsed().as_secs())
+    }
+}
 
-        let days = total_secs / 86400;
-        let hours = (total_secs % 86400) / 3600;
-        let minutes = (total_secs % 3600) / 60;
-        let seconds = total_secs % 60;
+/// Render a duration in seconds as `1d 2h 3m 4s`, dropping leading zero units.
+fn format_uptime(total_secs: u64) -> String {
+    let days = total_secs / 86400;
+    let hours = (total_secs % 86400) / 3600;
+    let minutes = (total_secs % 3600) / 60;
+    let seconds = total_secs % 60;
 
-        if days > 0 {
-            format!("{}d {}h {}m {}s", days, hours, minutes, seconds)
-        } else if hours > 0 {
-            format!("{}h {}m {}s", hours, minutes, seconds)
-        } else if minutes > 0 {
-            format!("{}m {}s", minutes, seconds)
-        } else {
-            format!("{}s", seconds)
-        }
+    if days > 0 {
+        format!("{}d {}h {}m {}s", days, hours, minutes, seconds)
+    } else if hours > 0 {
+        format!("{}h {}m {}s", hours, minutes, seconds)
+    } else if minutes > 0 {
+        format!("{}m {}s", minutes, seconds)
+    } else {
+        format!("{}s", seconds)
     }
 }
 
@@ -136,8 +111,8 @@ impl Default for RuntimeInfo {
 /// Application state shared across handlers
 #[derive(Clone)]
 pub struct AppState {
-    pub db: Arc<Database>,
-    pub watcher_status: Arc<WatcherStatus>,
+    /// Report reads and writes. `RemoteStore` in production.
+    pub store: Arc<dyn ReportStore>,
     pub config: Arc<ConfigInfo>,
     pub runtime: Arc<RuntimeInfo>,
     /// Authentication state (None when auth_mode == "none")
@@ -148,6 +123,44 @@ pub struct AppState {
     pub metrics: Arc<Metrics>,
     /// Alert evaluator (None when Kubernetes API unavailable or alerts disabled)
     pub alerts: Option<Arc<AlertEvaluator>>,
+    /// ConfigMap-backed report notes (None when the Kubernetes API is
+    /// unavailable, in which case notes are read-only and empty).
+    pub notes: Option<Arc<NotesStore>>,
+    /// Secret-backed API tokens (None when the Kubernetes API is unavailable,
+    /// in which case Bearer-token auth is unavailable).
+    pub tokens: Option<Arc<TokenStore>>,
+}
+
+impl AppState {
+    /// Join stored notes onto a page of report metadata. A missing notes store
+    /// leaves the fields empty rather than failing the read.
+    pub fn merge_notes(&self, metas: &mut [crate::storage::ReportMeta]) {
+        if let Some(notes) = &self.notes {
+            notes.cache().merge_all(metas);
+        }
+    }
+
+    /// Join a stored note onto one report's metadata.
+    pub fn merge_note(&self, meta: &mut crate::storage::ReportMeta) {
+        if let Some(notes) = &self.notes {
+            notes.cache().merge_meta(meta);
+        }
+    }
+
+    /// Publish how many API tokens the Secret-backed store holds.
+    pub fn record_token_count(&self) {
+        if let (Some(tokens), Some(gauge)) = (&self.tokens, &self.metrics.api_tokens_total) {
+            gauge.set(tokens.cache().len() as i64);
+        }
+    }
+
+    /// Publish the notes ConfigMap's current size. The 1MiB object limit is a
+    /// hard wall, so its headroom is worth a gauge rather than a surprise.
+    pub fn record_notes_size(&self) {
+        if let (Some(notes), Some(gauge)) = (&self.notes, &self.metrics.notes_configmap_bytes) {
+            gauge.set(notes.cache().bytes() as i64);
+        }
+    }
 }
 
 /// Allow axum-extra PrivateCookieJar to extract the cookie Key from AppState
@@ -165,92 +178,46 @@ impl axum::extract::FromRef<AppState> for cookie::Key {
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_watcher_status_default() {
-        let status = WatcherStatus::new();
-        assert!(!status.vuln_watcher_running.load(Ordering::SeqCst));
-        assert!(!status.sbom_watcher_running.load(Ordering::SeqCst));
-        assert!(!status.vuln_initial_sync_done.load(Ordering::SeqCst));
-        assert!(!status.sbom_initial_sync_done.load(Ordering::SeqCst));
+    fn config(mode: crate::config::Mode) -> Config {
+        Config::for_test(mode)
     }
 
     #[test]
-    fn test_watcher_status_set_vuln() {
-        let status = WatcherStatus::new();
-        status.set_vuln_running(true);
-        status.set_vuln_sync_done(true);
-        assert!(status.vuln_watcher_running.load(Ordering::SeqCst));
-        assert!(status.vuln_initial_sync_done.load(Ordering::SeqCst));
-        assert!(!status.sbom_watcher_running.load(Ordering::SeqCst));
+    fn format_uptime_drops_leading_zero_units() {
+        assert_eq!(format_uptime(0), "0s");
+        assert_eq!(format_uptime(45), "45s");
+        assert_eq!(format_uptime(90), "1m 30s");
+        assert_eq!(format_uptime(3661), "1h 1m 1s");
+        assert_eq!(format_uptime(90061), "1d 1h 1m 1s");
     }
 
     #[test]
-    fn test_watcher_status_set_sbom() {
-        let status = WatcherStatus::new();
-        status.set_sbom_running(true);
-        status.set_sbom_sync_done(true);
-        assert!(status.sbom_watcher_running.load(Ordering::SeqCst));
-        assert!(status.sbom_initial_sync_done.load(Ordering::SeqCst));
-        assert!(!status.vuln_watcher_running.load(Ordering::SeqCst));
-    }
-
-    #[test]
-    fn test_runtime_info_uptime_string() {
+    fn runtime_info_starts_at_zero_with_a_hostname() {
         let runtime = RuntimeInfo::new();
-        let uptime = runtime.uptime_string();
-        // Just created, should be 0s
-        assert_eq!(uptime, "0s");
-    }
-
-    #[test]
-    fn test_runtime_info_hostname() {
-        let runtime = RuntimeInfo::new();
-        // hostname should be non-empty
+        assert_eq!(runtime.uptime_string(), "0s");
         assert!(!runtime.hostname.is_empty());
     }
 
     #[test]
-    fn test_runtime_info_default() {
+    fn runtime_info_default_matches_new() {
         let runtime = RuntimeInfo::default();
         assert!(!runtime.hostname.is_empty());
         assert_eq!(runtime.uptime_string(), "0s");
     }
 
     #[test]
-    fn test_config_info_from_server() {
-        let config = crate::config::Config {
-            command: None,
-            mode: crate::config::Mode::Server,
-            log_format: "json".to_string(),
-            log_level: "debug".to_string(),
-            health_port: 9090,
-            server_url: None,
-            cluster_name: "my-cluster".to_string(),
-            namespaces: vec!["ns1".to_string()],
-            collect_vulnerability_reports: true,
-            collect_sbom_reports: false,
-            retry_attempts: 3,
-            retry_delay_secs: 5,
-            health_check_interval_secs: 30,
-            server_port: 8080,
-            storage_path: "/tmp".to_string(),
-            watch_local: true,
-            hub_secret_namespace: String::new(),
-            external_url: String::new(),
-            auth_mode: "keycloak".to_string(),
-            oidc_issuer_url: None,
-            oidc_client_id: None,
-            oidc_client_secret: None,
-            oidc_redirect_url: None,
-            oidc_scopes: "openid".to_string(),
-            rbac_policy_csv: String::new(),
-            rbac_default_policy: "role:readonly".to_string(),
-            mcp_enabled: false,
-            mcp_allowed_hosts: vec![],
-            mcp_stateless: false,
-            mcp_max_concurrency: 8,
-        };
-        let info = ConfigInfo::from(&config);
+    fn config_info_carries_the_server_facing_subset() {
+        let mut c = config(crate::config::Mode::Server);
+        c.log_level = "debug".to_string();
+        c.health_port = 9090;
+        c.cluster_name = "my-cluster".to_string();
+        c.namespaces = vec!["ns1".to_string()];
+        c.collect_sbom_reports = false;
+        c.server_port = 8080;
+        c.scraper_url = "http://scraper:8081".to_string();
+        c.auth_mode = "keycloak".to_string();
+
+        let info = ConfigInfo::from(&c);
         assert_eq!(info.mode, "server");
         assert_eq!(info.log_level, "debug");
         assert_eq!(info.health_port, 9090);
@@ -259,45 +226,15 @@ mod tests {
         assert!(info.collect_vulnerability_reports);
         assert!(!info.collect_sbom_reports);
         assert_eq!(info.server_port, 8080);
-        assert!(info.watch_local);
+        assert_eq!(info.scraper_url, "http://scraper:8081");
         assert_eq!(info.auth_mode, Some("keycloak".to_string()));
     }
 
     #[test]
-    fn test_config_info_auth_mode_none() {
-        let config = crate::config::Config {
-            command: None,
-            mode: crate::config::Mode::Scraper,
-            log_format: "pretty".to_string(),
-            log_level: "info".to_string(),
-            health_port: 8080,
-            server_url: Some("http://server:3000".to_string()),
-            cluster_name: "edge".to_string(),
-            namespaces: vec![],
-            collect_vulnerability_reports: true,
-            collect_sbom_reports: true,
-            retry_attempts: 3,
-            retry_delay_secs: 5,
-            health_check_interval_secs: 30,
-            server_port: 3000,
-            storage_path: "/data".to_string(),
-            watch_local: false,
-            hub_secret_namespace: String::new(),
-            external_url: String::new(),
-            auth_mode: "none".to_string(),
-            oidc_issuer_url: None,
-            oidc_client_id: None,
-            oidc_client_secret: None,
-            oidc_redirect_url: None,
-            oidc_scopes: "openid".to_string(),
-            rbac_policy_csv: String::new(),
-            rbac_default_policy: "role:readonly".to_string(),
-            mcp_enabled: false,
-            mcp_allowed_hosts: vec![],
-            mcp_stateless: false,
-            mcp_max_concurrency: 8,
-        };
-        let info = ConfigInfo::from(&config);
+    fn auth_mode_none_is_reported_as_absent() {
+        let mut c = config(crate::config::Mode::Scraper);
+        c.auth_mode = "none".to_string();
+        let info = ConfigInfo::from(&c);
         assert_eq!(info.mode, "scraper");
         assert!(info.auth_mode.is_none());
     }

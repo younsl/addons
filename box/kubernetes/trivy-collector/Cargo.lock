@@ -4573,9 +4573,10 @@ dependencies = [
 
 [[package]]
 name = "trivy-collector"
-version = "1.6.0"
+version = "1.7.0"
 dependencies = [
  "anyhow",
+ "async-trait",
  "axum",
  "axum-extra",
  "base64 0.22.1",

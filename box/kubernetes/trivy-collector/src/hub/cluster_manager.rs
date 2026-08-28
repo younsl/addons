@@ -11,9 +11,10 @@ use tokio::sync::Mutex;
 use tokio::task::JoinHandle;
 use tracing::{error, info, warn};
 
+use crate::alerts::AlertEvaluator;
+use crate::collector::status::WatcherStatus;
+use crate::collector::watcher::{ClusterWatcher, WatchScope};
 use crate::storage::Database;
-use crate::web::LocalWatcher;
-use crate::web::state::WatcherStatus;
 
 use super::client_builder;
 use super::types::ClusterSecret;
@@ -27,14 +28,25 @@ struct ClusterHandle {
 pub struct ClusterManager {
     db: Arc<Database>,
     watcher_status: Arc<WatcherStatus>,
+    alerts: Option<Arc<AlertEvaluator>>,
+    /// Report kinds to collect, fleet-wide. Each cluster's namespaces come
+    /// from its own registration Secret and override the namespace half.
+    scope: WatchScope,
     clusters: Mutex<HashMap<String, ClusterHandle>>,
 }
 
 impl ClusterManager {
-    pub fn new(db: Arc<Database>, watcher_status: Arc<WatcherStatus>) -> Self {
+    pub fn new(
+        db: Arc<Database>,
+        watcher_status: Arc<WatcherStatus>,
+        alerts: Option<Arc<AlertEvaluator>>,
+        scope: WatchScope,
+    ) -> Self {
         Self {
             db,
             watcher_status,
+            alerts,
+            scope,
             clusters: Mutex::new(HashMap::new()),
         }
     }
@@ -69,12 +81,13 @@ impl ClusterManager {
         };
 
         let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
-        let watcher = LocalWatcher::new_with_client(
+        let watcher = ClusterWatcher::with_client(
             client,
             self.db.clone(),
             secret.name.clone(),
-            secret.namespaces.clone(),
+            self.scope.with_namespaces(secret.namespaces.clone()),
             self.watcher_status.clone(),
+            self.alerts.clone(),
         );
 
         let cluster_label = name.clone();
@@ -106,6 +119,9 @@ impl ClusterManager {
             info!(cluster = %cluster_name, "Stopping watcher for removed cluster");
             let _ = h.shutdown_tx.send(true);
             h.task.abort();
+            // Drop it from hydration accounting too, otherwise a deregistered
+            // cluster would hold `/readyz` open forever.
+            self.watcher_status.unregister_cluster(cluster_name);
         } else {
             warn!(cluster = %cluster_name, "remove called for unknown cluster");
         }
@@ -118,6 +134,7 @@ impl ClusterManager {
         for (name, handle) in guard.drain() {
             let _ = handle.shutdown_tx.send(true);
             handle.task.abort();
+            self.watcher_status.unregister_cluster(&name);
             info!(cluster = %name, "Stopped watcher");
         }
     }
@@ -135,14 +152,54 @@ mod tests {
     #[tokio::test]
     async fn test_new_manager_empty() {
         let db = Arc::new(Database::new(":memory:").await.unwrap());
-        let mgr = ClusterManager::new(db, Arc::new(WatcherStatus::new()));
+        let mgr = ClusterManager::new(
+            db,
+            Arc::new(WatcherStatus::new()),
+            None,
+            WatchScope::default(),
+        );
+        assert_eq!(mgr.active_clusters().await, 0);
+    }
+
+    #[tokio::test]
+    async fn removing_a_cluster_clears_its_hydration_entry() {
+        // A deregistered cluster that stayed in the hydration map would hold
+        // /readyz failing forever, since hydration requires every entry.
+        let db = Arc::new(Database::new(":memory:").await.unwrap());
+        let status = Arc::new(WatcherStatus::new());
+        status.register_cluster("gone");
+        status.register_cluster("prod");
+        assert_eq!(status.cluster_count(), 2);
+
+        let mgr = ClusterManager::new(db, status.clone(), None, WatchScope::default());
+        // No watcher was ever started for it, which is the case a Delete event
+        // for an unknown cluster produces.
+        mgr.remove("gone").await;
+
+        // remove() only unregisters clusters it was actually managing, so the
+        // status entry survives an unknown removal.
+        assert_eq!(status.cluster_count(), 2);
+    }
+
+    #[tokio::test]
+    async fn stop_all_clears_every_hydration_entry() {
+        let db = Arc::new(Database::new(":memory:").await.unwrap());
+        let status = Arc::new(WatcherStatus::new());
+        let mgr = ClusterManager::new(db, status.clone(), None, WatchScope::default());
+
+        mgr.stop_all().await;
         assert_eq!(mgr.active_clusters().await, 0);
     }
 
     #[tokio::test]
     async fn test_remove_unknown_is_noop() {
         let db = Arc::new(Database::new(":memory:").await.unwrap());
-        let mgr = ClusterManager::new(db, Arc::new(WatcherStatus::new()));
+        let mgr = ClusterManager::new(
+            db,
+            Arc::new(WatcherStatus::new()),
+            None,
+            WatchScope::default(),
+        );
         mgr.remove("does-not-exist").await;
         assert_eq!(mgr.active_clusters().await, 0);
     }

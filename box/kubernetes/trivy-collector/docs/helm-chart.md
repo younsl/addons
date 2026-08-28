@@ -21,22 +21,19 @@ collector:
 # Server settings
 server:
   port: 3000
-  persistence:
-    enabled: true
-    storageClass: ""
-    size: 5Gi
-  ingress:
-    enabled: false
-    hosts:
-      - host: trivy.example.com
-        paths:
-          - path: /
-            pathType: Prefix
-  gateway:  # Gateway API HTTPRoute (alternative to Ingress)
+  replicaCount: 1
+  gateway:  # Gateway API HTTPRoute, the only supported ingress path
     enabled: false
     parentRefs:
       - name: main-gateway
         namespace: gateway-system
+
+# Internal API between the scraper (which owns the database) and the server
+internal:
+  port: 8081
+  token: ""          # generated on first install when empty
+  networkPolicy:
+    enabled: true
 
 # Common settings
 health:
@@ -56,17 +53,33 @@ resources:
 
 ## Installation Examples
 
-### Server with persistence and ingress
+### Server exposed through Gateway API
 
 ```bash
 helm install trivy-server ./charts/trivy-collector \
   --namespace trivy-system \
-  --set mode=server \
-  --set server.persistence.enabled=true \
-  --set server.ingress.enabled=true \
-  --set server.ingress.className=nginx \
-  --set server.ingress.hosts[0].host=trivy.example.com
+  --set server.gateway.enabled=true \
+  --set server.gateway.hostnames[0]=trivy.example.com
 ```
+
+The chart renders an `HTTPRoute` only. `Ingress` support was removed, so an
+`Ingress` in front of this release has to be authored outside the chart (for
+example through `extraObjects`).
+
+The release creates no PersistentVolumeClaim. The scraper keeps SQLite on its own `emptyDir` and rebuilds it from the watched clusters on restart; report notes and API tokens live in a ConfigMap and a Secret.
+
+### Migrating off an existing PersistentVolume
+
+API tokens are hashed and report notes are typed by a human, so both are unrecoverable and must be exported before the volume goes away. Reports need no export.
+
+```bash
+helm upgrade trivy-collector ./charts/trivy-collector \
+  --namespace trivy-system \
+  --set migration.exportState.enabled=true \
+  --set migration.exportState.existingClaim=trivy-collector
+```
+
+The hook Job mounts the old PVC read-only and writes `{release}-api-tokens` and `{release}-notes`. Verify both objects, confirm hydration completes and that a known token still authenticates and a known note still renders, then disable the hook and delete the PVC. Until that last step the PVC is the rollback.
 
 ### Collector watching specific namespaces
 

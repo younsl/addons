@@ -6,7 +6,7 @@
 //!
 //! The self-secret is **display-only**:
 //!   - The per-cluster watcher is skipped (see `ClusterManager::upsert`);
-//!     in-cluster Trivy CRDs are watched by `LocalWatcher` on the scraper
+//!     in-cluster Trivy CRDs are watched by `ClusterWatcher` on the scraper
 //!     pod directly.
 //!   - The UI flags rows carrying `trivy-collector.io/in-cluster=true` and
 //!     disables the Delete button to prevent wiping the Hub's own reports.
@@ -79,7 +79,7 @@ pub async fn ensure_local_cluster_secret(
     let Some(secret_name) = self_secret_name(cluster_name) else {
         warn!(
             "self-register: cluster_name is empty — skipping. \
-             LocalWatcher still runs; the Hub just won't appear in the \
+             ClusterWatcher still runs; the Hub just won't appear in the \
              Registered Clusters table."
         );
         return Ok(());
@@ -99,7 +99,7 @@ pub async fn ensure_local_cluster_secret(
     );
 
     // No bearerToken / caData — local access goes through the pod's own SA
-    // via LocalWatcher. The Secret exists purely for discovery/display.
+    // via ClusterWatcher. The Secret exists purely for discovery/display.
     let config_json = r#"{"bearerToken":null,"tlsClientConfig":{}}"#.to_string();
     let namespaces_json = serde_json::to_string(namespaces)
         .context("self-register: failed to serialise namespaces")?;
@@ -139,7 +139,7 @@ pub async fn ensure_local_cluster_secret(
                 "self-register: failed to apply self-secret — local cluster \
                  will not appear in Registered Clusters table"
             );
-            // Non-fatal: LocalWatcher still works, the UI just won't list it.
+            // Non-fatal: ClusterWatcher still works, the UI just won't list it.
         }
     }
 
