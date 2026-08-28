@@ -367,7 +367,6 @@ fn log_gate_config(cfg: &Config) {
         namespace = %cfg.argocd.namespace,
         server_address = %cfg.argocd.server_address,
         ca_file = or_none(&cfg.argocd.ca_file),
-        insecure_skip_verify = cfg.argocd.insecure_skip_verify,
         token_path = %cfg.argocd.token_path,
         timeout_seconds = cfg.argocd.timeout_seconds,
         cache_ttl_seconds = cfg.argocd.cache_ttl_seconds,

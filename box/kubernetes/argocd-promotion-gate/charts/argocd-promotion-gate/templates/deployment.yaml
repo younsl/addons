@@ -78,7 +78,7 @@ spec:
             - name: token
               mountPath: /etc/argocd-promotion-gate/token
               readOnly: true
-            {{- if and .Values.promotionGate.argocd.caSecret.enabled (not .Values.promotionGate.argocd.insecureSkipVerify) }}
+            {{- if .Values.promotionGate.argocd.caSecret.enabled }}
             - name: argocd-ca
               mountPath: /etc/argocd-promotion-gate/argocd-ca
               readOnly: true
@@ -96,7 +96,7 @@ spec:
           secret:
             secretName: {{ .Values.promotionGate.argocd.tokenSecret.name }}
             optional: true
-        {{- if and .Values.promotionGate.argocd.caSecret.enabled (not .Values.promotionGate.argocd.insecureSkipVerify) }}
+        {{- if .Values.promotionGate.argocd.caSecret.enabled }}
         - name: argocd-ca
           secret:
             secretName: {{ .Values.promotionGate.argocd.caSecret.name }}

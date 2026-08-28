@@ -1,6 +1,6 @@
 # argocd-promotion-gate
 
-![Version: 0.3.0](https://img.shields.io/badge/Version-0.3.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.2.0](https://img.shields.io/badge/AppVersion-0.2.0-informational?style=flat-square)
+![Version: 0.3.1](https://img.shields.io/badge/Version-0.3.1-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.2.1](https://img.shields.io/badge/AppVersion-0.2.1-informational?style=flat-square)
 
 Admission gate that blocks an Argo CD Application sync until the same app is promoted in the upstream environment
 
@@ -43,7 +43,7 @@ helm install argocd-promotion-gate oci://ghcr.io/younsl/charts/argocd-promotion-
 Install a specific version:
 
 ```console
-helm install argocd-promotion-gate oci://ghcr.io/younsl/charts/argocd-promotion-gate --version 0.3.0
+helm install argocd-promotion-gate oci://ghcr.io/younsl/charts/argocd-promotion-gate --version 0.3.1
 ```
 
 ### Install from local chart
@@ -51,7 +51,7 @@ helm install argocd-promotion-gate oci://ghcr.io/younsl/charts/argocd-promotion-
 Download argocd-promotion-gate chart and install from local directory:
 
 ```console
-helm pull oci://ghcr.io/younsl/charts/argocd-promotion-gate --untar --version 0.3.0
+helm pull oci://ghcr.io/younsl/charts/argocd-promotion-gate --untar --version 0.3.1
 helm install argocd-promotion-gate ./argocd-promotion-gate
 ```
 
@@ -142,7 +142,6 @@ The following table lists the configurable parameters and their default values.
 | promotionGate.exempt.annotation | string | `"promotion-gate.younsl.github.io/skip"` | Application annotation that opts one app out when set to `"true"` |
 | promotionGate.argocd.namespace | string | `"argocd"` | Namespace holding the Application resources |
 | promotionGate.argocd.serverAddress | string | `"https://argocd-server"` | Base URL of argocd-server. Its certificate has no SAN for the fully qualified name |
-| promotionGate.argocd.insecureSkipVerify | bool | `false` | Disable TLS verification against argocd-server. Prefer `caSecret` |
 | promotionGate.argocd.timeoutSeconds | int | `3` | Per-request timeout for argocd-server calls |
 | promotionGate.argocd.cacheTtlSeconds | int | `30` | How long a desired image lookup is reused |
 | promotionGate.argocd.caSecret.enabled | bool | `true` | Mount a CA bundle for argocd-server |

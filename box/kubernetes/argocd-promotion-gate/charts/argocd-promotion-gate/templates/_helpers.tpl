@@ -60,7 +60,7 @@ chart owns, so a path never has to be repeated in values.
 {{- $argocd := $gate.argocd -}}
 {{- $_ := unset $argocd "caSecret" -}}
 {{- $_ := unset $argocd "tokenSecret" -}}
-{{- if and .Values.promotionGate.argocd.caSecret.enabled (not .Values.promotionGate.argocd.insecureSkipVerify) -}}
+{{- if .Values.promotionGate.argocd.caSecret.enabled -}}
 {{- $_ := set $argocd "caFile" (printf "/etc/argocd-promotion-gate/argocd-ca/%s" .Values.promotionGate.argocd.caSecret.key) -}}
 {{- else -}}
 {{- $_ := set $argocd "caFile" "" -}}

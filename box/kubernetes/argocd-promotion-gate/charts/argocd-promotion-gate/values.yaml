@@ -204,8 +204,6 @@ promotionGate:
     namespace: argocd
     # -- (string) Base URL of argocd-server. Its certificate has no SAN for the fully qualified name
     serverAddress: https://argocd-server
-    # -- (bool) Disable TLS verification against argocd-server. Prefer `caSecret`
-    insecureSkipVerify: false
     # -- (int) Per-request timeout for argocd-server calls
     timeoutSeconds: 3
     # -- (int) How long a desired image lookup is reused

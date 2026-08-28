@@ -171,11 +171,11 @@ pub struct ArgoCd {
     /// The PEM bundle that signs the argocd-server certificate. Mounting
     /// argocd-secret's `tls.crt` is enough, since that certificate is its own
     /// issuer.
+    ///
+    /// There is deliberately no switch to skip verification: the token this
+    /// client sends is a full Argo CD API credential. An argocd-server that
+    /// terminates TLS elsewhere is reached over plain `http://` instead.
     pub ca_file: String,
-    /// Disables TLS verification against argocd-server. It exists only for
-    /// clusters that terminate TLS elsewhere. Prefer `ca_file`, because the
-    /// token this client sends is a full Argo CD API credential.
-    pub insecure_skip_verify: bool,
     pub token_path: String,
     /// Bounds each argocd-server call. It must stay well under the webhook's
     /// own timeout.
@@ -191,7 +191,6 @@ impl Default for ArgoCd {
             namespace: "argocd".to_string(),
             server_address: "https://argocd-server".to_string(),
             ca_file: "/etc/argocd-promotion-gate/argocd-ca/tls.crt".to_string(),
-            insecure_skip_verify: false,
             token_path: "/etc/argocd-promotion-gate/token/token".to_string(),
             timeout_seconds: 3,
             cache_ttl_seconds: 30,

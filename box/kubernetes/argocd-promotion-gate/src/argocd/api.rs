@@ -116,12 +116,9 @@ impl DesiredImageClient {
             .timeout(Duration::from_secs(
                 cfg.timeout_seconds.max(0).unsigned_abs(),
             ))
-            .min_tls_version(reqwest::tls::Version::TLS_1_2)
-            // Operators opt into this explicitly. The default is verification
-            // with the CA file.
-            .danger_accept_invalid_certs(cfg.insecure_skip_verify);
+            .min_tls_version(reqwest::tls::Version::TLS_1_2);
 
-        if !cfg.ca_file.is_empty() && !cfg.insecure_skip_verify {
+        if !cfg.ca_file.is_empty() {
             let pem = std::fs::read(&cfg.ca_file).map_err(|source| ApiError::ReadCa {
                 path: cfg.ca_file.clone(),
                 source,
@@ -547,15 +544,5 @@ mod tests {
             ..ArgoCd::default()
         };
         assert!(DesiredImageClient::new(&cfg, &[]).is_ok());
-
-        let insecure = ArgoCd {
-            ca_file: "/nonexistent/ca.crt".to_string(),
-            insecure_skip_verify: true,
-            ..ArgoCd::default()
-        };
-        assert!(
-            DesiredImageClient::new(&insecure, &[]).is_ok(),
-            "ca file is ignored when skipping verification"
-        );
     }
 }

@@ -35,7 +35,6 @@ argocd:
   namespace: argocd
   serverAddress: https://argocd-server
   caFile: /etc/argocd-promotion-gate/argocd-ca/tls.crt
-  insecureSkipVerify: false
   tokenPath: /etc/argocd-promotion-gate/token/token
   timeoutSeconds: 3
   cacheTtlSeconds: 30
@@ -150,7 +149,7 @@ Argo CD's self-signed serving certificate is its own issuer and carries SANs for
 - `serverAddress: https://argocd-server` verifies. The fully qualified `argocd-server.argocd.svc.cluster.local` does not, because it is not in the SAN list.
 - `caSecret` points at `argocd-secret`, whose `tls.crt` is that certificate, which is enough to verify it.
 
-`insecureSkipVerify: true` exists for clusters that terminate TLS elsewhere. Prefer not to use it: the token this client sends is a full Argo CD API credential, and skipping verification is what makes it interceptable.
+There is no switch to skip verification. The token this client sends is a full Argo CD API credential, and skipping verification is what would make it interceptable. An argocd-server started with `--insecure`, which serves plain HTTP, is reached with `serverAddress: http://argocd-server` and `caSecret.enabled: false`.
 
 ## Rollout order
 
