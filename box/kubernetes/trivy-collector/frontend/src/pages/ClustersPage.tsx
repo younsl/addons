@@ -168,10 +168,10 @@ export default function ClustersPage() {
                         className={styles.mono}
                         title={[heart.title, c.reachability_message].filter(Boolean).join(' · ')}
                       >
-                        <i className={`fa-solid ${heart.icon}`} style={{ color: heart.color, marginRight: 6 }} />
+                        <i className={`fa-solid ${heart.icon}`} style={{ color: heart.color, marginRight: 3 }} />
                         {latency}
                         {heart.label && (
-                          <span style={{ color: 'var(--text-muted)', marginLeft: latency ? 6 : 0 }}>
+                          <span style={{ color: 'var(--text-muted)', marginLeft: latency ? 4 : 0 }}>
                             {heart.label}
                           </span>
                         )}
