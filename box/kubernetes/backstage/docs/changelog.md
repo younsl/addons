@@ -10,6 +10,13 @@ Headings are image tags, not Backstage versions. A rebuild at the same Backstage
 
 Tags released before this file existed (`1.51.0-1` through `1.53.0-3`) are not recorded here.
 
+## 1.54.4-3
+
+Released 2026-08-28. Built on Backstage [v1.54.4](https://github.com/backstage/backstage/releases/tag/v1.54.4) as the base version, the same base as `1.54.4-2`, so this tag differs only by the changes below.
+
+- OpenCost controller dropdown no longer loads the full controller list. A cluster with many Jobs carries over 20,000 distinct controller names per year, and the dropdown fetched all of them on every page load, rendered every one as a DOM node, and re-filtered the whole list on each keystroke, which made the search unusable. `/costs/controllers` is now a server-side search: it takes a substring `q`, `kinds`, `excludeKinds` and `limit` (default 50, max 500), orders matches by total cost, and reports `truncated` when more rows matched than were returned. The dropdown queries only when opened, debounces typing by 300ms, renders at most 50 rows with their cost, and says when the search should be refined. Jobs are excluded by default behind an Include Jobs toggle, since their per-run names are what inflates the list and they are rarely what a filter targets. Controllers picked earlier stay selected even when they fall outside the current result page.
+- The dropdown searches controller names only. Matching on the kind text (typing `Deployment` to list deployments) is gone, replaced by the Jobs toggle and the `kinds` parameter.
+
 ## 1.54.4-2
 
 Released 2026-08-28. Built on Backstage [v1.54.4](https://github.com/backstage/backstage/releases/tag/v1.54.4) as the base version, the same base as `1.54.4-1`, so this tag differs only by the changes below.

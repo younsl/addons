@@ -275,6 +275,37 @@ describe('OpenCostCostStore batch performance', () => {
     expect(totals.totalCost).toBe(0);
   });
 
+  test('searchControllers — substring match, cost order, cap, kind exclusion', async () => {
+    const clusterId = (await store.getClusterId('bench-cluster'))!;
+    // 2025-03 has deploy-0..deploy-49 (Deployment)
+    const top = await store.searchControllers(clusterId, 2025, 3, undefined, { limit: 10 });
+    expect(top.items.length).toBe(10);
+    expect(top.truncated).toBe(true);
+    for (let i = 1; i < top.items.length; i++) {
+      expect(top.items[i - 1].totalCost).toBeGreaterThanOrEqual(top.items[i].totalCost);
+    }
+
+    const q = await store.searchControllers(clusterId, 2025, 3, undefined, { q: 'DEPLOY-1', limit: 100 });
+    expect(q.items.length).toBe(11);
+    expect(q.truncated).toBe(false);
+    for (const it of q.items) expect(it.controller.startsWith('deploy-1')).toBe(true);
+
+    // LIKE wildcards in user input are literal
+    const wild = await store.searchControllers(clusterId, 2025, 3, undefined, { q: 'deploy-%', limit: 100 });
+    expect(wild.items.length).toBe(0);
+
+    const none = await store.searchControllers(clusterId, 2025, 3, undefined, { excludeKinds: ['Deployment'] });
+    expect(none.items.length).toBe(0);
+    const only = await store.searchControllers(clusterId, 2025, 3, undefined, { kinds: ['Deployment'], limit: 500 });
+    expect(only.items.length).toBe(50);
+
+    const preset = await store.searchControllers(clusterId, 2025, 3, { patterns: ['deploy-4_'] }, { limit: 100 });
+    expect(preset.items.length).toBe(10);
+
+    const year = await store.searchControllers(clusterId, 2025, undefined, undefined, { limit: 500 });
+    expect(year.items.length).toBe(50);
+  });
+
   test('getControllers — year-wide query without month', async () => {
     const clusterId = (await store.getClusterId('bench-cluster'))!;
     const year = await store.getControllers(clusterId, 2025);

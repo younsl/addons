@@ -306,9 +306,9 @@ export const OpenCostPage = () => {
 
   // Controller multi-select filter (for Year/Month views)
   const [selectedControllers, setSelectedControllers] = useState<string[]>([]);
-  const [controllerListByMonth, setControllerListByMonth] = useState<Map<string, { controller: string; controllerKind: string | null }[]>>(new Map());
   const [controllerDropdownOpen, setControllerDropdownOpen] = useState(false);
   const [controllerSearch, setControllerSearch] = useState('');
+  const [includeJobs, setIncludeJobs] = useState(false);
   const controllerDropdownRef = useRef<HTMLDivElement>(null);
 
   // Controller filter presets (admin-managed, stored in the backend DB)
@@ -353,65 +353,52 @@ export const OpenCostPage = () => {
     return () => document.removeEventListener('mousedown', handler);
   }, []);
 
-  // Fetch controller lists for relevant months
-  useAsync(async () => {
-    if (!baseUrl || (drillDown !== 'year' && drillDown !== 'month')) return;
+  // Server-side controller search. Clusters with many Jobs have tens of thousands of
+  // distinct controller names per year, so the browser never loads the full list: the
+  // dropdown asks the backend for the top matches by cost (debounced) and renders only those.
+  interface ControllerOption { controller: string; controllerKind: string | null; totalCost: number; podCount: number }
+  const CONTROLLER_LIMIT = 50;
+  const [controllerOptions, setControllerOptions] = useState<ControllerOption[]>([]);
+  const [controllerTruncated, setControllerTruncated] = useState(false);
+  const [controllerLoading, setControllerLoading] = useState(false);
+  // Kind lookup for chips of controllers selected earlier that are no longer in the result page
+  const [controllerKindMap, setControllerKindMap] = useState<Map<string, string | null>>(new Map());
 
-    if (drillDown === 'month') {
-      const key = `${selectedCluster}:${selectedYear}:${selectedMonth}:${filterKey}`;
-      if (controllerListByMonth.has(key)) return;
+  useEffect(() => {
+    if (!baseUrl || !controllerDropdownOpen || (drillDown !== 'year' && drillDown !== 'month')) return undefined;
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      setControllerLoading(true);
       try {
         const params = new URLSearchParams({
           cluster: selectedCluster,
           year: String(selectedYear),
-          month: String(selectedMonth),
+          limit: String(CONTROLLER_LIMIT),
         });
+        if (drillDown === 'month') params.set('month', String(selectedMonth));
         if (filterParam) params.set('filter', filterParam);
+        if (controllerSearch.trim()) params.set('q', controllerSearch.trim());
+        if (!includeJobs) params.set('excludeKinds', 'Job');
         const res = await fetchApi.fetch(`${baseUrl}/costs/controllers?${params}`);
+        if (cancelled) return;
         if (res.ok) {
           const json = await res.json();
-          setControllerListByMonth(prev => new Map(prev).set(key, json.data ?? []));
+          const items = (json.data as ControllerOption[]) ?? [];
+          setControllerOptions(items);
+          setControllerTruncated(!!json.truncated);
+          setControllerKindMap(prev => {
+            const next = new Map(prev);
+            for (const it of items) next.set(it.controller, it.controllerKind);
+            return next;
+          });
         }
-      } catch { /* optional */ }
-    } else {
-      // Year view: one request for the whole year instead of one per month
-      const key = `${selectedCluster}:${selectedYear}:*:${filterKey}`;
-      if (controllerListByMonth.has(key)) return;
-      try {
-        const params = new URLSearchParams({
-          cluster: selectedCluster,
-          year: String(selectedYear),
-        });
-        if (filterParam) params.set('filter', filterParam);
-        const res = await fetchApi.fetch(`${baseUrl}/costs/controllers?${params}`);
-        if (res.ok) {
-          const json = await res.json();
-          setControllerListByMonth(prev => new Map(prev).set(key, json.data ?? []));
-        }
-      } catch { /* optional */ }
-    }
-  }, [drillDown, baseUrl, selectedCluster, selectedYear, selectedMonth, fetchApi, filterParam]);
-
-  // Derived: merged controller list for current view
-  const { availableControllers, controllerKindMap } = useMemo(() => {
-    const map = new Map<string, string | null>();
-    const addItems = (items: { controller: string; controllerKind: string | null }[]) => {
-      for (const c of items) {
-        if (!map.has(c.controller)) map.set(c.controller, c.controllerKind);
+      } catch { /* optional */ } finally {
+        if (!cancelled) setControllerLoading(false);
       }
-    };
-    if (drillDown === 'month') {
-      const key = `${selectedCluster}:${selectedYear}:${selectedMonth}:${filterKey}`;
-      addItems(controllerListByMonth.get(key) ?? []);
-    } else {
-      // Year view: year-wide list fetched in one request
-      addItems(controllerListByMonth.get(`${selectedCluster}:${selectedYear}:*:${filterKey}`) ?? []);
-    }
-    return {
-      availableControllers: Array.from(map.keys()).sort(),
-      controllerKindMap: map,
-    };
-  }, [drillDown, selectedCluster, selectedYear, selectedMonth, controllerListByMonth, filterKey]);
+    }, controllerSearch ? 300 : 0);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [baseUrl, controllerDropdownOpen, drillDown, selectedCluster, selectedYear, selectedMonth, filterParam, controllerSearch, includeJobs, fetchApi]);
+
 
   const controllersParam = useMemo(
     () => selectedControllers.length > 0 ? selectedControllers.join(',') : undefined,
@@ -1255,32 +1242,25 @@ export const OpenCostPage = () => {
                 >Manage</button>
               </div>
             </div>
-            {(drillDown === 'year' || drillDown === 'month') && availableControllers.length > 0 && (
+            {(drillDown === 'year' || drillDown === 'month') && (
               <div className="oc-native-select" ref={controllerDropdownRef} style={{ position: 'relative' }}>
                 <label className="oc-native-select-label">Controller</label>
                 <button
                   className="oc-controller-toggle"
                   onClick={() => setControllerDropdownOpen(o => !o)}
                 >
-                  {selectedControllers.length === 0
-                    ? `All (${availableControllers.length})`
-                    : `${selectedControllers.length} selected`}
+                  {selectedControllers.length === 0 ? 'All' : `${selectedControllers.length} selected`}
                   <span style={{ marginLeft: 4, opacity: 0.5 }}>{controllerDropdownOpen ? '\u25B2' : '\u25BC'}</span>
                 </button>
                 {controllerDropdownOpen && (() => {
-                  const q = controllerSearch.toLowerCase();
-                  const filtered = q
-                    ? availableControllers.filter(c => {
-                        const kind = controllerKindMap.get(c) ?? '';
-                        return c.toLowerCase().includes(q) || kind.toLowerCase().includes(q);
-                      })
-                    : availableControllers;
+                  const q = controllerSearch.trim();
+                  const names = controllerOptions.map(o => o.controller);
                   return (
                   <div className="oc-controller-dropdown">
                     <div className="oc-controller-search">
                       <input
                         type="text"
-                        placeholder="Search controllers..."
+                        placeholder="Search controllers (server-side)..."
                         value={controllerSearch}
                         onChange={e => setControllerSearch(e.target.value)}
                         autoFocus
@@ -1288,39 +1268,48 @@ export const OpenCostPage = () => {
                       <div className="oc-controller-actions">
                         <button onClick={() => setSelectedControllers(prev => {
                           const set = new Set(prev);
-                          for (const c of filtered) set.add(c);
+                          for (const c of names) set.add(c);
                           return Array.from(set);
-                        })}>Select All{q ? ` (${filtered.length})` : ''}</button>
-                        <button onClick={() => {
-                          if (q) {
-                            const remove = new Set(filtered);
-                            setSelectedControllers(prev => prev.filter(c => !remove.has(c)));
-                          } else {
-                            setSelectedControllers([]);
-                          }
-                        }}>Clear{q ? ` (${filtered.length})` : ''}</button>
+                        })}>Select shown ({names.length})</button>
+                        <button onClick={() => setSelectedControllers([])}>Clear all</button>
+                        <label className="oc-controller-option" style={{ marginLeft: 'auto' }}>
+                          <input type="checkbox" checked={includeJobs} onChange={e => setIncludeJobs(e.target.checked)} />
+                          <span>Include Jobs</span>
+                        </label>
                       </div>
                     </div>
                     <div className="oc-controller-list">
-                      {filtered.map(c => (
-                        <label key={c} className="oc-controller-option">
+                      {controllerOptions.map(o => (
+                        <label key={o.controller} className="oc-controller-option">
                           <input
                             type="checkbox"
-                            checked={selectedControllers.includes(c)}
+                            checked={selectedControllers.includes(o.controller)}
                             onChange={e => {
                               if (e.target.checked) {
-                                setSelectedControllers(prev => [...prev, c]);
+                                setSelectedControllers(prev => [...prev, o.controller]);
                               } else {
-                                setSelectedControllers(prev => prev.filter(x => x !== c));
+                                setSelectedControllers(prev => prev.filter(x => x !== o.controller));
                               }
                             }}
                           />
-                          <span>{controllerKindMap.get(c) ? <><span className="oc-kind">{highlightMatch(controllerKindMap.get(c)!, q)}</span>{' / '}</> : ''}{highlightMatch(c, q)}</span>
+                          <span>
+                            {o.controllerKind ? <><span className="oc-kind">{o.controllerKind}</span>{' / '}</> : ''}{highlightMatch(o.controller, q.toLowerCase())}
+                          </span>
+                          <span className="oc-controller-cost">{formatCost(o.totalCost)}</span>
                         </label>
                       ))}
-                      {filtered.length === 0 && (
+                      {!controllerLoading && controllerOptions.length === 0 && (
                         <div className="oc-controller-no-match">No match</div>
                       )}
+                      {controllerLoading && controllerOptions.length === 0 && (
+                        <div className="oc-controller-no-match">Searching...</div>
+                      )}
+                    </div>
+                    <div className="oc-controller-footer">
+                      {controllerTruncated
+                        ? `Top ${controllerOptions.length} by cost shown, more match. Refine the search to narrow down.`
+                        : `${controllerOptions.length} controller(s)${q ? ' match' : ''}, ordered by cost`}
+                      {controllerLoading && controllerOptions.length > 0 ? ' (updating)' : ''}
                     </div>
                   </div>
                   );

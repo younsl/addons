@@ -104,6 +104,24 @@ export interface ControllerFilterPresetInput {
   clusters?: string[] | null;
 }
 
+/** Options for the controller search used by the UI dropdown. */
+export interface ControllerSearchOptions {
+  /** Case-insensitive substring match on the controller name */
+  q?: string;
+  /** Only these controller kinds */
+  kinds?: string[];
+  /** Exclude these controller kinds (e.g. Job, whose names are unique per run) */
+  excludeKinds?: string[];
+  /** Max rows returned. Results are ordered by total cost descending. */
+  limit?: number;
+}
+
+export interface ControllerSearchResult {
+  items: { controller: string; controllerKind: string | null; totalCost: number; podCount: number }[];
+  /** True when more rows matched than `limit` */
+  truncated: boolean;
+}
+
 export function hasControllerFilter(filter?: ControllerFilter): boolean {
   return !!filter && ((filter.controllers?.length ?? 0) > 0 || (filter.patterns?.length ?? 0) > 0);
 }
@@ -1108,23 +1126,25 @@ export class OpenCostCostStore {
     return toRow(d, daysCovered, 'daily');
   }
 
+  private monthRange(year: number, month?: number): { startDate: string; endDate: string } {
+    if (month === undefined) {
+      return { startDate: `${year}-01-01`, endDate: `${year + 1}-01-01` };
+    }
+    const nextMonth = month === 12 ? 1 : month + 1;
+    const nextYear = month === 12 ? year + 1 : year;
+    return {
+      startDate: `${year}-${String(month).padStart(2, '0')}-01`,
+      endDate: `${nextYear}-${String(nextMonth).padStart(2, '0')}-01`,
+    };
+  }
+
   /**
    * Get distinct controller names that have cost data for a cluster in a given month.
-   * When `month` is omitted the whole year is scanned in one query, which the yearly
-   * view uses instead of issuing one request per month.
+   * When `month` is omitted the whole year is scanned in one query. Used by the filter
+   * preset preview, which needs the full matched set.
    */
   async getControllers(clusterId: number, year: number, month?: number, filter?: ControllerFilter): Promise<{ controller: string; controllerKind: string | null }[]> {
-    let startDate: string;
-    let endDate: string;
-    if (month === undefined) {
-      startDate = `${year}-01-01`;
-      endDate = `${year + 1}-01-01`;
-    } else {
-      startDate = `${year}-${String(month).padStart(2, '0')}-01`;
-      const nextMonth = month === 12 ? 1 : month + 1;
-      const nextYear = month === 12 ? year + 1 : year;
-      endDate = `${nextYear}-${String(nextMonth).padStart(2, '0')}-01`;
-    }
+    const { startDate, endDate } = this.monthRange(year, month);
 
     const query = this.db(DAILY_TABLE)
       .join(PODS_TABLE, `${DAILY_TABLE}.pod_id`, '=', `${PODS_TABLE}.id`)
@@ -1138,6 +1158,68 @@ export class OpenCostCostStore {
       .orderBy(`${PODS_TABLE}.controller`, 'asc');
 
     return rows.map(r => ({ controller: r.controller as string, controllerKind: (r.controller_kind as string | null) ?? null }));
+  }
+
+  /**
+   * Server-side controller search for the UI dropdown. Clusters with many Jobs carry
+   * tens of thousands of distinct controller names per year, so the browser never
+   * receives the full list: results are matched on the server, ordered by total cost,
+   * and capped at `limit`. Fetches `limit + 1` rows to report truncation without a
+   * second COUNT query.
+   */
+  async searchControllers(
+    clusterId: number,
+    year: number,
+    month?: number,
+    filter?: ControllerFilter,
+    options: ControllerSearchOptions = {},
+  ): Promise<ControllerSearchResult> {
+    const { startDate, endDate } = this.monthRange(year, month);
+    const limit = Math.max(1, Math.min(options.limit ?? 50, 500));
+
+    const query = this.db(DAILY_TABLE)
+      .join(PODS_TABLE, `${DAILY_TABLE}.pod_id`, '=', `${PODS_TABLE}.id`)
+      .where({ [`${DAILY_TABLE}.cluster_id`]: clusterId })
+      .where(`${DAILY_TABLE}.date`, '>=', startDate)
+      .where(`${DAILY_TABLE}.date`, '<', endDate)
+      .whereNotNull(`${PODS_TABLE}.controller`);
+    this.applyControllerFilter(query, filter);
+
+    const q = options.q?.trim();
+    if (q) {
+      // Escape LIKE wildcards so user input is a literal substring match
+      const escaped = q.replace(/[\\%_]/g, ch => `\\${ch}`);
+      query.whereRaw(`LOWER(${PODS_TABLE}.controller) LIKE ? ESCAPE '\\'`, [`%${escaped.toLowerCase()}%`]);
+    }
+    if (options.kinds && options.kinds.length > 0) {
+      query.whereIn(`${PODS_TABLE}.controller_kind`, options.kinds);
+    }
+    if (options.excludeKinds && options.excludeKinds.length > 0) {
+      query.where(function () {
+        this.whereNotIn(`${PODS_TABLE}.controller_kind`, options.excludeKinds!)
+          .orWhereNull(`${PODS_TABLE}.controller_kind`);
+      });
+    }
+
+    const rows = await query
+      .select(`${PODS_TABLE}.controller`, `${PODS_TABLE}.controller_kind`)
+      .sum(`${DAILY_TABLE}.total_cost as total_cost`)
+      .countDistinct(`${DAILY_TABLE}.pod_id as pod_count`)
+      .groupBy(`${PODS_TABLE}.controller`, `${PODS_TABLE}.controller_kind`)
+      .orderBy('total_cost', 'desc')
+      .orderBy(`${PODS_TABLE}.controller`, 'asc')
+      .limit(limit + 1);
+
+    const truncated = rows.length > limit;
+    return {
+      items: rows.slice(0, limit).map(r => ({
+        controller: r.controller as string,
+        controllerKind: (r.controller_kind as string | null) ?? null,
+        totalCost: Number(r.total_cost),
+        podCount: Number(r.pod_count),
+      })),
+      truncated,
+    };
   }
 
   /**

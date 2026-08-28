@@ -218,14 +218,17 @@ export async function createRouter(options: RouterOptions): Promise<Router> {
   });
 
   /**
-   * GET /costs/controllers?cluster=X&year=Y[&month=Z][&filter=preset]
-   * Returns distinct controller names for the given cluster/month.
-   * Without `month` the whole year is returned in one response.
+   * GET /costs/controllers?cluster=X&year=Y[&month=Z][&filter=preset][&q=text][&kinds=a,b][&excludeKinds=Job][&limit=50]
+   * Server-side controller search for the filter dropdown. Results are ordered by
+   * total cost and capped (default 50, max 500). `truncated` tells the client that
+   * more rows matched, so it can ask the user to refine the query.
+   * Without `month` the whole year is searched.
    */
   router.get('/costs/controllers', async (req, res) => {
     const cluster = req.query.cluster as string | undefined;
     const year = Number(req.query.year);
     const month = req.query.month === undefined ? undefined : Number(req.query.month);
+    const list = (v: unknown) => (typeof v === 'string' && v ? v.split(',').filter(Boolean) : undefined);
 
     if (!cluster || !year || (month !== undefined && (!month || month < 1 || month > 12))) {
       res.status(400).json({ message: 'Required: cluster, year. Optional: month (1-12)' });
@@ -235,7 +238,7 @@ export async function createRouter(options: RouterOptions): Promise<Router> {
     try {
       const clusterId = await costStore.getClusterId(cluster);
       if (!clusterId) {
-        res.json({ data: [] });
+        res.json({ data: [], truncated: false });
         return;
       }
 
@@ -244,8 +247,13 @@ export async function createRouter(options: RouterOptions): Promise<Router> {
         res.status(400).json({ message: error });
         return;
       }
-      const data = await costStore.getControllers(clusterId, year, month, filter);
-      res.json({ data });
+      const result = await costStore.searchControllers(clusterId, year, month, filter, {
+        q: typeof req.query.q === 'string' ? req.query.q : undefined,
+        kinds: list(req.query.kinds),
+        excludeKinds: list(req.query.excludeKinds),
+        limit: req.query.limit === undefined ? undefined : Number(req.query.limit) || undefined,
+      });
+      res.json({ data: result.items, truncated: result.truncated });
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
       logger.error(`Error fetching controllers for cluster=${cluster} ${year}-${month}: ${msg}`);

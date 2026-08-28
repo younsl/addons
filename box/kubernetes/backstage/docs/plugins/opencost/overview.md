@@ -184,7 +184,7 @@ Base path: `/api/opencost-backend/`
 | GET | `/clusters/status` | Cluster connectivity status |
 | GET | `/allocation` | Proxy to OpenCost API with carbon enrichment |
 | GET | `/costs/years` | Available years for cluster |
-| GET | `/costs/controllers` | Distinct controllers for month, or for the whole year when `month` is omitted |
+| GET | `/costs/controllers` | Server-side controller search for the filter dropdown: substring `q`, `kinds`, `excludeKinds`, `limit` (default 50, max 500), ordered by total cost, `truncated` flag. Whole year when `month` is omitted |
 | GET | `/costs/monthly-totals` | One aggregated row per month, used by the yearly overview |
 | GET | `/costs/daily-summary` | Per-day aggregates for month |
 | GET | `/costs` | Monthly pod costs (summary or real-time aggregation) |
