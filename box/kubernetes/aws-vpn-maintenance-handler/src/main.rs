@@ -56,50 +56,53 @@ enum Command {
     Status,
 }
 
-/// Installs the tracing subscriber. A failure before the config is read still
-/// has to look like every other line in the Pod log, so the default logger is
-/// set up before anything can fail, and replaced once the configured level and
-/// format are known.
-fn init_logging(level: &str, format: &str) -> Option<tracing::subscriber::DefaultGuard> {
-    let filter =
-        tracing_subscriber::EnvFilter::try_new(match level.to_ascii_lowercase().as_str() {
-            "debug" => "debug",
-            "warn" => "warn",
-            "error" => "error",
-            _ => "info",
-        })
-        .ok()?;
+type Subscriber = Box<dyn tracing::Subscriber + Send + Sync>;
+
+/// Builds the tracing subscriber for a level and format.
+fn subscriber(level: &str, format: &str) -> Subscriber {
+    let filter = tracing_subscriber::EnvFilter::new(match level.to_ascii_lowercase().as_str() {
+        "debug" => "debug",
+        "warn" => "warn",
+        "error" => "error",
+        _ => "info",
+    });
     let builder = tracing_subscriber::fmt()
         .with_env_filter(filter)
         .with_target(false);
-    let subscriber: Box<dyn tracing::Subscriber + Send + Sync> =
-        if format.eq_ignore_ascii_case("text") {
-            Box::new(builder.finish())
-        } else {
-            Box::new(builder.json().flatten_event(true).finish())
-        };
-    Some(tracing::subscriber::set_default(subscriber))
+    if format.eq_ignore_ascii_case("text") {
+        Box::new(builder.finish())
+    } else {
+        Box::new(builder.json().flatten_event(true).finish())
+    }
 }
 
 fn main() -> ExitCode {
     // Both `ring` (reqwest) and `aws-lc-rs` (AWS SDK, kube) are linked, so
     // rustls cannot pick a default provider on its own.
     let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
-    let bootstrap = init_logging("info", "json");
 
     let cli = Cli::parse();
     let env = config::Env::from_process();
     let path = config::resolve_path(cli.config.as_deref());
-    let cfg = match config::load(Path::new(&path), &env) {
-        Ok(cfg) => cfg,
-        Err(err) => {
+    // A failure before the config is read still has to look like every other
+    // line in the Pod log, so it is reported through a default JSON logger
+    // scoped to this thread. The configured logger is installed globally once
+    // the level and format are known: the runtime's worker threads only see a
+    // global subscriber, and the Socket Mode loop and the replacement worker
+    // both log from them.
+    let loaded = tracing::subscriber::with_default(subscriber("info", "json"), || {
+        config::load(Path::new(&path), &env).map_err(|err| {
             error!(file = %path, error = %err, "configuration error");
-            return ExitCode::FAILURE;
-        }
+        })
+    });
+    let Ok(cfg) = loaded else {
+        return ExitCode::FAILURE;
     };
-    drop(bootstrap);
     let level = if cli.verbose { "debug" } else { &cfg.log_level };
-    let _logging = init_logging(level, &cfg.log_format);
+    if tracing::subscriber::set_global_default(subscriber(level, &cfg.log_format)).is_err() {
+        eprintln!("a global tracing subscriber was already installed");
+        return ExitCode::FAILURE;
+    }
 
     let runtime = match tokio::runtime::Runtime::new() {
         Ok(rt) => rt,
@@ -152,8 +155,15 @@ mod tests {
     }
 
     #[test]
-    fn logging_initializes_both_formats() {
-        assert!(init_logging("debug", "text").is_some());
-        assert!(init_logging("nonsense", "json").is_some());
+    fn subscribers_build_for_both_formats() {
+        for (level, format) in [
+            ("debug", "text"),
+            ("nonsense", "json"),
+            ("warn", "JSON"),
+            ("error", "text"),
+        ] {
+            let s = subscriber(level, format);
+            tracing::subscriber::with_default(s, || tracing::info!("probe"));
+        }
     }
 }
