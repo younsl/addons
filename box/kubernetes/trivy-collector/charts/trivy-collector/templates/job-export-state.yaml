@@ -58,7 +58,7 @@ spec:
             - --db-path={{ .Values.migration.exportState.dbPath }}
             - --namespace={{ .Release.Namespace }}
             {{- if .Values.migration.exportState.dryRun }}
-            - --dry-run=true
+            - --dry-run
             {{- end }}
           env:
             - name: LOG_FORMAT
