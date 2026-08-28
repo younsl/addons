@@ -21,7 +21,7 @@ pub async fn run(slack_cfg: SlackArgs, run_cfg: RunArgs) -> anyhow::Result<()> {
     let metrics = Metrics::new();
 
     let slack = SlackClient::new(
-        slack_cfg.slack_webhook_url.clone(),
+        &slack_cfg.slack_webhook_url,
         Duration::from_secs(slack_cfg.slack_timeout_secs),
     )
     .context("failed to construct Slack client")?;

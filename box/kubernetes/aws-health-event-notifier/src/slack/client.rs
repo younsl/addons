@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use reqwest::Client;
+use reqwest::{Client, Url};
 use secrecy::{ExposeSecret, SecretString};
 use serde_json::Value;
 
@@ -9,11 +9,17 @@ use crate::error::{AppError, AppResult};
 #[derive(Clone)]
 pub struct SlackClient {
     http: Client,
-    webhook_url: SecretString,
+    webhook_url: Url,
 }
 
 impl SlackClient {
-    pub fn new(webhook_url: SecretString, timeout: Duration) -> AppResult<Self> {
+    /// Builds a client for the given webhook URL.
+    ///
+    /// The webhook URL carries the Slack secret in its path, so it is only
+    /// accepted over `https`. Plain `http` is allowed for loopback hosts so
+    /// local mock servers still work.
+    pub fn new(webhook_url: &SecretString, timeout: Duration) -> AppResult<Self> {
+        let webhook_url = validate_webhook_url(webhook_url.expose_secret())?;
         let http = Client::builder()
             .timeout(timeout)
             .user_agent(concat!(
@@ -28,7 +34,7 @@ impl SlackClient {
     pub async fn post(&self, payload: &Value) -> AppResult<()> {
         let resp = self
             .http
-            .post(self.webhook_url.expose_secret())
+            .post(self.webhook_url.clone())
             .json(payload)
             .send()
             .await
@@ -43,6 +49,18 @@ impl SlackClient {
     }
 }
 
+fn validate_webhook_url(raw: &str) -> AppResult<Url> {
+    let url = Url::parse(raw).map_err(|e| AppError::Slack(format!("invalid webhook url: {e}")))?;
+    let loopback = matches!(url.host_str(), Some("localhost" | "127.0.0.1" | "[::1]"));
+    match url.scheme() {
+        "https" => Ok(url),
+        "http" if loopback => Ok(url),
+        other => Err(AppError::Slack(format!(
+            "webhook url must use https, got scheme {other:?}"
+        ))),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -51,7 +69,38 @@ mod tests {
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     fn client(url: &str) -> SlackClient {
-        SlackClient::new(SecretString::from(url.to_string()), Duration::from_secs(5)).unwrap()
+        SlackClient::new(&SecretString::from(url.to_string()), Duration::from_secs(5)).unwrap()
+    }
+
+    #[test]
+    fn new_accepts_https() {
+        let c = SlackClient::new(
+            &SecretString::from("https://hooks.slack.com/services/T/B/x".to_string()),
+            Duration::from_secs(5),
+        );
+        assert!(c.is_ok());
+    }
+
+    #[test]
+    fn new_rejects_cleartext_http_to_remote_host() {
+        let err = SlackClient::new(
+            &SecretString::from("http://hooks.slack.com/services/T/B/x".to_string()),
+            Duration::from_secs(5),
+        )
+        .err()
+        .unwrap();
+        assert!(matches!(err, AppError::Slack(m) if m.contains("must use https")));
+    }
+
+    #[test]
+    fn new_rejects_unparsable_url() {
+        let err = SlackClient::new(
+            &SecretString::from("not a url".to_string()),
+            Duration::from_secs(5),
+        )
+        .err()
+        .unwrap();
+        assert!(matches!(err, AppError::Slack(m) if m.contains("invalid webhook url")));
     }
 
     #[tokio::test]

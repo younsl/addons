@@ -412,7 +412,7 @@ mod tests {
         fn poller(aws: HealthClient, slack_url: &str, cfg: PollerCfg) -> Poller {
             let metrics = Metrics::new();
             let slack = SlackClient::new(
-                SecretString::from(slack_url.to_string()),
+                &SecretString::from(slack_url.to_string()),
                 StdDuration::from_secs(5),
             )
             .unwrap();
@@ -479,7 +479,7 @@ mod tests {
                 replay_client(vec![LIST_ONE.into(), DETAILS.into(), ENTITIES.into()]);
             let metrics = Metrics::new();
             let slack = SlackClient::new(
-                SecretString::from("http://127.0.0.1:1".to_string()),
+                &SecretString::from("http://127.0.0.1:1".to_string()),
                 StdDuration::from_secs(5),
             )
             .unwrap();

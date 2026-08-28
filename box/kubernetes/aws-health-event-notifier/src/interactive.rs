@@ -21,7 +21,7 @@ use crate::slack::formatter::{self, SlackMessageOpts};
 
 pub async fn run(slack_cfg: SlackArgs, args: SendArgs) -> anyhow::Result<()> {
     let slack = SlackClient::new(
-        slack_cfg.slack_webhook_url.clone(),
+        &slack_cfg.slack_webhook_url,
         Duration::from_secs(slack_cfg.slack_timeout_secs),
     )
     .context("construct Slack client")?;

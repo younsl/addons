@@ -125,7 +125,7 @@ mod tests {
 
     fn notifier(url: &str) -> (Notifier, Metrics) {
         let slack =
-            SlackClient::new(SecretString::from(url.to_string()), Duration::from_secs(5)).unwrap();
+            SlackClient::new(&SecretString::from(url.to_string()), Duration::from_secs(5)).unwrap();
         let metrics = Metrics::new();
         let n = Notifier::new(
             slack,
