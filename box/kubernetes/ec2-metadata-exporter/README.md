@@ -2,12 +2,11 @@
 
 [![GitHub Container Registry](https://img.shields.io/badge/ghcr.io-ec2--metadata--exporter-black?style=flat-square&logo=docker&logoColor=white)](https://github.com/younsl/o/pkgs/container/ec2-metadata-exporter)
 [![Helm Chart](https://img.shields.io/badge/ghcr.io-charts%2Fec2--metadata--exporter-black?style=flat-square&logo=helm&logoColor=white)](https://github.com/younsl/o/pkgs/container/charts%2Fec2-metadata-exporter)
-[![Go](https://img.shields.io/badge/go-1.27.0-black?style=flat-square&logo=go&logoColor=white)](https://go.dev/)
+[![Rust](https://img.shields.io/badge/rust-1.98.0-black?style=flat-square&logo=rust&logoColor=white)](https://www.rust-lang.org/)
 [![GitHub license](https://img.shields.io/github/license/younsl/o?style=flat-square&color=black)](https://github.com/younsl/o/blob/main/LICENSE)
 
 Prometheus exporter that polls the EC2 DescribeInstances API and publishes
-every instance's private IP and Name tag as metric labels. Built with Go 1.27
-and shipped as a statically linked binary on a scratch image.
+every instance's private IP and Name tag as metric labels. Built with Rust 1.98 and shipped as a statically linked musl binary (cargo-zigbuild) on a scratch image.
 
 ## Architecture
 
@@ -24,15 +23,15 @@ for the full metric reference, example queries, and alerting hints.
 
 ## Configuration
 
-All settings come from environment variables.
+All settings come from environment variables. Each one also has a matching CLI flag (`--scrape-interval`, `--metrics-port`, ...); run with `--help` for the full list.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `AWS_REGION` | SDK default chain | Region to scan. |
-| `SCRAPE_INTERVAL` | `60s` | EC2 API polling interval (Go duration, min `1s`). |
+| `SCRAPE_INTERVAL` | `60s` | EC2 API polling interval (humantime duration such as `30s`, `1m30s`, `5m`, min `1s`). |
 | `METRICS_PORT` | `8081` | Port serving `/metrics`. |
 | `HEALTH_PORT` | `8080` | Port serving `/healthz` and `/readyz`. |
-| `LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error`. |
+| `LOG_LEVEL` | `info` | `trace`, `debug`, `info`, `warn`, `error`. `RUST_LOG` overrides it with a full tracing filter. |
 | `LOG_FORMAT` | `json` | `json` or `text`. |
 
 ## Required IAM permissions
@@ -91,9 +90,12 @@ See [charts/ec2-metadata-exporter/README.md](charts/ec2-metadata-exporter/README
 ## Development
 
 ```bash
-make build      # Compile binary into bin/
-make test       # Run tests with race detector
-make coverage   # Enforce 70% minimum line coverage
-make lint       # gofmt check + go vet
-make all        # fmt + vet + lint + test + build
+make build      # Compile debug binary
+make test       # Run tests
+make coverage   # Enforce 70% minimum line coverage (cargo-llvm-cov)
+make lint       # rustfmt check + clippy (-D warnings)
+make zigbuild   # Cross-compile static linux/amd64 and linux/arm64 binaries
+make all        # fmt + lint + test + build
 ```
+
+The container image is built from the pre-compiled `ec2-metadata-exporter-linux-<arch>` binaries, so `make docker-build` runs `zigbuild` first. Requires `cargo-zigbuild` and `zig`.

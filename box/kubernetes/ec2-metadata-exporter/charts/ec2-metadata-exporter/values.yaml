@@ -33,7 +33,7 @@ strategy:
 config:
   # -- (string) AWS region to scan; empty falls back to the SDK default chain (IRSA, instance profile)
   region: ""
-  # -- (string) EC2 API polling interval as a Go duration; supports h, m, s and combinations (e.g. 30s, 5m, 1h)
+  # -- (string) EC2 API polling interval as a humantime duration; supports h, m, s and combinations (e.g. 30s, 5m, 1h)
   scrapeInterval: "60s"
   # -- (string) Log level: debug, info, warn, error
   logLevel: "info"

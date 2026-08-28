@@ -1,6 +1,6 @@
 # ec2-metadata-exporter
 
-![Version: 0.1.1](https://img.shields.io/badge/Version-0.1.1-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.1.1](https://img.shields.io/badge/AppVersion-0.1.1-informational?style=flat-square)
+![Version: 0.2.0](https://img.shields.io/badge/Version-0.2.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.2.0](https://img.shields.io/badge/AppVersion-0.2.0-informational?style=flat-square)
 
 Prometheus exporter that publishes every EC2 instance's private IP and Name tag via the DescribeInstances API
 
@@ -39,7 +39,7 @@ helm install ec2-metadata-exporter oci://ghcr.io/younsl/charts/ec2-metadata-expo
 Install a specific version:
 
 ```console
-helm install ec2-metadata-exporter oci://ghcr.io/younsl/charts/ec2-metadata-exporter --version 0.1.1
+helm install ec2-metadata-exporter oci://ghcr.io/younsl/charts/ec2-metadata-exporter --version 0.2.0
 ```
 
 ### Install from local chart
@@ -47,7 +47,7 @@ helm install ec2-metadata-exporter oci://ghcr.io/younsl/charts/ec2-metadata-expo
 Download ec2-metadata-exporter chart and install from local directory:
 
 ```console
-helm pull oci://ghcr.io/younsl/charts/ec2-metadata-exporter --untar --version 0.1.1
+helm pull oci://ghcr.io/younsl/charts/ec2-metadata-exporter --untar --version 0.2.0
 helm install ec2-metadata-exporter ./ec2-metadata-exporter
 ```
 
@@ -86,7 +86,7 @@ The following table lists the configurable parameters and their default values.
 | strategy.rollingUpdate.maxSurge | string|int | `"25%"` | Max Pods created above desired count during an update |
 | strategy.rollingUpdate.maxUnavailable | string|int | `"25%"` | Max Pods unavailable during an update |
 | config.region | string | `""` | AWS region to scan; empty falls back to the SDK default chain (IRSA, instance profile) |
-| config.scrapeInterval | string | `"60s"` | EC2 API polling interval as a Go duration; supports h, m, s and combinations (e.g. 30s, 5m, 1h) |
+| config.scrapeInterval | string | `"60s"` | EC2 API polling interval as a humantime duration; supports h, m, s and combinations (e.g. 30s, 5m, 1h) |
 | config.logLevel | string | `"info"` | Log level: debug, info, warn, error |
 | config.logFormat | string | `"json"` | Log format: json or text |
 | extraEnv | list | `[]` | Additional environment variables for the container (raw EnvVar entries) |
