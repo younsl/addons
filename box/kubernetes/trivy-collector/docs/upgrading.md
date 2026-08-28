@@ -1,5 +1,11 @@
 # Upgrading
 
+## To app 1.7.1 / chart 0.12.1
+
+A patch release. No configuration changes and no migration steps.
+
+The database size reported by `/api/v1/stats` and by the `trivy_collector_db_size_bytes` metric now comes from the SQLite page pragmas instead of `fs::metadata` on the database file. The value is the logical size of the committed database, so it no longer counts a WAL segment that has not been checkpointed yet, and an in-memory database reports a real size. Reading it no longer touches a filesystem path on a request path, which closes a CodeQL `rust/path-injection` finding.
+
 ## To app 1.7.0 / chart 0.12.0
 
 This release removes the PersistentVolume and reworks the UI. The scraper now owns SQLite on its own `emptyDir` and serves it back to the server pods over an internal API, so the server holds no database and no volume. See [Architecture](architecture.md) for why.

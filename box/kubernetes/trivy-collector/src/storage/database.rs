@@ -12,7 +12,6 @@ use super::schema::init_schema;
 #[derive(Clone)]
 pub struct Database {
     pub(super) pool: SqlitePool,
-    db_path: String,
 }
 
 impl Database {
@@ -75,13 +74,10 @@ impl Database {
         // Initialize schema
         init_schema(&pool).await?;
 
-        let db = Self {
-            pool,
-            db_path: db_path.to_string(),
-        };
+        let db = Self { pool };
 
         // Log final database status
-        let (size_bytes, size_human) = db.get_db_size();
+        let (size_bytes, size_human) = db.db_size().await;
         let report_count = db.get_total_report_count().await.unwrap_or(0);
 
         info!(
@@ -105,16 +101,21 @@ impl Database {
         Ok(count)
     }
 
-    /// Get database file size
-    pub fn get_db_size(&self) -> (u64, String) {
-        match std::fs::metadata(&self.db_path) {
-            Ok(metadata) => {
-                let size = metadata.len();
-                let human = Self::format_bytes(size);
-                (size, human)
-            }
-            Err(_) => (0, "0 B".to_string()),
-        }
+    /// Get database size through the open pool.
+    ///
+    /// Measured with the page pragmas rather than `fs::metadata`, so no file
+    /// path is touched on a request path and `:memory:` databases report a
+    /// real size too. Reports the logical size of the committed database,
+    /// which excludes the WAL segment still waiting for a checkpoint.
+    pub async fn db_size(&self) -> (u64, String) {
+        let bytes: i64 = sqlx::query_scalar(
+            "SELECT page_count * page_size FROM pragma_page_count(), pragma_page_size()",
+        )
+        .fetch_one(&self.pool)
+        .await
+        .unwrap_or(0);
+        let size = bytes.max(0) as u64;
+        (size, Self::format_bytes(size))
     }
 
     /// Count reports by type (for metrics)

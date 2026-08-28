@@ -386,7 +386,7 @@ impl Database {
 
     /// Get overall statistics
     pub async fn get_stats(&self) -> Result<Stats> {
-        let (db_size_bytes, db_size_human) = self.get_db_size();
+        let (db_size_bytes, db_size_human) = self.db_size().await;
 
         let version_row = sqlx::query("SELECT sqlite_version()")
             .fetch_one(&self.pool)

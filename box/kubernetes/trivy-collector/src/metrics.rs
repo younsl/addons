@@ -300,11 +300,10 @@ impl Metrics {
     }
 
     /// Refresh the gauges that describe the scraper's database.
-    pub async fn refresh_db_gauges(&self, db: &Database, db_path: &str) {
-        if let Some(ref gauge) = self.db_size_bytes
-            && let Ok(metadata) = std::fs::metadata(db_path)
-        {
-            gauge.set(metadata.len() as i64);
+    pub async fn refresh_db_gauges(&self, db: &Database) {
+        if let Some(ref gauge) = self.db_size_bytes {
+            let (size_bytes, _) = db.db_size().await;
+            gauge.set(size_bytes as i64);
         }
 
         if let Some(ref family) = self.db_reports_total {
@@ -443,13 +442,12 @@ mod tests {
         let metrics = Metrics::new(&mut registry, Mode::Scraper);
         let db = Database::new(":memory:").await.unwrap();
 
-        metrics
-            .refresh_db_gauges(&db, "/nonexistent/trivy.db")
-            .await;
+        metrics.refresh_db_gauges(&db).await;
 
         let out = scrape(&registry);
         assert!(out.contains(r#"trivy_collector_db_reports{report_type="vulnerabilityreport"} 0"#));
-        // A missing file leaves the size gauge untouched rather than lying.
-        assert!(out.contains("trivy_collector_db_size_bytes 0"));
+        // The pragma-based size works on `:memory:` too, so the gauge is set.
+        assert!(out.contains("trivy_collector_db_size_bytes"));
+        assert!(!out.contains("trivy_collector_db_size_bytes 0\n"));
     }
 }

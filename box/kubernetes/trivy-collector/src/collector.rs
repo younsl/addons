@@ -102,7 +102,7 @@ pub async fn run(
         shutdown.clone(),
     );
 
-    let metrics_handle = spawn_metrics_refresh(&config, &db, &metrics, &shutdown);
+    let metrics_handle = spawn_metrics_refresh(&db, &metrics, &shutdown);
 
     let _ = shutdown.changed().await;
     info!("Scraper shutdown signal received");
@@ -264,14 +264,12 @@ fn spawn_readiness_loop(
 
 /// Refresh the database gauges the scraper owns.
 fn spawn_metrics_refresh(
-    config: &Config,
     db: &Arc<Database>,
     metrics: &Arc<Metrics>,
     shutdown: &tokio::sync::watch::Receiver<bool>,
 ) -> tokio::task::JoinHandle<()> {
     let db = db.clone();
     let metrics = metrics.clone();
-    let db_path = config.get_db_path();
     let mut shutdown = shutdown.clone();
 
     tokio::spawn(async move {
@@ -280,7 +278,7 @@ fn spawn_metrics_refresh(
             tokio::select! {
                 _ = shutdown.changed() => break,
                 _ = interval.tick() => {
-                    metrics.refresh_db_gauges(&db, &db_path).await;
+                    metrics.refresh_db_gauges(&db).await;
                 }
             }
         }
