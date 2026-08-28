@@ -106,11 +106,11 @@ kubectl -n argocd get events --field-selector reason=PromotionBlocked
 
 Every refusal carries the reason `PromotionBlocked`, whatever the underlying code was, so one field selector finds all of them. A mismatch that `imageTag.mode: warn` let through is `PromotionWarning`, because it is worth recording but refused nobody. The verdict code stays out of the Event and lives on `decisions_total`, which is the surface built to be aggregated over. An Event is deleted an hour after it is written, so it is context on one Application rather than a history to query.
 
-`events_total` counts submissions rather than writes. Delivery is asynchronous and client-go aggregates a repeated Event onto the existing object and drops the rest under its own spam filter, so a retry loop cannot flood etcd and the counter will run ahead of the objects that exist.
+`events_total` counts submissions rather than writes. Delivery is asynchronous through a queue drained by a background task, and a write the API server refuses is logged and dropped, so the counter can run ahead of the objects that exist.
 
 ## The certificate gauge cannot see the failure that matters
 
-`webhook_certificate_expiry_seconds` is the `notAfter` of the pair the process currently has loaded, as a unix timestamp, and zero when none is loaded. The gate re-reads the pair from disk per handshake, so it tracks what is actually being served rather than what was on disk at startup.
+`webhook_certificate_expiry_seconds` is the `notAfter` of the pair the process currently has loaded, as a unix timestamp, and zero when none is loaded. The gate polls the pair on disk every 10 seconds and reloads it when either file changes, so it tracks what is actually being served rather than what was on disk at startup.
 
 It only catches a certificate running out. The failure that takes the webhook down in practice is a re-issued CA: cert-manager mints a new one, cainjector publishes it into `caBundle`, and the leaf still being served is valid but no longer chains to it. The gauge reads healthy throughout, because the handshake fails before any request reaches this process. Nothing on this side can see it, so alert on the API server instead.
 
@@ -131,7 +131,7 @@ So `decisions_total` measures verdicts, not deploys. For traffic that actually p
 
 Application identity is deliberately absent from every label. A denial costs one log line, but one time series per Application would outlive the Application itself.
 
-The logs carry what the labels do not. Every verdict, allowed or denied, logs `app`, `namespace`, `principal`, `outcome`, `reason`, and `durationMs`, plus `initiatedBy` and `revision` when the operation names them. Denials go out at warn level.
+The logs carry what the labels do not. Every verdict, allowed or denied, logs `app`, `namespace`, `principal`, `outcome`, `reason`, and `duration_ms`, plus `initiated_by` and `revision` when the operation names them. Denials go out at warn level.
 
 ```bash
 kubectl -n argocd logs deploy/argocd-promotion-gate | jq 'select(.outcome == "denied")'

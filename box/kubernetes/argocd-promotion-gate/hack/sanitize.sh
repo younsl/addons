@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Sanitize public identity references before mirroring to a private repo.
 #
-# The old values are read out of go.mod, Chart.yaml, and values.yaml at runtime,
+# The old values are read out of Cargo.toml, Chart.yaml, and values.yaml at runtime,
 # so this script holds no identity string of its own and is safe to mirror.
 # Generic registry fixtures (example/, stefanprodan/) are intentionally kept.
 #
@@ -32,7 +32,10 @@ yaml_value() { # file, key regex -> first scalar value, quotes and list dash str
   sed -nE "s|^[[:space:]]*(- )?$2:[[:space:]]*[\"']?([^\"']+)[\"']?[[:space:]]*$|\2|p" "$1" | head -1
 }
 
-OLD_MODULE=$(awk '/^module /{print $2; exit}' go.mod)
+# Cargo.toml's repository URL stands in for the Go module path: the host and
+# namespace it carries are the identity strings that leak into docs and chart.
+OLD_REPO_URL=$(sed -nE 's|^repository[[:space:]]*=[[:space:]]*"([^"]+)".*|\1|p' Cargo.toml | head -1)
+OLD_MODULE="${OLD_REPO_URL#*://}/${BINARY}"
 OLD_MODULE_PREFIX="${OLD_MODULE%/*}"
 OLD_NAMESPACE=$(cut -d/ -f2 <<<"$OLD_MODULE")
 
@@ -99,7 +102,7 @@ ALLOW_PATTERN="$(escape_re "$OLD_REGISTRY_HOST")/(example|stefanprodan)"
 matching_lines() {
   grep -rInE \
     --exclude-dir=.git --exclude-dir=bin --exclude-dir=node_modules \
-    --exclude=go.sum --exclude=cover.out \
+    --exclude=Cargo.lock --exclude-dir=target \
     "$CHECK_PATTERN" . 2>/dev/null | grep -vE "$ALLOW_PATTERN" || true
 }
 

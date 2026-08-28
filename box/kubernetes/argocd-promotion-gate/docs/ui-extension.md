@@ -31,7 +31,7 @@ Ungated environments render no tile on purpose. A permanent "not gated" badge on
 
 Argo CD's extension contract is browser side only. argocd-server serves static files from its extensions directory, the SPA loads them, and each script registers a React component through `window.extensionsAPI`. There is no server side plugin ABI, so no amount of Go can render into that page. The only real choice is how the JavaScript is produced, not whether it exists.
 
-This one is hand written against the `window.React` that Argo CD already exposes, so there is no build step, no bundler, and no 5 MB bundle. It lives at `internal/uiextension/extension.js` and is compiled into the gate binary with `go:embed`.
+This one is hand written against the `window.React` that Argo CD already exposes, so there is no build step, no bundler, and no 5 MB bundle. It lives at `assets/extension.js` and is compiled into the gate binary with `include_str!`.
 
 Embedding it is the reason the panel cannot go stale. The usual pattern publishes the frontend as a separate release artifact, which means a cluster can run an old script against a newer API. Here the script and the API it calls are the same build by construction.
 
@@ -151,4 +151,4 @@ Then open any gated Application. If the tile says `Unavailable` the message name
 
 ## Editing the script
 
-Edit `internal/uiextension/extension.js` and rebuild the binary. `__EXTENSION_NAME__` in that file is substituted at serve time from `--extension-name`, so the path is never hardcoded twice. Tests in `internal/uiextension` assert that the placeholder is gone and that `window.extensionsAPI.registerStatusPanelExtension` is still referenced, which is the whole contract with Argo CD and otherwise fails silently.
+Edit `assets/extension.js` and rebuild the binary. `__EXTENSION_NAME__` in that file is substituted at serve time from `--extension-name`, so the path is never hardcoded twice. Tests in `src/uiextension.rs` assert that the placeholder is gone and that `window.extensionsAPI.registerStatusPanelExtension` is still referenced, which is the whole contract with Argo CD and otherwise fails silently.

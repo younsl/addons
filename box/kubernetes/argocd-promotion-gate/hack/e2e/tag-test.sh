@@ -27,7 +27,7 @@ cleanup() {
 trap cleanup EXIT
 
 echo "building the gate for the host"
-(cd "${REPO_ROOT}" && go build -o "${WORK}/gate" ./cmd/argocd-promotion-gate) || exit 1
+(cd "${REPO_ROOT}" && cargo build --release --quiet && cp target/release/argocd-promotion-gate "${WORK}/gate") || exit 1
 
 openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj '/CN=localhost' \
   -keyout "${WORK}/tls.key" -out "${WORK}/tls.crt" 2>/dev/null

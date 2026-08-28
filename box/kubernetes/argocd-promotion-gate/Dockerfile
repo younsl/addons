@@ -1,19 +1,4 @@
-# Statically linked Go binary on scratch. Cross-compilation happens inside the
-# builder stage (CGO disabled), so buildx needs no QEMU for the compile step.
-FROM --platform=$BUILDPLATFORM golang:1.27.0-alpine AS builder
-ARG TARGETOS
-ARG TARGETARCH
-ARG VERSION=dev
-ARG COMMIT=none
-WORKDIR /src
-COPY go.mod go.sum ./
-RUN go mod download
-COPY . .
-RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
-    go build -trimpath \
-    -ldflags="-s -w -X github.com/younsl/o/box/kubernetes/argocd-promotion-gate/internal/version.Version=${VERSION} -X github.com/younsl/o/box/kubernetes/argocd-promotion-gate/internal/version.Commit=${COMMIT}" \
-    -o /out/argocd-promotion-gate ./cmd/argocd-promotion-gate
-
+# Statically linked binary built via GitHub Actions cross-compilation (cargo-zigbuild)
 FROM alpine:3.23 AS certs
 RUN apk add --no-cache ca-certificates
 
@@ -28,8 +13,11 @@ LABEL org.opencontainers.image.title="argocd-promotion-gate" \
 
 # The Kubernetes API and argocd-server are both reached over TLS, so the trust
 # store is not optional even though both are in-cluster.
+ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
+
+ARG TARGETARCH
 COPY --from=certs /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
-COPY --from=builder /out/argocd-promotion-gate /app/argocd-promotion-gate
+COPY --chmod=755 argocd-promotion-gate-linux-${TARGETARCH} /app/argocd-promotion-gate
 EXPOSE 8443 8080
 USER 65532:65532
 ENTRYPOINT ["/app/argocd-promotion-gate"]

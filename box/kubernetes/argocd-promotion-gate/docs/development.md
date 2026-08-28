@@ -2,38 +2,48 @@
 
 ## Overview
 
-Where the code lives, what each package is allowed to depend on, how to run the gate against a real cluster, and the end to end tier. Also the tests that pin decisions which are easy to undo by accident.
+Where the code lives, what each module is allowed to depend on, how to run the gate against a real cluster, and the end to end tier. Also the tests that pin decisions which are easy to undo by accident.
 
 For anyone changing the code. Behaviour and settings live in [docs/configuration.md](configuration.md) instead.
 
 ```bash
-make          # fmt, vet, lint, test, build
-make test     # go test -race ./...
-make coverage # enforce the 70% floor
-make fix      # go fix modernizations
+make            # fmt, lint, test, build
+make lint       # cargo fmt --check + cargo clippy --all-targets -- -D warnings
+make test       # cargo test
+make coverage   # cargo llvm-cov, enforce the 70% floor
+make zigbuild   # static linux/amd64 and linux/arm64 binaries via cargo-zigbuild
 ```
+
+The toolchain is Rust 1.98.0, edition 2024. Cross-compilation uses [cargo-zigbuild](https://github.com/rust-cross/cargo-zigbuild) against the musl targets, which is what the release workflow does too, so `make zigbuild` reproduces the shipped binary locally.
 
 ## Layout
 
-| Package | Responsibility | External deps |
+| Module | Responsibility | External deps |
 | --- | --- | --- |
-| `internal/gate` | the rules: chain, image parsing, verdict | none |
-| `internal/config` | load and validate the config file | `yaml.v3` |
-| `internal/argocd` | read Applications, resolve desired images | `client-go`, `net/http` |
-| `internal/engine` | gather facts, delegate the verdict | the above |
-| `internal/admission` | AdmissionReview in, verdict out | `internal/engine` |
-| `internal/extension` | read-only API for the UI panel | `internal/engine` |
-| `internal/observability` | Prometheus registry and metric set | `client_golang` |
+| `src/gate/` | the rules: chain, image parsing, verdict | `serde` |
+| `src/config.rs` | load and validate the config file | `serde_yaml` |
+| `src/argocd/` | read Applications, resolve desired images | `kube`, `reqwest` |
+| `src/engine.rs` | gather facts, delegate the verdict | the above |
+| `src/admission/` | AdmissionReview in, verdict out | `axum` |
+| `src/extension.rs` | read-only API for the UI panel | `axum` |
+| `src/events.rs` | Kubernetes Events for blocked and warned verdicts | `kube`, `k8s-openapi` |
+| `src/servingcert.rs` | load and reload the webhook keypair | `rustls`, `x509-parser` |
+| `src/uiextension.rs` | the embedded extension script and its tar layout | `tar` |
+| `src/observability/` | Prometheus registry and metric set | `prometheus-client` |
+| `src/app.rs` | startup logging, listeners, graceful shutdown | `axum-server` |
 
-`internal/gate` holds no I/O at all. Every fact a verdict depends on arrives in a `gate.Input`, which is why the rules are covered by table tests with no cluster and no fake client.
+`src/gate/` holds no I/O at all. Every fact a verdict depends on arrives in a `gate::Input`, which is why the rules are covered by table tests with no cluster and no fake client.
 
-The engine exists so the webhook and the UI API cannot diverge. Both call `Engine.Evaluate`. Neither has rules of its own.
+The engine exists so the webhook and the UI API cannot diverge. Both call `Engine::evaluate`. Neither has rules of its own.
 
 ## Running against a live cluster
 
-The gate needs a serving certificate for the webhook listener, but the extension API and probes are plain HTTP, so the read paths can be exercised without one:
+The gate needs a serving certificate for the webhook listener. It is loaded before either listener opens, so a local run needs a pair even when only the plain HTTP read paths are exercised:
 
 ```bash
+openssl req -x509 -newkey rsa:2048 -nodes -days 1 \
+  -subj '/CN=localhost' -keyout /tmp/tls.key -out /tmp/tls.crt
+
 cat > /tmp/gate.yaml <<'EOF'
 chain: [stage, prod]
 gatedEnvs: [prod]
@@ -41,20 +51,14 @@ imageTag:
   enabled: false
 EOF
 
-go run ./cmd/argocd-promotion-gate \
+cargo run -- \
   --config /tmp/gate.yaml \
   --kubeconfig ~/.kube/config \
+  --tls-cert-file /tmp/tls.crt --tls-key-file /tmp/tls.key \
   --log-format text --log-level debug &
 
 curl -s 'localhost:8080/api/v1/gate?app=prod-payment-api' | jq
 curl -s localhost:8080/api/v1/config | jq
-```
-
-The webhook listener fails to start without `--tls-cert-file` and `--tls-key-file`, which is the intended behaviour in-cluster. For a local self-signed pair:
-
-```bash
-openssl req -x509 -newkey rsa:2048 -nodes -days 1 \
-  -subj '/CN=localhost' -keyout /tmp/tls.key -out /tmp/tls.crt
 ```
 
 With `imageTag.enabled: true`, point `argocd.serverAddress` at a port-forwarded argocd-server and mint a token as described in [configuration.md](configuration.md).
@@ -89,25 +93,18 @@ Drop the `operation` field from `object` and the response flips to an unconditio
 
 ## Testing conventions
 
-Table tests where the cases are genuinely parallel, named subtests otherwise. Assertions say what broke rather than dumping a struct, because the failure message is the only thing a future reader gets.
+Unit tests live in a `#[cfg(test)]` module in the same file. Table tests where the cases are genuinely parallel, named tests otherwise. Assertions say what broke rather than dumping a struct, because the failure message is the only thing a future reader gets.
 
-`internal/argocd`, `internal/admission`, `internal/engine`, and `internal/extension` use `dynamicfake` with `NewSimpleDynamicClientWithCustomListKinds`. The Application CRD is in no built-in scheme, so the list kind has to be declared:
-
-```go
-dynamicfake.NewSimpleDynamicClientWithCustomListKinds(
-    runtime.NewScheme(),
-    map[schema.GroupVersionResource]string{argocd.ApplicationGVR: "ApplicationList"},
-    objects...,
-)
-```
+Nothing talks to a cluster. `AppReader`, `ImageResolver`, and `EventSink` are traits with one Kubernetes implementation each and an in-memory double under `engine::testing` and `events::testing`. The argocd-server client is tested against [wiremock](https://docs.rs/wiremock), and the certificate reloader against pairs minted with [rcgen](https://docs.rs/rcgen). HTTP handlers are driven through `tower::ServiceExt::oneshot` with no socket.
 
 Tests worth keeping in mind when changing behaviour, because each pins a decision that is easy to undo by accident:
 
-- `TestReaderGetNotFoundIsNotAnError`. A missing upstream must reach the gate as "absent", not as an error, or every app without a counterpart hits the `onError` policy.
-- `TestEvaluateKubernetesFailureIsNotAMissingUpstream`. The reverse case, where a read failure must never be mistaken for an absent upstream, which would open the gate on any API hiccup.
-- `TestEvaluateSkipsImageLookupWhenUpstreamAlreadyFails`. The remote call must not happen on a path that is already a denial.
-- `TestDesiredImagesFailsWholeLookupOnPartialFailure`. A partial image list would let a mismatch through on the kind that failed to load.
-- `TestHandlerFailsOpenOnMalformedInput`. The gate cannot judge what it cannot parse, and refusing everything would take all syncs down with it.
+- `engine::tests::kubernetes_failure_is_not_a_missing_upstream`. A read failure must never be mistaken for an absent upstream, which would open the gate on any API hiccup.
+- `engine::tests::missing_upstream_is_allowed_and_skips_images`. The reverse case, where a missing upstream must reach the gate as "absent", not as an error, or every app without a counterpart hits the `onError` policy.
+- `engine::tests::skips_image_lookup_when_upstream_already_fails`. The remote call must not happen on a path that is already a denial.
+- `argocd::api::tests::desired_images_fails_whole_lookup_on_partial_failure`. A partial image list would let a mismatch through on the kind that failed to load.
+- `admission::handler::tests::fails_open_on_malformed_input`. The gate cannot judge what it cannot parse, and refusing everything would take all syncs down with it.
+- `admission::handler::tests::dry_run_computes_but_never_writes`. `sideEffects: NoneOnDryRun` is a promise the handler has to keep by itself.
 
 ## End to end
 
@@ -117,7 +114,7 @@ Tests worth keeping in mind when changing behaviour, because each pins a decisio
 | --- | --- |
 | `up.sh` | cluster with the Application CRD, fixtures, and the gate. No Argo CD, because a running controller would keep rewriting the statuses the tests set |
 | `test.sh` | the assertions, driven through real admission: denials, exemptions, the match conditions, the panel API agreeing with the webhook, the metrics |
-| `tag-test.sh` | the image tag comparison, with the gate on the host and `stub-argocd-server.py` standing in for the one Argo CD route it calls |
+| `tag-test.sh` | the image tag comparison, with the gate built on the host and `stub-argocd-server.py` standing in for the one Argo CD route it calls |
 | `up-argocd.sh` | a second cluster with a real Argo CD and the UI extension wired in, for pressing Sync by hand |
 | `setup-rollback.sh` | drives that cluster to the state a rollback test starts from |
 | `down.sh` | removes both clusters and their kubeconfigs |
@@ -131,6 +128,6 @@ kind runs on podman when no docker daemon answers, which `common.sh` decides onc
 
 ## Release
 
-Bump `org.opencontainers.image.version` in the `Dockerfile` and merge to `main`. The workflow builds and pushes to GHCR, skipping if the version already exists. Bump `version` in `charts/argocd-promotion-gate/Chart.yaml` to publish the chart.
+Bump `org.opencontainers.image.version` in the `Dockerfile` and merge to `main`. The Rust scratch container workflow runs fmt, clippy, tests, and the coverage floor, cross-compiles both architectures with cargo-zigbuild, and pushes a multi-arch image to GHCR, skipping if the version already exists. Bump `version` in `charts/argocd-promotion-gate/Chart.yaml` to publish the chart.
 
 Chart README is generated by helm-docs from `values.yaml` comments. Regenerate with `make -C ../charts docs` and never edit it directly.

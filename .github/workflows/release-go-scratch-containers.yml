@@ -6,9 +6,7 @@ on:
     branches: [main]
     paths:
       - 'box/kubernetes/external-ebs-autoresizer/Dockerfile'
-      - 'box/kubernetes/aws-vpn-maintenance-handler/Dockerfile'
       - 'box/kubernetes/filesystem-cleaner/Dockerfile'
-      - 'box/kubernetes/argocd-promotion-gate/Dockerfile'
   workflow_dispatch:
     inputs:
       project:
@@ -17,9 +15,7 @@ on:
         type: choice
         options:
           - external-ebs-autoresizer
-          - aws-vpn-maintenance-handler
           - filesystem-cleaner
-          - argocd-promotion-gate
       force:
         description: "Rebuild even if the version already exists on GHCR (overwrites the tag)"
         required: false
@@ -76,9 +72,7 @@ jobs:
           # project_name:project_dir
           PROJECTS=(
             "external-ebs-autoresizer:external-ebs-autoresizer"
-            "aws-vpn-maintenance-handler:aws-vpn-maintenance-handler"
             "filesystem-cleaner:filesystem-cleaner"
-            "argocd-promotion-gate:argocd-promotion-gate"
           )
 
           TEST_JSON="[]"

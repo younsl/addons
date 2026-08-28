@@ -1,0 +1,12 @@
+# Rust / build artifacts
+/target/
+**/*.rs.bk
+argocd-promotion-gate-linux-*
+lcov.info
+
+# Helm
+charts/**/charts/
+charts/**/*.tgz
+
+# OS
+.DS_Store

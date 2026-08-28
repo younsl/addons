@@ -7,11 +7,13 @@ on:
     paths:
       - 'box/kubernetes/aurora-database-insights-exporter/Dockerfile'
       - 'box/kubernetes/aws-health-event-notifier/Dockerfile'
+      - 'box/kubernetes/aws-vpn-maintenance-handler/Dockerfile'
       - 'box/kubernetes/ec2-metadata-exporter/Dockerfile'
       - 'box/kubernetes/gss/Dockerfile'
       - 'box/kubernetes/trivy-collector/Dockerfile'
       - 'box/kubernetes/kubernetes-upgrade-operator/Dockerfile'
       - 'box/kubernetes/kagent-gateway/Dockerfile'
+      - 'box/kubernetes/argocd-promotion-gate/Dockerfile'
   workflow_dispatch:
     inputs:
       project:
@@ -21,11 +23,13 @@ on:
         options:
           - aurora-database-insights-exporter
           - aws-health-event-notifier
+          - aws-vpn-maintenance-handler
           - ec2-metadata-exporter
           - gss
           - trivy-collector
           - kuo
           - kagent-gateway
+          - argocd-promotion-gate
       force:
         description: "Rebuild even if the version already exists on GHCR (overwrites the tag)"
         required: false
@@ -80,11 +84,13 @@ jobs:
           PROJECTS=(
             "aurora-database-insights-exporter:aurora-database-insights-exporter:adie:false"
             "aws-health-event-notifier:aws-health-event-notifier:aws-health-event-notifier:false"
+            "aws-vpn-maintenance-handler:aws-vpn-maintenance-handler:aws-vpn-maintenance-handler:false"
             "ec2-metadata-exporter:ec2-metadata-exporter:ec2-metadata-exporter:false"
             "gss:gss:ghes-schedule-scanner:false"
             "trivy-collector:trivy-collector:trivy-collector:true"
             "kuo:kubernetes-upgrade-operator:kuo:false"
             "kagent-gateway:kagent-gateway:kagent-gateway:false"
+            "argocd-promotion-gate:argocd-promotion-gate:argocd-promotion-gate:false"
           )
 
           TEST_JSON="[]"
