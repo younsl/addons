@@ -102,8 +102,8 @@
   gap: 16px 20px;
 }
 
-.oc-preset-form { grid-area: form; }
-.oc-preset-preview { grid-area: preview; }
+.oc-preset-form { grid-area: form; min-width: 0; }
+.oc-preset-preview { grid-area: preview; min-width: 0; min-height: 0; }
 .oc-preset-editor .oc-modal-footer { grid-area: footer; margin-top: 0; }
 
 @media (max-width: 760px) {
@@ -139,6 +139,18 @@
   border-radius: 8px;
   padding: 12px;
   min-height: 200px;
+  /* Cap the panel so a long pod list scrolls inside it instead of pushing past the
+     dashed border and under the footer */
+  max-height: min(60vh, 640px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.oc-preset-preview-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .oc-preset-preview-header {
@@ -177,5 +189,8 @@
 }
 
 .oc-preset-preview-chips { display: flex; flex-wrap: wrap; gap: 4px; max-height: 120px; overflow-y: auto; }
+.oc-preset-sample-wrapper { max-height: 280px; overflow: auto; }
+.oc-preset-sample { width: 100%; }
+.oc-preset-sample thead th { position: sticky; top: 0; z-index: 1; background: var(--bui-bg-surface-1, var(--bui-color-surface-1, #1e1e1e)); }
 .oc-preset-sample td, .oc-preset-sample th { font-size: 0.6875rem; }
 .oc-preset-pod { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; word-break: break-all; }
