@@ -10,7 +10,7 @@
 #   ./hack/sanitize.sh --apply      # rewrite files in place
 #
 # Override replacement targets via environment variables:
-#   NEW_MODULE=git.example.com/platform/argocd-promotion-gate \
+#   NEW_SOURCE_PATH=git.example.com/platform/argocd-promotion-gate \
 #   NEW_REGISTRY=registry.example.com/platform \
 #   NEW_SOURCE_URL=https://git.example.com/platform/argocd-promotion-gate \
 #   NEW_DOMAIN=promotion-gate.example.com \
@@ -32,12 +32,12 @@ yaml_value() { # file, key regex -> first scalar value, quotes and list dash str
   sed -nE "s|^[[:space:]]*(- )?$2:[[:space:]]*[\"']?([^\"']+)[\"']?[[:space:]]*$|\2|p" "$1" | head -1
 }
 
-# Cargo.toml's repository URL stands in for the Go module path: the host and
-# namespace it carries are the identity strings that leak into docs and chart.
+# Cargo.toml's repository URL, minus the scheme, is the source path: the host
+# and namespace it carries are the identity strings that leak into docs and chart.
 OLD_REPO_URL=$(sed -nE 's|^repository[[:space:]]*=[[:space:]]*"([^"]+)".*|\1|p' Cargo.toml | head -1)
-OLD_MODULE="${OLD_REPO_URL#*://}/${BINARY}"
-OLD_MODULE_PREFIX="${OLD_MODULE%/*}"
-OLD_NAMESPACE=$(cut -d/ -f2 <<<"$OLD_MODULE")
+OLD_SOURCE_PATH="${OLD_REPO_URL#*://}/${BINARY}"
+OLD_SOURCE_PREFIX="${OLD_SOURCE_PATH%/*}"
+OLD_NAMESPACE=$(cut -d/ -f2 <<<"$OLD_SOURCE_PATH")
 
 OLD_REGISTRY_HOST=$(yaml_value "$VALUES" registry)
 OLD_REPOSITORY=$(yaml_value "$VALUES" repository)
@@ -51,14 +51,14 @@ OLD_MAINTAINER_URL=$(yaml_value "$CHART" url)
 OLD_DOMAIN=$(sed -nE "s|.*[[:space:]]([A-Za-z0-9.-]*${OLD_NAMESPACE}\.[A-Za-z0-9.-]+)/.*|\1|p" "$VALUES" | head -1)
 OLD_DOMAIN="${OLD_DOMAIN#*.}"
 
-for v in OLD_MODULE OLD_NAMESPACE OLD_REGISTRY_HOST OLD_REPOSITORY OLD_HOME \
+for v in OLD_SOURCE_PATH OLD_NAMESPACE OLD_REGISTRY_HOST OLD_REPOSITORY OLD_HOME \
          OLD_SOURCE OLD_MAINTAINER OLD_MAINTAINER_EMAIL OLD_MAINTAINER_URL OLD_DOMAIN; do
   [[ -n "${!v}" ]] || { echo "FAIL: could not derive $v from the repo" >&2; exit 1; }
 done
 
 # --- new values -------------------------------------------------------------
 
-NEW_MODULE="${NEW_MODULE:-git.example.com/platform/${BINARY}}"
+NEW_SOURCE_PATH="${NEW_SOURCE_PATH:-git.example.com/platform/${BINARY}}"
 NEW_REGISTRY="${NEW_REGISTRY:-registry.example.com/platform}"
 NEW_SOURCE_URL="${NEW_SOURCE_URL:-https://git.example.com/platform/${BINARY}}"
 NEW_DOMAIN="${NEW_DOMAIN:-example.com}"
@@ -66,7 +66,7 @@ NEW_MAINTAINER="${NEW_MAINTAINER:-platform}"
 NEW_MAINTAINER_EMAIL="${NEW_MAINTAINER_EMAIL:-platform@example.com}"
 NEW_MAINTAINER_URL="${NEW_MAINTAINER_URL:-https://git.example.com/platform}"
 
-NEW_MODULE_PREFIX="${NEW_MODULE%/*}"
+NEW_SOURCE_PREFIX="${NEW_SOURCE_PATH%/*}"
 REGISTRY_HOST="${NEW_REGISTRY%%/*}"
 REGISTRY_NS="${NEW_REGISTRY#*/}"
 
@@ -75,7 +75,7 @@ REGISTRY_NS="${NEW_REGISTRY#*/}"
 # pattern|replacement (longest / most specific first)
 RULES=(
   "${OLD_SOURCE}|${NEW_SOURCE_URL}"
-  "${OLD_MODULE_PREFIX}|${NEW_MODULE_PREFIX}"
+  "${OLD_SOURCE_PREFIX}|${NEW_SOURCE_PREFIX}"
   "${OLD_HOME}|${NEW_SOURCE_URL}"
   "${OLD_MAINTAINER_URL}|${NEW_MAINTAINER_URL}"
   "${OLD_REGISTRY}|${NEW_REGISTRY}"

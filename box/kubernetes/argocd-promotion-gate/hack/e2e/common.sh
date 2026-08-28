@@ -80,12 +80,45 @@ create_cluster() {
   require_local_cluster
 }
 
+# The architecture the kind node runs on, as the Dockerfile's TARGETARCH spells
+# it. Under podman machine or docker desktop that is the VM's architecture, so
+# the engine is asked rather than uname. podman and docker expose it under
+# different template fields, hence the two attempts.
+node_arch() {
+  local arch
+  arch=$("${BUILDER}" info --format '{{.Host.Arch}}' 2>/dev/null) ||
+    arch=$("${BUILDER}" info --format '{{.Architecture}}' 2>/dev/null) ||
+    arch=$(uname -m)
+  case "${arch}" in
+    x86_64 | amd64) echo amd64 ;;
+    aarch64 | arm64) echo arm64 ;;
+    *)
+      printf 'unsupported node architecture: %s\n' "${arch}" >&2
+      return 1
+      ;;
+  esac
+}
+
+# The Dockerfile is scratch plus a prebuilt static binary named
+# argocd-promotion-gate-linux-<arch> in the build context, the same layout the
+# release workflow feeds it. cargo-zigbuild produces that binary for the node's
+# architecture; the commit baked into the version output comes from build.rs
+# reading git, so no build args are needed.
 build_and_load_image() {
+  local arch target
+  arch=$(node_arch) || exit 1
+  case "${arch}" in
+    amd64) target=x86_64-unknown-linux-musl ;;
+    arm64) target=aarch64-unknown-linux-musl ;;
+  esac
+
+  log "cross-compiling for linux/${arch} (${target})"
+  (cd "${REPO_ROOT}" &&
+    cargo zigbuild --release --target "${target}" &&
+    cp "target/${target}/release/argocd-promotion-gate" "argocd-promotion-gate-linux-${arch}")
+
   log "building and loading ${IMAGE}"
-  "${BUILDER}" build \
-    --build-arg VERSION=e2e \
-    --build-arg COMMIT="$(git -C "${REPO_ROOT}" rev-parse --short HEAD 2>/dev/null || echo none)" \
-    -t "${IMAGE}" "${REPO_ROOT}"
+  "${BUILDER}" build --platform "linux/${arch}" -t "${IMAGE}" "${REPO_ROOT}"
   local archive
   archive="$(mktemp -t apg-image-XXXXXX).tar"
   "${BUILDER}" save -o "${archive}" "${IMAGE}"

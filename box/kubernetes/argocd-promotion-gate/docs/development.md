@@ -124,6 +124,8 @@ hack/e2e/up.sh && hack/e2e/test.sh && hack/e2e/tag-test.sh
 hack/e2e/down.sh
 ```
 
+`up.sh` and `up-argocd.sh` cross-compile a static musl binary with cargo-zigbuild for the node architecture and build the scratch image from it, the same way the release workflow does. That needs `cargo install cargo-zigbuild` and the `aarch64-unknown-linux-musl` or `x86_64-unknown-linux-musl` target installed. The staged `argocd-promotion-gate-linux-*` binary lands in the project root and is gitignored.
+
 kind runs on podman when no docker daemon answers, which `common.sh` decides once and `down.sh` reuses so a teardown looks for node containers with the same engine. `BUILDER` and `KIND_EXPERIMENTAL_PROVIDER` override it.
 
 ## Release
