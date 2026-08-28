@@ -64,7 +64,7 @@ connection the approvers are already looking at is not notified about again.
 | `aws_vpn_maintenance_handler_reconcile_errors_total` | counter | Errors by `stage` |
 | `aws_vpn_maintenance_handler_managed_connections` | gauge | Tag-matched connections discovered in the latest pass |
 
-Go runtime and process collectors are registered as well.
+No runtime or process collectors are registered. The registry holds only the metrics above.
 
 ## Alerts worth having
 

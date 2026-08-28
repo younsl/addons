@@ -1,0 +1,13 @@
+# Rust / build artifacts
+/target/
+**/*.rs.bk
+
+# Cross-compiled binaries staged for docker build
+aws-vpn-maintenance-handler-linux-*
+
+# Helm
+charts/**/charts/
+charts/**/*.tgz
+
+# OS
+.DS_Store

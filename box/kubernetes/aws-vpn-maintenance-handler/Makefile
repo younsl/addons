@@ -1,36 +1,16 @@
-BINARY      := aws-vpn-maintenance-handler
-PKG         := ./cmd/$(BINARY)
-VERSION     := $(shell grep -oE 'org\.opencontainers\.image\.version="[^"]+"' Dockerfile | cut -d'"' -f2)
-COMMIT      := $(shell git rev-parse --short HEAD 2>/dev/null || echo none)
-LDFLAGS     := -s -w \
-	-X github.com/younsl/o/box/kubernetes/aws-vpn-maintenance-handler/internal/version.Version=$(VERSION) \
-	-X github.com/younsl/o/box/kubernetes/aws-vpn-maintenance-handler/internal/version.Commit=$(COMMIT)
-REGISTRY    ?= ghcr.io/younsl
-IMAGE       := $(REGISTRY)/$(BINARY)
-PLATFORM    ?= linux/amd64
+.PHONY: build release run dev validate status test coverage fmt lint check clean deps \
+        zigbuild-amd64 zigbuild-arm64 zigbuild docker-build docker-buildx \
+        helm-lint helm-template docs help
+
+BINARY_NAME := aws-vpn-maintenance-handler
+IMAGE_NAME  ?= ghcr.io/younsl/aws-vpn-maintenance-handler
+IMAGE_TAG   ?= $(shell grep -oE 'org\.opencontainers\.image\.version="[^"]+"' Dockerfile | cut -d'"' -f2)
 COVER_MIN   ?= 70
 CONFIG      ?= config.example.yaml
-CHART       := charts/$(BINARY)
+CHART       := charts/$(BINARY_NAME)
 
-.PHONY: all build run dev test coverage fmt lint vet tidy clean \
-        docker-build docker-buildx helm-lint helm-template docs \
-        validate status help
-
-.DEFAULT_GOAL := help
-
-all: fmt vet test build
-
-## build: compile the binary into bin/
-build:
-	CGO_ENABLED=0 go build -trimpath -ldflags="$(LDFLAGS)" -o bin/$(BINARY) $(PKG)
-
-## run: build and run the daemon with the example config
-run: build
-	@$(LOCAL_ENV) LOG_FORMAT=text ./bin/$(BINARY)
-
-## dev: run the daemon with debug logging and the example config
-dev:
-	@$(LOCAL_ENV) LOG_FORMAT=text LOG_LEVEL=debug go run $(PKG)
+RUSTUP := $(shell command -v rustup 2>/dev/null || echo "/opt/homebrew/bin/rustup")
+TOOLCHAIN_PATH := $(shell $(RUSTUP) which cargo 2>/dev/null | xargs dirname 2>/dev/null)
 
 # The Slack tokens and Pod identity are required config, so a local run needs stand-ins.
 # validate and status never make a Slack call, so placeholders are enough there; export
@@ -40,73 +20,107 @@ LOCAL_ENV = CONFIG_FILE=$(CONFIG) \
 	SLACK_BOT_TOKEN=$${SLACK_BOT_TOKEN:-xoxb-placeholder} \
 	SLACK_APP_TOKEN=$${SLACK_APP_TOKEN:-xapp-placeholder}
 
-## validate: validate the config file without touching AWS or Kubernetes
+.DEFAULT_GOAL := help
+
+## Build debug binary
+build:
+	@PATH="$(TOOLCHAIN_PATH):$$PATH" cargo build
+
+## Build optimized release binary
+release:
+	@PATH="$(TOOLCHAIN_PATH):$$PATH" cargo build --release
+
+## Run the daemon with the example config
+run:
+	@$(LOCAL_ENV) LOG_FORMAT=text PATH="$(TOOLCHAIN_PATH):$$PATH" cargo run
+
+## Run the daemon with debug logging and the example config
+dev:
+	@$(LOCAL_ENV) LOG_FORMAT=text LOG_LEVEL=debug PATH="$(TOOLCHAIN_PATH):$$PATH" cargo run
+
+## Validate the config file without touching AWS or Kubernetes
 validate:
-	@$(LOCAL_ENV) go run $(PKG) validate
+	@$(LOCAL_ENV) PATH="$(TOOLCHAIN_PATH):$$PATH" cargo run -q -- validate
 
-## status: print tunnel telemetry and pending maintenance, read-only (needs AWS credentials)
+## Print tunnel telemetry and pending maintenance, read-only (needs AWS credentials)
 status:
-	@$(LOCAL_ENV) go run $(PKG) status
+	@$(LOCAL_ENV) PATH="$(TOOLCHAIN_PATH):$$PATH" cargo run -q -- status
 
-## test: run tests with the race detector
+## Run tests
 test:
-	go test -race ./...
+	@PATH="$(TOOLCHAIN_PATH):$$PATH" cargo test --verbose
 
-## coverage: run tests and fail below COVER_MIN percent line coverage
+## Enforce minimum line coverage with cargo-llvm-cov
 coverage:
-	@go test -coverprofile=cover.out -covermode=atomic ./... >/dev/null
-	@go tool cover -func=cover.out | tail -1
-	@total=$$(go tool cover -func=cover.out | tail -1 | awk '{print $$3}' | tr -d '%'); \
-	 awk -v t="$$total" -v m="$(COVER_MIN)" 'BEGIN { if (t+0 < m+0) { printf "coverage %.1f%% is below the %s%% minimum\n", t, m; exit 1 } printf "coverage %.1f%% meets the %s%% minimum\n", t, m }'
+	@PATH="$(TOOLCHAIN_PATH):$$PATH" cargo llvm-cov --fail-under-lines $(COVER_MIN)
 
-## fmt: format the code
+## Format code
 fmt:
-	gofmt -w .
+	@PATH="$(TOOLCHAIN_PATH):$$PATH" cargo fmt
 
-## vet: run go vet
-vet:
-	go vet ./...
-
-## lint: run golangci-lint if installed, otherwise go vet
+## Run clippy linter
 lint:
-	@command -v golangci-lint >/dev/null 2>&1 && golangci-lint run ./... || $(MAKE) vet
+	@PATH="$(TOOLCHAIN_PATH):$$PATH" cargo clippy -- -D warnings
 
-## tidy: tidy go.mod and go.sum
-tidy:
-	go mod tidy
+## Check code without building
+check:
+	@PATH="$(TOOLCHAIN_PATH):$$PATH" cargo check
 
-## clean: remove build and coverage artifacts
+## Update dependencies
+deps:
+	@PATH="$(TOOLCHAIN_PATH):$$PATH" cargo update
+
+## Clean build artifacts
 clean:
-	rm -rf bin cover.out
+	@PATH="$(TOOLCHAIN_PATH):$$PATH" cargo clean
+	@rm -f $(BINARY_NAME)-linux-*
 
-## docker-build: build the container image for PLATFORM
+## Cross-compile to linux/amd64 musl using zig
+zigbuild-amd64:
+	@PATH="$(TOOLCHAIN_PATH):$$PATH" cargo zigbuild --release --target x86_64-unknown-linux-musl
+
+## Cross-compile to linux/arm64 musl using zig
+zigbuild-arm64:
+	@PATH="$(TOOLCHAIN_PATH):$$PATH" cargo zigbuild --release --target aarch64-unknown-linux-musl
+
+## Cross-compile to both linux/amd64 and linux/arm64 musl
+zigbuild: zigbuild-amd64 zigbuild-arm64
+
+## Build a single-arch image for the host platform (cross-compiles with cargo-zigbuild first)
 docker-build:
-	docker build --platform $(PLATFORM) \
-	    --build-arg VERSION=$(VERSION) --build-arg COMMIT=$(COMMIT) \
-	    -t $(IMAGE):$(VERSION) .
+	@ARCH=$$(docker version -f '{{.Server.Arch}}'); \
+	if [ "$$ARCH" = "amd64" ]; then TARGET=x86_64-unknown-linux-musl; else TARGET=aarch64-unknown-linux-musl; fi; \
+	PATH="$(TOOLCHAIN_PATH):$$PATH" cargo zigbuild --release --target $$TARGET --bin $(BINARY_NAME); \
+	cp target/$$TARGET/release/$(BINARY_NAME) $(BINARY_NAME)-linux-$$ARCH; \
+	docker build --platform linux/$$ARCH -t $(IMAGE_NAME):$(IMAGE_TAG) .; \
+	rm -f $(BINARY_NAME)-linux-$$ARCH
 
-## docker-buildx: build and push a multi-arch image
-docker-buildx:
+## Build and push a multi-arch image via buildx
+docker-buildx: zigbuild
+	@cp target/x86_64-unknown-linux-musl/release/$(BINARY_NAME) $(BINARY_NAME)-linux-amd64; \
+	cp target/aarch64-unknown-linux-musl/release/$(BINARY_NAME) $(BINARY_NAME)-linux-arm64; \
 	docker buildx build --platform linux/amd64,linux/arm64 \
-	    --build-arg VERSION=$(VERSION) --build-arg COMMIT=$(COMMIT) \
-	    -t $(IMAGE):$(VERSION) --push .
+	    -t $(IMAGE_NAME):$(IMAGE_TAG) -t $(IMAGE_NAME):latest --push .; \
+	rm -f $(BINARY_NAME)-linux-amd64 $(BINARY_NAME)-linux-arm64
 
-## helm-lint: lint the Helm chart
+## Lint the Helm chart
 helm-lint:
-	helm lint $(CHART) \
+	@helm lint $(CHART) \
 	    --set config.region=$(or $(AWS_REGION),ap-northeast-2) \
 	    --set slack.botToken=xoxb-lint --set slack.appToken=xapp-lint
 
-## helm-template: render the Helm chart locally
+## Render the Helm chart locally
 helm-template:
-	helm template $(BINARY) $(CHART) \
+	@helm template $(BINARY_NAME) $(CHART) \
 	    --set config.region=$(or $(AWS_REGION),ap-northeast-2) \
 	    --set slack.botToken=xoxb-lint --set slack.appToken=xapp-lint
 
-## docs: regenerate the chart README via helm-docs (never edit it directly)
+## Regenerate the chart README via helm-docs (never edit it directly)
 docs:
 	$(MAKE) -C ../charts docs
 
-## help: show this help message
+## Show this help message
 help:
+	@echo "Available targets:"
+	@echo ""
 	@grep -E '^##' $(MAKEFILE_LIST) | sed 's/## /  /' | column -t -s ':'
