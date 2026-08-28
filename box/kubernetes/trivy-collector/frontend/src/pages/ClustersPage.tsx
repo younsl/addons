@@ -130,17 +130,19 @@ export default function ClustersPage() {
                   // In-cluster row is the Hub itself — ClusterWatcher on this
                   // pod is always active, so treat it as Synced regardless of
                   // whether the DB has accumulated reports yet.
-                  const baseStatus = !dbLoaded
-                    ? '—'
+                  // Heart = reachability, colour = sync state, label = probe
+                  // latency. Unreachable is a cracked heart with no latency.
+                  const heart = !dbLoaded
+                    ? { icon: 'fa-heart', color: 'var(--text-muted)', label: '—', title: 'Loading' }
                     : c.reachable === false
-                      ? 'Unreachable'
+                      ? { icon: 'fa-heart-crack', color: 'var(--critical)', label: 'unreachable', title: 'Unreachable' }
                       : isLocal || synced
-                        ? 'Synced'
-                        : 'Awaiting first sync'
-                  const latencySuffix =
+                        ? { icon: 'fa-heart', color: 'var(--low)', label: '', title: 'Synced' }
+                        : { icon: 'fa-heart', color: 'var(--medium)', label: 'awaiting sync', title: 'Awaiting first sync' }
+                  const latency =
                     typeof c.reachability_latency_ms === 'number'
-                      ? ` (${c.reachability_latency_ms} ms)`
-                      : ''
+                      ? `${c.reachability_latency_ms} ms`
+                      : isLocal ? 'in-cluster' : ''
                   return (
                     <tr key={c.name}>
                       <td>{c.name}</td>
@@ -162,9 +164,17 @@ export default function ClustersPage() {
                           <span style={{ color: 'var(--text-muted)' }}>—</span>
                         )}
                       </td>
-                      <td title={c.reachability_message || undefined}>
-                        {baseStatus}
-                        {latencySuffix}
+                      <td
+                        className={styles.mono}
+                        title={[heart.title, c.reachability_message].filter(Boolean).join(' · ')}
+                      >
+                        <i className={`fa-solid ${heart.icon}`} style={{ color: heart.color, marginRight: 6 }} />
+                        {latency}
+                        {heart.label && (
+                          <span style={{ color: 'var(--text-muted)', marginLeft: latency ? 6 : 0 }}>
+                            {heart.label}
+                          </span>
+                        )}
                       </td>
                       <td>
                         <button
