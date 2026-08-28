@@ -18,8 +18,9 @@ export const opencostPlugin = createBackendPlugin({
         config: coreServices.rootConfig,
         database: coreServices.database,
         scheduler: coreServices.scheduler,
+        httpAuth: coreServices.httpAuth,
       },
-      async init({ httpRouter, logger, config, database, scheduler }) {
+      async init({ httpRouter, logger, config, database, scheduler, httpAuth }) {
         const enabled = config.getOptionalBoolean('app.plugins.opencost') ?? true;
         if (!enabled) {
           logger.info('OpenCost backend plugin is disabled via config');
@@ -38,7 +39,7 @@ export const opencostPlugin = createBackendPlugin({
         await collector.registerTasks(scheduler);
 
         const presets = new ControllerFilterPresets(costStore);
-        const router = await createRouter({ service, costStore, collector, presets, logger });
+        const router = await createRouter({ service, costStore, collector, presets, httpAuth, logger });
 
         httpRouter.use(router as any);
         httpRouter.addAuthPolicy({

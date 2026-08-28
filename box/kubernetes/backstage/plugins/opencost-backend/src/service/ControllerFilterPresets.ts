@@ -69,8 +69,8 @@ export class ControllerFilterPresets {
     return this.store.getFilterPreset(name);
   }
 
-  save(input: ControllerFilterPresetInput): Promise<ControllerFilterPreset> {
-    return this.store.upsertFilterPreset(input);
+  save(input: ControllerFilterPresetInput, actor: string | null = null): Promise<ControllerFilterPreset> {
+    return this.store.upsertFilterPreset(input, actor);
   }
 
   remove(name: string): Promise<boolean> {

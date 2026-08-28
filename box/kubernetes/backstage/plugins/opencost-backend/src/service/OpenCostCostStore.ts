@@ -8,7 +8,7 @@ const MONTHLY_TABLE = 'opencost_monthly_summaries';
 const RUNS_TABLE = 'opencost_collection_runs';
 const FILTERS_TABLE = 'opencost_controller_filters';
 
-const SCHEMA_VERSION = 3;
+const SCHEMA_VERSION = 4;
 
 export interface DailyCostItem {
   namespace: string;
@@ -92,6 +92,9 @@ export interface ControllerFilterPreset {
   description: string | null;
   patterns: string[];
   clusters: string[] | null;
+  /** Backstage user entity ref (e.g. user:default/jane) or null for legacy rows */
+  createdBy: string | null;
+  updatedBy: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -173,6 +176,11 @@ export class OpenCostCostStore {
       if (version >= SCHEMA_VERSION) return;
       if (version === 2) {
         await this.migrateV2toV3();
+        await this.migrateV3toV4();
+        return;
+      }
+      if (version === 3) {
+        await this.migrateV3toV4();
         return;
       }
     }
@@ -186,6 +194,22 @@ export class OpenCostCostStore {
       await this.createSchemaV2();
     }
     await this.migrateV2toV3();
+    await this.migrateV3toV4();
+  }
+
+  /**
+   * V4 records who created and last changed each controller filter preset, so a
+   * billing preset can be traced back to its author from the UI.
+   */
+  private async migrateV3toV4(): Promise<void> {
+    const cols = await this.db(FILTERS_TABLE).columnInfo();
+    if (!('created_by' in cols)) {
+      await this.db.schema.alterTable(FILTERS_TABLE, table => {
+        table.string('created_by', 253);
+        table.string('updated_by', 253);
+      });
+    }
+    await this.setSchemaVersion(SCHEMA_VERSION);
   }
 
   /**
@@ -217,7 +241,7 @@ export class OpenCostCostStore {
         table.timestamp('updated_at').defaultTo(this.db.fn.now());
       });
     }
-    await this.setSchemaVersion(SCHEMA_VERSION);
+    await this.setSchemaVersion(3);
   }
 
   private async getSchemaVersion(): Promise<number> {
@@ -1266,6 +1290,8 @@ export class OpenCostCostStore {
       description: (r.description as string | null) ?? null,
       patterns: parse(r.patterns) ?? [],
       clusters: parse(r.clusters),
+      createdBy: (r.created_by as string | null) ?? null,
+      updatedBy: (r.updated_by as string | null) ?? null,
       createdAt: ts(r.created_at),
       updatedAt: ts(r.updated_at),
     };
@@ -1281,20 +1307,21 @@ export class OpenCostCostStore {
     return row ? this.toPreset(row) : undefined;
   }
 
-  /** Create or replace a preset by name. */
-  async upsertFilterPreset(input: ControllerFilterPresetInput): Promise<ControllerFilterPreset> {
+  /** Create or replace a preset by name. `actor` is recorded as creator on insert and as last editor on update. */
+  async upsertFilterPreset(input: ControllerFilterPresetInput, actor: string | null = null): Promise<ControllerFilterPreset> {
     const now = new Date().toISOString();
     const clusters = input.clusters && input.clusters.length > 0 ? JSON.stringify(input.clusters) : null;
     await this.db.raw(
-      `INSERT INTO ${FILTERS_TABLE} (name, title, description, patterns, clusters, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)
+      `INSERT INTO ${FILTERS_TABLE} (name, title, description, patterns, clusters, created_by, updated_by, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT (name) DO UPDATE SET
          title = EXCLUDED.title,
          description = EXCLUDED.description,
          patterns = EXCLUDED.patterns,
          clusters = EXCLUDED.clusters,
+         updated_by = EXCLUDED.updated_by,
          updated_at = EXCLUDED.updated_at`,
-      [input.name, input.title, input.description ?? null, JSON.stringify(input.patterns), clusters, now, now],
+      [input.name, input.title, input.description ?? null, JSON.stringify(input.patterns), clusters, actor, actor, now, now],
     );
     return (await this.getFilterPreset(input.name))!;
   }

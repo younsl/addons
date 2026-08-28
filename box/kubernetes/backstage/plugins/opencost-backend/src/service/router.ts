@@ -1,5 +1,5 @@
 import { Router, json as jsonBody } from 'express';
-import { LoggerService } from '@backstage/backend-plugin-api';
+import { HttpAuthService, LoggerService } from '@backstage/backend-plugin-api';
 import { OpenCostService } from './OpenCostService';
 import { OpenCostCostStore } from './OpenCostCostStore';
 import { OpenCostCollector } from './OpenCostCollector';
@@ -10,11 +10,24 @@ export interface RouterOptions {
   costStore: OpenCostCostStore;
   collector: OpenCostCollector;
   presets: ControllerFilterPresets;
+  httpAuth: HttpAuthService;
   logger: LoggerService;
 }
 
 export async function createRouter(options: RouterOptions): Promise<Router> {
-  const { service, costStore, collector, presets, logger } = options;
+  const { service, costStore, collector, presets, httpAuth, logger } = options;
+
+  /** Entity ref of the calling Backstage user, or null for service or unauthenticated callers. */
+  const actorOf = async (req: unknown): Promise<string | null> => {
+    try {
+      // Express's typed Request<{name}> is not assignable to the untyped one HttpAuthService expects
+      const creds = await httpAuth.credentials(req as any, { allow: ['user', 'service', 'none'] });
+      const p = creds.principal as { type: string; userEntityRef?: string };
+      return p.type === 'user' && p.userEntityRef ? p.userEntityRef : null;
+    } catch {
+      return null;
+    }
+  };
 
   const router = Router();
   router.use(jsonBody({ limit: '64kb' }));
@@ -134,8 +147,9 @@ export async function createRouter(options: RouterOptions): Promise<Router> {
     }
     try {
       const existed = !!(await presets.get(validated.value.name));
-      const saved = await presets.save(validated.value);
-      logger.info(`Controller filter '${saved.name}' ${existed ? 'updated' : 'created'} (${saved.patterns.length} pattern(s))`);
+      const actor = await actorOf(req);
+      const saved = await presets.save(validated.value, actor);
+      logger.info(`Controller filter '${saved.name}' ${existed ? 'updated' : 'created'} by ${actor ?? 'unknown'} (${saved.patterns.length} pattern(s))`);
       res.status(existed ? 200 : 201).json({ data: saved });
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
@@ -151,7 +165,7 @@ export async function createRouter(options: RouterOptions): Promise<Router> {
         res.status(404).json({ message: `Unknown controller filter: ${req.params.name}` });
         return;
       }
-      logger.info(`Controller filter '${req.params.name}' deleted`);
+      logger.info(`Controller filter '${req.params.name}' deleted by ${(await actorOf(req)) ?? 'unknown'}`);
       res.status(204).end();
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);

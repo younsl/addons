@@ -244,13 +244,17 @@ describe('OpenCostCostStore batch performance', () => {
     if (!v.ok) throw new Error(v.error);
     expect(v.value.patterns).toEqual(['deploy-1%', 'deploy-2']);
 
-    const created = await presets.save(v.value);
+    const created = await presets.save(v.value, 'user:default/alice');
     expect(created.name).toBe('vendor-x');
     expect(created.clusters).toEqual(['bench-cluster']);
+    expect(created.createdBy).toBe('user:default/alice');
+    expect(created.updatedBy).toBe('user:default/alice');
 
-    const updated = await presets.save({ ...v.value, title: 'Vendor X (renamed)', clusters: null });
+    const updated = await presets.save({ ...v.value, title: 'Vendor X (renamed)', clusters: null }, 'user:default/bob');
     expect(updated.title).toBe('Vendor X (renamed)');
     expect(updated.clusters).toBeNull();
+    expect(updated.createdBy).toBe('user:default/alice');
+    expect(updated.updatedBy).toBe('user:default/bob');
     expect((await presets.list()).length).toBe(1);
 
     const resolved = await presets.resolve('vendor-x', ['deploy-12'], 'bench-cluster');

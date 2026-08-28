@@ -91,6 +91,8 @@ erDiagram
         text description "nullable"
         text patterns "JSON array of SQL LIKE patterns"
         text clusters "nullable JSON array of cluster names"
+        varchar(253) created_by "nullable user entity ref"
+        varchar(253) updated_by "nullable user entity ref"
         datetime created_at
         datetime updated_at
     }
@@ -187,7 +189,7 @@ Admin-defined controller filter presets, managed from the UI. Not related to any
 
 `patterns` and `clusters` are JSON arrays serialised as `text` so the column type is identical on SQLite and PostgreSQL. Patterns are SQL LIKE expressions applied to `opencost_pods.controller` and ORed together at query time.
 
-Schema version 3 added this table and the `opencost_daily_costs (pod_id)`, `opencost_monthly_summaries (pod_id)` and `opencost_pods (cluster_id, controller)` indexes.
+Schema version 3 added this table and the `opencost_daily_costs (pod_id)`, `opencost_monthly_summaries (pod_id)` and `opencost_pods (cluster_id, controller)` indexes. Version 4 added `created_by` and `updated_by`, the Backstage user entity ref of the caller taken from the request credentials, so a preset can be traced to its author. Rows written before version 4 carry `null`.
 
 ## Design Decisions
 

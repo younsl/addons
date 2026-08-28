@@ -93,6 +93,8 @@
 .oc-preset-actions { white-space: nowrap; text-align: right; }
 .oc-preset-actions button { margin-left: 6px; }
 .oc-preset-confirm { font-size: 0.6875rem; margin-right: 4px; opacity: 0.8; }
+.oc-preset-audit { white-space: nowrap; display: flex; flex-direction: column; gap: 2px; font-size: 0.75rem; }
+.oc-preset-audit-time { font-size: 0.6875rem; opacity: 0.6; }
 
 /* Editor */
 .oc-preset-editor {

@@ -192,7 +192,7 @@ Base path: `/api/opencost-backend/`
 | GET | `/costs/pods` | All pod costs for specific date |
 | GET | `/costs/collection-runs` | Task execution history |
 | GET | `/filters` | Controller filter presets |
-| PUT | `/filters/{name}` | Create or replace a preset (`title`, `description`, `patterns[]`, `clusters[]`) |
+| PUT | `/filters/{name}` | Create or replace a preset (`title`, `description`, `patterns[]`, `clusters[]`). Records the calling user as `createdBy` or `updatedBy` |
 | DELETE | `/filters/{name}` | Delete a preset |
 | POST | `/filters/preview` | Dry-run `patterns[]` against a `cluster`, `year`, `month` and return matched controllers, pod count, total and sample pods |
 
