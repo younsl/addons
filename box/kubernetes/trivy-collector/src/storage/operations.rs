@@ -26,7 +26,7 @@ const SBOM_COMPONENTS_PATH: &str = "$.report.components.components";
 /// Append the row-level filters shared by the count and the page of
 /// `query_reports`. `report_type` is already bound by the caller.
 fn push_report_filters(
-    builder: &mut QueryBuilder<'_, Sqlite>,
+    builder: &mut QueryBuilder<Sqlite>,
     report_type: &str,
     params: &QueryParams,
 ) {

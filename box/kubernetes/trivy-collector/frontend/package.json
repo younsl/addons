@@ -10,24 +10,24 @@
     "lint": "tsc --noEmit"
   },
   "dependencies": {
-    "@fortawesome/fontawesome-free": "^6.5.1",
-    "chart.js": "^4.4.1",
-    "cytoscape": "^3.30.4",
+    "@fortawesome/fontawesome-free": "^7.3.1",
+    "chart.js": "^4.5.1",
+    "cytoscape": "^3.34.2",
     "cytoscape-fcose": "^2.2.0",
     "html2canvas": "^1.4.1",
-    "react": "^19.1.0",
-    "react-chartjs-2": "^5.3.0",
-    "react-dom": "^19.1.0",
-    "react-router-dom": "^7.13.1"
+    "react": "^19.2.8",
+    "react-chartjs-2": "^5.3.1",
+    "react-dom": "^19.2.8",
+    "react-router-dom": "^7.18.2"
   },
   "devDependencies": {
-    "@scalar/api-reference": "^1.66.1",
-    "@types/cytoscape": "^3.21.9",
-    "@types/node": "^25.3.0",
-    "@types/react": "^19.1.0",
-    "@types/react-dom": "^19.1.0",
-    "@vitejs/plugin-react": "^4.5.2",
-    "typescript": "~5.8.3",
-    "vite": "^6.3.5"
+    "@scalar/api-reference": "^1.67.0",
+    "@types/cytoscape": "^3.31.0",
+    "@types/node": "^26.4.0",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.5",
+    "@vitejs/plugin-react": "^6.1.1",
+    "typescript": "~7.0.2",
+    "vite": "^8.2.2"
   }
 }

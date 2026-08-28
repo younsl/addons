@@ -487,8 +487,8 @@ impl TokenStore {
 
 /// Generate a random API token: "tc_" plus 32 random bytes as hex.
 pub fn generate_token() -> String {
-    use rand::Rng;
-    let mut rng = rand::thread_rng();
+    use rand::RngExt;
+    let mut rng = rand::rng();
     let mut bytes = [0u8; 32];
     rng.fill(&mut bytes);
     format!("tc_{}", hex::encode(bytes))

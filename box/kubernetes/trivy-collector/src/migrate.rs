@@ -308,7 +308,8 @@ async fn column_exists(pool: &SqlitePool, table: &str, column: &str) -> Result<b
         "SELECT COUNT(*) > 0 FROM pragma_table_info('{}') WHERE name=$1",
         table
     );
-    let (exists,): (bool,) = sqlx::query_as(&query)
+    // SAFETY: `table` is a hardcoded literal at every call site, never user input.
+    let (exists,): (bool,) = sqlx::query_as(sqlx::AssertSqlSafe(query))
         .bind(column)
         .fetch_one(pool)
         .await

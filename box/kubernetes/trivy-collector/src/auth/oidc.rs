@@ -4,7 +4,7 @@
 
 use anyhow::{Context, Result};
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
-use rand::Rng;
+use rand::RngExt;
 use sha2::{Digest, Sha256};
 use tracing::{debug, info};
 
@@ -237,7 +237,7 @@ fn generate_pkce() -> (String, String) {
 
 /// Generate a cryptographically random URL-safe string
 fn generate_random_string(len: usize) -> String {
-    let mut rng = rand::thread_rng();
-    let bytes: Vec<u8> = (0..len).map(|_| rng.r#gen()).collect();
+    let mut rng = rand::rng();
+    let bytes: Vec<u8> = (0..len).map(|_| rng.random()).collect();
     URL_SAFE_NO_PAD.encode(&bytes)
 }

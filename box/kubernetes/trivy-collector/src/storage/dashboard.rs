@@ -150,7 +150,8 @@ impl Database {
                 cluster_filter, cluster_filter
             );
 
-            let mut query = sqlx::query(&sql);
+            // SAFETY: the only interpolated fragment is `cluster_filter`, a static literal.
+            let mut query = sqlx::query(sqlx::AssertSqlSafe(sql));
             if let Some(c) = cluster {
                 query = query.bind(c.to_string());
             }
@@ -243,7 +244,8 @@ impl Database {
                 cluster_filter, cluster_filter
             );
 
-            let mut query = sqlx::query(&sql);
+            // SAFETY: the only interpolated fragment is `cluster_filter`, a static literal.
+            let mut query = sqlx::query(sqlx::AssertSqlSafe(sql));
             query = query.bind(start_date.to_string());
             query = query.bind(end_date.to_string());
             if let Some(c) = cluster {
