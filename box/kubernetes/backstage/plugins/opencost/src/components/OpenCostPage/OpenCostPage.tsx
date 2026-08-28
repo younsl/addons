@@ -7,6 +7,8 @@ import {
   Flex,
   Text,
   Select,
+  SelectItem,
+  SelectItemText,
   SearchField,
   Skeleton,
   Alert,
@@ -41,6 +43,10 @@ import {
 } from './utils';
 import { FilterPresetManager, FilterPreset } from '../FilterPresetManager';
 import './OpenCostPage.css';
+
+/** Sentinel keys for the Preset select (never valid preset names: names are [a-z0-9_-]) */
+const PRESET_NONE_KEY = '__none__';
+const PRESET_CREATE_KEY = '__create__';
 
 /* ─── Types ─── */
 
@@ -1220,28 +1226,6 @@ export const OpenCostPage = () => {
               selectedKey={selectedCluster} onSelectionChange={key => handleClusterChange(key as string)} />
             <Select label="Year" size="small" options={yearOptions}
               selectedKey={String(selectedYear)} onSelectionChange={key => handleYearChange(key as string)} />
-            <div className="oc-native-select">
-              <label className="oc-native-select-label" htmlFor="oc-preset-select">Preset</label>
-              <div className="oc-preset-select-row">
-                <select
-                  id="oc-preset-select"
-                  value={selectedPreset ?? ''}
-                  onChange={e => handlePresetChange(e.target.value || null)}
-                  title={activePreset?.description ?? undefined}
-                >
-                  <option value="">None</option>
-                  {presetsForCluster.map(p => (
-                    <option key={p.name} value={p.name}>{p.title}</option>
-                  ))}
-                </select>
-                <button
-                  className="oc-export-btn"
-                  style={{ height: '2rem' }}
-                  onClick={() => setPresetManagerOpen(true)}
-                  title="Create, edit or delete filter presets"
-                >Manage</button>
-              </div>
-            </div>
             {(drillDown === 'year' || drillDown === 'month') && (
               <div className="oc-native-select" ref={controllerDropdownRef} style={{ position: 'relative' }}>
                 <label className="oc-native-select-label">Controller</label>
@@ -1316,6 +1300,25 @@ export const OpenCostPage = () => {
                 })()}
               </div>
             )}
+            <Select label="Preset" size="small"
+              selectedKey={selectedPreset ?? PRESET_NONE_KEY}
+              onSelectionChange={key => {
+                if (key === PRESET_CREATE_KEY) {
+                  setPresetManagerOpen(true);
+                  return;
+                }
+                handlePresetChange(key === PRESET_NONE_KEY ? null : (key as string));
+              }}>
+              {[
+                <SelectItemText key={PRESET_NONE_KEY} id={PRESET_NONE_KEY} title="None" />,
+                ...presetsForCluster.map(p => (
+                  <SelectItemText key={p.name} id={p.name} title={p.title} />
+                )),
+                <SelectItem key={PRESET_CREATE_KEY} id={PRESET_CREATE_KEY} textValue="Create" className="oc-preset-create-item">
+                  + Create
+                </SelectItem>,
+              ]}
+            </Select>
           </Flex>
           {activePreset && (
             <div className="oc-controller-chips" style={{ marginTop: 8 }}>
@@ -2322,6 +2325,7 @@ export const OpenCostPage = () => {
           previewYear={selectedYear}
           previewMonth={drillDown === 'year' ? (selectedYear === now.getFullYear() ? now.getMonth() + 1 : 12) : selectedMonth}
           presets={presets}
+          initialMode="edit"
           onChanged={reloadPresets}
           onClose={() => setPresetManagerOpen(false)}
         />
