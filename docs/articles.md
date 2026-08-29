@@ -12,3 +12,4 @@
 ## Tech Culture
 
 - [Why Is Everyone In Tech So Sad?](https://www.noemamag.com/why-is-everyone-in-tech-so-sad/)
+- [The end of programming](https://pauldix.com/the-end-of-programming)
