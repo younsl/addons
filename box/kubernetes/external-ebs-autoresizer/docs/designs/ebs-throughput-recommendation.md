@@ -431,7 +431,7 @@ seeing at startup rather than at failover.
 
 ## Configuration
 
-Eight settings. Everything else is fixed policy in `internal/throughput/defaults.go`.
+Eight settings. Everything else is fixed policy in `src/throughput/defaults.rs`.
 
 ```yaml
 throughputRecommendation:

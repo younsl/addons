@@ -34,7 +34,7 @@ recommender pass (30m)                     resizer pass (1m)
                                              -> ModifyVolume(size [+throughput +iops])
 ```
 
-`internal/recstore` is a mutex-guarded map keyed by volume ID, shared between
+`src/recstore.rs` is a mutex-guarded map keyed by volume ID, shared between
 the two loops of the same process. The recommender publishes every decided
 action (`increase`, `decrease`, `none`) with the values it computed, deletes
 entries for volumes that can no longer be decided, and after each successful

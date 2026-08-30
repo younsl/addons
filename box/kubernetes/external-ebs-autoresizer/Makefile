@@ -1,83 +1,95 @@
-BINARY      := external-ebs-autoresizer
-PKG         := ./cmd/$(BINARY)
-VERSION     := $(shell grep -oE 'org\.opencontainers\.image\.version="[^"]+"' Dockerfile | cut -d'"' -f2)
-COMMIT      := $(shell git rev-parse --short HEAD 2>/dev/null || echo none)
-LDFLAGS     := -s -w \
-	-X github.com/younsl/o/box/kubernetes/external-ebs-autoresizer/internal/version.Version=$(VERSION) \
-	-X github.com/younsl/o/box/kubernetes/external-ebs-autoresizer/internal/version.Commit=$(COMMIT)
-ECR_REGISTRY ?= ghcr.io/younsl
-IMAGE        := $(ECR_REGISTRY)/$(BINARY)
-COVER_MIN   ?= 70
-CONFIG      ?= config.example.yaml
+BINARY     := external-ebs-autoresizer
+VERSION    := $(shell grep -oE 'org\.opencontainers\.image\.version="[^"]+"' Dockerfile | cut -d'"' -f2)
+REGISTRY   ?= ghcr.io/younsl
+IMAGE      := $(REGISTRY)/$(BINARY)
+COVER_MIN  ?= 70
+CONFIG     ?= config.example.yaml
 
-.PHONY: all build run dev test coverage fmt lint vet tidy clean docker-build docker-push validate policies instances
+.PHONY: all build release run dev validate policies instances test coverage fmt lint check clean \
+        zigbuild-amd64 zigbuild-arm64 zigbuild docker-build docker-push help
 
-all: fmt vet lint test build
+.DEFAULT_GOAL := help
 
-## build: compile the binary into bin/
+## all: fmt + lint + test + build
+all: fmt lint test build
+
+## build: compile debug binary
 build:
-	CGO_ENABLED=0 go build -trimpath -ldflags="$(LDFLAGS)" -o bin/$(BINARY) $(PKG)
+	cargo build
 
-## run: build and run the controller with the example config (CONFIG=path to override)
-run: build
-	CONFIG_FILE=$(CONFIG) LOG_FORMAT=text ./bin/$(BINARY)
+## release: compile optimized release binary
+release:
+	cargo build --release
+
+## run: run the controller with the example config (CONFIG=path to override)
+run:
+	CONFIG_FILE=$(CONFIG) cargo run -- run
 
 ## dev: run the controller with debug logging and the example config
 dev:
-	CONFIG_FILE=$(CONFIG) LOG_FORMAT=text LOG_LEVEL=debug go run $(PKG)
+	CONFIG_FILE=$(CONFIG) cargo run -- --verbose run
 
 ## validate: validate the config file via the built-in CLI (no AWS)
 validate:
-	go run $(PKG) validate --config $(CONFIG)
+	cargo run -- validate --config $(CONFIG)
 
 ## policies: print resolved resize policies via the built-in CLI (no AWS)
 policies:
-	go run $(PKG) policies --config $(CONFIG)
+	cargo run -- policies --config $(CONFIG)
 
 ## instances: list discovered instances grouped by matched policy (needs AWS credentials)
 instances:
-	go run $(PKG) instances --config $(CONFIG)
+	cargo run -- instances --config $(CONFIG)
 
-## test: run tests with race detector
+## test: run tests
 test:
-	go test -race ./...
+	cargo test
 
-## coverage: enforce minimum line coverage
+## coverage: enforce minimum line coverage (cargo-llvm-cov)
 coverage:
-	go test -coverprofile=cover.out ./...
-	@total=$$(go tool cover -func=cover.out | awk '/^total:/ {gsub("%","",$$3); print $$3}'); \
-	echo "total coverage: $$total% (min $(COVER_MIN)%)"; \
-	awk "BEGIN { exit !($$total >= $(COVER_MIN)) }" || { echo "coverage below $(COVER_MIN)%"; exit 1; }
+	cargo llvm-cov --fail-under-lines $(COVER_MIN)
 
 ## fmt: format code
 fmt:
-	gofmt -w .
+	cargo fmt
 
-## lint: gofmt check + go vet
-lint: vet
-	@unformatted=$$(gofmt -l .); \
-	if [ -n "$$unformatted" ]; then echo "gofmt needed:"; echo "$$unformatted"; exit 1; fi
+## lint: rustfmt check + clippy with warnings denied
+lint:
+	cargo fmt --check
+	cargo clippy --all-targets -- -D warnings
 
-## vet: run go vet
-vet:
-	go vet ./...
+## check: type-check without building
+check:
+	cargo check
 
-## tidy: tidy module dependencies
-tidy:
-	go mod tidy
-
-## clean: remove build and coverage artifacts
+## clean: remove build artifacts
 clean:
-	rm -rf bin cover.out
+	cargo clean
+	rm -f $(BINARY)-linux-*
 
-## docker-build: build multi-arch image (requires buildx)
-docker-build:
+## zigbuild-amd64: cross-compile static linux/amd64 binary
+zigbuild-amd64:
+	cargo zigbuild --release --target x86_64-unknown-linux-musl
+	cp target/x86_64-unknown-linux-musl/release/$(BINARY) $(BINARY)-linux-amd64
+
+## zigbuild-arm64: cross-compile static linux/arm64 binary
+zigbuild-arm64:
+	cargo zigbuild --release --target aarch64-unknown-linux-musl
+	cp target/aarch64-unknown-linux-musl/release/$(BINARY) $(BINARY)-linux-arm64
+
+## zigbuild: cross-compile both architectures
+zigbuild: zigbuild-amd64 zigbuild-arm64
+
+## docker-build: cross-compile both arches, then build multi-arch image (requires buildx)
+docker-build: zigbuild
 	docker buildx build --platform linux/amd64,linux/arm64 \
-		--build-arg VERSION=$(VERSION) --build-arg COMMIT=$(COMMIT) \
 		-t $(IMAGE):$(VERSION) -t $(IMAGE):latest .
 
-## docker-push: build and push multi-arch image
-docker-push:
+## docker-push: cross-compile both arches, then build and push multi-arch image
+docker-push: zigbuild
 	docker buildx build --platform linux/amd64,linux/arm64 \
-		--build-arg VERSION=$(VERSION) --build-arg COMMIT=$(COMMIT) \
 		-t $(IMAGE):$(VERSION) -t $(IMAGE):latest --push .
+
+## help: show this message
+help:
+	@grep -E '^## ' $(MAKEFILE_LIST) | sed 's/^## //' | column -t -s ':'

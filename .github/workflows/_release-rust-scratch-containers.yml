@@ -15,6 +15,7 @@ on:
       - 'box/kubernetes/kagent-gateway/Dockerfile'
       - 'box/kubernetes/argocd-promotion-gate/Dockerfile'
       - 'box/kubernetes/filesystem-cleaner/Dockerfile'
+      - 'box/kubernetes/external-ebs-autoresizer/Dockerfile'
   workflow_dispatch:
     inputs:
       project:
@@ -32,6 +33,7 @@ on:
           - kagent-gateway
           - argocd-promotion-gate
           - filesystem-cleaner
+          - external-ebs-autoresizer
       force:
         description: "Rebuild even if the version already exists on GHCR (overwrites the tag)"
         required: false
@@ -94,6 +96,7 @@ jobs:
             "kagent-gateway:kagent-gateway:kagent-gateway:false"
             "argocd-promotion-gate:argocd-promotion-gate:argocd-promotion-gate:false"
             "filesystem-cleaner:filesystem-cleaner:filesystem-cleaner:false"
+            "external-ebs-autoresizer:external-ebs-autoresizer:external-ebs-autoresizer:false"
           )
 
           TEST_JSON="[]"

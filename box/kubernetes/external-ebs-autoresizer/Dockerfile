@@ -1,19 +1,4 @@
-# Statically linked Go binary on scratch. Cross-compilation happens inside the
-# builder stage (CGO disabled), so buildx needs no QEMU for the compile step.
-FROM --platform=$BUILDPLATFORM golang:1.27.0-alpine AS builder
-ARG TARGETOS
-ARG TARGETARCH
-ARG VERSION=dev
-ARG COMMIT=none
-WORKDIR /src
-COPY go.mod go.sum ./
-RUN go mod download
-COPY . .
-RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
-    go build -trimpath \
-    -ldflags="-s -w -X github.com/younsl/o/box/kubernetes/external-ebs-autoresizer/internal/version.Version=${VERSION} -X github.com/younsl/o/box/kubernetes/external-ebs-autoresizer/internal/version.Commit=${COMMIT}" \
-    -o /out/external-ebs-autoresizer ./cmd/external-ebs-autoresizer
-
+# Statically linked binary built via GitHub Actions cross-compilation (cargo-zigbuild)
 FROM alpine:3.23 AS certs
 RUN apk add --no-cache ca-certificates
 
@@ -26,7 +11,13 @@ LABEL org.opencontainers.image.title="external-ebs-autoresizer" \
       org.opencontainers.image.base.name="scratch" \
       org.opencontainers.image.deprecated="false"
 
+# AWS, the Kubernetes API, and the optional Alertmanager, Grafana, and
+# Prometheus sinks are all reached over TLS, and scratch has no trust store.
+ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
+
+ARG TARGETARCH
 COPY --from=certs /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
-COPY --from=builder /out/external-ebs-autoresizer /app/external-ebs-autoresizer
+COPY --chmod=755 external-ebs-autoresizer-linux-${TARGETARCH} /app/external-ebs-autoresizer
+EXPOSE 8080 8081
 USER 65532:65532
 ENTRYPOINT ["/app/external-ebs-autoresizer"]

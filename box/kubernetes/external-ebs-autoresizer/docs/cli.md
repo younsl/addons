@@ -14,18 +14,21 @@ Read this if you are:
 - An on-call engineer checking why an instance was (or was not) resized.
 
 ```
-Usage:
-  external-ebs-autoresizer [flags]
-  external-ebs-autoresizer [command]
+Usage: external-ebs-autoresizer [OPTIONS] [COMMAND]
 
-Available Commands:
-  completion  Generate the autocompletion script for the specified shell
-  help        Help about any command
-  instances   List discovered instances grouped by the policy each matches (calls AWS)
-  policies    Print the resolved resize policies and their effective settings
-  run         Run the controller (the default when no subcommand is given)
-  unused      List unused PersistentVolumeClaims and PersistentVolumes (reads the Kubernetes API, writes nothing)
-  validate    Load and validate the config file, then exit
+Commands:
+  run        Run the controller (the default when no subcommand is given)
+  validate   Load and validate the config file, then exit
+  policies   Print the resolved resize policies and their effective settings
+  instances  List discovered instances grouped by the policy each matches (calls AWS)
+  unused     List unused PersistentVolumeClaims and PersistentVolumes (reads the Kubernetes API, writes nothing)
+  help       Print this message or the help of the given subcommand(s)
+
+Options:
+      --config <CONFIG>  Path to the config file ($CONFIG_FILE, else the mounted default)
+  -v, --verbose          Verbose output (debug logging)
+  -h, --help             Print help
+  -V, --version          Print version
 ```
 
 With no subcommand (or `run`) the binary starts the controller. All commands

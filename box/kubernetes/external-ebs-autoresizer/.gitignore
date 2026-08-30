@@ -1,10 +1,8 @@
-# Build output
-/bin/
+# Rust / build artifacts
+/target/
+**/*.rs.bk
+external-ebs-autoresizer-linux-*
+lcov.info
 
-# Coverage artifacts
-*.out
-
-# The repo-root .gitignore ignores any path named "config"; that bare pattern
-# also matches this Go package. Re-include it so the source is tracked.
-!internal/config/
-!internal/config/**
+# The repo-root .gitignore ignores any path named "config"; src/config is
+# re-included there, so nothing extra is needed for src/config/.

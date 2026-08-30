@@ -2,6 +2,7 @@
 
 [![GitHub Container Registry](https://img.shields.io/badge/ghcr.io-external--ebs--autoresizer-black?style=flat-square&logo=docker&logoColor=white)](https://github.com/younsl/o/pkgs/container/external-ebs-autoresizer)
 [![Helm Chart](https://img.shields.io/badge/ghcr.io-charts%2Fexternal--ebs--autoresizer-black?style=flat-square&logo=helm&logoColor=white)](https://github.com/younsl/o/pkgs/container/charts%2Fexternal-ebs-autoresizer)
+[![Rust](https://img.shields.io/badge/rust-1.98.0-black?style=flat-square&logo=rust&logoColor=white)](https://www.rust-lang.org/)
 [![GitHub license](https://img.shields.io/github/license/younsl/o?style=flat-square&color=black)](https://github.com/younsl/o/blob/main/LICENSE)
 
 Automatically grows the [root filesystem][ebs-extend-fs] (ext2/3/4 or XFS) of
@@ -16,6 +17,8 @@ narrow the candidate set further. For each instance over the threshold it [grows
 the root EBS volume][ebs-modify] and [extends the filesystem][ebs-extend-fs] in
 place. Every step is driven and logged by the addon itself rather than delegated
 to an opaque SSM runbook, so each action has clear ownership and granular logs.
+Built with Rust 1.98.0 and shipped as a statically linked musl binary
+(cargo-zigbuild) on a `scratch` image for `linux/amd64` and `linux/arm64`.
 
 [ebs-modify]: https://docs.aws.amazon.com/ebs/latest/userguide/requesting-ebs-volume-modifications.html
 [ebs-modify-reqs]: https://docs.aws.amazon.com/ebs/latest/userguide/modify-volume-requirements.html
@@ -205,7 +208,7 @@ instances.
 
 ## Built-in CLI
 
-The same binary ships cobra subcommands, useful for validating config and
+The same binary ships subcommands, useful for validating config and
 inspecting policy reach without a running controller (all accept `--config`,
 defaulting to `$CONFIG_FILE` or `/etc/external-ebs-autoresizer/config.yaml`):
 
@@ -557,11 +560,12 @@ Target instances must have the SSM Agent running and the
 ## Build
 
 ```bash
-make build          # local binary into bin/
-make test           # race-enabled unit tests
-make coverage       # enforce minimum line coverage (70%)
-make lint           # format check + vet
-make docker-build   # multi-arch image (linux/amd64, linux/arm64)
+make build          # debug binary into target/debug/
+make test           # unit tests
+make coverage       # enforce minimum line coverage (70%, cargo-llvm-cov)
+make lint           # rustfmt check + clippy (pedantic and nursery as warnings, denied in CI)
+make zigbuild       # static musl binaries for linux/amd64 and linux/arm64 (cargo-zigbuild)
+make docker-build   # multi-arch scratch image from the zigbuild binaries
 ```
 
 ## Installation
