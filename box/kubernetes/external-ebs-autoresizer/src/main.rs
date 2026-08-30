@@ -41,7 +41,14 @@ use tracing::error;
 #[command(
     name = "external-ebs-autoresizer",
     about = "Grow standalone EC2 root volumes when disk usage crosses a threshold",
-    version = concat!(env!("CARGO_PKG_VERSION"), " (commit ", env!("BUILD_COMMIT"), ")")
+    version = concat!(
+        env!("CARGO_PKG_VERSION"),
+        " (commit ",
+        env!("BUILD_COMMIT"),
+        ", rustc ",
+        env!("BUILD_RUSTC_VERSION"),
+        ")"
+    )
 )]
 struct Cli {
     /// Path to the config file (`$CONFIG_FILE`, else the mounted default)
@@ -200,6 +207,7 @@ mod tests {
         assert!(cli.command.is_none());
         let version = Cli::command().render_version();
         assert!(version.contains("(commit "), "{version}");
+        assert!(version.contains(", rustc "), "{version}");
     }
 
     #[test]

@@ -33,6 +33,7 @@ pub async fn run(cfg: Config) -> Result<()> {
     info!(
         version = env!("CARGO_PKG_VERSION"),
         commit = env!("BUILD_COMMIT"),
+        rust_version = env!("BUILD_RUSTC_VERSION"),
         region = %cfg.region,
         reconcile_interval = %go_duration(cfg.reconcile_interval),
         dry_run = cfg.dry_run,
