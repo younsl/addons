@@ -19,6 +19,11 @@ use crate::k8s::nodes::PAGE_SIZE;
 /// carries the EBS volume ID verbatim in `spec.csi.volumeHandle`.
 const EBS_CSI_DRIVER: &str = "ebs.csi.aws.com";
 
+/// The page size of the Pod sweep. Smaller than the general page size because
+/// a Pod is the widest object the scanner reads, and the memory limit in the
+/// chart is sized for the addon's steady state, not for a 500-Pod page.
+const POD_PAGE_SIZE: u32 = 100;
+
 /// The kube-backed scanner client.
 pub struct KubeClient {
     client: kube::Client,
@@ -30,22 +35,36 @@ impl KubeClient {
         Self { client }
     }
 
-    async fn list_all<K>(&self, api: &kube::Api<K>, what: &str) -> Result<Vec<K>, String>
+    /// Lists every object of one kind, handing each page to `reduce` and
+    /// dropping it before the next is fetched. The full object list is never
+    /// held: a Pod carries a large spec and status, and a cluster of a few
+    /// hundred Pods materialized at once is enough to blow through the
+    /// container's memory limit, while the scanner only keeps a claim name
+    /// per Pod.
+    async fn for_each_page<K, F>(
+        &self,
+        api: &kube::Api<K>,
+        what: &str,
+        page_size: u32,
+        mut reduce: F,
+    ) -> Result<(), String>
     where
         K: kube::Resource + Clone + serde::de::DeserializeOwned + std::fmt::Debug,
         <K as kube::Resource>::DynamicType: Default,
+        F: FnMut(&K),
     {
-        let mut out = Vec::new();
-        let mut params = ListParams::default().limit(PAGE_SIZE);
+        let mut params = ListParams::default().limit(page_size);
         loop {
             let page = api
                 .list(&params)
                 .await
                 .map_err(|e| format!("list {what}: {e}"))?;
-            out.extend(page.items);
+            for item in &page.items {
+                reduce(item);
+            }
             match page.metadata.continue_ {
                 Some(token) if !token.is_empty() => params = params.continue_token(&token),
-                _ => return Ok(out),
+                _ => return Ok(()),
             }
         }
     }
@@ -56,33 +75,38 @@ impl KubeApi for KubeClient {
     /// Reads the whole cluster's claims, volumes, Pod claim references, and
     /// `StatefulSets` in four paginated list sweeps.
     async fn inventory(&self) -> Result<Inventory, String> {
-        let pvcs = self
-            .list_all(
-                &kube::Api::<PersistentVolumeClaim>::all(self.client.clone()),
-                "persistentvolumeclaims",
-            )
-            .await?;
-        let volumes = self
-            .list_all(
-                &kube::Api::<PersistentVolume>::all(self.client.clone()),
-                "persistentvolumes",
-            )
-            .await?;
-        let pods = self
-            .list_all(&kube::Api::<Pod>::all(self.client.clone()), "pods")
-            .await?;
-        let sets = self
-            .list_all(
-                &kube::Api::<K8sStatefulSet>::all(self.client.clone()),
-                "statefulsets",
-            )
-            .await?;
-        Ok(Inventory {
-            pvcs: pvcs.iter().map(from_pvc).collect(),
-            pvs: volumes.iter().map(from_pv).collect(),
-            claims_in_use: claims_in_use(&pods),
-            stateful_sets: sets.iter().map(from_stateful_set).collect(),
-        })
+        let mut inv = Inventory::default();
+        self.for_each_page(
+            &kube::Api::<PersistentVolumeClaim>::all(self.client.clone()),
+            "persistentvolumeclaims",
+            PAGE_SIZE,
+            |p| inv.pvcs.push(from_pvc(p)),
+        )
+        .await?;
+        self.for_each_page(
+            &kube::Api::<PersistentVolume>::all(self.client.clone()),
+            "persistentvolumes",
+            PAGE_SIZE,
+            |p| inv.pvs.push(from_pv(p)),
+        )
+        .await?;
+        // Pods are by far the widest objects the scanner reads and the only
+        // thing kept per Pod is a claim name, so they are paged small.
+        self.for_each_page(
+            &kube::Api::<Pod>::all(self.client.clone()),
+            "pods",
+            POD_PAGE_SIZE,
+            |p| claims_in_use(std::slice::from_ref(p), &mut inv.claims_in_use),
+        )
+        .await?;
+        self.for_each_page(
+            &kube::Api::<K8sStatefulSet>::all(self.client.clone()),
+            "statefulsets",
+            PAGE_SIZE,
+            |s| inv.stateful_sets.push(from_stateful_set(s)),
+        )
+        .await?;
+        Ok(inv)
     }
 
     async fn annotate_pvc(
@@ -173,8 +197,7 @@ pub(crate) fn from_pv(p: &PersistentVolume) -> Pv {
 /// in a terminal phase. Succeeded and Failed Pods are excluded on purpose:
 /// their containers are gone and mount nothing, but the Pod object survives
 /// until something reaps it.
-pub(crate) fn claims_in_use(pods: &[Pod]) -> HashSet<String> {
-    let mut out = HashSet::new();
+pub(crate) fn claims_in_use(pods: &[Pod], out: &mut HashSet<String>) {
     for p in pods {
         let phase = p
             .status
@@ -196,7 +219,6 @@ pub(crate) fn claims_in_use(pods: &[Pod]) -> HashSet<String> {
             }
         }
     }
-    out
 }
 
 /// Reduces a `StatefulSet` to the replica range and claim template names.
@@ -567,7 +589,9 @@ mod tests {
             pod("b", "Failed", "broken"),
             Pod::default(),
         ];
-        let got = claims_in_use(&pods);
+        let mut got = HashSet::new();
+        claims_in_use(&pods, &mut got);
+        claims_in_use(&pods[..1], &mut got);
         assert_eq!(
             got,
             HashSet::from(["a/live".to_string(), "a/soon".to_string()])
