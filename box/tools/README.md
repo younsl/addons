@@ -12,7 +12,7 @@ All CLI tools are built with [Rust](https://github.com/rust-lang/rust) 1.93+. Ru
 
 | Category | Name | Language | Description |
 |----------|------|----------|-------------|
-| CLI | [ij](./ij/) (Infra Janitor) | [Rust](./ij/Cargo.toml) | EC2 operations CLI for SSM connect and AMI cleanup with multi-region scanning. |
+| TUI | [ij](./ij/) (Infra Janitor) | [Rust](./ij/Cargo.toml) | EC2 operations CLI for SSM connect and AMI cleanup with multi-region scanning. |
 | TUI | [vlt](./vlt/) | [Rust](./vlt/Cargo.toml) | Local-first password manager TUI with Argon2id and ChaCha20-Poly1305 encrypted vault. |
 
 ## License
