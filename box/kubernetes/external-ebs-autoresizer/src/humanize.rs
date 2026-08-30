@@ -13,14 +13,27 @@ pub fn go_duration(d: Duration) -> String {
         return "0s".to_string();
     }
     if d < Duration::from_secs(1) {
+        // Go picks the largest unit that keeps a non-zero integer part and
+        // prints the remainder as a trimmed fraction: 436.421432ms, 1.5µs.
         let nanos = d.as_nanos();
-        if nanos.is_multiple_of(1_000_000) {
-            return format!("{}ms", nanos / 1_000_000);
+        let (unit, scale) = if nanos >= 1_000_000 {
+            ("ms", 1_000_000)
+        } else if nanos >= 1_000 {
+            ("µs", 1_000)
+        } else {
+            return format!("{nanos}ns");
+        };
+        let whole = nanos / scale;
+        let frac = nanos % scale;
+        if frac == 0 {
+            return format!("{whole}{unit}");
         }
-        if nanos.is_multiple_of(1_000) {
-            return format!("{}µs", nanos / 1_000);
+        let width = if scale == 1_000_000 { 6 } else { 3 };
+        let mut f = format!("{frac:0width$}");
+        while f.ends_with('0') {
+            f.pop();
         }
-        return format!("{nanos}ns");
+        return format!("{whole}.{f}{unit}");
     }
     let total = d.as_secs();
     let hours = total / 3600;
@@ -89,7 +102,9 @@ mod tests {
         for (d, want) in [
             (Duration::ZERO, "0s"),
             (Duration::from_millis(500), "500ms"),
-            (Duration::from_micros(1500), "1500µs"),
+            (Duration::from_micros(1500), "1.5ms"),
+            (Duration::from_nanos(436_421_432), "436.421432ms"),
+            (Duration::from_nanos(1_500), "1.5µs"),
             (Duration::from_nanos(7), "7ns"),
             (Duration::from_secs(1), "1s"),
             (Duration::from_millis(1500), "1.5s"),
