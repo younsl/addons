@@ -18,11 +18,11 @@ This repository follows the single-repository model Google describes in [Why Goo
 
 | Path | Contents |
 | --- | --- |
-| `box/kubernetes/` | Kubernetes addons, operators, and runtime container images |
-| `box/kubernetes/charts/` | Helm charts, distributed as OCI artifacts |
-| `box/tools/` | CLI tools |
-| `docs/` | Repository documentation, articles, and the resume |
-| `.github/workflows/` | Shared and per-artifact release pipelines |
+| [box/kubernetes/](../box/kubernetes/) | Kubernetes addons, operators, and runtime container images |
+| [box/kubernetes/charts/](../box/kubernetes/charts/) | Helm charts, distributed as OCI artifacts |
+| [box/tools/](../box/tools/) | CLI tools |
+| [docs/](../docs/) | Repository documentation, articles, and the resume |
+| [.github/workflows/](../.github/workflows/) | Shared and per-artifact release pipelines |
 
 Components are mixed-language by design. Rust 1.98+ is the primary runtime for the CLI tools and addons, and one component is different: Backstage is Node.js and React. The repository holds the conventions, not a single toolchain.
 
@@ -30,11 +30,11 @@ Components are mixed-language by design. Rust 1.98+ is the primary runtime for t
 
 The main risk of a monorepo is that every push rebuilds everything. Two mechanisms keep that from happening.
 
-Each release workflow declares an explicit `paths:` filter listing the exact files it owns, so a workflow only wakes for changes inside its own components. The `paths:` list at the top of a workflow is the authoritative record of which artifacts that workflow releases.
+Each release workflow declares an explicit paths: filter listing the exact files it owns, so a workflow only wakes for changes inside its own components. The paths: list at the top of a workflow is the authoritative record of which artifacts that workflow releases.
 
-Releases then trigger on a version value changing inside a file rather than on any change at all. A container releases when the `org.opencontainers.image.version` label in its Dockerfile changes, a chart when `version` in its `Chart.yaml` changes, and the Rust CLI when `version` in its `Cargo.toml` changes. Editing a Dockerfile without touching its version label still starts a workflow run, which then finds the version already published and no-ops. That is the intended way to make a non-releasing change.
+Releases then trigger on a version value changing inside a file rather than on any change at all. A container releases when the org.opencontainers.image.version label in its Dockerfile changes, a chart when version in its Chart.yaml changes, and the Rust CLI when version in its Cargo.toml changes. Editing a Dockerfile without touching its version label still starts a workflow run, which then finds the version already published and no-ops. That is the intended way to make a non-releasing change.
 
-The `ij` release workflow creates the GitHub release itself, and the tag it cuts is namespaced per component, as in `ij/x.y.z`, because a flat `vx.y.z` tag space cannot express independent versions for independent components sharing one history.
+The ij release workflow creates the GitHub release itself, and the tag it cuts is namespaced per component, as in ij/x.y.z, because a flat vx.y.z tag space cannot express independent versions for independent components sharing one history.
 
 ## Costs
 
@@ -42,6 +42,10 @@ This model is not free, and the costs are worth naming.
 
 Access control is repository-wide. There is no way to grant someone write access to one component without granting it everywhere, so the model suits a repository with a single maintainer or a small trusted set far better than one with many external contributors.
 
-History is shared. Every component's commits interleave in one log, which makes per-component history harder to read and makes commit message discipline load-bearing rather than cosmetic. That is why commits carry a `[<TOOLNAME>]` prefix.
+History is shared. Every component's commits interleave in one log, which makes per-component history harder to read and makes commit message discipline load-bearing rather than cosmetic. That is why every commit message opens with the component name in brackets.
 
-CI correctness depends on the `paths:` filters staying accurate. Adding a component without adding it to the right filter produces a component that silently never releases, and the failure mode is silence rather than an error.
+CI correctness depends on the paths: filters staying accurate. Adding a component without adding it to the right filter produces a component that silently never releases, and the failure mode is silence rather than an error.
+
+## Conclusion
+
+The single-repository model trades coordination cost for maintenance discipline, and that trade is what keeps a collection of small, single-purpose tools workable for one maintainer. It holds only while access control stays acceptable at repository granularity and the paths: filters stay accurate as components are added, neither of which is enforced by tooling. If the repository ever gains many external contributors who need scoped write access, splitting becomes the correct answer. Until then, one checkout holding every convention, every release pipeline, and full cross-project context for both humans and coding agents is worth more than per-component isolation.
