@@ -15,28 +15,28 @@ path = "src/main.rs"
 
 [dependencies]
 # Async runtime (interval scheduling, signal handling)
-tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "time"] }
-tokio-util = "0.7"
+tokio = { version = "1.53.1", features = ["macros", "rt-multi-thread", "signal", "time"] }
+tokio-util = "0.7.19"
 
 # CLI
-clap = { version = "4", features = ["derive"] }
+clap = { version = "4.6.6", features = ["derive"] }
 
 # Glob matching. The default settings (literal_separator=false) are load-bearing:
 # deployed exclude patterns like `*.log` rely on `*` matching across `/`.
-globset = "0.4"
+globset = "0.4.20"
 
 # statvfs(2) for disk usage
-nix = { version = "0.31", default-features = false, features = ["fs"] }
+nix = { version = "0.31.3", default-features = false, features = ["fs"] }
 
 # Error handling
-thiserror = "2"
+thiserror = "2.0.20"
 
 # Logging
-tracing = "0.1"
-tracing-subscriber = "0.3"
+tracing = "0.1.44"
+tracing-subscriber = "0.3.23"
 
 [dev-dependencies]
-tempfile = "3"
+tempfile = "3.27.0"
 
 [lints.rust]
 unsafe_code = "forbid"

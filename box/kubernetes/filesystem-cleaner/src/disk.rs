@@ -10,6 +10,9 @@ use nix::sys::statvfs::statvfs;
 /// Usage is computed as `(total - available) / total`, where available is the
 /// space usable by unprivileged processes (`f_bavail`). This matches the
 /// behavior the tool has always shipped with and can differ from `df`.
+// `fsblkcnt_t` is `u64` on Linux but `u32` on macOS, so the `u64::from` calls
+// are required on one target and flagged as useless on the other.
+#[allow(clippy::useless_conversion)]
 #[expect(clippy::cast_precision_loss)]
 pub fn usage_percent(path: &Path) -> Result<f64, nix::Error> {
     let st = statvfs(path)?;
