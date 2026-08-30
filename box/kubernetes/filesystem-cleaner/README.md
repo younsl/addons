@@ -1,8 +1,9 @@
 # filesystem-cleaner
 
 [![GitHub Container Registry](https://img.shields.io/badge/ghcr.io-younsl%2Ffilesystem--cleaner-000000?style=flat-square&logo=github&logoColor=white)](https://github.com/younsl/o/pkgs/container/filesystem-cleaner)
+[![Rust](https://img.shields.io/badge/rust-1.98.0-000000?style=flat-square&logo=rust&logoColor=white)](https://www.rust-lang.org/)
 
-A lightweight container image for automatic filesystem cleanup in [Kubernetes](https://kubernetes.io/docs/concepts/overview/) environments. Designed as a [sidecar container](https://kubernetes.io/docs/concepts/workloads/pods/sidecar-containers/) or [init container](https://kubernetes.io/docs/concepts/workloads/pods/init-containers/), it monitors disk usage and intelligently removes files to prevent storage exhaustion. Particularly useful for GitHub Actions self-hosted runners, CI/CD pipelines, and any workloads that generate temporary files requiring periodic cleanup.
+A lightweight container image for automatic filesystem cleanup in [Kubernetes](https://kubernetes.io/docs/concepts/overview/) environments. Designed as a [sidecar container](https://kubernetes.io/docs/concepts/workloads/pods/sidecar-containers/) or [init container](https://kubernetes.io/docs/concepts/workloads/pods/init-containers/), it monitors disk usage and intelligently removes files to prevent storage exhaustion. Particularly useful for GitHub Actions self-hosted runners, CI/CD pipelines, and any workloads that generate temporary files requiring periodic cleanup. Built with Rust 1.98.0 and shipped as a statically linked musl binary (cargo-zigbuild) on a `scratch` image for `linux/amd64` and `linux/arm64`.
 
 ## Architecture
 
@@ -21,7 +22,7 @@ The filesystem-cleaner runs as a [sidecar container](https://kubernetes.io/docs/
 - **Configurable cleanup patterns** - Include/exclude file patterns
 - **Dry-run mode** - Preview what would be deleted
 - **Non-root execution** - Runs as unprivileged user
-- **Minimal footprint** - Statically linked binary on a `scratch` image, structured logging via `log/slog`
+- **Minimal footprint** - Statically linked binary on a `scratch` image, structured logging via `tracing`
 
 ## Installation
 
@@ -30,13 +31,14 @@ filesystem-cleaner supports multiple deployment methods: standalone binary execu
 ### Binary
 
 ```bash
-make build
-./bin/filesystem-cleaner --help
+make release
+./target/release/filesystem-cleaner --help
 ```
 
 ### Docker
 
 ```bash
+# Cross-compiles linux/amd64 and linux/arm64 with cargo-zigbuild, then builds the image with buildx
 make docker-build
 ```
 
@@ -154,8 +156,11 @@ Configure filesystem-cleaner using command-line flags or environment variables. 
 ## Building
 
 ```bash
-# Local build
-make build
+# Local release build
+make release
+
+# Static linux binaries for both architectures (requires cargo-zigbuild and zig)
+make zigbuild
 
 # Docker image (multi-arch, requires buildx)
 make docker-build
@@ -170,12 +175,12 @@ make docker-push
 # Run with debug logging (dry-run against /tmp)
 make dev
 
-# Run tests with race detector
+# Run tests
 make test
 
-# Coverage gate (70% minimum)
+# Coverage gate (70% minimum, cargo-llvm-cov)
 make coverage
 
-# Format and lint
+# Format and lint (rustfmt check + clippy with warnings denied)
 make fmt lint
 ```

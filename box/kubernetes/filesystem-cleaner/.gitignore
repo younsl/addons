@@ -1,12 +1,8 @@
-# Go
-bin/
-*.exe
-*.exe~
-*.dll
-*.so
-*.dylib
-*.test
-*.out
+# Rust / build artifacts
+/target/
+**/*.rs.bk
+filesystem-cleaner-linux-*
+lcov.info
 
 # IDEs
 .idea/

@@ -2,7 +2,7 @@
 
 This document explains how filesystem-cleaner is built and organized. You'll learn:
 
-- **What each component does** - Clear responsibilities for every package
+- **What each component does** - Clear responsibilities for every module
 - **How they work together** - Data flow from CLI input to file deletion
 - **Why this design** - Single responsibility principle in action
 
@@ -10,24 +10,24 @@ If you're contributing code, debugging, or just curious about the internals, sta
 
 ## Design Philosophy
 
-filesystem-cleaner follows the Unix philosophy: **"Do one thing and do it well"**. Each package has a single, well-defined responsibility.
+filesystem-cleaner follows the Unix philosophy: **"Do one thing and do it well"**. Each module has a single, well-defined responsibility.
 
 ## Component Overview
 
 ```
 ┌──────────────────────────┐
-│ cmd/filesystem-cleaner   │  Entry point - CLI initialization & signal handling
+│ src/main.rs              │  Entry point - CLI initialization & signal handling
 └────────────┬─────────────┘
              │
              ▼
 ┌──────────────────────────┐
-│ internal/cleaner         │  Orchestrator - Schedules cleanup & monitors disk usage
+│ src/cleaner.rs           │  Orchestrator - Schedules cleanup & monitors disk usage
 └────────────┬─────────────┘
              │
       ┌──────┴──────┬──────────────┐
       ▼             ▼              ▼
 ┌───────────┐ ┌───────────┐ ┌───────────┐
-│ internal/ │ │ internal/ │ │ internal/ │
+│ src/      │ │ src/      │ │ src/      │
 │ matcher   │ │ scanner   │ │ disk      │
 │ Pattern   │ │ Directory │ │ Filesystem│
 │ matching  │ │ traversal │ │ usage     │
@@ -36,53 +36,53 @@ filesystem-cleaner follows the Unix philosophy: **"Do one thing and do it well"*
 
 ## Components
 
-### cmd/filesystem-cleaner
+### src/main.rs
 **Responsibility**: Application entry point
 
-- Parse CLI arguments via `internal/config`
-- Set up structured logging with `log/slog`
-- Handle shutdown signals (SIGTERM, SIGINT) via `signal.NotifyContext`
-- Start the cleaner
+- Parse CLI arguments via `config`
+- Set up structured logging with `tracing` and `tracing-subscriber`
+- Handle shutdown signals (SIGTERM, SIGINT) through a `CancellationToken`
+- Start the cleaner on the tokio runtime
 
-### internal/config
+### src/config.rs
 **Responsibility**: Configuration management
 
-- Define CLI flags with the standard `flag` package
-- Resolve environment variable fallbacks (flag > env > default)
-- Validate configuration values (threshold range, mode, log level)
-- Define `CleanupMode` (`once`/`interval`)
+- Define CLI flags with `clap` (derive API)
+- Resolve environment variable fallbacks (flag > env > default) through an injectable lookup so precedence is unit-tested without touching the process environment
+- Validate configuration values (threshold range, interval minimum, mode, log level)
+- Define `CleanupMode` (`once`/`interval`) and `LogLevel`
 
-### internal/matcher
+### src/matcher.rs
 **Responsibility**: Pattern matching logic
 
 Answers one question: *"Does this relative path match the configured glob patterns?"*
 
-Glob patterns are translated into anchored regular expressions at startup. The semantics mirror the Rust globset crate (default settings) the tool originally shipped with: `*` and `?` match across `/`, and `**` as a full component matches zero or more path components.
+Glob patterns are compiled into `globset` sets at startup using the crate's default settings: `*` and `?` match across `/`, and `**` as a full component matches zero or more path components. These semantics are what deployed patterns rely on, see [Glob Pattern Guide](glob-patterns.md).
 
 **Key Methods**:
-- `ShouldExclude(path) bool` - Check if path matches exclude patterns
-- `ShouldInclude(path) bool` - Check if path matches include patterns
+- `should_exclude(rel) -> bool` - Check if path matches exclude patterns
+- `should_include(rel) -> bool` - Check if path matches include patterns
 
-### internal/scanner
+### src/scanner.rs
 **Responsibility**: File system traversal
 
 Walks directory trees and collects files based on pattern rules.
 
 **How it works**:
 1. Start from the target path
-2. For each entry:
+2. For each entry (sorted by name for deterministic logs):
    - Calculate the relative path (forward slashes)
    - Skip symbolic links (prevents infinite loops and deletions outside target paths)
    - If directory and not excluded, recurse
    - If file, keep it when it passes exclude then include filters
 3. Return the list of files to delete with their sizes
 
-### internal/disk
+### src/disk.rs
 **Responsibility**: Filesystem usage
 
-Reports the used-space percentage of the filesystem containing a path via `statfs(2)`. Usage is `(total - available) / total`, where available is the space usable by unprivileged processes.
+Reports the used-space percentage of the filesystem containing a path via `statvfs(2)` (through the `nix` crate). Usage is `(total - available) / total`, where available is the space usable by unprivileged processes.
 
-### internal/cleaner
+### src/cleaner.rs
 **Responsibility**: Cleanup orchestration
 
 Coordinates all components to perform the actual cleanup operation.
@@ -105,11 +105,11 @@ Coordinates all components to perform the actual cleanup operation.
    └─> Wait for the next tick and repeat
 ```
 
-### internal/bytesize
+### src/bytesize.rs
 **Responsibility**: Human-readable byte formatting for log output (e.g. `1.5 MiB`).
 
-### internal/version
-**Responsibility**: Build-time version information injected via `-ldflags -X`.
+### build.rs
+**Responsibility**: Build-time metadata. Injects `BUILD_COMMIT` and `BUILD_DATE` so `--version` reports the commit the binary was built from.
 
 ## Data Flow
 
@@ -132,7 +132,7 @@ User → CLI Args → Config → Cleaner
 ## Design Principles
 
 ### 1. Single Responsibility Principle
-Each package does **one thing only**:
+Each module does **one thing only**:
 - `matcher` - Pattern matching
 - `scanner` - File traversal
 - `disk` - Filesystem usage
@@ -145,34 +145,34 @@ cleaner → scanner → matcher
 config, disk
 ```
 
-Dependencies flow in one direction. Lower-level packages (`matcher`, `scanner`, `disk`) don't know about higher-level ones (`cleaner`).
+Dependencies flow in one direction. Lower-level modules (`matcher`, `scanner`, `disk`) don't know about higher-level ones (`cleaner`).
 
 ### 3. Testability
-Each package has its own unit tests using `t.TempDir()` for real filesystem operations, and the test suite runs with the race detector in CI.
+Each module has its own `#[cfg(test)]` unit tests using `tempfile` for real filesystem operations. CI runs the suite in debug and release and enforces 70% line coverage with `cargo-llvm-cov`.
 
 ### 4. Unix Philosophy
 > "Write programs that do one thing and do it well. Write programs to work together."
 
-- Small, focused packages
+- Small, focused modules
 - Clear interfaces between components
 - Easy to understand, test, and modify
 
 ## Adding New Features
 
 **Want to add a new pattern type?**
-→ Modify `internal/matcher` only
+→ Modify `src/matcher.rs` only
 
 **Want to change directory traversal logic?**
-→ Modify `internal/scanner` only
+→ Modify `src/scanner.rs` only
 
 **Want to add a new scheduling mode?**
-→ Modify `internal/cleaner` only
+→ Modify `src/cleaner.rs` only
 
-Each change is **isolated to one package**, making the codebase easy to maintain and extend.
+Each change is **isolated to one module**, making the codebase easy to maintain and extend.
 
 ## Performance Considerations
 
 - **Scanner**: Traverses directories only once per cleanup cycle
-- **Matcher**: Glob patterns are compiled to regular expressions once at startup
+- **Matcher**: Glob patterns are compiled into `GlobSet`s once at startup
 - **Memory**: Files are collected in memory before deletion (acceptable for typical workspace sizes)
-- **Binary**: Statically linked with CGO disabled, packaged on `scratch`
+- **Binary**: Statically linked musl binary cross-compiled with cargo-zigbuild, packaged on `scratch`

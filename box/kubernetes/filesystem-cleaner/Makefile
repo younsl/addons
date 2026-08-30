@@ -1,70 +1,82 @@
-BINARY      := filesystem-cleaner
-PKG         := ./cmd/$(BINARY)
-VERSION     := $(shell grep -oE 'org\.opencontainers\.image\.version="[^"]+"' Dockerfile | cut -d'"' -f2)
-COMMIT      := $(shell git rev-parse --short HEAD 2>/dev/null || echo none)
-LDFLAGS     := -s -w \
-	-X github.com/younsl/o/box/kubernetes/filesystem-cleaner/internal/version.Version=$(VERSION) \
-	-X github.com/younsl/o/box/kubernetes/filesystem-cleaner/internal/version.Commit=$(COMMIT)
-REGISTRY    ?= ghcr.io/younsl
-IMAGE       := $(REGISTRY)/$(BINARY)
-COVER_MIN   ?= 70
+BINARY     := filesystem-cleaner
+VERSION    := $(shell grep -oE 'org\.opencontainers\.image\.version="[^"]+"' Dockerfile | cut -d'"' -f2)
+REGISTRY   ?= ghcr.io/younsl
+IMAGE      := $(REGISTRY)/$(BINARY)
+COVER_MIN  ?= 70
 
-.PHONY: all build run dev test coverage fmt lint vet tidy clean docker-build docker-push
+.PHONY: all build release run dev test coverage fmt lint check clean \
+        zigbuild-amd64 zigbuild-arm64 zigbuild docker-build docker-push help
 
-all: fmt vet lint test build
+.DEFAULT_GOAL := help
 
-## build: compile the binary into bin/
+## all: fmt + lint + test + build
+all: fmt lint test build
+
+## build: compile debug binary
 build:
-	CGO_ENABLED=0 go build -trimpath -ldflags="$(LDFLAGS)" -o bin/$(BINARY) $(PKG)
+	cargo build
 
-## run: build and dry-run against /tmp
-run: build
-	./bin/$(BINARY) --dry-run --usage-threshold-percent 70 --target-paths /tmp --cleanup-mode once
+## release: compile optimized release binary
+release:
+	cargo build --release
+
+## run: dry-run against /tmp
+run:
+	cargo run -- --dry-run --usage-threshold-percent 70 --target-paths /tmp --cleanup-mode once
 
 ## dev: dry-run against /tmp with debug logging
 dev:
-	go run $(PKG) --log-level debug --dry-run --usage-threshold-percent 70 --target-paths /tmp --cleanup-mode once
+	cargo run -- --log-level debug --dry-run --usage-threshold-percent 70 --target-paths /tmp --cleanup-mode once
 
-## test: run tests with race detector
+## test: run tests
 test:
-	go test -race ./...
+	cargo test
 
-## coverage: enforce minimum line coverage
+## coverage: enforce minimum line coverage (cargo-llvm-cov)
 coverage:
-	go test -coverprofile=cover.out ./...
-	@total=$$(go tool cover -func=cover.out | awk '/^total:/ {gsub("%","",$$3); print $$3}'); \
-	echo "total coverage: $$total% (min $(COVER_MIN)%)"; \
-	awk "BEGIN { exit !($$total >= $(COVER_MIN)) }" || { echo "coverage below $(COVER_MIN)%"; exit 1; }
+	cargo llvm-cov --fail-under-lines $(COVER_MIN)
 
 ## fmt: format code
 fmt:
-	gofmt -w .
+	cargo fmt
 
-## lint: gofmt check + go vet
-lint: vet
-	@unformatted=$$(gofmt -l .); \
-	if [ -n "$$unformatted" ]; then echo "gofmt needed:"; echo "$$unformatted"; exit 1; fi
+## lint: rustfmt check + clippy with warnings denied
+lint:
+	cargo fmt --check
+	cargo clippy --all-targets -- -D warnings
 
-## vet: run go vet
-vet:
-	go vet ./...
+## check: type-check without building
+check:
+	cargo check
 
-## tidy: tidy module dependencies
-tidy:
-	go mod tidy
-
-## clean: remove build and coverage artifacts
+## clean: remove build artifacts
 clean:
-	rm -rf bin cover.out
+	cargo clean
+	rm -f $(BINARY)-linux-*
 
-## docker-build: build multi-arch image (requires buildx)
-docker-build:
+## zigbuild-amd64: cross-compile static linux/amd64 binary
+zigbuild-amd64:
+	cargo zigbuild --release --target x86_64-unknown-linux-musl
+	cp target/x86_64-unknown-linux-musl/release/$(BINARY) $(BINARY)-linux-amd64
+
+## zigbuild-arm64: cross-compile static linux/arm64 binary
+zigbuild-arm64:
+	cargo zigbuild --release --target aarch64-unknown-linux-musl
+	cp target/aarch64-unknown-linux-musl/release/$(BINARY) $(BINARY)-linux-arm64
+
+## zigbuild: cross-compile both architectures
+zigbuild: zigbuild-amd64 zigbuild-arm64
+
+## docker-build: cross-compile both arches, then build multi-arch image (requires buildx)
+docker-build: zigbuild
 	docker buildx build --platform linux/amd64,linux/arm64 \
-		--build-arg VERSION=$(VERSION) --build-arg COMMIT=$(COMMIT) \
 		-t $(IMAGE):$(VERSION) -t $(IMAGE):latest .
 
-## docker-push: build and push multi-arch image
-docker-push:
+## docker-push: cross-compile both arches, then build and push multi-arch image
+docker-push: zigbuild
 	docker buildx build --platform linux/amd64,linux/arm64 \
-		--build-arg VERSION=$(VERSION) --build-arg COMMIT=$(COMMIT) \
 		-t $(IMAGE):$(VERSION) -t $(IMAGE):latest --push .
+
+## help: show this message
+help:
+	@grep -E '^## ' $(MAKEFILE_LIST) | sed 's/^## //' | column -t -s ':'

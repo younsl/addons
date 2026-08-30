@@ -6,7 +6,6 @@ on:
     branches: [main]
     paths:
       - 'box/kubernetes/external-ebs-autoresizer/Dockerfile'
-      - 'box/kubernetes/filesystem-cleaner/Dockerfile'
   workflow_dispatch:
     inputs:
       project:
@@ -15,7 +14,6 @@ on:
         type: choice
         options:
           - external-ebs-autoresizer
-          - filesystem-cleaner
       force:
         description: "Rebuild even if the version already exists on GHCR (overwrites the tag)"
         required: false
@@ -72,7 +70,6 @@ jobs:
           # project_name:project_dir
           PROJECTS=(
             "external-ebs-autoresizer:external-ebs-autoresizer"
-            "filesystem-cleaner:filesystem-cleaner"
           )
 
           TEST_JSON="[]"

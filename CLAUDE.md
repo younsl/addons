@@ -9,8 +9,7 @@ target lists, or per-tool feature summaries here; read the code or the tool's ow
 ## Overview
 
 Monorepo of Kubernetes addons, operators, CLI tools, runtime container images, and a Zola blog.
-Most applications are Rust. Exceptions: `backstage` (Node.js/React), `external-ebs-autoresizer`, and
-`filesystem-cleaner`.
+Most applications are Rust. Exceptions: `backstage` (Node.js/React) and `external-ebs-autoresizer` (Go).
 
 Each addon follows the Unix philosophy of doing one thing well. Prefer a new small component over
 extending an existing one past its purpose.
