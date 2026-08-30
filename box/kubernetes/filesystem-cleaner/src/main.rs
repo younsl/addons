@@ -6,8 +6,11 @@ mod bytesize;
 mod cleaner;
 mod config;
 mod disk;
+mod error;
 mod matcher;
+mod remover;
 mod scanner;
+mod schedule;
 
 use std::io::IsTerminal;
 use std::process::ExitCode;

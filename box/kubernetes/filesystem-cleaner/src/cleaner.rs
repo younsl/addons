@@ -1,37 +1,61 @@
-//! Cleanup orchestration: monitors disk usage, schedules cleanup runs (once
-//! or on an interval), and deletes files collected by the scanner.
+//! Cleanup orchestration: one cycle checks disk usage for every target path
+//! and deletes matching files where usage exceeds the threshold.
+//!
+//! Filesystem access goes through [`DiskUsage`] and [`FileRemover`], so the
+//! policy in this module is exercised in tests with fixed usage figures and
+//! a recording remover instead of the live filesystem.
+
+pub mod report;
 
 use std::fs;
 use std::path::Path;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use tokio::time::{self, MissedTickBehavior};
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn};
 
 use crate::bytesize;
-use crate::config::{CleanupMode, Config};
-use crate::disk;
-use crate::matcher::{Matcher, PatternError};
+use crate::config::Config;
+use crate::disk::{DiskUsage, Statvfs};
+use crate::error::PatternError;
+use crate::matcher::Matcher;
+use crate::remover::{FileRemover, FsRemover};
 use crate::scanner::Scanner;
+use crate::schedule;
+
+use self::report::{CleanStats, CycleReport, Outcome, PathReport};
 
 /// Runs cleanup cycles against the configured target paths.
-#[derive(Debug)]
 pub struct Cleaner {
     config: Config,
     scanner: Scanner,
+    disk: Arc<dyn DiskUsage>,
+    remover: Arc<dyn FileRemover>,
     shutdown: CancellationToken,
 }
 
 impl Cleaner {
-    /// Creates a cleaner, compiling the configured glob patterns. Cancelling
+    /// Creates a cleaner backed by `statvfs(2)` and `std::fs`. Cancelling
     /// `shutdown` stops the interval loop and interrupts an in-flight
     /// deletion pass between files.
     pub fn new(config: Config, shutdown: CancellationToken) -> Result<Self, PatternError> {
+        Self::with_backends(config, Arc::new(Statvfs), Arc::new(FsRemover), shutdown)
+    }
+
+    /// Creates a cleaner with explicit filesystem backends.
+    pub fn with_backends(
+        config: Config,
+        disk: Arc<dyn DiskUsage>,
+        remover: Arc<dyn FileRemover>,
+        shutdown: CancellationToken,
+    ) -> Result<Self, PatternError> {
         let matcher = Matcher::new(&config.include_patterns, &config.exclude_patterns)?;
         Ok(Self {
             config,
             scanner: Scanner::new(matcher),
+            disk,
+            remover,
             shutdown,
         })
     }
@@ -39,38 +63,16 @@ impl Cleaner {
     /// Executes the cleaner in the configured mode until it finishes (once
     /// mode) or the shutdown token is cancelled (interval mode).
     pub async fn run(&self) {
-        match self.config.cleanup_mode {
-            CleanupMode::Once => {
-                info!("Running in 'once' mode - single cleanup execution");
+        let period = Duration::from_secs(self.config.check_interval_minutes.saturating_mul(60));
+        schedule::run(
+            self.config.cleanup_mode,
+            period,
+            self.shutdown.clone(),
+            || {
                 self.perform_cleanup();
-                info!("Cleanup completed, exiting");
-            }
-            CleanupMode::Interval => {
-                info!(
-                    interval_minutes = self.config.check_interval_minutes,
-                    "Running in 'interval' mode - periodic cleanup"
-                );
-                self.perform_cleanup();
-
-                let period =
-                    Duration::from_secs(self.config.check_interval_minutes.saturating_mul(60));
-                let mut ticker = time::interval(period);
-                ticker.set_missed_tick_behavior(MissedTickBehavior::Delay);
-                // The first tick completes immediately; the cycle above already covered it.
-                ticker.tick().await;
-
-                loop {
-                    tokio::select! {
-                        biased;
-                        () = self.shutdown.cancelled() => {
-                            info!("Cleaner stopped");
-                            return;
-                        }
-                        _ = ticker.tick() => self.perform_cleanup(),
-                    }
-                }
-            }
-        }
+            },
+        )
+        .await;
     }
 
     fn interrupted(&self) -> bool {
@@ -78,45 +80,57 @@ impl Cleaner {
     }
 
     /// Runs one cleanup cycle over all target paths.
-    fn perform_cleanup(&self) {
+    fn perform_cleanup(&self) -> CycleReport {
         info!("Starting cleanup cycle");
         let start = Instant::now();
+        let threshold = self.config.usage_threshold_percent;
 
-        for path in &self.config.target_paths {
-            let usage = Self::disk_usage_percent(path);
-            let threshold = self.config.usage_threshold_percent;
-
-            if usage > f64::from(threshold) {
-                warn!(
-                    path = %path.display(),
+        let paths = self
+            .config
+            .target_paths
+            .iter()
+            .map(|path| {
+                let usage = self.disk_usage_percent(path);
+                let outcome = if usage > f64::from(threshold) {
+                    warn!(
+                        path = %path.display(),
+                        usage,
+                        threshold,
+                        cleanup_mode = %self.config.cleanup_mode,
+                        dry_run = self.config.dry_run,
+                        "Disk usage exceeds threshold, starting cleanup"
+                    );
+                    self.clean_path(path)
+                } else {
+                    info!(
+                        path = %path.display(),
+                        usage,
+                        threshold,
+                        cleanup_mode = %self.config.cleanup_mode,
+                        "Disk usage is below threshold, skipping cleanup"
+                    );
+                    Outcome::BelowThreshold
+                };
+                PathReport {
+                    path: path.clone(),
                     usage,
-                    threshold,
-                    cleanup_mode = %self.config.cleanup_mode,
-                    dry_run = self.config.dry_run,
-                    "Disk usage exceeds threshold, starting cleanup"
-                );
-                self.clean_path(path);
-            } else {
-                info!(
-                    path = %path.display(),
-                    usage,
-                    threshold,
-                    cleanup_mode = %self.config.cleanup_mode,
-                    "Disk usage is below threshold, skipping cleanup"
-                );
-            }
-        }
+                    outcome,
+                }
+            })
+            .collect();
 
+        let duration = start.elapsed();
         info!(
-            duration_secs = start.elapsed().as_secs(),
+            duration_secs = duration.as_secs(),
             "Cleanup cycle completed"
         );
+        CycleReport { paths, duration }
     }
 
     /// Returns the used percentage of the filesystem containing `path`, or 0
     /// when the filesystem cannot be inspected.
-    fn disk_usage_percent(path: &Path) -> f64 {
-        match disk::usage_percent(path) {
+    fn disk_usage_percent(&self, path: &Path) -> f64 {
+        match self.disk.usage_percent(path) {
             Ok(usage) => usage,
             Err(e) => {
                 error!(path = %path.display(), error = %e, "Failed to get disk usage");
@@ -126,39 +140,44 @@ impl Cleaner {
     }
 
     /// Deletes matching files under `base`.
-    fn clean_path(&self, base: &Path) {
+    fn clean_path(&self, base: &Path) -> Outcome {
         if let Err(e) = fs::metadata(base) {
             error!(path = %base.display(), error = %e, "Path does not exist");
-            return;
+            return Outcome::Missing;
         }
 
-        let initial_usage = Self::disk_usage_percent(base);
-
+        let initial_usage = self.disk_usage_percent(base);
         let files = self.scanner.scan(base);
+        let mut stats = CleanStats {
+            initial_usage,
+            final_usage: initial_usage,
+            candidates: files.len(),
+            candidate_bytes: files.iter().map(|f| f.size).sum(),
+            dry_run: self.config.dry_run,
+            ..CleanStats::default()
+        };
+
         if files.is_empty() {
             info!(
                 path = %base.display(),
                 initial_usage_percent = initial_usage,
                 "No files to clean"
             );
-            return;
+            return Outcome::Cleaned(stats);
         }
 
-        let total_size: u64 = files.iter().map(|f| f.size).sum();
         info!(
             path = %base.display(),
             initial_usage_percent = initial_usage,
-            file_count = files.len(),
-            total_size = %bytesize::human(total_size),
+            file_count = stats.candidates,
+            total_size = %bytesize::human(stats.candidate_bytes),
             "Starting cleanup operation"
         );
-
-        let mut deleted_count = 0_usize;
-        let mut freed_space = 0_u64;
 
         for file in &files {
             if self.interrupted() {
                 info!("Cleanup interrupted by shutdown");
+                stats.interrupted = true;
                 break;
             }
 
@@ -171,40 +190,48 @@ impl Cleaner {
                 continue;
             }
 
-            if let Err(e) = fs::remove_file(&file.path) {
-                error!(file = %file.path.display(), error = %e, "Failed to delete file");
-                continue;
+            match self.remover.remove(&file.path) {
+                Ok(()) => {
+                    info!(
+                        file = %file.path.display(),
+                        size = %bytesize::human(file.size),
+                        "File deleted successfully"
+                    );
+                    stats.deleted += 1;
+                    stats.freed_bytes += file.size;
+                }
+                Err(e) => {
+                    error!(file = %file.path.display(), error = %e, "Failed to delete file");
+                    stats.failed += 1;
+                }
             }
-            info!(
-                file = %file.path.display(),
-                size = %bytesize::human(file.size),
-                "File deleted successfully"
-            );
-            deleted_count += 1;
-            freed_space += file.size;
         }
 
-        let final_usage = Self::disk_usage_percent(base);
-        let usage_reduction = initial_usage - final_usage;
+        stats.final_usage = self.disk_usage_percent(base);
+        self.log_completion(base, &stats);
+        Outcome::Cleaned(stats)
+    }
 
+    fn log_completion(&self, base: &Path, stats: &CleanStats) {
         if self.config.dry_run {
             info!(
                 path = %base.display(),
-                initial_usage_percent = initial_usage,
-                final_usage_percent = final_usage,
-                usage_reduction,
-                would_delete = files.len(),
+                initial_usage_percent = stats.initial_usage,
+                final_usage_percent = stats.final_usage,
+                usage_reduction = stats.usage_reduction(),
+                would_delete = stats.candidates,
                 "Cleanup completed (DRY-RUN)"
             );
             return;
         }
         info!(
             path = %base.display(),
-            initial_usage_percent = initial_usage,
-            final_usage_percent = final_usage,
-            usage_reduction,
-            deleted_count,
-            freed_space = %bytesize::human(freed_space),
+            initial_usage_percent = stats.initial_usage,
+            final_usage_percent = stats.final_usage,
+            usage_reduction = stats.usage_reduction(),
+            deleted_count = stats.deleted,
+            failed_count = stats.failed,
+            freed_space = %bytesize::human(stats.freed_bytes),
             "Cleanup completed successfully"
         );
     }
@@ -213,13 +240,70 @@ impl Cleaner {
 #[cfg(test)]
 mod tests {
     use std::fs;
+    use std::io;
     use std::path::{Path, PathBuf};
+    use std::sync::{Arc, Mutex};
     use std::time::Duration;
 
     use tokio_util::sync::CancellationToken;
 
     use super::Cleaner;
+    use super::report::Outcome;
     use crate::config::{CleanupMode, Config, LogLevel};
+    use crate::disk::DiskUsage;
+    use crate::remover::FileRemover;
+
+    /// Reports a fixed usage for every path.
+    struct FixedUsage(f64);
+
+    impl DiskUsage for FixedUsage {
+        fn usage_percent(&self, _: &Path) -> io::Result<f64> {
+            Ok(self.0)
+        }
+    }
+
+    /// Fails every usage query, like a path on an unmounted filesystem.
+    struct BrokenUsage;
+
+    impl DiskUsage for BrokenUsage {
+        fn usage_percent(&self, _: &Path) -> io::Result<f64> {
+            Err(io::Error::other("statvfs unavailable"))
+        }
+    }
+
+    /// Records removal requests without touching the filesystem and fails
+    /// for paths ending in `fail_suffix`.
+    #[derive(Default)]
+    struct RecordingRemover {
+        removed: Mutex<Vec<PathBuf>>,
+        fail_suffix: Option<&'static str>,
+    }
+
+    impl RecordingRemover {
+        fn failing_on(suffix: &'static str) -> Self {
+            Self {
+                removed: Mutex::default(),
+                fail_suffix: Some(suffix),
+            }
+        }
+
+        fn removed(&self) -> Vec<PathBuf> {
+            self.removed.lock().expect("lock").clone()
+        }
+    }
+
+    impl FileRemover for RecordingRemover {
+        fn remove(&self, path: &Path) -> io::Result<()> {
+            if self
+                .fail_suffix
+                .is_some_and(|suffix| path.ends_with(suffix))
+            {
+                return Err(io::Error::from(io::ErrorKind::PermissionDenied));
+            }
+            self.removed.lock().expect("lock").push(path.to_path_buf());
+            Ok(())
+        }
+    }
 
     fn make_config(target: &Path, threshold: u8, mode: CleanupMode, dry_run: bool) -> Config {
         Config {
@@ -234,7 +318,21 @@ mod tests {
         }
     }
 
-    fn cleaner(config: Config) -> (Cleaner, CancellationToken) {
+    /// A cleaner with fake backends: fixed `usage`, recording remover.
+    fn fake_cleaner(
+        config: Config,
+        usage: f64,
+        remover: Arc<RecordingRemover>,
+    ) -> (Cleaner, CancellationToken) {
+        let token = CancellationToken::new();
+        let cleaner =
+            Cleaner::with_backends(config, Arc::new(FixedUsage(usage)), remover, token.clone())
+                .expect("cleaner");
+        (cleaner, token)
+    }
+
+    /// A cleaner wired to the real filesystem backends.
+    fn real_cleaner(config: Config) -> (Cleaner, CancellationToken) {
         let token = CancellationToken::new();
         let cleaner = Cleaner::new(config, token.clone()).expect("cleaner");
         (cleaner, token)
@@ -245,6 +343,12 @@ mod tests {
         fs::create_dir_all(full.parent().expect("parent")).expect("create_dir_all");
         fs::write(&full, content).expect("write");
         full
+    }
+
+    fn single_outcome(cleaner: &Cleaner) -> Outcome {
+        let report = cleaner.perform_cleanup();
+        assert_eq!(report.paths.len(), 1);
+        report.paths.into_iter().next().expect("one path").outcome
     }
 
     #[test]
@@ -260,52 +364,107 @@ mod tests {
 
     #[test]
     fn cancelled_token_sets_interrupted() {
-        let (c, token) = cleaner(make_config(Path::new("/tmp"), 80, CleanupMode::Once, true));
+        let (c, token) = real_cleaner(make_config(Path::new("/tmp"), 80, CleanupMode::Once, true));
         assert!(!c.interrupted());
         token.cancel();
         assert!(c.interrupted());
     }
 
     #[test]
-    fn disk_usage_percent_for_existing_and_missing_paths() {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let usage = Cleaner::disk_usage_percent(dir.path());
-        assert!((0.0..=100.0).contains(&usage), "usage {usage}");
-        // Nonexistent paths cannot be statvfs'd; usage falls back to 0.
-        let missing = Cleaner::disk_usage_percent(Path::new("relative/nonexistent"));
-        assert!(missing.abs() < f64::EPSILON, "usage {missing}");
+    fn disk_usage_failure_falls_back_to_zero() {
+        let cfg = make_config(Path::new("/tmp"), 0, CleanupMode::Once, true);
+        let c = Cleaner::with_backends(
+            cfg,
+            Arc::new(BrokenUsage),
+            Arc::new(RecordingRemover::default()),
+            CancellationToken::new(),
+        )
+        .expect("cleaner");
+        let usage = c.disk_usage_percent(Path::new("/tmp"));
+        assert!(usage.abs() < f64::EPSILON, "usage {usage}");
+        // 0 is not above a threshold of 0, so the path is skipped.
+        assert_eq!(single_outcome(&c), Outcome::BelowThreshold);
     }
 
     #[test]
-    fn clean_path_nonexistent_returns() {
+    fn threshold_comparison_is_strict() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        create_file(dir.path(), "file.txt", b"x");
+
+        let remover = Arc::new(RecordingRemover::default());
+        let (at_threshold, _) = fake_cleaner(
+            make_config(dir.path(), 50, CleanupMode::Once, false),
+            50.0,
+            Arc::clone(&remover),
+        );
+        assert_eq!(single_outcome(&at_threshold), Outcome::BelowThreshold);
+        assert!(remover.removed().is_empty());
+
+        let (above, _) = fake_cleaner(
+            make_config(dir.path(), 50, CleanupMode::Once, false),
+            50.1,
+            Arc::clone(&remover),
+        );
+        let Outcome::Cleaned(stats) = single_outcome(&above) else {
+            panic!("expected Cleaned");
+        };
+        assert_eq!(stats.deleted, 1);
+        assert_eq!(remover.removed().len(), 1);
+    }
+
+    #[test]
+    fn missing_target_path_is_reported() {
         let target = Path::new("/does/not/exist/zzzz-test");
-        let (c, _token) = cleaner(make_config(target, 0, CleanupMode::Once, true));
-        c.clean_path(target);
+        let (c, _) = fake_cleaner(
+            make_config(target, 0, CleanupMode::Once, false),
+            99.0,
+            Arc::new(RecordingRemover::default()),
+        );
+        assert_eq!(single_outcome(&c), Outcome::Missing);
     }
 
     #[test]
-    fn clean_path_empty_directory() {
+    fn empty_directory_yields_no_candidates() {
         let dir = tempfile::tempdir().expect("tempdir");
-        let (c, _token) = cleaner(make_config(dir.path(), 0, CleanupMode::Once, false));
-        c.clean_path(dir.path());
+        let (c, _) = fake_cleaner(
+            make_config(dir.path(), 0, CleanupMode::Once, false),
+            99.0,
+            Arc::new(RecordingRemover::default()),
+        );
+        let Outcome::Cleaned(stats) = single_outcome(&c) else {
+            panic!("expected Cleaned");
+        };
+        assert_eq!(stats.candidates, 0);
+        assert_eq!(stats.deleted, 0);
         assert!(dir.path().exists());
     }
 
     #[test]
-    fn clean_path_dry_run_preserves_files() {
+    fn dry_run_lists_candidates_without_removing() {
         let dir = tempfile::tempdir().expect("tempdir");
-        let keep1 = create_file(dir.path(), "keep1.txt", b"hello");
-        let keep2 = create_file(dir.path(), "keep2.txt", b"world");
+        create_file(dir.path(), "keep1.txt", b"hello");
+        create_file(dir.path(), "keep2.txt", b"world");
 
-        let (c, _token) = cleaner(make_config(dir.path(), 0, CleanupMode::Once, true));
-        c.clean_path(dir.path());
+        let remover = Arc::new(RecordingRemover::default());
+        let (c, _) = fake_cleaner(
+            make_config(dir.path(), 0, CleanupMode::Once, true),
+            99.0,
+            Arc::clone(&remover),
+        );
+        let Outcome::Cleaned(stats) = single_outcome(&c) else {
+            panic!("expected Cleaned");
+        };
 
-        assert!(keep1.exists());
-        assert!(keep2.exists());
+        assert!(stats.dry_run);
+        assert_eq!(stats.candidates, 2);
+        assert_eq!(stats.candidate_bytes, 10);
+        assert_eq!(stats.deleted, 0);
+        assert_eq!(stats.freed_bytes, 0);
+        assert!(remover.removed().is_empty());
     }
 
     #[test]
-    fn clean_path_deletes_files() {
+    fn deletes_every_candidate_and_counts_bytes() {
         let dir = tempfile::tempdir().expect("tempdir");
         let files = [
             create_file(dir.path(), "delete1.txt", b"hello"),
@@ -313,57 +472,112 @@ mod tests {
             create_file(dir.path(), "sub/delete3.txt", b"nested"),
         ];
 
-        let (c, _token) = cleaner(make_config(dir.path(), 0, CleanupMode::Once, false));
-        c.clean_path(dir.path());
-
-        for file in &files {
-            assert!(
-                !file.exists(),
-                "{} should have been deleted",
-                file.display()
-            );
-        }
-        assert!(
-            dir.path().join("sub").exists(),
-            "directories are never removed"
+        let remover = Arc::new(RecordingRemover::default());
+        let (c, _) = fake_cleaner(
+            make_config(dir.path(), 0, CleanupMode::Once, false),
+            99.0,
+            Arc::clone(&remover),
         );
+        let Outcome::Cleaned(stats) = single_outcome(&c) else {
+            panic!("expected Cleaned");
+        };
+
+        assert_eq!(stats.deleted, 3);
+        assert_eq!(stats.failed, 0);
+        assert_eq!(stats.freed_bytes, 16);
+        assert!(!stats.interrupted);
+        let mut recorded = remover.removed();
+        recorded.sort();
+        let mut expected = files.to_vec();
+        expected.sort();
+        assert_eq!(recorded, expected);
     }
 
     #[test]
-    fn clean_path_respects_cancellation() {
+    fn removal_failure_is_counted_and_does_not_abort() {
         let dir = tempfile::tempdir().expect("tempdir");
-        let file1 = create_file(dir.path(), "file1.txt", b"a");
-        let file2 = create_file(dir.path(), "file2.txt", b"b");
+        create_file(dir.path(), "a.txt", b"1");
+        create_file(dir.path(), "locked.txt", b"22");
+        create_file(dir.path(), "z.txt", b"333");
 
-        let (c, token) = cleaner(make_config(dir.path(), 0, CleanupMode::Once, false));
-        token.cancel();
-        c.clean_path(dir.path());
+        let remover = Arc::new(RecordingRemover::failing_on("locked.txt"));
+        let (c, _) = fake_cleaner(
+            make_config(dir.path(), 0, CleanupMode::Once, false),
+            99.0,
+            Arc::clone(&remover),
+        );
+        let Outcome::Cleaned(stats) = single_outcome(&c) else {
+            panic!("expected Cleaned");
+        };
 
-        // The deletion loop bails at the stop check before touching the files.
-        assert!(file1.exists());
-        assert!(file2.exists());
+        assert_eq!(stats.candidates, 3);
+        assert_eq!(stats.deleted, 2);
+        assert_eq!(stats.failed, 1);
+        assert_eq!(stats.freed_bytes, 4);
+        assert_eq!(remover.removed().len(), 2);
     }
 
     #[test]
-    fn perform_cleanup_below_threshold_skips() {
+    fn shutdown_interrupts_before_first_removal() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        create_file(dir.path(), "file1.txt", b"a");
+        create_file(dir.path(), "file2.txt", b"b");
+
+        let remover = Arc::new(RecordingRemover::default());
+        let (c, token) = fake_cleaner(
+            make_config(dir.path(), 0, CleanupMode::Once, false),
+            99.0,
+            Arc::clone(&remover),
+        );
+        token.cancel();
+        let Outcome::Cleaned(stats) = single_outcome(&c) else {
+            panic!("expected Cleaned");
+        };
+
+        assert!(stats.interrupted);
+        assert_eq!(stats.deleted, 0);
+        assert!(remover.removed().is_empty());
+    }
+
+    #[test]
+    fn cycle_reports_every_target_path() {
+        let present = tempfile::tempdir().expect("tempdir");
+        create_file(present.path(), "file.txt", b"x");
+        let mut cfg = make_config(present.path(), 0, CleanupMode::Once, false);
+        cfg.target_paths
+            .push(PathBuf::from("/does/not/exist/zzzz-test"));
+
+        let (c, _) = fake_cleaner(cfg, 99.0, Arc::new(RecordingRemover::default()));
+        let report = c.perform_cleanup();
+
+        assert_eq!(report.paths.len(), 2);
+        assert!(matches!(report.paths[0].outcome, Outcome::Cleaned(_)));
+        assert_eq!(report.paths[1].outcome, Outcome::Missing);
+    }
+
+    #[test]
+    fn default_backends_delete_real_files() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let doomed = create_file(dir.path(), "doomed.txt", b"bytes");
+        let (c, _) = real_cleaner(make_config(dir.path(), 0, CleanupMode::Once, false));
+
+        let Outcome::Cleaned(stats) = single_outcome(&c) else {
+            panic!("expected Cleaned");
+        };
+
+        assert_eq!(stats.deleted, 1);
+        assert!(!doomed.exists());
+        assert!((0.0..=100.0).contains(&stats.initial_usage));
+    }
+
+    #[test]
+    fn default_backends_keep_files_above_threshold_100() {
         let dir = tempfile::tempdir().expect("tempdir");
         let keep = create_file(dir.path(), "keep.txt", b"data");
+        let (c, _) = real_cleaner(make_config(dir.path(), 100, CleanupMode::Once, false));
 
-        let (c, _token) = cleaner(make_config(dir.path(), 100, CleanupMode::Once, false));
-        c.perform_cleanup();
-
+        assert_eq!(single_outcome(&c), Outcome::BelowThreshold);
         assert!(keep.exists());
-    }
-
-    #[test]
-    fn perform_cleanup_exceeding_threshold_cleans() {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let doomed = create_file(dir.path(), "to-delete.txt", b"bytes");
-
-        let (c, _token) = cleaner(make_config(dir.path(), 0, CleanupMode::Once, false));
-        c.perform_cleanup();
-
-        assert!(!doomed.exists());
     }
 
     #[tokio::test]
@@ -371,7 +585,7 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         let doomed = create_file(dir.path(), "once.txt", b"x");
 
-        let (c, _token) = cleaner(make_config(dir.path(), 0, CleanupMode::Once, false));
+        let (c, _) = real_cleaner(make_config(dir.path(), 0, CleanupMode::Once, false));
         c.run().await;
 
         assert!(!doomed.exists());
@@ -380,28 +594,7 @@ mod tests {
     #[tokio::test]
     async fn run_interval_mode_returns_on_cancel() {
         let dir = tempfile::tempdir().expect("tempdir");
-        let token = CancellationToken::new();
-        let c = Cleaner::new(
-            make_config(dir.path(), 100, CleanupMode::Interval, true),
-            token.clone(),
-        )
-        .expect("cleaner");
-        token.cancel();
-
-        tokio::time::timeout(Duration::from_secs(5), c.run())
-            .await
-            .expect("run() did not exit within 5s after cancellation");
-    }
-
-    #[tokio::test]
-    async fn run_interval_mode_stops_when_cancelled_while_waiting() {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let token = CancellationToken::new();
-        let c = Cleaner::new(
-            make_config(dir.path(), 100, CleanupMode::Interval, true),
-            token.clone(),
-        )
-        .expect("cleaner");
+        let (c, token) = real_cleaner(make_config(dir.path(), 100, CleanupMode::Interval, true));
 
         let stopper = tokio::spawn(async move {
             tokio::time::sleep(Duration::from_millis(50)).await;

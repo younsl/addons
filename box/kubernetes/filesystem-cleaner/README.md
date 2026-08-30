@@ -2,6 +2,7 @@
 
 [![GitHub Container Registry](https://img.shields.io/badge/ghcr.io-younsl%2Ffilesystem--cleaner-000000?style=flat-square&logo=github&logoColor=white)](https://github.com/younsl/o/pkgs/container/filesystem-cleaner)
 [![Rust](https://img.shields.io/badge/rust-1.98.0-000000?style=flat-square&logo=rust&logoColor=white)](https://www.rust-lang.org/)
+[![GitHub license](https://img.shields.io/github/license/younsl/o?style=flat-square&color=000000)](https://github.com/younsl/o/blob/main/LICENSE)
 
 A lightweight container image for automatic filesystem cleanup in [Kubernetes](https://kubernetes.io/docs/concepts/overview/) environments. Designed as a [sidecar container](https://kubernetes.io/docs/concepts/workloads/pods/sidecar-containers/) or [init container](https://kubernetes.io/docs/concepts/workloads/pods/init-containers/), it monitors disk usage and intelligently removes files to prevent storage exhaustion. Particularly useful for GitHub Actions self-hosted runners, CI/CD pipelines, and any workloads that generate temporary files requiring periodic cleanup. Built with Rust 1.98.0 and shipped as a statically linked musl binary (cargo-zigbuild) on a `scratch` image for `linux/amd64` and `linux/arm64`.
 
@@ -184,3 +185,7 @@ make coverage
 # Format and lint (rustfmt check + clippy with warnings denied)
 make fmt lint
 ```
+
+## License
+
+filesystem-cleaner is licensed under the Apache License 2.0. See the [LICENSE](../../../LICENSE) file for details.

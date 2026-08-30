@@ -15,14 +15,7 @@
 
 use globset::{Glob, GlobSet, GlobSetBuilder};
 
-/// A glob pattern that failed to compile.
-#[derive(Debug, thiserror::Error)]
-pub enum PatternError {
-    #[error("invalid include pattern: {0}")]
-    Include(#[source] globset::Error),
-    #[error("invalid exclude pattern: {0}")]
-    Exclude(#[source] globset::Error),
-}
+use crate::error::PatternError;
 
 /// Decides whether a relative path should be included in or excluded from a
 /// cleanup run.
@@ -66,7 +59,8 @@ fn compile<S: AsRef<str>>(patterns: &[S]) -> Result<GlobSet, globset::Error> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Matcher, PatternError};
+    use super::Matcher;
+    use crate::error::PatternError;
 
     const NONE: &[&str] = &[];
 

@@ -8,6 +8,8 @@ use std::str::FromStr;
 
 use clap::{Parser, ValueEnum};
 
+use crate::error::ConfigError;
+
 const LONG_VERSION: &str = concat!(
     env!("CARGO_PKG_VERSION"),
     "\ncommit: ",
@@ -21,19 +23,6 @@ const DEFAULT_THRESHOLD: i64 = 80;
 const DEFAULT_INTERVAL: i64 = 10;
 const DEFAULT_INCLUDE: &str = "*";
 const DEFAULT_EXCLUDE: &str = "**/.git/**,**/node_modules/**,*.log";
-
-/// Configuration that failed validation.
-#[derive(Debug, thiserror::Error, PartialEq, Eq)]
-pub enum ConfigError {
-    #[error("environment variable {key}: {reason}")]
-    Env { key: &'static str, reason: String },
-    #[error("usage-threshold-percent must be between 0 and 100, got {0}")]
-    ThresholdOutOfRange(i64),
-    #[error("check-interval-minutes must be at least 1, got {0}")]
-    IntervalTooSmall(i64),
-    #[error("target-paths must not be empty")]
-    EmptyTargetPaths,
-}
 
 /// Selects between a single cleanup run and periodic cleanup.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
@@ -337,7 +326,8 @@ mod tests {
     use clap::Parser;
     use clap::error::ErrorKind;
 
-    use super::{Args, CleanupMode, Config, ConfigError, LogLevel};
+    use super::{Args, CleanupMode, Config, LogLevel};
+    use crate::error::ConfigError;
 
     fn no_env(_: &str) -> Option<String> {
         None
