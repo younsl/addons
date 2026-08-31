@@ -59,6 +59,14 @@ export async function createRouter(options: RouterOptions): Promise<Router> {
 
   const isDevMode = config.getOptionalBoolean('backend.auth.dangerouslyDisableDefaultAuthPolicy') ?? false;
 
+  // A service principal is an external static token (backstage-mcp) or another
+  // backend plugin. It reads with admin visibility and never writes: on any
+  // method other than GET it is treated as unauthenticated, before the
+  // dev-mode guest fallback can apply.
+  function isServiceRef(ref: string): boolean {
+    return ref.startsWith('external:') || ref.startsWith('plugin:');
+  }
+
   // Helper: try to extract user identity from request.
   // In dev mode (dangerouslyDisableDefaultAuthPolicy), falls back to guest identity
   // so admin-gated routes can be properly tested.
@@ -66,7 +74,12 @@ export async function createRouter(options: RouterOptions): Promise<Router> {
     req: express.Request,
   ): Promise<IamUserIdentity | undefined> {
     try {
-      const credentials = await httpAuth.credentials(req as any, { allow: ['user'] });
+      const credentials = await httpAuth.credentials(req as any, { allow: ['user', 'service'] });
+      if (credentials.principal.type === 'service') {
+        if (req.method !== 'GET') return undefined;
+        const subject = credentials.principal.subject;
+        return { userRef: subject, ownershipEntityRefs: [subject] };
+      }
       const ref = credentials.principal.userEntityRef;
       logger.info(`[auth-debug] userRef=${ref}, isAdmin=${admins.includes(ref)}`);
       try {
@@ -109,6 +122,28 @@ export async function createRouter(options: RouterOptions): Promise<Router> {
 
   const router = Router();
   router.use(express.json());
+
+  // The password reset submit route attributes an unidentified caller to
+  // user:default/unknown rather than rejecting it, so the GET-only rule for
+  // service principals must be enforced before any handler runs.
+  router.use(async (req, res, next) => {
+    if (req.method === 'GET') {
+      next();
+      return;
+    }
+    try {
+      const credentials = await httpAuth.credentials(req as any, {
+        allow: ['user', 'service'],
+      });
+      if (credentials.principal.type === 'service') {
+        res.status(401).json({ error: 'Service credentials are read-only' });
+        return;
+      }
+    } catch {
+      // Unauthenticated callers keep the behavior each route defines.
+    }
+    next();
+  });
 
   router.get('/health', (_, res) => {
     res.json({ status: 'ok' });
@@ -187,7 +222,7 @@ export async function createRouter(options: RouterOptions): Promise<Router> {
 
     // Admin or guest → return all users (guest skips IAM name matching)
     const isGuest = userRef ? parseEntityRef(userRef).name === 'guest' : false;
-    if (userRef && (admins.includes(userRef) || isGuest)) {
+    if (userRef && (admins.includes(userRef) || isGuest || isServiceRef(userRef))) {
       res.json(allUsers);
       return;
     }
@@ -256,7 +291,7 @@ export async function createRouter(options: RouterOptions): Promise<Router> {
 
       // Admin or guest → return all requests
       const isGuest = userRef ? parseEntityRef(userRef).name === 'guest' : false;
-      if (userRef && (admins.includes(userRef) || isGuest)) {
+      if (userRef && (admins.includes(userRef) || isGuest || isServiceRef(userRef))) {
         res.json(requests);
         return;
       }
@@ -594,7 +629,7 @@ export async function createRouter(options: RouterOptions): Promise<Router> {
   // Guest is treated as admin to match the /users endpoint behavior in dev mode.
   function isAdminOrGuest(userRef: string | undefined): boolean {
     if (!userRef) return false;
-    if (admins.includes(userRef)) return true;
+    if (admins.includes(userRef) || isServiceRef(userRef)) return true;
     return parseEntityRef(userRef).name === 'guest';
   }
 

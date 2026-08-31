@@ -48,13 +48,20 @@ export async function createRouter(options: RouterOptions): Promise<Router> {
   // reservations is restricted to admins listed in `permission.admins`.
   const admins = config.getOptionalStringArray('permission.admins') ?? [];
 
+  // A service principal (an external static token such as backstage-mcp)
+  // may list domains and requests but never reserve or cancel one: on any
+  // method other than GET it is treated as unauthenticated, before the
+  // dev-mode guest fallback can apply.
   async function tryGetUserRef(
     req: express.Request,
   ): Promise<string | undefined> {
     try {
       const credentials = await httpAuth.credentials(req as any, {
-        allow: ['user'],
+        allow: ['user', 'service'],
       });
+      if (credentials.principal.type === 'service') {
+        return req.method === 'GET' ? credentials.principal.subject : undefined;
+      }
       return credentials.principal.userEntityRef;
     } catch {
       return isDevMode ? 'user:development/guest' : undefined;

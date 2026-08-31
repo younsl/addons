@@ -30,15 +30,20 @@ const CURRENT = {
 
 async function makeApp(opts: {
   user?: string;
+  /** Subject of a service principal (external static token) instead of a user. */
+  service?: string;
+  devMode?: boolean;
   admins?: string[];
   client?: any;
   store?: any;
 }) {
   const config = new ConfigReader({
     permission: { admins: opts.admins ?? [ADMIN] },
+    backend: { auth: { dangerouslyDisableDefaultAuthPolicy: opts.devMode ?? false } },
   });
   const httpAuth = {
     credentials: jest.fn(async () => {
+      if (opts.service) return { principal: { type: 'service', subject: opts.service } };
       if (!opts.user) throw new Error('no user');
       return { principal: { userEntityRef: opts.user } };
     }),
@@ -220,5 +225,49 @@ describe('opensearch-scaling router (mocked AWS, no real OpenSearch calls)', () 
       await request(app).post('/requests/r1/cancel').expect(403);
       expect(store.updateStatus).not.toHaveBeenCalled();
     });
+  });
+});
+
+describe('service principals (backstage-mcp)', () => {
+  const SERVICE = 'external:backstage-mcp';
+
+  it('lets a service principal list domains and requests', async () => {
+    const client = { listDomains: jest.fn().mockResolvedValue([{ name: DOMAIN, engineVersion: null }]) };
+    const store = { listRequests: jest.fn().mockResolvedValue([{ id: 'r1', status: 'scheduled' }]) };
+    const app = await makeApp({ service: SERVICE, client, store });
+
+    const domains = await request(app).get('/domains').expect(200);
+    expect(domains.body).toHaveLength(1);
+    const requests = await request(app).get('/requests').expect(200);
+    expect(requests.body).toHaveLength(1);
+    const role = await request(app).get('/user-role').expect(200);
+    expect(role.body.isAdmin).toBe(false);
+  });
+
+  it('rejects a service principal on reserve and cancel, even in dev mode', async () => {
+    const store = {
+      hasActiveRequest: jest.fn().mockResolvedValue(false),
+      addRequest: jest.fn(),
+      getRequest: jest.fn().mockResolvedValue({ id: 'r1', requester: ADMIN, status: 'scheduled' }),
+      cancelRequest: jest.fn(),
+    };
+    const app = await makeApp({ service: SERVICE, devMode: true, store });
+
+    await request(app)
+      .post('/requests')
+      .send({
+        domain: DOMAIN,
+        instanceType: 'r6g.2xlarge.search',
+        instanceCount: 3,
+        volumeSizeGb: 1200,
+        scheduledAt: FUTURE,
+        timezone: 'Asia/Seoul',
+        reason: 'x',
+      })
+      .expect(401);
+    expect(store.addRequest).not.toHaveBeenCalled();
+
+    await request(app).post('/requests/r1/cancel').send({}).expect(401);
+    expect(store.cancelRequest).not.toHaveBeenCalled();
   });
 });

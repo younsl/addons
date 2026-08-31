@@ -58,11 +58,24 @@ export async function createRouter(options: RouterOptions): Promise<Router> {
       'backend.auth.dangerouslyDisableDefaultAuthPolicy',
     ) ?? false;
 
+  // A service principal is an external static token (backstage-mcp) or another
+  // backend plugin. It reads with admin visibility and never writes: on any
+  // method other than GET it is treated as unauthenticated, before the
+  // dev-mode guest fallback can apply.
+  function isServiceRef(ref: string): boolean {
+    return ref.startsWith('external:') || ref.startsWith('plugin:');
+  }
+
+  const isAdminRef = (ref: string): boolean => admins.includes(ref) || isServiceRef(ref);
+
   async function tryGetUserRef(req: express.Request): Promise<string | undefined> {
     try {
       const credentials = await httpAuth.credentials(req as any, {
-        allow: ['user'],
+        allow: ['user', 'service'],
       });
+      if (credentials.principal.type === 'service') {
+        return req.method === 'GET' ? credentials.principal.subject : undefined;
+      }
       return credentials.principal.userEntityRef;
     } catch {
       return isDevMode ? 'user:development/guest' : undefined;
@@ -89,7 +102,7 @@ export async function createRouter(options: RouterOptions): Promise<Router> {
   ): Promise<string | undefined> {
     const userRef = await requireUser(req, res);
     if (!userRef) return undefined;
-    if (!admins.includes(userRef)) {
+    if (!isAdminRef(userRef)) {
       res.status(403).json({ error: 'Admin access required' });
       return undefined;
     }
@@ -177,7 +190,7 @@ export async function createRouter(options: RouterOptions): Promise<Router> {
 
   router.get('/user-role', async (req, res) => {
     const userRef = await tryGetUserRef(req);
-    res.json({ isAdmin: !!userRef && admins.includes(userRef), admins });
+    res.json({ isAdmin: !!userRef && isAdminRef(userRef), admins });
   });
 
   // 조회: list existing internal users (admin-only)
@@ -258,7 +271,7 @@ export async function createRouter(options: RouterOptions): Promise<Router> {
     }
 
     const requester = userRef;
-    const isAdmin = admins.includes(userRef);
+    const isAdmin = isAdminRef(userRef);
 
     // Regular users may only submit create requests; delete/modify are admin-only.
     if ((action === 'delete' || action === 'modify') && !isAdmin) {
@@ -355,7 +368,7 @@ export async function createRouter(options: RouterOptions): Promise<Router> {
   router.get('/requests', async (req, res) => {
     const userRef = await requireUser(req, res);
     if (!userRef) return;
-    const isAdmin = admins.includes(userRef);
+    const isAdmin = isAdminRef(userRef);
     res.json(await store.listRequests(isAdmin ? undefined : userRef));
   });
 
@@ -367,7 +380,7 @@ export async function createRouter(options: RouterOptions): Promise<Router> {
       res.status(404).json({ error: 'Request not found' });
       return;
     }
-    if (!admins.includes(userRef) && request.requester !== userRef) {
+    if (!isAdminRef(userRef) && request.requester !== userRef) {
       res.status(403).json({ error: 'You can only view your own requests' });
       return;
     }
@@ -378,7 +391,7 @@ export async function createRouter(options: RouterOptions): Promise<Router> {
     if (!requireClient(res)) return;
 
     const userRef = await tryGetUserRef(req);
-    if (!userRef || !admins.includes(userRef)) {
+    if (!userRef || !isAdminRef(userRef)) {
       res.status(403).json({ error: 'Only admins can approve requests' });
       return;
     }
@@ -428,7 +441,7 @@ export async function createRouter(options: RouterOptions): Promise<Router> {
 
   router.post('/requests/:id/reject', async (req, res) => {
     const userRef = await tryGetUserRef(req);
-    if (!userRef || !admins.includes(userRef)) {
+    if (!userRef || !isAdminRef(userRef)) {
       res.status(403).json({ error: 'Only admins can reject requests' });
       return;
     }

@@ -23,12 +23,22 @@ export async function createRouter(options: RouterOptions): Promise<Router> {
     ) ?? false;
   const admins = config.getOptionalStringArray('permission.admins') ?? [];
 
+  // A service principal (an external static token such as backstage-mcp)
+  // may read snapshots but never start a scan or delete indices: on any
+  // method other than GET it is treated as unauthenticated, before the
+  // dev-mode guest fallback can apply.
   async function requireUser(
     req: express.Request,
     res: express.Response,
   ): Promise<boolean> {
     try {
-      await httpAuth.credentials(req as any, { allow: ['user'] });
+      const credentials = await httpAuth.credentials(req as any, {
+        allow: ['user', 'service'],
+      });
+      if (credentials.principal.type === 'service' && req.method !== 'GET') {
+        res.status(401).json({ error: 'Authentication required' });
+        return false;
+      }
       return true;
     } catch {
       if (isDevMode) return true;

@@ -813,3 +813,65 @@ describe('router', () => {
     });
   });
 });
+
+describe('service principals (backstage-mcp)', () => {
+  const SERVICE = 'external:backstage-mcp';
+  let app: express.Express;
+
+  function setServiceAuth() {
+    mockHttpAuth.credentials.mockResolvedValue({
+      principal: { type: 'service', subject: SERVICE },
+    });
+  }
+
+  beforeAll(async () => {
+    app = await createTestApp({
+      backend: { auth: { dangerouslyDisableDefaultAuthPolicy: true } },
+    });
+  });
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    setServiceAuth();
+  });
+
+  it('lists every request for a service principal', async () => {
+    mockStore.listRequests.mockResolvedValue([
+      makeRequest({ id: 'a', requesterRef: 'user:default/alice' }),
+      makeRequest({ id: 'b', requesterRef: 'user:default/bob' }),
+    ]);
+
+    const res = await request(app).get('/requests');
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveLength(2);
+  });
+
+  it('rejects a service principal on submit, even in dev mode', async () => {
+    const res = await request(app).post('/requests').send({
+      source: 'k8s',
+      env: 'prd',
+      date: '2026-03-05',
+      apps: ['order-api'],
+      startTime: '09:00',
+      endTime: '10:00',
+      reason: 'x',
+      encryption: 'aes256',
+    });
+    expect(res.status).toBe(401);
+    expect(mockStore.createRequest).not.toHaveBeenCalled();
+  });
+
+  it('never lets a service principal download an archive', async () => {
+    mockStore.getRequest.mockResolvedValue(
+      makeRequest({
+        status: 'completed',
+        fileCount: 3,
+        archivePath: '/definitely/missing/archive.zip',
+        requesterRef: SERVICE,
+      }),
+    );
+
+    const res = await request(app).get('/requests/req-001/download');
+    expect(res.status).not.toBe(200);
+  });
+});

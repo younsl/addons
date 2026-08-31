@@ -35,13 +35,21 @@ export async function createRouter(options: RouterOptions): Promise<Router> {
   const isDevMode =
     config.getOptionalBoolean('backend.auth.dangerouslyDisableDefaultAuthPolicy') ?? false;
 
+  // A service principal (an external static token such as backstage-mcp)
+  // may list requests but never submit, review or download one: the router
+  // middleware below rejects it on any method other than GET, and it is
+  // never an admin or the requester, so the download ownership check
+  // rejects it as well.
   async function tryGetUserRef(
     req: express.Request,
   ): Promise<string | undefined> {
     try {
       const credentials = await httpAuth.credentials(req as any, {
-        allow: ['user'],
+        allow: ['user', 'service'],
       });
+      if (credentials.principal.type === 'service') {
+        return req.method === 'GET' ? credentials.principal.subject : undefined;
+      }
       return credentials.principal.userEntityRef;
     } catch {
       if (isDevMode) {
@@ -53,6 +61,28 @@ export async function createRouter(options: RouterOptions): Promise<Router> {
 
   const router = Router();
   router.use(express.json());
+
+  // The submit route attributes an unidentified caller to user:default/unknown
+  // rather than rejecting it, so the GET-only rule for service principals must
+  // be enforced before any handler runs.
+  router.use(async (req, res, next) => {
+    if (req.method === 'GET') {
+      next();
+      return;
+    }
+    try {
+      const credentials = await httpAuth.credentials(req as any, {
+        allow: ['user', 'service'],
+      });
+      if (credentials.principal.type === 'service') {
+        res.status(401).json({ error: 'Service credentials are read-only' });
+        return;
+      }
+    } catch {
+      // Unauthenticated callers keep the behavior each route defines.
+    }
+    next();
+  });
 
   // Resolve an explicit ec2 log stream value: null when absent (ec2 app
   // entries carry their own `{app}/{category}`), undefined when invalid.

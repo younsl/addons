@@ -75,9 +75,20 @@ export async function createRouter(options: RouterOptions): Promise<Router> {
   const isDevMode =
     config.getOptionalBoolean('backend.auth.dangerouslyDisableDefaultAuthPolicy') ?? false;
 
+  // A service principal is an external static token (backstage-mcp) or another
+  // backend plugin. It reads with admin visibility and never writes: on any
+  // method other than GET it is treated as unauthenticated, before the
+  // dev-mode guest fallback can apply.
+  function isServiceRef(ref: string): boolean {
+    return ref.startsWith('external:') || ref.startsWith('plugin:');
+  }
+
   async function tryGetUserRef(req: express.Request): Promise<string | undefined> {
     try {
-      const credentials = await httpAuth.credentials(req as any, { allow: ['user'] });
+      const credentials = await httpAuth.credentials(req as any, { allow: ['user', 'service'] });
+      if (credentials.principal.type === 'service') {
+        return req.method === 'GET' ? credentials.principal.subject : undefined;
+      }
       return credentials.principal.userEntityRef;
     } catch {
       if (isDevMode) return 'user:development/guest';
@@ -87,7 +98,7 @@ export async function createRouter(options: RouterOptions): Promise<Router> {
 
   function isAdminOrGuest(userRef: string | undefined): boolean {
     if (!userRef) return false;
-    if (admins.includes(userRef)) return true;
+    if (admins.includes(userRef) || isServiceRef(userRef)) return true;
     return parseEntityRef(userRef).name === 'guest';
   }
 

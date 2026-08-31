@@ -650,3 +650,76 @@ describe('iam-user-audit-backend router', () => {
     });
   });
 });
+
+describe('service principals (backstage-mcp)', () => {
+  const SERVICE = 'external:backstage-mcp';
+
+  function setServiceAuth() {
+    mockHttpAuth.credentials.mockResolvedValue({
+      principal: { type: 'service', subject: SERVICE },
+    });
+  }
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockStore.listRequests.mockResolvedValue([]);
+    mockCache.getUsers.mockReturnValue([]);
+    setServiceAuth();
+  });
+
+  it('lists every user for a service principal, like an admin', async () => {
+    const app = await createTestApp();
+    mockCache.getUsers.mockReturnValue([makeUser('alice', 100), makeUser('bob', 30)]);
+
+    const res = await request(app).get('/users');
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveLength(2);
+    expect(mockUserInfo.getUserInfo).not.toHaveBeenCalled();
+  });
+
+  it('lists every password reset request for a service principal', async () => {
+    const app = await createTestApp();
+    mockStore.listRequests.mockResolvedValue([
+      makePendingRequest({ id: 'a', requesterRef: 'user:default/alice' }),
+      makePendingRequest({ id: 'b', requesterRef: 'user:default/bob' }),
+    ]);
+
+    const res = await request(app).get('/password-reset/requests');
+    expect(res.status).toBe(200);
+    expect(res.body.map((r: PasswordResetRequest) => r.id)).toEqual(['a', 'b']);
+  });
+
+  it('lets a service principal read the muted user list', async () => {
+    const app = await createTestApp();
+    mockMutedUserStore.list.mockResolvedValue([{ iamUserName: 'svc', mutedBy: 'x', reason: null, createdAt: '' }]);
+
+    const res = await request(app).get('/admin/muted-users');
+    expect(res.status).toBe(200);
+    expect(res.body.items).toHaveLength(1);
+  });
+
+  it('rejects a service principal on every write, even in dev mode', async () => {
+    const app = await createTestApp({
+      backend: { auth: { dangerouslyDisableDefaultAuthPolicy: true } },
+    });
+    mockStore.getRequest.mockResolvedValue(makePendingRequest());
+
+    const created = await request(app).post('/password-reset/requests').send({
+      iamUserName: 'johndoe',
+      iamUserArn: 'arn:aws:iam::123456789012:user/johndoe',
+      reason: 'x',
+    });
+    expect(created.status).toBe(401);
+    expect(mockStore.createRequest).not.toHaveBeenCalled();
+
+    const reviewed = await request(app)
+      .post('/password-reset/requests/req-001/review')
+      .send({ action: 'approve' });
+    expect(reviewed.status).toBe(401);
+    expect(mockIamUserService.resetLoginProfile).not.toHaveBeenCalled();
+
+    const muted = await request(app).post('/admin/muted-users').send({ iamUserName: 'svc' });
+    expect(muted.status).toBe(401);
+    expect(mockMutedUserStore.add).not.toHaveBeenCalled();
+  });
+});
