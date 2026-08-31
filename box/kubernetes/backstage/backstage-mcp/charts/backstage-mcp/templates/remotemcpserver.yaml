@@ -1,0 +1,28 @@
+{{- if .Values.kagent.remoteMCPServer.enabled -}}
+apiVersion: {{ .Values.kagent.remoteMCPServer.apiVersion }}
+kind: RemoteMCPServer
+metadata:
+  name: {{ default (include "backstage-mcp.fullname" .) .Values.kagent.remoteMCPServer.name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "backstage-mcp.labels" . | nindent 4 }}
+spec:
+  description: {{ .Values.kagent.remoteMCPServer.description | quote }}
+  protocol: STREAMABLE_HTTP
+  url: {{ include "backstage-mcp.url" . | quote }}
+  timeout: {{ .Values.kagent.remoteMCPServer.timeout | quote }}
+  sseReadTimeout: {{ .Values.kagent.remoteMCPServer.sseReadTimeout | quote }}
+  terminateOnClose: true
+  {{- if include "backstage-mcp.mcpAuthEnabled" . }}
+  headersFrom:
+    - name: Authorization
+      valueFrom:
+        type: Secret
+        name: {{ include "backstage-mcp.mcpSecretName" . }}
+        key: {{ include "backstage-mcp.mcpAuthorizationKey" . }}
+  {{- end }}
+  {{- with .Values.kagent.remoteMCPServer.allowedNamespaces }}
+  allowedNamespaces:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+{{- end }}

@@ -1,0 +1,10 @@
+target
+charts
+docs
+*.md
+.env
+.git
+src
+Cargo.*
+build.rs
+Makefile

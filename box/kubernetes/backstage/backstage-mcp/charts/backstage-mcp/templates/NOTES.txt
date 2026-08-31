@@ -1,0 +1,9 @@
+{{ include "backstage-mcp.fullname" . }} is deployed in {{ .Release.Namespace }}: MCP endpoint {{ include "backstage-mcp.url" . }}, reading from {{ .Values.backstage.url }}.
+{{- if not (include "backstage-mcp.mcpAuthEnabled" .) }}
+
+The MCP endpoint accepts unauthenticated requests. Set mcp.bearerToken or mcp.existingSecret before exposing it beyond the cluster.
+{{- end }}
+{{- if not (include "backstage-mcp.backstageAuthEnabled" .) }}
+
+No Backstage token is configured, so plugin endpoints that require a signed-in principal will answer 401. Set backstage.token or backstage.existingSecret to a backend.auth.externalAccess static token.
+{{- end }}
