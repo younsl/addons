@@ -16,6 +16,7 @@ on:
       - 'box/kubernetes/argocd-promotion-gate/Dockerfile'
       - 'box/kubernetes/filesystem-cleaner/Dockerfile'
       - 'box/kubernetes/external-ebs-autoresizer/Dockerfile'
+      - 'box/kubernetes/backstage/backstage-mcp/Dockerfile'
   workflow_dispatch:
     inputs:
       project:
@@ -34,6 +35,7 @@ on:
           - argocd-promotion-gate
           - filesystem-cleaner
           - external-ebs-autoresizer
+          - backstage-mcp
       force:
         description: "Rebuild even if the version already exists on GHCR (overwrites the tag)"
         required: false
@@ -97,6 +99,7 @@ jobs:
             "argocd-promotion-gate:argocd-promotion-gate:argocd-promotion-gate:false"
             "filesystem-cleaner:filesystem-cleaner:filesystem-cleaner:false"
             "external-ebs-autoresizer:external-ebs-autoresizer:external-ebs-autoresizer:false"
+            "backstage-mcp:backstage/backstage-mcp:backstage-mcp:false"
           )
 
           TEST_JSON="[]"
