@@ -80,6 +80,29 @@ backend:
     connection: {}
   auth:
     dangerouslyDisableDefaultAuthPolicy: true
+    # Static token for backstage-mcp. Declared in app-config.local.yaml or the
+    # Helm values rather than here, because a `${VAR}` that is not set makes
+    # the backend refuse to start.
+    # externalAccess:
+    #   - type: static
+    #     options:
+    #       token: ${BACKSTAGE_MCP_TOKEN}
+    #       subject: backstage-mcp
+    #     accessRestrictions:
+    #       - plugin: catalog
+    #       - plugin: search
+    #       - plugin: techdocs
+    #       - plugin: platforms
+    #       - plugin: openapi-registry
+    #       - plugin: catalog-health
+    #       - plugin: argocd-appset
+    #       - plugin: gitlab-token-audit
+    #       - plugin: opencost
+    #       - plugin: iam-user-audit
+    #       - plugin: opensearch-account
+    #       - plugin: opensearch-viewer
+    #       - plugin: opensearch-scaling
+    #       - plugin: s3-log-extract
   reading:
     allow:
       - host: localhost:7007

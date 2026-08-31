@@ -19,7 +19,7 @@ backstage:
   image:
     registry: ghcr.io
     repository: younsl/backstage
-    tag: "1.54.4-2"
+    tag: "1.54.6-1"
     pullPolicy: IfNotPresent
 
   extraEnvVars:
@@ -57,6 +57,13 @@ backstage:
         secretKeyRef:
           name: backstage-secrets
           key: SONARQUBE_TOKEN
+    # Shared with the backstage-mcp chart (backstage.token), which presents it
+    # as a bearer token on every read.
+    - name: BACKSTAGE_MCP_TOKEN
+      valueFrom:
+        secretKeyRef:
+          name: backstage-secrets
+          key: BACKSTAGE_MCP_TOKEN
 
   appConfig:
     app:
@@ -94,6 +101,30 @@ backstage:
           database: backstage
       auth:
         dangerouslyDisableDefaultAuthPolicy: true
+        # backstage-mcp authenticates with this static token. The access
+        # restrictions confine it to the plugins the MCP tools read from, so
+        # the token cannot reach the scaffolder or the permission API even if
+        # it leaks.
+        externalAccess:
+          - type: static
+            options:
+              token: ${BACKSTAGE_MCP_TOKEN}
+              subject: backstage-mcp
+            accessRestrictions:
+              - plugin: catalog
+              - plugin: search
+              - plugin: techdocs
+              - plugin: platforms
+              - plugin: openapi-registry
+              - plugin: catalog-health
+              - plugin: argocd-appset
+              - plugin: gitlab-token-audit
+              - plugin: opencost
+              - plugin: iam-user-audit
+              - plugin: opensearch-account
+              - plugin: opensearch-viewer
+              - plugin: opensearch-scaling
+              - plugin: s3-log-extract
       auditor:
         severityLogLevelMappings:
           low: debug

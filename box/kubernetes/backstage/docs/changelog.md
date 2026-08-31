@@ -10,6 +10,14 @@ Headings are image tags, not Backstage versions. A rebuild at the same Backstage
 
 Tags released before this file existed (`1.51.0-1` through `1.53.0-3`) are not recorded here.
 
+## 1.54.6-1
+
+Released 2026-08-31. Built on Backstage [v1.54.6](https://github.com/backstage/backstage/releases/tag/v1.54.6) as the base version, up from `1.54.4`.
+
+- Base version bumped through `backstage-cli versions:bump`, which moved the backend to `@backstage/backend-defaults` `^0.17.8`, `@backstage/plugin-catalog-backend` `^3.9.1`, `@backstage/plugin-scaffolder-backend` `^4.1.0` and sibling patch releases, plus the matching frontend packages in the app. Two upstream patch releases and nothing more.
+- In-house plugins accept a service principal on reads. Every self-service plugin resolved the caller with `allow: ['user']`, so an external static token declared under `backend.auth.externalAccess` got 401 from the list endpoints of GitLab Tokens, IAM Audit, OpenSearch, Capacity and S3 Log Extract and could only reach the routes that never checked identity at all. The auth helpers in those six backends (`gitlab-token-audit`, `iam-user-audit`, `opensearch-account`, `opensearch-viewer`, `opensearch-scaling`, `s3-log-extract`) now also accept a service principal on GET requests, with admin visibility so list endpoints return every row rather than the caller's own, and treat it as unauthenticated on any other method, before the dev-mode guest fallback can apply. A service token therefore cannot approve, review, mute, reserve, scan, delete or download anything through these routes, and the S3 archive download additionally fails its requester-or-admin check for it.
+- The change exists for [backstage-mcp](../backstage-mcp/README.md), a separate Rust MCP server released as `ghcr.io/younsl/backstage-mcp` with its own chart, which exposes the catalog, search, TechDocs and every plugin page as read-only tools for kagent. The Helm values gain a `BACKSTAGE_MCP_TOKEN` environment variable and a `backend.auth.externalAccess` entry whose `accessRestrictions` confine the token to the fourteen plugins the tools read from, so the token cannot reach the scaffolder or the permission API. `app-config.yaml` carries the same block commented out, because an unset `${BACKSTAGE_MCP_TOKEN}` would stop the backend from booting locally.
+
 ## 1.54.4-2
 
 Released 2026-08-28, rebuilt and overwritten in place later the same day. Built on Backstage [v1.54.4](https://github.com/backstage/backstage/releases/tag/v1.54.4) as the base version, the same base as `1.54.4-1`, so this tag differs only by the changes below. The rebuild folded in what was briefly published as `1.54.4-3`, which has been removed from the registry, so a pod already running the first `1.54.4-2` build must be restarted to pick up the last five items.

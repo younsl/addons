@@ -46,3 +46,6 @@ yarn-error.log*
 .env.development.local
 .env.test.local
 .env.production.local
+
+# Standalone MCP server, built and released on its own
+backstage-mcp

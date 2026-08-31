@@ -58,6 +58,26 @@ helm install backstage backstage/backstage \
   -f values.yaml
 ```
 
+## Connect AI agents
+
+[backstage-mcp](../backstage-mcp/README.md) gives kagent or any MCP client read-only tools over this instance. It runs as its own Deployment from its own chart and authenticates to Backstage with a static token, so two values must match: `BACKSTAGE_MCP_TOKEN` in the `backstage-secrets` Secret, which the Helm values above declare under `backend.auth.externalAccess`, and `backstage.token` on the backstage-mcp release.
+
+```bash
+TOKEN=$(openssl rand -hex 32)
+
+kubectl -n backstage patch secret backstage-secrets \
+  --type merge -p "{\"stringData\":{\"BACKSTAGE_MCP_TOKEN\":\"$TOKEN\"}}"
+
+helm install backstage-mcp oci://ghcr.io/younsl/charts/backstage-mcp \
+  --namespace kagent \
+  --set backstage.url=http://backstage.backstage.svc:7007 \
+  --set backstage.token=$TOKEN \
+  --set mcp.bearerToken=$(openssl rand -hex 24) \
+  --set kagent.remoteMCPServer.enabled=true
+```
+
+The `accessRestrictions` on the token limit it to the plugins the tools read from, and the plugins themselves reject a service principal on anything but GET, so the agent can never change state through this path. Install the backstage-mcp release in the namespace where the kagent Agents live, because kagent resolves the `RemoteMCPServer` header Secret in the Agent's namespace.
+
 ## Next Steps
 
 See [Helm Chart](helm-chart.md) for the full values, secrets, and Keycloak OIDC setup.
