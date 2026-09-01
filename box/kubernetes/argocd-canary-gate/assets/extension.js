@@ -151,13 +151,16 @@
   }
 
   // Kept deliberately short. item-value renders at 2em, so a sentence here
-  // would push the whole panel into a horizontal scroll.
+  // would push the whole panel into a horizontal scroll. The icons are the
+  // font-awesome classes Argo CD's own tiles use, so a check here is the same
+  // check as on SYNC STATUS, and a paused canary carries the pause circle the
+  // Suspended health state carries.
   const CODES = {
-    Passed: {label: 'Ready', tone: 'ok'},
-    NoRollouts: {label: 'No rollouts', tone: 'muted'},
-    Exempt: {label: 'Exempt', tone: 'muted'},
-    CanaryInProgress: {label: 'Canary running', tone: 'blocked'},
-    LookupFailed: {label: 'Unknown', tone: 'warn'},
+    Passed: {label: 'Ready', tone: 'ok', icon: 'fa fa-check-circle'},
+    NoRollouts: {label: 'No rollouts', tone: 'muted', icon: 'fa fa-check-circle'},
+    Exempt: {label: 'Exempt', tone: 'muted', icon: 'fa fa-check-circle'},
+    CanaryInProgress: {label: 'Canary running', tone: 'blocked', icon: 'fa fa-pause-circle'},
+    LookupFailed: {label: 'Unknown', tone: 'warn', icon: 'fa fa-question-circle'},
   };
 
   // At most this many detail rows, so an app with many Rollouts cannot make
@@ -190,6 +193,14 @@
       return found.label + ' (warn)';
     }
     return found.label;
+  }
+
+  function icon(verdict) {
+    const found = entry(verdict);
+    if (!found) {
+      return verdict.allowed ? 'fa fa-check-circle' : 'fa fa-times-circle';
+    }
+    return found.icon;
   }
 
   function stateOf(rollout) {
@@ -337,6 +348,11 @@
           onClick: props.onClick,
           title: props.hover || undefined,
         },
+        // The icon inherits the tile colour, exactly how the check on SYNC
+        // STATUS gets its green. The trailing space matches Argo CD's own
+        // icon-then-text layout.
+        props.icon ? React.createElement('i', {key: 'icon', className: props.icon}) : null,
+        props.icon ? ' ' : null,
         props.value,
       ),
     ];
@@ -456,7 +472,11 @@
     const openFlyout = typeof props.openFlyout === 'function' ? props.openFlyout : undefined;
 
     if (state.status === STATE.LOADING) {
-      return React.createElement(Item, {tone: 'muted', value: 'Checking'});
+      return React.createElement(Item, {
+        tone: 'muted',
+        value: 'Checking',
+        icon: 'fa fa-circle-notch fa-spin',
+      });
     }
 
     if (state.status === STATE.ERROR) {
@@ -465,6 +485,7 @@
       return React.createElement(Item, {
         tone: 'warn',
         value: 'Unavailable',
+        icon: 'fa fa-exclamation-triangle',
         rows: [['ERROR', state.error]],
         hover: state.error,
         onClick: openFlyout,
@@ -475,6 +496,7 @@
     return React.createElement(Item, {
       tone: tone(verdict),
       value: label(verdict),
+      icon: icon(verdict),
       rows: rows(verdict),
       hover: verdict.message,
       onClick: openFlyout,
