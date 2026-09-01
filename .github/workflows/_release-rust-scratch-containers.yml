@@ -14,6 +14,7 @@ on:
       - 'box/kubernetes/kubernetes-upgrade-operator/Dockerfile'
       - 'box/kubernetes/kagent-gateway/Dockerfile'
       - 'box/kubernetes/argocd-promotion-gate/Dockerfile'
+      - 'box/kubernetes/argocd-canary-gate/Dockerfile'
       - 'box/kubernetes/filesystem-cleaner/Dockerfile'
       - 'box/kubernetes/external-ebs-autoresizer/Dockerfile'
       - 'box/kubernetes/backstage/backstage-mcp/Dockerfile'
@@ -33,6 +34,7 @@ on:
           - kuo
           - kagent-gateway
           - argocd-promotion-gate
+          - argocd-canary-gate
           - filesystem-cleaner
           - external-ebs-autoresizer
           - backstage-mcp
@@ -97,6 +99,7 @@ jobs:
             "kuo:kubernetes-upgrade-operator:kuo:false"
             "kagent-gateway:kagent-gateway:kagent-gateway:false"
             "argocd-promotion-gate:argocd-promotion-gate:argocd-promotion-gate:false"
+            "argocd-canary-gate:argocd-canary-gate:argocd-canary-gate:false"
             "filesystem-cleaner:filesystem-cleaner:filesystem-cleaner:false"
             "external-ebs-autoresizer:external-ebs-autoresizer:external-ebs-autoresizer:false"
             "backstage-mcp:backstage/backstage-mcp:backstage-mcp:false"
