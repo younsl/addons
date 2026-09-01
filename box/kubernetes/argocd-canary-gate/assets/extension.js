@@ -349,10 +349,16 @@
           title: props.hover || undefined,
         },
         // The icon inherits the tile colour, exactly how the check on SYNC
-        // STATUS gets its green. The trailing space matches Argo CD's own
-        // icon-then-text layout.
-        props.icon ? React.createElement('i', {key: 'icon', className: props.icon}) : null,
-        props.icon ? ' ' : null,
+        // STATUS gets its green. The gap is an explicit margin because
+        // item-value is a flex container, where a whitespace text node
+        // between children does not render as a reliable space.
+        props.icon
+          ? React.createElement('i', {
+              key: 'icon',
+              className: props.icon,
+              style: {marginRight: '5px'},
+            })
+          : null,
         props.value,
       ),
     ];
