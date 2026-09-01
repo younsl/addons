@@ -8,6 +8,8 @@
 
 Blocks an [Argo CD Application](https://argo-cd.readthedocs.io/en/stable/operator-manual/declarative-setup/#applications) sync while an [Argo Rollouts](https://argoproj.github.io/rollouts/) canary owned by that Application is still in progress. A sync that lands mid-canary hands the Rollout new desired state, which restarts the step progression and throws away the analysis the canary was running. The gate refuses that sync until the rollout is promoted, finished, or aborted. An Application that manages no Rollout syncs freely.
 
+![argocd-canary-gate architecture](docs/assets/architecture.svg)
+
 ## Why a webhook
 
 A sync is a write that sets the Application's `operation` field, and [admission](https://kubernetes.io/docs/reference/access-authn-authz/extensible-admission-controllers/) is the one place every path takes: the UI Sync button, [`argocd app sync`](https://argo-cd.readthedocs.io/en/stable/user-guide/commands/argocd_app_sync/), and the [REST API](https://argo-cd.readthedocs.io/en/stable/developer-guide/api-docs/) all pass through it. Argo CD renders the denial verbatim in its error toast.
