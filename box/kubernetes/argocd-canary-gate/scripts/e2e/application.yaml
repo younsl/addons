@@ -1,10 +1,9 @@
 # The Application whose syncs the gate judges.
 #
-# Deliberately boring: one public Helm chart into a throwaway namespace, no
-# automated sync policy. What the app deploys is irrelevant to the gate. The
-# verdict hangs on the Rollout in rollout.yaml, which carries this
-# Application's tracking label and lives in this Application's destination
-# namespace.
+# Its source is the in-cluster Gitea repo that up.sh seeds with rollout.yaml,
+# so the Rollout renders in the Argo CD resource tree and a canary is started
+# the production way: bump.sh commits a new image tag, the app goes OutOfSync,
+# and a sync applies it.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -21,17 +20,11 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: https://stefanprodan.github.io/podinfo
-    chart: podinfo
-    targetRevision: 6.7.1
-    helm:
-      releaseName: canary-demo
-      parameters:
-        - name: replicaCount
-          value: "1"
-        # Nothing about this test needs to be reachable.
-        - name: serviceMonitor.enabled
-          value: "false"
+    repoURL: http://gitea.git.svc:3000/demo/canary-demo.git
+    path: .
+    targetRevision: HEAD
+    directory:
+      recurse: false
   destination:
     server: https://kubernetes.default.svc
     namespace: canary-gate-test

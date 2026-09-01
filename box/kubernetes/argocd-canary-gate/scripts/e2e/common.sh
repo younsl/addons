@@ -35,6 +35,11 @@ export KIND_EXPERIMENTAL_PROVIDER
 BUILDER="${BUILDER:-${KIND_EXPERIMENTAL_PROVIDER}}"
 IMAGE="${IMAGE:-localhost/argocd-canary-gate:e2e}"
 
+# The in-cluster Gitea account that owns the demo repo. Throwaway credentials
+# for a cluster that only exists on this machine.
+GITEA_USER="${GITEA_USER:-demo}"
+GITEA_PASSWORD="${GITEA_PASSWORD:-demo-password-1}"
+
 log() { printf '\n=== %s\n' "$*"; }
 
 # Refuses to run against anything that is not the local kind cluster. A stray

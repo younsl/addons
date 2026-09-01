@@ -1,9 +1,13 @@
 # The Rollout the gate watches while judging canary-demo.
 #
-# Applied directly rather than through the Application, so the canary can be
-# driven with one kubectl patch instead of a git push. What ties it to the
-# Application is the tracking label, which is exactly what Argo CD stamps onto
-# every resource it manages: the gate cannot tell the difference, by design.
+# This file is not applied with kubectl. up.sh commits it into the in-cluster
+# Gitea repo that the Application uses as its source, so the Rollout renders in
+# the Argo CD resource tree like any managed resource and the canary is driven
+# the way it is in production: a commit changes the image, a sync applies it.
+# No namespace: Argo CD fills in the Application's destination namespace.
+#
+# The tracking label is what the gate matches Rollouts by. Argo CD v3 tracks
+# resources by annotation, so the label must travel in the manifest.
 #
 # The second step is an indefinite pause, so a canary stays mid-flight until
 # promoted or aborted. That is what makes the denial reproducible by hand.
@@ -11,7 +15,6 @@ apiVersion: argoproj.io/v1alpha1
 kind: Rollout
 metadata:
   name: canary-demo-web
-  namespace: canary-gate-test
   labels:
     argocd.argoproj.io/instance: canary-demo
 spec:
