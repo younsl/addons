@@ -101,15 +101,14 @@ pub struct HttpOptions {
 
 #[derive(Clone)]
 struct AppState {
-    client: Arc<Client>,
     bearer_token: Arc<String>,
 }
 
 /// Builds the axum application: probes, the bearer check and the MCP
 /// endpoint. Stateless MCP mode, so any replica can answer any request.
 pub fn app(handler: BackstageMcp, options: &HttpOptions, shutdown: CancellationToken) -> Router {
+    let client = Arc::clone(&handler.client);
     let state = AppState {
-        client: handler.client.clone(),
         bearer_token: Arc::new(options.bearer_token.clone()),
     };
 
@@ -136,7 +135,15 @@ pub fn app(handler: BackstageMcp, options: &HttpOptions, shutdown: CancellationT
 
     Router::new()
         .route("/healthz", get(healthz))
-        .route("/readyz", get(readyz))
+        .route(
+            "/readyz",
+            // The client is captured here rather than pulled from `State`, so
+            // the readiness call is not reachable from a handler argument.
+            get(move || {
+                let client = Arc::clone(&client);
+                async move { readyz(&client).await }
+            }),
+        )
         .merge(mcp)
         .with_state(state)
 }
@@ -147,9 +154,8 @@ async fn healthz() -> Json<serde_json::Value> {
 
 /// Ready once Backstage answers its own readiness probe, so a pod that
 /// cannot reach the portal is taken out of the Service.
-async fn readyz(State(state): State<AppState>) -> Response {
-    match state
-        .client
+async fn readyz(client: &Client) -> Response {
+    match client
         .get_json::<serde_json::Value>("/.backstage/health/v1/readiness", &[])
         .await
     {
