@@ -18,4 +18,12 @@ rules:
     verbs:
       - create
       - patch
+  # The UI extension preview resolves an Application by name. The webhook path
+  # never reads one: the object arrives inside the AdmissionReview.
+  - apiGroups:
+      - argoproj.io
+    resources:
+      - applications
+    verbs:
+      - get
 {{- end }}

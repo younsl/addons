@@ -4,7 +4,7 @@
 pub mod application;
 pub mod rollout;
 
-pub use application::{nested, nested_str, snapshot_from_value};
+pub use application::{AppReader, KubeAppReader, nested, nested_str, snapshot_from_value};
 pub use rollout::{KubeRolloutReader, RolloutReader};
 
 // Constructed directly only by the test doubles.

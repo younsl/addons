@@ -1,5 +1,7 @@
 //! Domain types shared by the rules, the engine, and the admission handler.
 
+use serde::Serialize;
+
 /// One Argo CD Application reduced to the fields the gate reasons about.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct AppSnapshot {
@@ -67,8 +69,10 @@ impl RolloutSnapshot {
     }
 }
 
-/// One Rollout's contribution to a verdict, kept for the log line.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// One Rollout's contribution to a verdict, kept for the log line and
+/// rendered by the UI extension.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct RolloutState {
     pub name: String,
     pub namespace: String,
@@ -99,7 +103,7 @@ impl RolloutState {
 }
 
 /// The machine-readable reason for a verdict.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
 pub enum Code {
     /// The Application opted out through the skip annotation.
     Exempt,
@@ -133,8 +137,10 @@ impl std::fmt::Display for Code {
     }
 }
 
-/// The gate verdict.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// The gate verdict, shared by the admission webhook and the UI extension API
+/// so both always agree.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Decision {
     pub app: String,
     /// The namespace the Rollouts were searched in. Empty means cluster-wide.
@@ -142,8 +148,10 @@ pub struct Decision {
     pub allowed: bool,
     pub code: Code,
     pub message: String,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     pub warnings: Vec<String>,
     /// The watched Rollouts, in-progress ones first.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     pub rollouts: Vec<RolloutState>,
 }
 
@@ -209,6 +217,40 @@ mod tests {
         assert!(state.in_progress);
         assert_eq!(state.phase, "Paused");
         assert_eq!(state.strategy, "canary");
+    }
+
+    #[test]
+    fn decision_json_is_camel_case_and_omits_empties() {
+        let mut r = rollout("a", "b");
+        r.current_step = Some(1);
+        r.total_steps = 4;
+        let verdict = Decision {
+            app: "prd-api".into(),
+            namespace: "payments".into(),
+            allowed: false,
+            code: Code::CanaryInProgress,
+            message: "blocked".into(),
+            warnings: Vec::new(),
+            rollouts: vec![RolloutState::of(&r)],
+        };
+        let json = serde_json::to_value(&verdict).unwrap();
+        assert_eq!(json["code"], "CanaryInProgress");
+        assert_eq!(json["allowed"], false);
+        assert!(json.get("warnings").is_none());
+        assert_eq!(json["rollouts"][0]["inProgress"], true);
+        assert_eq!(json["rollouts"][0]["step"], "step 1/4");
+
+        let empty = Decision {
+            app: String::new(),
+            namespace: String::new(),
+            allowed: true,
+            code: Code::NoRollouts,
+            message: String::new(),
+            warnings: Vec::new(),
+            rollouts: Vec::new(),
+        };
+        let json = serde_json::to_value(&empty).unwrap();
+        assert!(json.get("rollouts").is_none());
     }
 
     #[test]

@@ -126,6 +126,7 @@ The following table lists the configurable parameters and their default values.
 | webhook.extraMatchConditions | list | `[]` | Extra CEL match conditions appended to the generated ones |
 | webhook.certManager.enabled | bool | `false` | Hand the serving certificate to cert-manager instead of minting one with `genCA`, which a renderer without cluster access re-mints on every pass |
 | webhook.certManager.issuerRef | object | `{}` | Issue from an existing issuer such as `{kind: ClusterIssuer, name: internal-ca}`. Empty makes the chart create its own self-signed and CA Issuer |
+| uiExtension.name | string | `"canary-gate"` | Name argocd-server proxies under `/extensions/<name>/...`. Must match argocd-cm |
 | canaryGate.mode | string | `"enforce"` | `enforce` denies a sync while a watched Rollout has an update in flight. `warn` lets it through with a warning |
 | canaryGate.onError | string | `"deny"` | Verdict when the Rollout list itself fails: `allow` or `deny` |
 | canaryGate.argocd.namespace | string | `"argocd"` | Namespace holding the Application resources. Denial Events are written here |

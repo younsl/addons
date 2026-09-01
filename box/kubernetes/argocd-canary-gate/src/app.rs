@@ -21,9 +21,11 @@ use crate::cli::Cli;
 use crate::config::Config;
 use crate::engine::Engine;
 use crate::events::{KubeSink, Recorder};
-use crate::k8s::{KubeRolloutReader, RolloutReader};
+use crate::extension::{self, ExtensionState};
+use crate::k8s::{AppReader, KubeAppReader, KubeRolloutReader, RolloutReader};
 use crate::observability::Metrics;
 use crate::servingcert::Reloader;
+use crate::uiextension;
 
 /// Bounds in-flight requests during a graceful stop. It stays under the usual
 /// pod `terminationGracePeriodSeconds` so the process exits on its own terms
@@ -36,6 +38,7 @@ const CERT_POLL_INTERVAL: Duration = Duration::from_secs(10);
 /// Everything the admin listener needs.
 pub struct AdminState {
     pub metrics: Arc<Metrics>,
+    pub extension_name: String,
 }
 
 /// Runs the gate until `shutdown` fires or a listener fails.
@@ -62,7 +65,7 @@ pub async fn run(cli: Cli, mut shutdown: watch::Receiver<bool>) -> anyhow::Resul
     let reader: Arc<dyn RolloutReader> = Arc::new(KubeRolloutReader::new(client.clone()));
 
     let recorder = Arc::new(Recorder::new(
-        Arc::new(KubeSink::new(client, &cfg.argocd.namespace)),
+        Arc::new(KubeSink::new(client.clone(), &cfg.argocd.namespace)),
         Arc::clone(&metrics),
     ));
     tracing::info!(
@@ -74,6 +77,11 @@ pub async fn run(cli: Cli, mut shutdown: watch::Receiver<bool>) -> anyhow::Resul
         "kubernetes event recording started"
     );
 
+    let app_reader: Arc<dyn AppReader> = Arc::new(KubeAppReader::new(
+        client,
+        &cfg.argocd.namespace,
+        &cfg.exempt.annotation,
+    ));
     let engine = Arc::new(Engine::new(cfg, reader, Arc::clone(&metrics)));
 
     // Loaded eagerly so a broken pair fails startup here rather than at the
@@ -84,9 +92,16 @@ pub async fn run(cli: Cli, mut shutdown: watch::Receiver<bool>) -> anyhow::Resul
     metrics.set_certificate_expiry(loaded.leaf.as_ref().map_or(0, |l| l.not_after_unix));
     let tls = RustlsConfig::from_config(loaded.config);
 
-    let admin_router = admin_router(Arc::new(AdminState {
-        metrics: Arc::clone(&metrics),
-    }));
+    let admin_router = admin_router(
+        Arc::new(AdminState {
+            metrics: Arc::clone(&metrics),
+            extension_name: cli.extension_name.clone(),
+        }),
+        Arc::new(ExtensionState {
+            engine: Arc::clone(&engine),
+            reader: app_reader,
+        }),
+    );
     let webhook_router = admission::router(Arc::new(AdmissionState {
         engine,
         metrics: Arc::clone(&metrics),
@@ -185,13 +200,57 @@ fn log_certificate(reloader: &Reloader, leaf: Option<&crate::servingcert::LeafIn
     }
 }
 
-/// Builds the admin router: probes and metrics.
-pub fn admin_router(state: Arc<AdminState>) -> Router {
+/// Builds the admin router: probes, metrics, the UI extension API, and the
+/// extension script itself.
+pub fn admin_router(state: Arc<AdminState>, extension_state: Arc<ExtensionState>) -> Router {
     Router::new()
         .route("/healthz", get(|| async { StatusCode::OK }))
         .route("/readyz", get(|| async { StatusCode::OK }))
         .route("/metrics", get(metrics_handler))
+        // Serving the script here is not how the browser gets it, since Argo
+        // CD loads extensions off disk. It is here so the running version can
+        // be diffed against what argocd-server is actually serving, and so
+        // argocd-extension-installer can fetch it with its standard
+        // EXTENSION_URL and unpack it into argocd-server's extensions volume.
+        .route("/api/v1/extension.tar", get(extension_tar))
+        .route("/api/v1/extension.js", get(extension_js))
         .with_state(state)
+        .merge(extension::router(extension_state))
+}
+
+async fn extension_tar(State(state): State<Arc<AdminState>>) -> Response {
+    match uiextension::tar(&state.extension_name) {
+        Ok(archive) => ([(header::CONTENT_TYPE, "application/x-tar")], archive).into_response(),
+        Err(err) => {
+            tracing::error!(error = %err, "could not pack the embedded extension script");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "extension archive unavailable",
+            )
+                .into_response()
+        }
+    }
+}
+
+async fn extension_js(State(state): State<Arc<AdminState>>) -> Response {
+    match uiextension::script(&state.extension_name) {
+        Ok(script) => (
+            [(
+                header::CONTENT_TYPE,
+                "application/javascript; charset=utf-8",
+            )],
+            script,
+        )
+            .into_response(),
+        Err(err) => {
+            tracing::error!(error = %err, "could not render the embedded extension script");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "extension script unavailable",
+            )
+                .into_response()
+        }
+    }
 }
 
 async fn metrics_handler(State(state): State<Arc<AdminState>>) -> Response {
@@ -265,14 +324,41 @@ mod tests {
 
     use super::*;
 
-    fn state() -> Arc<AdminState> {
-        Arc::new(AdminState {
-            metrics: Arc::new(Metrics::new()),
-        })
+    struct NoApps;
+
+    #[async_trait::async_trait]
+    impl AppReader for NoApps {
+        async fn get(
+            &self,
+            _name: &str,
+        ) -> Result<Option<crate::gate::AppSnapshot>, crate::k8s::application::AppReadError>
+        {
+            Ok(None)
+        }
+    }
+
+    fn state() -> (Arc<AdminState>, Arc<ExtensionState>) {
+        let metrics = Arc::new(Metrics::new());
+        let engine = Arc::new(Engine::new(
+            Config::default(),
+            Arc::new(crate::engine::testing::FakeReader::default()) as Arc<dyn RolloutReader>,
+            Arc::clone(&metrics),
+        ));
+        (
+            Arc::new(AdminState {
+                metrics,
+                extension_name: "my-gate".to_string(),
+            }),
+            Arc::new(ExtensionState {
+                engine,
+                reader: Arc::new(NoApps),
+            }),
+        )
     }
 
     async fn get(uri: &str) -> (StatusCode, String, Vec<u8>) {
-        let response = admin_router(state())
+        let (admin, extension) = state();
+        let response = admin_router(admin, extension)
             .oneshot(Request::builder().uri(uri).body(Body::empty()).unwrap())
             .await
             .unwrap();
@@ -305,6 +391,30 @@ mod tests {
                 .contains("argocd_canary_gate_")
         );
         assert_eq!(get("/nope").await.0, StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn extension_script_and_archive() {
+        let (status, content_type, body) = get("/api/v1/extension.js").await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(content_type.starts_with("application/javascript"));
+        assert!(
+            String::from_utf8(body)
+                .unwrap()
+                .contains("/extensions/my-gate/")
+        );
+
+        let (status, content_type, body) = get("/api/v1/extension.tar").await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(content_type, "application/x-tar");
+        assert_eq!(body, uiextension::tar("my-gate").unwrap());
+
+        let (status, _, body) = get("/api/v1/config").await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(String::from_utf8(body).unwrap().contains("trackingLabel"));
+
+        let (status, _, _) = get("/api/v1/gate?app=missing").await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
     }
 
     #[tokio::test]

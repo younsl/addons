@@ -42,6 +42,7 @@ spec:
             - --tls-key-file=/etc/argocd-canary-gate/tls/tls.key
             - --log-level={{ .Values.logging.level }}
             - --log-format={{ .Values.logging.format }}
+            - --extension-name={{ .Values.uiExtension.name }}
           ports:
             - name: webhook
               containerPort: 8443

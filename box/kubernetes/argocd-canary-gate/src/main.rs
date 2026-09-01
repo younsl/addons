@@ -7,21 +7,42 @@ mod cli;
 mod config;
 mod engine;
 mod events;
+mod extension;
 mod gate;
 mod k8s;
 mod observability;
 mod servingcert;
+mod uiextension;
 
 use clap::Parser;
 use tokio::signal;
 use tokio::sync::watch;
 use tracing_subscriber::{EnvFilter, fmt, prelude::*};
 
-use crate::cli::Cli;
+use crate::cli::{Cli, Command};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
+
+    // One subcommand. It exists because argocd-server loads extension scripts
+    // from its own filesystem, so an init container has to place the embedded
+    // script there.
+    if let Some(Command::InstallExtension {
+        dest,
+        extension_name,
+    }) = cli.command
+    {
+        let path = uiextension::install(&dest, &extension_name).map_err(|err| {
+            eprintln!("install-extension: {err}");
+            anyhow::anyhow!("install-extension failed")
+        })?;
+        println!(
+            "wrote {} for extension name {extension_name}",
+            path.display()
+        );
+        return Ok(());
+    }
 
     if cli.version {
         print!("{}", cli::version_banner());

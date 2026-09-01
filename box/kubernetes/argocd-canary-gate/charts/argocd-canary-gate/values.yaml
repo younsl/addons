@@ -149,6 +149,10 @@ webhook:
     # -- (object) Issue from an existing issuer such as `{kind: ClusterIssuer, name: internal-ca}`. Empty makes the chart create its own self-signed and CA Issuer
     issuerRef: {}
 
+uiExtension:
+  # -- (string) Name argocd-server proxies under `/extensions/<name>/...`. Must match argocd-cm
+  name: canary-gate
+
 canaryGate:
   # -- (string) `enforce` denies a sync while a watched Rollout has an update in flight. `warn` lets it through with a warning
   mode: enforce

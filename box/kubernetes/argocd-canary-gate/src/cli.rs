@@ -4,13 +4,18 @@
 use std::net::{Ipv4Addr, SocketAddr};
 use std::path::PathBuf;
 
-use clap::Parser;
+use clap::{Parser, Subcommand};
+
+use crate::uiextension;
 
 /// Blocks an Argo CD Application sync while an Argo Rollouts canary owned by
 /// that Application is still in progress.
 #[derive(Debug, Parser)]
 #[command(name = "argocd-canary-gate", disable_version_flag = true)]
 pub struct Cli {
+    #[command(subcommand)]
+    pub command: Option<Command>,
+
     /// Path to the gate configuration file
     #[arg(
         long,
@@ -55,9 +60,27 @@ pub struct Cli {
     #[arg(long, env = "LOG_FORMAT", default_value = "json")]
     pub log_format: String,
 
+    /// Name argocd-server proxies the gate API under. It must match argocd-cm
+    #[arg(long, env = "EXTENSION_NAME", default_value = uiextension::DEFAULT_NAME)]
+    pub extension_name: String,
+
     /// Print version and exit
     #[arg(short = 'V', long)]
     pub version: bool,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum Command {
+    /// Write the embedded UI extension script into an Argo CD extensions
+    /// directory and exit
+    InstallExtension {
+        /// Argo CD extensions directory to write into
+        #[arg(long, default_value = "/tmp/extensions")]
+        dest: PathBuf,
+        /// Name argocd-server proxies the gate API under
+        #[arg(long, default_value = uiextension::DEFAULT_NAME)]
+        extension_name: String,
+    },
 }
 
 /// Parses a listen address, accepting the Go style `:8443` shorthand for "all
@@ -98,10 +121,35 @@ mod tests {
         assert_eq!(cli.admin_addr.port(), 8080);
         assert!(cli.webhook_addr.ip().is_unspecified());
         assert!(!cli.version);
+        assert!(cli.command.is_none());
+        assert_eq!(cli.extension_name, "canary-gate");
         assert_eq!(
             cli.config,
             PathBuf::from("/etc/argocd-canary-gate/config.yaml")
         );
+    }
+
+    #[test]
+    fn install_extension_subcommand() {
+        let cli = Cli::try_parse_from([
+            "gate",
+            "install-extension",
+            "--dest",
+            "/x",
+            "--extension-name",
+            "g",
+        ])
+        .unwrap();
+        match cli.command {
+            Some(Command::InstallExtension {
+                dest,
+                extension_name,
+            }) => {
+                assert_eq!(dest, PathBuf::from("/x"));
+                assert_eq!(extension_name, "g");
+            }
+            None => panic!("expected subcommand"),
+        }
     }
 
     #[test]

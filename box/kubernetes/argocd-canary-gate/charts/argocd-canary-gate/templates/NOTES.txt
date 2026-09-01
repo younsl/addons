@@ -18,3 +18,14 @@ To bypass the gate for one Application:
 
   kubectl -n {{ .Values.canaryGate.argocd.namespace }} annotate application <app> \
     {{ .Values.canaryGate.exempt.annotation }}=true
+
+The UI tile is optional and the gate enforces without it. To render the verdict
+in the Argo CD status panel, register the proxy extension in argocd-cm under
+the name {{ .Values.uiExtension.name }} and deliver the script with an
+argocd-extension-installer init container pointed at
+/api/v1/extension.tar on this service. See the chart README.
+
+Check a verdict without syncing anything:
+
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "argocd-canary-gate.fullname" . }} {{ .Values.service.adminPort }}
+  curl -s 'localhost:{{ .Values.service.adminPort }}/api/v1/gate?app=<your-app>' | jq

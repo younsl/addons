@@ -30,6 +30,12 @@ A first deploy carries no stable hash and passes, matching Argo Rollouts' own be
 
 Exemptions mirror how Argo CD itself operates. The application controller and automated (auto-sync) operations are exempt by default, since denying a reconcile loop only produces retries, and one Application can opt out with the `canary-gate.younsl.github.io/skip: "true"` annotation. `canaryGate.mode: warn` reports instead of denying, for observing the blast radius before enforcing. Watch `argocd_canary_gate_decisions_total{code="CanaryInProgress"}`, then switch.
 
+## UI tile
+
+An optional Argo CD UI extension renders the verdict as a CANARY GATE tile in the Application status panel, styled with Argo CD's own panel classes so it sits indistinguishably next to SYNC STATUS and HEALTH. It shows `Ready`, `Canary running` (red, with the Rollout and its step), `No rollouts`, `Exempt`, or `Unknown`, and clicking it opens a flyout with the full message and a per-Rollout table. The tile only renders: enforcement is the webhook's, on every path, with or without the tile. The script is embedded in the gate binary and served at `/api/v1/extension.tar` in the layout [argocd-extension-installer](https://github.com/argoproj-labs/argocd-extension-installer) expects, so the panel and the API it calls are always the same build. Wiring needs three argocd-server pieces: `ARGOCD_SERVER_ENABLE_PROXY_EXTENSION=true`, an `extension.config` entry in argocd-cm registering the `canary-gate` backend, and the installer init container. `scripts/e2e/argocd-values.yaml` and `scripts/e2e/argocd-extension.yaml` carry a working example.
+
+`GET /api/v1/gate?app=<name>` on the admin port returns the same verdict without syncing anything.
+
 ## Install
 
 ```bash

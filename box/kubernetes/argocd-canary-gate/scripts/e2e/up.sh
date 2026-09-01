@@ -45,6 +45,16 @@ log "installing the gate"
   --values "${E2E_DIR}/values.yaml" \
   --wait --timeout 180s
 
+log "adding the UI extension to argocd-server"
+# A second pass, because the init container fetches the script from the gate
+# and the gate did not exist during the first install.
+"${HELM[@]}" upgrade argocd argo/argo-cd \
+  --version "${ARGOCD_CHART_VERSION}" \
+  --namespace argocd \
+  --values "${E2E_DIR}/argocd-values.yaml" \
+  --values "${E2E_DIR}/argocd-extension.yaml" \
+  --wait --timeout 300s
+
 log "installing Gitea and seeding the demo repo"
 "${KUBECTL[@]}" apply -f "${E2E_DIR}/gitea.yaml"
 "${KUBECTL[@]}" -n git rollout status deploy/gitea --timeout=300s
@@ -104,7 +114,9 @@ cat <<EOF
 
 Open the canary-demo application. Its tree shows the Rollout, its ReplicaSets,
 and its pods, because the Rollout comes from the app's git source (the
-in-cluster Gitea repo).
+in-cluster Gitea repo). The CANARY GATE tile in the status panel, next to SYNC
+STATUS, shows the verdict before you press SYNC; clicking it opens a flyout
+with the full message and a per-Rollout table.
 
 === 1. start a canary the production way: commit, then sync
 
