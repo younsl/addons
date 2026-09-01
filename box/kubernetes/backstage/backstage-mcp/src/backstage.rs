@@ -5,6 +5,7 @@
 
 use std::time::Duration;
 
+use anyhow::Context;
 use reqwest::header::{ACCEPT, AUTHORIZATION, HeaderMap, HeaderValue, USER_AGENT};
 use serde::de::DeserializeOwned;
 use thiserror::Error;
@@ -28,6 +29,8 @@ pub enum BackstageError {
     Transport { path: String, reason: String },
     #[error("Backstage returned an unreadable body for GET {path}: {reason}")]
     Decode { path: String, reason: String },
+    #[error("refused GET {path}: {reason}")]
+    InvalidPath { path: String, reason: String },
 }
 
 impl BackstageError {
@@ -36,7 +39,7 @@ impl BackstageError {
     pub const fn status(&self) -> Option<u16> {
         match self {
             Self::Status { status, .. } => Some(*status),
-            Self::Transport { .. } | Self::Decode { .. } => None,
+            Self::Transport { .. } | Self::Decode { .. } | Self::InvalidPath { .. } => None,
         }
     }
 }
@@ -52,7 +55,7 @@ fn fmt_detail(message: &str) -> String {
 #[derive(Debug, Clone)]
 pub struct Client {
     http: reqwest::Client,
-    base_url: String,
+    base: reqwest::Url,
 }
 
 impl Client {
@@ -80,10 +83,46 @@ impl Client {
             .default_headers(headers)
             .timeout(timeout)
             .build()?;
-        Ok(Self {
-            http,
-            base_url: base_url.trim_end_matches('/').to_string(),
-        })
+        let base = reqwest::Url::parse(base_url.trim_end_matches('/'))
+            .with_context(|| format!("invalid Backstage base URL {base_url:?}"))?;
+        if base.host_str().is_none() {
+            anyhow::bail!("Backstage base URL {base_url:?} has no host");
+        }
+        Ok(Self { http, base })
+    }
+
+    /// Builds the request URL by grafting `path` onto the base URL's path.
+    ///
+    /// The scheme, host and port always come from the base URL and `path` is
+    /// set through [`reqwest::Url::set_path`], which cannot alter the
+    /// authority, so a user-influenced path segment can never redirect the
+    /// request to another server. Traversal segments are refused outright.
+    fn request_url(&self, path: &str) -> Result<reqwest::Url, BackstageError> {
+        let refuse = |reason: &str| BackstageError::InvalidPath {
+            path: path.to_string(),
+            reason: reason.to_string(),
+        };
+        if !path.starts_with('/') {
+            return Err(refuse("path must start with '/'"));
+        }
+        if path.split('/').any(|segment| segment == "..") {
+            return Err(refuse("path must not contain \"..\""));
+        }
+        if path
+            .chars()
+            .any(|c| c.is_ascii_control() || c.is_whitespace())
+        {
+            return Err(refuse(
+                "path must not contain whitespace or control characters",
+            ));
+        }
+        let mut url = self.base.clone();
+        url.set_path(&format!(
+            "{}{}",
+            self.base.path().trim_end_matches('/'),
+            path
+        ));
+        Ok(url)
     }
 
     /// GETs `path` and decodes the JSON body.
@@ -135,11 +174,11 @@ impl Client {
         query: &[QueryPair],
         accept: &str,
     ) -> Result<reqwest::Response, BackstageError> {
-        let url = format!("{}{}", self.base_url, path);
+        let url = self.request_url(path)?;
         let started = std::time::Instant::now();
         let response = self
             .http
-            .get(&url)
+            .get(url)
             .header(ACCEPT, accept)
             .query(query)
             .send()
@@ -305,6 +344,61 @@ mod tests {
             .unwrap_err();
         assert!(matches!(err, BackstageError::Transport { .. }));
         assert!(err.to_string().contains("GET /api/x"));
+    }
+
+    #[tokio::test]
+    async fn refuses_paths_that_could_escape_the_base() {
+        let client = Client::new("http://127.0.0.1:1", "", Duration::from_secs(1), "t").unwrap();
+        for path in ["api/x", "/api/../admin", "/api/\u{7}x", "/api/ x", ".."] {
+            let err = client
+                .get_json::<serde_json::Value>(path, &[])
+                .await
+                .unwrap_err();
+            assert!(matches!(err, BackstageError::InvalidPath { .. }), "{path}");
+            assert_eq!(err.status(), None);
+        }
+    }
+
+    #[tokio::test]
+    async fn path_cannot_redirect_to_another_host() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_json(serde_json::json!({"host": "mock"})),
+            )
+            .mount(&server)
+            .await;
+        // A protocol-relative-looking path stays a path on the base host.
+        let value: serde_json::Value = client(&server, "")
+            .get_json("//attacker.example/steal", &[])
+            .await
+            .unwrap();
+        assert_eq!(value["host"], "mock");
+    }
+
+    #[tokio::test]
+    async fn base_url_path_prefix_is_preserved() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/backstage/api/x"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({"ok": true})))
+            .mount(&server)
+            .await;
+        let client = Client::new(
+            &format!("{}/backstage/", server.uri()),
+            "",
+            Duration::from_secs(5),
+            "t",
+        )
+        .unwrap();
+        let value: serde_json::Value = client.get_json("/api/x", &[]).await.unwrap();
+        assert_eq!(value["ok"], true);
+    }
+
+    #[test]
+    fn rejects_hostless_base_urls() {
+        assert!(Client::new("unix:/tmp/sock", "", Duration::from_secs(1), "t").is_err());
+        assert!(Client::new("not a url", "", Duration::from_secs(1), "t").is_err());
     }
 
     #[test]
