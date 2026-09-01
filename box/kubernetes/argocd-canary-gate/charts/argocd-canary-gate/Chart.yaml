@@ -1,0 +1,26 @@
+apiVersion: v2
+name: argocd-canary-gate
+description: Admission gate that blocks an Argo CD Application sync while an Argo Rollouts canary is still in progress
+type: application
+deprecated: false
+version: 0.1.0
+appVersion: "0.1.0"
+kubeVersion: ">=1.30.0-0"
+home: https://github.com/younsl/o
+sources:
+  - https://github.com/younsl/o/tree/main/box/kubernetes/argocd-canary-gate
+maintainers:
+  - name: younsl
+    email: cysl@kakao.com
+    url: https://github.com/younsl
+keywords:
+  - argocd
+  - argo-rollouts
+  - gitops
+  - admission-webhook
+  - canary
+  - governance
+  - progressive-delivery
+  - deployment-gate
+annotations:
+  artifacthub.io/license: Apache-2.0

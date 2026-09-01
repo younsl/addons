@@ -1,0 +1,21 @@
+{{- if .Values.rbac.create }}
+{{/*
+Namespaced to where the Applications live, because the only thing the gate
+writes is a Kubernetes Event on the Application it judged.
+*/}}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "argocd-canary-gate.fullname" . }}
+  namespace: {{ .Values.canaryGate.argocd.namespace }}
+  labels:
+    {{- include "argocd-canary-gate.labels" . | nindent 4 }}
+rules:
+  - apiGroups:
+      - ""
+    resources:
+      - events
+    verbs:
+      - create
+      - patch
+{{- end }}
