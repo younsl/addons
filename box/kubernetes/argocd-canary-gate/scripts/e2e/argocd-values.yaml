@@ -1,0 +1,53 @@
+# Argo CD for local manual testing. Pinned to the chart whose appVersion is
+# v3.4.5, the same server version the sibling promotion gate was verified
+# against.
+#
+# Trimmed to what a canary test needs. Dex, notifications, and the
+# ApplicationSet controller are all off because none of them touch the sync
+# path and a laptop-sized cluster has better uses for the memory.
+
+global:
+  domain: localhost
+
+configs:
+  params:
+    # Plain HTTP so a port-forward is enough to log in. Never do this anywhere
+    # that is not a throwaway cluster.
+    server.insecure: true
+    controller.status.processors: "4"
+    controller.operation.processors: "2"
+    reposerver.parallelism.limit: "2"
+
+server:
+  replicas: 1
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+
+controller:
+  replicas: 1
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+
+repoServer:
+  replicas: 1
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+
+redis:
+  resources:
+    requests:
+      cpu: 25m
+      memory: 64Mi
+
+dex:
+  enabled: false
+notifications:
+  enabled: false
+applicationSet:
+  enabled: false

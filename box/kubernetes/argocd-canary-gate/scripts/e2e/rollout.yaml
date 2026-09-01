@@ -1,0 +1,44 @@
+# The Rollout the gate watches while judging canary-demo.
+#
+# Applied directly rather than through the Application, so the canary can be
+# driven with one kubectl patch instead of a git push. What ties it to the
+# Application is the tracking label, which is exactly what Argo CD stamps onto
+# every resource it manages: the gate cannot tell the difference, by design.
+#
+# The second step is an indefinite pause, so a canary stays mid-flight until
+# promoted or aborted. That is what makes the denial reproducible by hand.
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+metadata:
+  name: canary-demo-web
+  namespace: canary-gate-test
+  labels:
+    argocd.argoproj.io/instance: canary-demo
+spec:
+  replicas: 4
+  revisionHistoryLimit: 2
+  selector:
+    matchLabels:
+      app: canary-demo-web
+  template:
+    metadata:
+      labels:
+        app: canary-demo-web
+    spec:
+      containers:
+        - name: web
+          image: docker.io/library/nginx:1.27-alpine
+          ports:
+            - containerPort: 80
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+  strategy:
+    canary:
+      steps:
+        - setWeight: 25
+        - pause: {}
+        - setWeight: 75
+        - pause:
+            duration: 15s

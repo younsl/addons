@@ -1,0 +1,40 @@
+# The Application whose syncs the gate judges.
+#
+# Deliberately boring: one public Helm chart into a throwaway namespace, no
+# automated sync policy. What the app deploys is irrelevant to the gate. The
+# verdict hangs on the Rollout in rollout.yaml, which carries this
+# Application's tracking label and lives in this Application's destination
+# namespace.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: canary-demo
+  namespace: argocd
+  annotations:
+    # Read by a person, not by Argo CD.
+    canary-gate.younsl.github.io/purpose: >-
+      Canary gate test target. Safe to delete.
+  finalizers:
+    # Deleting the Application also removes what it deployed, so teardown is
+    # one command and leaves nothing behind.
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://stefanprodan.github.io/podinfo
+    chart: podinfo
+    targetRevision: 6.7.1
+    helm:
+      releaseName: canary-demo
+      parameters:
+        - name: replicaCount
+          value: "1"
+        # Nothing about this test needs to be reachable.
+        - name: serviceMonitor.enabled
+          value: "false"
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: canary-gate-test
+  # Manual on purpose. Automated operations are exempt from the gate by
+  # default, so an auto-sync policy would test the exemption, not the gate.
+  syncPolicy: {}

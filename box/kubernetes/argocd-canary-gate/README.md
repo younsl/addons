@@ -54,3 +54,7 @@ make zigbuild    # static linux/amd64 + linux/arm64 binaries via cargo-zigbuild
 ```
 
 The container is `scratch` with a statically linked musl binary, built by the shared release workflow in `.github/workflows/_release-rust-scratch-containers.yml` when the `org.opencontainers.image.version` label in the Dockerfile changes.
+
+### Local test environment
+
+`scripts/e2e/up.sh` stands up a kind cluster with real Argo CD, real Argo Rollouts, and the gate built from the working tree, then prints a numbered walkthrough: an allowed sync against a settled Rollout, a denied sync mid-canary, the skip annotation bypass, promote-then-sync, and warn mode. `scripts/e2e/sync.sh <app>` triggers a sync the same way the UI does, so a denial lands as the kubectl error. Needs kind, helm, cargo-zigbuild, and a docker or podman engine. The real kubeconfig is never touched, and `scripts/e2e/down.sh` removes everything.
