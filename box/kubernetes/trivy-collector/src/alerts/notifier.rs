@@ -66,6 +66,24 @@ pub struct SlackNotifier {
     per_url_limits: Arc<Mutex<HashMap<String, Arc<Semaphore>>>>,
 }
 
+/// What a dispatch pass achieved, so the evaluator can put it on the status.
+#[derive(Debug, Default)]
+pub struct FireOutcome {
+    /// Receivers with a Slack destination.
+    pub attempted: usize,
+    pub succeeded: usize,
+    /// The last failure, when at least one receiver failed.
+    pub last_error: Option<String>,
+}
+
+impl FireOutcome {
+    /// Whether nothing got through. A rule with no Slack receiver attempted
+    /// nothing, which is not a failure.
+    pub fn all_failed(&self) -> bool {
+        self.attempted > 0 && self.succeeded == 0
+    }
+}
+
 impl SlackNotifier {
     pub fn new() -> Self {
         Self::with_external_url(None)
@@ -85,9 +103,18 @@ impl SlackNotifier {
         }
     }
 
-    pub async fn fire(&self, rule: &AlertRule, contexts: &[AlertContext], other_workloads: usize) {
+    /// Dispatch to every Slack receiver on the rule and report what happened,
+    /// so the caller can record it onto the rule's status. A receiver without
+    /// a Slack block is not a failure, it is simply not a destination.
+    pub async fn fire(
+        &self,
+        rule: &AlertRule,
+        contexts: &[AlertContext],
+        other_workloads: usize,
+    ) -> FireOutcome {
+        let mut outcome = FireOutcome::default();
         if contexts.is_empty() {
-            return;
+            return outcome;
         }
         for receiver in &rule.receivers {
             if let Some(slack) = &receiver.slack {
@@ -99,10 +126,19 @@ impl SlackNotifier {
                     self.external_url.as_deref(),
                     other_workloads,
                 );
-                self.send_with_retry(rule, &receiver.name, slack, &payload)
-                    .await;
+                outcome.attempted += 1;
+                match self
+                    .send_with_retry(rule, &receiver.name, slack, &payload)
+                    .await
+                {
+                    Ok(()) => outcome.succeeded += 1,
+                    Err(e) => {
+                        outcome.last_error = Some(format!("receiver '{}': {}", receiver.name, e))
+                    }
+                }
             }
         }
+        outcome
     }
 
     /// Send a one-off test message for the rule, bypassing cooldown and the
@@ -189,13 +225,13 @@ impl SlackNotifier {
         receiver_name: &str,
         slack: &SlackReceiver,
         payload: &Value,
-    ) {
+    ) -> Result<(), String> {
         let sem = self.semaphore_for(&slack.webhook_url).await;
         // Hold a permit for the entire retry window so 429 backoff doesn't
         // get bypassed by a parallel sender for the same URL.
         let _permit = match sem.acquire().await {
             Ok(p) => p,
-            Err(_) => return,
+            Err(_) => return Err("send semaphore closed".to_string()),
         };
 
         for attempt in 1..=MAX_SEND_ATTEMPTS {
@@ -206,7 +242,7 @@ impl SlackNotifier {
                 .send()
                 .await
             {
-                Ok(resp) if resp.status().is_success() => return,
+                Ok(resp) if resp.status().is_success() => return Ok(()),
                 Ok(resp) if resp.status() == StatusCode::TOO_MANY_REQUESTS => {
                     let wait = parse_retry_after(&resp).unwrap_or(FALLBACK_RETRY_AFTER);
                     if attempt == MAX_SEND_ATTEMPTS {
@@ -216,7 +252,7 @@ impl SlackNotifier {
                             attempts = attempt,
                             "Slack webhook 429: giving up after max attempts"
                         );
-                        return;
+                        return Err(format!("rate limited after {attempt} attempts"));
                     }
                     warn!(
                         rule = %rule.name,
@@ -228,13 +264,14 @@ impl SlackNotifier {
                     tokio::time::sleep(wait).await;
                 }
                 Ok(resp) => {
+                    let status = resp.status();
                     warn!(
                         rule = %rule.name,
                         receiver = %receiver_name,
-                        status = %resp.status(),
+                        status = %status,
                         "Slack webhook returned non-success"
                     );
-                    return;
+                    return Err(format!("Slack returned {status}"));
                 }
                 Err(e) => {
                     error!(
@@ -244,10 +281,11 @@ impl SlackNotifier {
                         error = %e,
                         "Slack webhook send failed"
                     );
-                    return;
+                    return Err(e.to_string());
                 }
             }
         }
+        Err(format!("gave up after {MAX_SEND_ATTEMPTS} attempts"))
     }
 }
 
@@ -581,6 +619,8 @@ mod tests {
             created_by: "tester".into(),
             updated_at: None,
             updated_by: None,
+            generation: None,
+            status: None,
         }
     }
 

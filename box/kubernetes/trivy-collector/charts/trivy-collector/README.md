@@ -1,6 +1,6 @@
 # trivy-collector
 
-![Version: 0.12.0](https://img.shields.io/badge/Version-0.12.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 1.7.0](https://img.shields.io/badge/AppVersion-1.7.0-informational?style=flat-square)
+![Version: 0.13.0](https://img.shields.io/badge/Version-0.13.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 1.8.0](https://img.shields.io/badge/AppVersion-1.8.0-informational?style=flat-square)
 
 Multi-cluster Trivy report collector and viewer
 
@@ -39,7 +39,7 @@ helm install trivy-collector oci://ghcr.io/younsl/charts/trivy-collector -f valu
 Install a specific version:
 
 ```console
-helm install trivy-collector oci://ghcr.io/younsl/charts/trivy-collector --version 0.12.0
+helm install trivy-collector oci://ghcr.io/younsl/charts/trivy-collector --version 0.13.0
 ```
 
 ### Install from local chart
@@ -47,7 +47,7 @@ helm install trivy-collector oci://ghcr.io/younsl/charts/trivy-collector --versi
 Download trivy-collector chart and install from local directory:
 
 ```console
-helm pull oci://ghcr.io/younsl/charts/trivy-collector --untar --version 0.12.0
+helm pull oci://ghcr.io/younsl/charts/trivy-collector --untar --version 0.13.0
 helm install trivy-collector ./trivy-collector
 ```
 
@@ -73,6 +73,11 @@ The following table lists the configurable parameters and their default values.
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
+| crds | object | `{"additionalLabels":{},"annotations":{},"install":true,"keep":true}` | CustomResourceDefinitions for alert rules |
+| crds.install | bool | `true` | Install and upgrade CRDs |
+| crds.keep | bool | `true` | Keep CRDs on chart uninstall |
+| crds.annotations | object | `{}` | Additional annotations to be added to all CRDs |
+| crds.additionalLabels | object | `{}` | Additional labels to be added to all CRDs |
 | nameOverride | string | `""` | Override the name of the chart |
 | fullnameOverride | string | `""` | Override the full name of the chart |
 | replicaCount | int | `1` | Default replica count (deprecated, use server.replicaCount for UI pods; scraper always runs as a single replica to avoid split-brain writes). |

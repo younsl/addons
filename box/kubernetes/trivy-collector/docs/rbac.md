@@ -43,10 +43,12 @@ g, platform-team, role:admin
 | `tokens` | `get` | `GET /api/v1/auth/tokens` |
 | `tokens` | `create` | `POST /api/v1/auth/tokens` |
 | `tokens` | `delete` | `DELETE /api/v1/auth/tokens/{prefix}` |
-| `alerts` | `get` | `GET /api/v1/alerts`, `GET /api/v1/alerts/{name}`, `POST /api/v1/alerts/preview` |
+| `alerts` | `get` | `GET /api/v1/alerts`, `GET /api/v1/alerts/{name}`, `POST /api/v1/alerts/preview`, and the `list_alert_rules` / `get_alert_rule` MCP tools |
 | `alerts` | `create` | `POST /api/v1/alerts` (create rule), `POST /api/v1/alerts/test` (send Slack test) |
 | `alerts` | `update` | `PUT /api/v1/alerts/{name}` |
 | `alerts` | `delete` | `DELETE /api/v1/alerts/{name}` |
+
+Alert rules are `AlertRule` custom resources, so these actions gate the HTTP API only. Anyone with Kubernetes `alertrules` permission in the release namespace can bypass them with `kubectl`, and the collector reads whatever is there. Treat the two as separate grants. See [Alerts](alerts.md).
 
 ## Default Policy
 

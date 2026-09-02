@@ -51,7 +51,18 @@ use crate::storage::{
 #[openapi(
     info(
         title = "Trivy Collector API",
-        description = "Multi-cluster Trivy report collector and viewer API",
+        description = "\
+Multi-cluster Trivy report collector and viewer API.
+
+Every `/api/v1` route below is served by the server pod. When `auth_mode` is \
+`keycloak` they require a session cookie or a `tc_`-prefixed Bearer token, and \
+each one is additionally gated by an RBAC `(resource, action)` pair — see the \
+RBAC documentation for the mapping.
+
+Two endpoints this router serves are deliberately absent from this document: \
+`/mcp`, which speaks JSON-RPC over Streamable HTTP rather than REST, and the \
+static UI. Liveness, readiness, and Prometheus metrics are served on a separate \
+port by the health server, not here.",
         version = env!("CARGO_PKG_VERSION"),
         license(name = "Apache-2.0")
     ),
@@ -93,7 +104,10 @@ use crate::storage::{
         crate::auth::handlers::list_tokens,
         crate::auth::handlers::create_token,
         crate::auth::handlers::delete_token,
+        crate::auth::handlers::login,
+        crate::auth::handlers::callback,
         crate::auth::handlers::logout,
+        crate::auth::handlers::auth_error,
     ),
     components(schemas(
         HealthResponse,
@@ -121,7 +135,10 @@ use crate::storage::{
         cluster_handlers::RegisteredCluster,
         cluster_handlers::ValidationResponse,
         alert_handlers::AlertRuleInput,
+        alert_handlers::AlertListResponse,
+        alert_handlers::AlertTestResponse,
         alert_handlers::PreviewRequest,
+        crate::auth::handlers::CreateTokenRequest,
         crate::alerts::preview::PreviewMatch,
         crate::alerts::preview::PreviewResult,
         crate::alerts::notifier::TestDeliveryResult,
@@ -146,7 +163,7 @@ use crate::storage::{
         (name = "Admin", description = "Admin summary endpoints"),
         (name = "Auth", description = "Authentication and token management endpoints"),
         (name = "Hub", description = "Cluster registration endpoints for hub-pull mode"),
-        (name = "Alerts", description = "Alert rule management (ConfigMap-backed)"),
+        (name = "Alerts", description = "Alert rule management. Rules are stored as `AlertRule` custom resources in the `trivy-collector.security.io` API group, so `kubectl get alertrules` sees exactly what this API writes."),
     )
 )]
 pub struct ApiDoc;
@@ -835,6 +852,102 @@ mod tests {
             )
             .await
             .unwrap()
+    }
+
+    /// The reference UI renders whatever this document says, so a `body =`
+    /// pointing at a schema that was never registered shows up as an empty
+    /// box rather than an error. Resolve every `$ref` instead.
+    #[test]
+    fn the_openapi_document_has_no_dangling_schema_references() {
+        let doc = serde_json::to_value(ApiDoc::openapi()).expect("the document serializes");
+        let schemas = doc["components"]["schemas"]
+            .as_object()
+            .expect("components.schemas");
+
+        fn collect_refs(node: &serde_json::Value, out: &mut Vec<String>) {
+            match node {
+                serde_json::Value::Object(map) => {
+                    for (key, value) in map {
+                        if key == "$ref" {
+                            if let Some(r) = value.as_str() {
+                                out.push(r.to_string());
+                            }
+                        } else {
+                            collect_refs(value, out);
+                        }
+                    }
+                }
+                serde_json::Value::Array(items) => {
+                    for item in items {
+                        collect_refs(item, out);
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        let mut refs = Vec::new();
+        collect_refs(&doc, &mut refs);
+        assert!(!refs.is_empty(), "the document should reference schemas");
+        for r in refs {
+            let name = r
+                .strip_prefix("#/components/schemas/")
+                .unwrap_or_else(|| panic!("unexpected reference target {r}"));
+            assert!(
+                schemas.contains_key(name),
+                "{name} is referenced but not in components.schemas"
+            );
+        }
+    }
+
+    /// Every operation needs a tag and at least one documented response, or it
+    /// renders in the reference as an untagged entry with no outcome.
+    #[test]
+    fn every_documented_operation_is_tagged_and_has_responses() {
+        let doc = serde_json::to_value(ApiDoc::openapi()).expect("the document serializes");
+        let declared: Vec<&str> = doc["tags"]
+            .as_array()
+            .expect("tags")
+            .iter()
+            .map(|t| t["name"].as_str().expect("tag name"))
+            .collect();
+
+        for (path, methods) in doc["paths"].as_object().expect("paths") {
+            for (method, op) in methods.as_object().expect("operations") {
+                let tags = op["tags"].as_array().expect("tags");
+                assert_eq!(tags.len(), 1, "{method} {path} must carry exactly one tag");
+                let tag = tags[0].as_str().unwrap();
+                assert!(
+                    declared.contains(&tag),
+                    "{method} {path} uses undeclared tag {tag}"
+                );
+                assert!(
+                    !op["responses"].as_object().expect("responses").is_empty(),
+                    "{method} {path} documents no responses"
+                );
+            }
+        }
+    }
+
+    /// The alerts endpoints all depend on the Kubernetes API and on the
+    /// `AlertRule` CRD being installed, and both failures surface as 503. A
+    /// caller cannot tell an outage from a missing CRD without it documented.
+    #[test]
+    fn the_alert_endpoints_document_their_unavailable_case() {
+        let doc = serde_json::to_value(ApiDoc::openapi()).expect("the document serializes");
+        for path in [
+            "/api/v1/alerts",
+            "/api/v1/alerts/{name}",
+            "/api/v1/alerts/test",
+        ] {
+            let methods = doc["paths"][path].as_object().expect(path);
+            for (method, op) in methods {
+                assert!(
+                    op["responses"]["503"].is_object(),
+                    "{method} {path} must document its 503"
+                );
+            }
+        }
     }
 
     #[tokio::test]

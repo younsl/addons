@@ -1,3 +1,14 @@
+# -- CustomResourceDefinitions for alert rules
+crds:
+  # -- (bool) Install and upgrade CRDs
+  install: true
+  # -- (bool) Keep CRDs on chart uninstall
+  keep: true
+  # -- (object) Additional annotations to be added to all CRDs
+  annotations: {}
+  # -- (object) Additional labels to be added to all CRDs
+  additionalLabels: {}
+
 # -- (string) Override the name of the chart
 nameOverride: ""
 

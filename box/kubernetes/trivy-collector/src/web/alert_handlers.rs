@@ -1,4 +1,9 @@
-//! HTTP handlers for `/api/v1/alerts` (RBAC-gated CRUD over the alerts ConfigMap).
+//! HTTP handlers for `/api/v1/alerts`: RBAC-gated CRUD over the `AlertRule`
+//! custom resources in the `trivy-collector.security.io` API group.
+//!
+//! The HTTP schema is snake_case, as the rest of this API is; the stored
+//! custom resource is camelCase, as Kubernetes objects are. `alerts::crd`
+//! owns the conversion, so nothing here needs to know the difference.
 
 use axum::{
     Json,
@@ -11,11 +16,12 @@ use serde::Deserialize;
 use tracing::{error, info};
 
 use crate::alerts::evaluator::TestRunError;
+use crate::alerts::notifier::TestDeliveryResult;
 use crate::alerts::preview::{self, PreviewResult};
 use crate::alerts::types::{AlertRule, Matchers, Receiver, validate_webhook_url};
 use crate::alerts::{AlertEvaluator, AlertStore, AlertStoreError};
 use crate::auth::session::{AuthSession, SESSION_COOKIE_NAME};
-use crate::web::AppState;
+use crate::web::{AppState, ErrorResponse};
 use std::collections::BTreeMap;
 
 #[derive(Deserialize, utoipa::ToSchema)]
@@ -38,11 +44,44 @@ fn default_true() -> bool {
     true
 }
 
+/// A page of alert rules, plus which Kubernetes resource they came from so a
+/// reader can go straight to `kubectl get`.
+#[derive(serde::Serialize, utoipa::ToSchema)]
+pub struct AlertListResponse {
+    pub items: Vec<AlertRule>,
+    pub total: usize,
+    /// `group/version` the rules are stored under, e.g.
+    /// `trivy-collector.security.io/v1alpha1`.
+    pub api_version: String,
+    /// Plural resource name, e.g. `alertrules`.
+    pub resource: String,
+    /// Namespace the rules live in — the release namespace.
+    pub namespace: String,
+}
+
+/// Per-receiver outcome of a test dispatch.
+#[derive(serde::Serialize, utoipa::ToSchema)]
+pub struct AlertTestResponse {
+    /// Rule name the test ran under; `draft` for an unnamed draft.
+    pub rule: String,
+    pub total: usize,
+    pub succeeded: usize,
+    pub results: Vec<TestDeliveryResult>,
+}
+
 #[utoipa::path(
     get,
     path = "/api/v1/alerts",
     tag = "Alerts",
-    responses((status = 200, description = "Alert rules"))
+    responses(
+        (status = 200, description = "Alert rules", body = AlertListResponse),
+        (status = 500, description = "Kubernetes API error", body = ErrorResponse),
+        (
+            status = 503,
+            description = "No Kubernetes API access, or the AlertRule CRD is not installed",
+            body = ErrorResponse
+        )
+    )
 )]
 pub async fn list_alerts(State(state): State<AppState>) -> impl IntoResponse {
     let store = match get_store(&state) {
@@ -50,12 +89,13 @@ pub async fn list_alerts(State(state): State<AppState>) -> impl IntoResponse {
         None => return unavailable(),
     };
     match store.list().await {
-        Ok(rules) => Json(serde_json::json!({
-            "items": rules,
-            "total": rules.len(),
-            "configmap": store.configmap_name(),
-            "namespace": store.namespace(),
-        }))
+        Ok(rules) => Json(AlertListResponse {
+            total: rules.len(),
+            items: rules,
+            api_version: store.api_version(),
+            resource: store.resource().to_string(),
+            namespace: store.namespace().to_string(),
+        })
         .into_response(),
         Err(e) => store_error_response(e),
     }
@@ -66,7 +106,16 @@ pub async fn list_alerts(State(state): State<AppState>) -> impl IntoResponse {
     path = "/api/v1/alerts/{name}",
     tag = "Alerts",
     params(("name" = String, Path, description = "Rule name")),
-    responses((status = 200, description = "Alert rule"), (status = 404, description = "Not found"))
+    responses(
+        (status = 200, description = "Alert rule", body = AlertRule),
+        (status = 404, description = "No rule by that name", body = ErrorResponse),
+        (status = 500, description = "Kubernetes API error", body = ErrorResponse),
+        (
+            status = 503,
+            description = "No Kubernetes API access, or the AlertRule CRD is not installed",
+            body = ErrorResponse
+        )
+    )
 )]
 pub async fn get_alert(
     State(state): State<AppState>,
@@ -87,7 +136,24 @@ pub async fn get_alert(
     path = "/api/v1/alerts",
     tag = "Alerts",
     request_body = AlertRuleInput,
-    responses((status = 201, description = "Created"), (status = 400, description = "Invalid input"))
+    responses(
+        (
+            status = 201,
+            description = "The rule as stored, including the server-assigned creation timestamp",
+            body = AlertRule
+        ),
+        (
+            status = 400,
+            description = "Invalid rule name, matcher, version expression, or Slack webhook host",
+            body = ErrorResponse
+        ),
+        (status = 500, description = "Kubernetes API error", body = ErrorResponse),
+        (
+            status = 503,
+            description = "No Kubernetes API access, or the AlertRule CRD is not installed",
+            body = ErrorResponse
+        )
+    )
 )]
 pub async fn create_alert(
     State(state): State<AppState>,
@@ -116,11 +182,15 @@ pub async fn create_alert(
         created_by: user,
         updated_at: None,
         updated_by: None,
+        // Read-only: the API server assigns the generation and the scraper
+        // owns the status subresource.
+        generation: None,
+        status: None,
     };
     match store.upsert(&rule).await {
-        Ok(()) => {
-            info!(rule = %rule.name, by = %rule.created_by, "Alert rule created");
-            (StatusCode::CREATED, Json(rule)).into_response()
+        Ok(stored) => {
+            info!(rule = %stored.name, by = %stored.created_by, "Alert rule created");
+            (StatusCode::CREATED, Json(stored)).into_response()
         }
         Err(e) => store_error_response(e),
     }
@@ -132,7 +202,21 @@ pub async fn create_alert(
     tag = "Alerts",
     params(("name" = String, Path, description = "Rule name")),
     request_body = AlertRuleInput,
-    responses((status = 200, description = "Updated"), (status = 404, description = "Not found"))
+    responses(
+        (status = 200, description = "The rule as stored", body = AlertRule),
+        (
+            status = 400,
+            description = "Path and body names disagree, or the rule is invalid",
+            body = ErrorResponse
+        ),
+        (status = 404, description = "No rule by that name", body = ErrorResponse),
+        (status = 500, description = "Kubernetes API error", body = ErrorResponse),
+        (
+            status = 503,
+            description = "No Kubernetes API access, or the AlertRule CRD is not installed",
+            body = ErrorResponse
+        )
+    )
 )]
 pub async fn update_alert(
     State(state): State<AppState>,
@@ -173,11 +257,13 @@ pub async fn update_alert(
         created_by: existing.created_by,
         updated_at: Some(now),
         updated_by: Some(user),
+        generation: existing.generation,
+        status: existing.status,
     };
     match store.upsert(&rule).await {
-        Ok(()) => {
-            info!(rule = %rule.name, by = ?rule.updated_by, "Alert rule updated");
-            Json(rule).into_response()
+        Ok(stored) => {
+            info!(rule = %stored.name, by = ?stored.updated_by, "Alert rule updated");
+            Json(stored).into_response()
         }
         Err(e) => store_error_response(e),
     }
@@ -188,7 +274,16 @@ pub async fn update_alert(
     path = "/api/v1/alerts/{name}",
     tag = "Alerts",
     params(("name" = String, Path, description = "Rule name")),
-    responses((status = 204, description = "Deleted"), (status = 404, description = "Not found"))
+    responses(
+        (status = 204, description = "The AlertRule object was deleted"),
+        (status = 404, description = "No rule by that name", body = ErrorResponse),
+        (status = 500, description = "Kubernetes API error", body = ErrorResponse),
+        (
+            status = 503,
+            description = "No Kubernetes API access, or the AlertRule CRD is not installed",
+            body = ErrorResponse
+        )
+    )
 )]
 pub async fn delete_alert(
     State(state): State<AppState>,
@@ -221,7 +316,7 @@ pub struct PreviewRequest {
     request_body = PreviewRequest,
     responses(
         (status = 200, description = "Matching items in current data", body = PreviewResult),
-        (status = 400, description = "Invalid matcher")
+        (status = 400, description = "Invalid matcher", body = ErrorResponse)
     )
 )]
 pub async fn preview_alert(
@@ -244,8 +339,27 @@ pub async fn preview_alert(
     tag = "Alerts",
     request_body = AlertRuleInput,
     responses(
-        (status = 200, description = "Test dispatch results per receiver"),
-        (status = 400, description = "Invalid input")
+        (
+            status = 200,
+            description = "Dispatch outcome per receiver. A per-receiver failure is reported here, not as an error status",
+            body = AlertTestResponse
+        ),
+        (
+            status = 400,
+            description = "No Slack receiver, or an invalid webhook host or version expression",
+            body = ErrorResponse
+        ),
+        (
+            status = 422,
+            description = "No stored report matches the matchers, so there is nothing realistic to send",
+            body = ErrorResponse
+        ),
+        (status = 500, description = "Report store error", body = ErrorResponse),
+        (
+            status = 503,
+            description = "No Kubernetes API access, or the AlertRule CRD is not installed",
+            body = ErrorResponse
+        )
     )
 )]
 pub async fn test_alert_draft(
@@ -286,6 +400,9 @@ pub async fn test_alert_draft(
         created_by: user.clone(),
         updated_at: None,
         updated_by: None,
+        // A draft is never stored, so it has neither.
+        generation: None,
+        status: None,
     };
     let rule_name = draft.name.clone();
     match evaluator.test_with_rule(draft, state.store.as_ref()).await {
@@ -299,12 +416,12 @@ pub async fn test_alert_draft(
                 succeeded,
                 "Alert draft test dispatched"
             );
-            Json(serde_json::json!({
-                "rule": rule_name,
-                "total": total,
-                "succeeded": succeeded,
-                "results": results,
-            }))
+            Json(AlertTestResponse {
+                rule: rule_name,
+                total,
+                succeeded,
+                results,
+            })
             .into_response()
         }
         Err(TestRunError::NoMatches) => (
@@ -395,6 +512,13 @@ fn store_error_response(err: AlertStoreError) -> axum::response::Response {
         AlertStoreError::Invalid(msg) => (
             StatusCode::BAD_REQUEST,
             Json(serde_json::json!({"error": msg})),
+        )
+            .into_response(),
+        // An install-time mistake, not a bad request: the caller can do
+        // nothing but wait for the CRD to be applied.
+        AlertStoreError::CrdMissing => (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(serde_json::json!({"error": AlertStoreError::CrdMissing.to_string()})),
         )
             .into_response(),
         e => {

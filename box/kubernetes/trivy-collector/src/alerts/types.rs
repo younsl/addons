@@ -53,6 +53,15 @@ pub struct AlertRule {
     pub created_by: String,
     pub updated_at: Option<String>,
     pub updated_by: Option<String>,
+    /// `metadata.generation` of the stored object. Read-only, and absent for a
+    /// draft that has never been applied.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub generation: Option<i64>,
+    /// What the evaluator has observed. Read-only: a value sent on a create or
+    /// update is ignored, because status is a Kubernetes subresource that only
+    /// the scraper writes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub status: Option<crate::alerts::crd::AlertRuleStatus>,
 }
 
 fn default_true() -> bool {

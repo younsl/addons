@@ -1,5 +1,44 @@
 # Upgrading
 
+## To app 1.8.0 / chart 0.13.0
+
+Alert rules move out of the `trivy-collector-alerts` ConfigMap and become `AlertRule` custom resources in the `trivy-collector.security.io` API group. See [Alerts](alerts.md) for the full schema.
+
+### A CRD has to exist before the alerts UI works
+
+The chart installs `alertrules.trivy-collector.security.io` under `crds.install` (default `true`). Installing a CRD needs cluster-scoped permission, which a namespace-scoped installer does not have. If your pipeline cannot create CRDs, set `crds.install=false` and apply it separately, ordering it ahead of the release:
+
+```bash
+kubectl apply -f charts/trivy-collector/templates/crds/alertrules.trivy-collector.security.io.yaml
+```
+
+Until the CRD exists the alerts endpoints answer `503` with a message naming the missing resource. Nothing else in the application is affected.
+
+### Existing rules migrate themselves
+
+On startup the collector imports the ConfigMap's rules and stamps it with `trivy-collector.security.io/migrated-at`. The import is idempotent and skips a name that already exists, and the ConfigMap is never deleted, so it stays the rollback.
+
+Confirm the rules landed, then delete the ConfigMap:
+
+```bash
+kubectl get alertrules -n trivy-system
+kubectl delete configmap trivy-collector-alerts -n trivy-system
+```
+
+Leaving it in place is harmless: once stamped, it is never read again. Deleting it before the migration runs loses the rules, so check `kubectl get alertrules` first.
+
+### The Role gained an API group
+
+`templates/role.yaml` now also grants full verbs on `trivy-collector.security.io` `alertrules`. A release with `serviceAccount.create=false` needs that rule added to whatever Role you bind yourself, or every alerts read and write returns `403`.
+
+### The alerts API response changed shape
+
+`GET /api/v1/alerts` replaced `configmap` with `api_version` and `resource`, naming the Kubernetes resource the rules came from. `items` is unchanged: the HTTP schema stays snake_case, and the camelCase custom resource is converted in one place. Every other alerts endpoint is unchanged.
+
+### OpenAPI document is now accurate about failures
+
+Status codes the alerts, hub, notes, and token endpoints actually return are documented, and the alerts responses carry real schemas rather than an untyped 200. If you generate a client from `/api-docs/openapi.json`, regenerate it: previously undocumented `400`, `422`, `500`, `502`, and `503` cases now appear, and a stale `400` on the SBOM component suggest endpoint is gone.
+
 ## To app 1.7.0 / chart 0.12.0
 
 This release removes the PersistentVolume and reworks the UI. The scraper now owns SQLite on its own `emptyDir` and serves it back to the server pods over an internal API, so the server holds no database and no volume. See [Architecture](architecture.md) for why.

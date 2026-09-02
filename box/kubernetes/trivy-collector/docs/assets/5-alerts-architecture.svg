@@ -1,0 +1,116 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1180" height="530" viewBox="0 0 1180 530" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="13">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#a1a1aa"/>
+    </marker>
+    <marker id="arrow-dim" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#52525b"/>
+    </marker>
+    <marker id="arrow-green" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#86efac"/>
+    </marker>
+  </defs>
+
+  <rect width="1180" height="530" fill="#0a0a0b"/>
+
+  <text x="40" y="40" fill="#e4e4e7" font-size="16" font-weight="600">trivy-collector alerts</text>
+  <text x="40" y="60" fill="#71717a">One AlertRule custom resource per rule. The UI and a Git repository are both first-class authors.</text>
+
+  <!-- ===== Hub cluster ===== -->
+  <rect x="316" y="80" width="572" height="416" rx="10" fill="#0f0f11" stroke="#3f3f46" stroke-width="1.5" stroke-dasharray="6 5"/>
+  <text x="334" y="102" fill="#a1a1aa" font-size="12" letter-spacing="1">HUB CLUSTER</text>
+
+  <!-- server pod -->
+  <rect x="344" y="118" width="256" height="72" rx="6" fill="#18181b" stroke="#52525b"/>
+  <text x="360" y="140" fill="#71717a" font-size="11">Deployment</text>
+  <text x="360" y="160" fill="#e4e4e7">trivy-collector-server</text>
+  <text x="360" y="178" fill="#8a8a93" font-size="11">RBAC-gated rule CRUD</text>
+
+  <!-- scraper pod -->
+  <rect x="344" y="222" width="256" height="96" rx="6" fill="#18181b" stroke="#52525b"/>
+  <text x="360" y="244" fill="#71717a" font-size="11">Deployment</text>
+  <text x="360" y="264" fill="#e4e4e7">trivy-collector-scraper</text>
+  <text x="360" y="284" fill="#8a8a93" font-size="11">evaluator, on the SbomReport</text>
+  <text x="360" y="300" fill="#8a8a93" font-size="11">ingest path (not a timer)</text>
+
+  <!-- kube-apiserver -->
+  <rect x="656" y="118" width="200" height="200" rx="6" fill="#131316" stroke="#52525b"/>
+  <text x="672" y="140" fill="#71717a" font-size="11">control plane</text>
+  <text x="672" y="160" fill="#e4e4e7">kube-apiserver</text>
+  <text x="672" y="188" fill="#8a8a93" font-size="11">validates every write</text>
+  <text x="672" y="204" fill="#8a8a93" font-size="11">against the CRD schema,</text>
+  <text x="672" y="220" fill="#8a8a93" font-size="11">so a malformed rule is</text>
+  <text x="672" y="236" fill="#8a8a93" font-size="11">never stored</text>
+  <text x="672" y="266" fill="#71717a" font-size="11">CustomResourceDefinition</text>
+  <text x="672" y="284" fill="#a1a1aa" font-size="11">alertrules</text>
+  <text x="672" y="300" fill="#a1a1aa" font-size="11">.trivy-collector.security.io</text>
+
+  <!-- AlertRule objects (stacked to suggest N) -->
+  <rect x="668" y="356" width="200" height="112" rx="6" fill="#101013" stroke="#3f3f46"/>
+  <rect x="662" y="350" width="200" height="112" rx="6" fill="#101013" stroke="#3f3f46"/>
+  <rect x="656" y="344" width="200" height="112" rx="6" fill="#18181b" stroke="#52525b"/>
+  <text x="672" y="366" fill="#71717a" font-size="11">namespace/trivy-system</text>
+  <text x="672" y="386" fill="#e4e4e7">AlertRule</text>
+  <text x="672" y="406" fill="#8a8a93" font-size="11">spec.matchers.packageName</text>
+  <text x="672" y="422" fill="#8a8a93" font-size="11">spec.matchers.versionExpr</text>
+  <text x="672" y="438" fill="#8a8a93" font-size="11">spec.receivers[].slack</text>
+
+  <!-- legacy ConfigMap -->
+  <rect x="344" y="352" width="256" height="96" rx="6" fill="#101013" stroke="#3f3f46" stroke-dasharray="4 4"/>
+  <text x="360" y="374" fill="#71717a" font-size="11">legacy, read once</text>
+  <text x="360" y="394" fill="#a1a1aa">ConfigMap</text>
+  <text x="360" y="412" fill="#8a8a93" font-size="11">trivy-collector-alerts</text>
+  <text x="360" y="432" fill="#8a8a93" font-size="11">kept as the rollback</text>
+
+  <!-- ===== outside the cluster ===== -->
+
+  <!-- browser -->
+  <rect x="40" y="118" width="240" height="72" rx="6" fill="#18181b" stroke="#52525b"/>
+  <text x="56" y="140" fill="#71717a" font-size="11">author</text>
+  <text x="56" y="160" fill="#e4e4e7">Alerts page (UI)</text>
+  <text x="56" y="178" fill="#8a8a93" font-size="11">create, edit, delete, test</text>
+
+  <!-- slack -->
+  <rect x="40" y="234" width="240" height="72" rx="6" fill="#18181b" stroke="#52525b"/>
+  <text x="56" y="256" fill="#71717a" font-size="11">receiver</text>
+  <text x="56" y="276" fill="#86efac">Slack incoming webhook</text>
+  <text x="56" y="294" fill="#8a8a93" font-size="11">hooks.slack.com only</text>
+
+  <!-- kubectl / gitops -->
+  <rect x="924" y="152" width="216" height="96" rx="6" fill="#18181b" stroke="#52525b"/>
+  <text x="940" y="174" fill="#71717a" font-size="11">author</text>
+  <text x="940" y="194" fill="#e4e4e7">kubectl / GitOps</text>
+  <text x="940" y="214" fill="#8a8a93" font-size="11">same objects, no UI.</text>
+  <text x="940" y="230" fill="#8a8a93" font-size="11">created_by reads unknown</text>
+
+  <!-- ===== arrows ===== -->
+
+  <!-- browser -> server -->
+  <line x1="280" y1="154" x2="338" y2="154" stroke="#a1a1aa" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- scraper -> slack -->
+  <line x1="344" y1="270" x2="286" y2="270" stroke="#86efac" stroke-width="1.5" marker-end="url(#arrow-green)"/>
+  <text x="292" y="326" fill="#8a8a93" font-size="11" text-anchor="middle">grouped per report,</text>
+  <text x="292" y="342" fill="#8a8a93" font-size="11" text-anchor="middle">one message per rule</text>
+
+  <!-- server -> apiserver -->
+  <line x1="600" y1="146" x2="650" y2="146" stroke="#a1a1aa" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <text x="625" y="132" fill="#8a8a93" font-size="11" text-anchor="middle">apply</text>
+
+  <!-- scraper -> apiserver -->
+  <line x1="600" y1="262" x2="650" y2="262" stroke="#a1a1aa" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <text x="625" y="248" fill="#8a8a93" font-size="11" text-anchor="middle">list</text>
+
+  <!-- kubectl -> apiserver -->
+  <line x1="924" y1="200" x2="862" y2="200" stroke="#a1a1aa" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- apiserver -> objects -->
+  <line x1="756" y1="318" x2="756" y2="338" stroke="#a1a1aa" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- configmap -> objects (one-shot migration) -->
+  <line x1="600" y1="400" x2="650" y2="400" stroke="#52525b" stroke-width="1.5" stroke-dasharray="4 4" marker-end="url(#arrow-dim)"/>
+
+  <!-- ===== annotations ===== -->
+  <text x="40" y="500" fill="#71717a" font-size="11">Writes are server-side apply with the field manager trivy-collector, so create and edit are one call and the UI can edit a rule GitOps still claims.</text>
+  <text x="40" y="518" fill="#71717a" font-size="11">Rules are re-listed on every evaluation pass, so an edit takes effect on the next report with no restart. Until the CRD exists the alerts API answers 503.</text>
+</svg>

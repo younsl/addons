@@ -32,6 +32,18 @@ pub struct ErrorQuery {
 }
 
 /// GET /auth/login — Initiate OIDC authorization flow
+#[utoipa::path(
+    get,
+    path = "/auth/login",
+    tag = "Auth",
+    params(
+        ("redirect" = Option<String>, Query, description = "Path to return to after a successful login. Only a same-origin path is honoured."),
+    ),
+    responses(
+        (status = 307, description = "Redirect to the Keycloak authorization endpoint, with the PKCE state in a short-lived cookie"),
+        (status = 503, description = "Authentication is not configured (auth_mode is none)"),
+    )
+)]
 pub async fn login(
     State(state): State<AppState>,
     cookie_jar: PrivateCookieJar,
@@ -70,6 +82,21 @@ pub async fn login(
 }
 
 /// GET /auth/callback — Handle OIDC callback
+#[utoipa::path(
+    get,
+    path = "/auth/callback",
+    tag = "Auth",
+    params(
+        ("code" = Option<String>, Query, description = "Authorization code from the identity provider"),
+        ("state" = Option<String>, Query, description = "Opaque state, matched against the pending-login cookie"),
+        ("error" = Option<String>, Query, description = "Error code, when the provider denied the request"),
+        ("error_description" = Option<String>, Query, description = "Human-readable provider error"),
+    ),
+    responses(
+        (status = 307, description = "Session cookie set, redirect to the originally requested path, or to /auth/error on failure"),
+        (status = 503, description = "Authentication is not configured (auth_mode is none)"),
+    )
+)]
 pub async fn callback(
     State(state): State<AppState>,
     cookie_jar: PrivateCookieJar,
@@ -208,7 +235,7 @@ pub async fn callback(
     path = "/auth/logout",
     tag = "Auth",
     responses(
-        (status = 302, description = "Redirect to login page"),
+        (status = 307, description = "Session cookie cleared, redirect to /auth/login"),
     )
 )]
 pub async fn logout(cookie_jar: PrivateCookieJar) -> impl IntoResponse {
@@ -226,6 +253,17 @@ pub async fn logout(cookie_jar: PrivateCookieJar) -> impl IntoResponse {
 }
 
 /// GET /auth/error — Display authentication error page
+#[utoipa::path(
+    get,
+    path = "/auth/error",
+    tag = "Auth",
+    params(
+        ("reason" = Option<String>, Query, description = "Failure reason. Only known values are rendered; anything else becomes `unknown`, since the value reaches an HTML page."),
+    ),
+    responses(
+        (status = 200, content_type = "text/html", description = "Error page explaining why authentication failed"),
+    )
+)]
 pub async fn auth_error(Query(query): Query<ErrorQuery>) -> impl IntoResponse {
     let raw_reason = query.reason.unwrap_or_else(|| "unknown".to_string());
 
@@ -427,11 +465,13 @@ pub async fn list_tokens(
     post,
     path = "/api/v1/auth/tokens",
     tag = "Auth",
+    request_body = CreateTokenRequest,
     responses(
-        (status = 200, description = "Token created successfully"),
-        (status = 400, description = "Invalid request"),
+        (status = 200, description = "Token created. The plaintext token is returned once and never again"),
+        (status = 400, description = "Invalid token name or expiry"),
         (status = 401, description = "Authentication required"),
         (status = 409, description = "Token name already exists"),
+        (status = 500, description = "Writing the token Secret failed"),
         (status = 503, description = "Token store unavailable"),
     )
 )]
@@ -516,7 +556,8 @@ fn bad_request(message: &str) -> axum::response::Response {
     responses(
         (status = 204, description = "Token deleted"),
         (status = 401, description = "Authentication required"),
-        (status = 404, description = "Token not found"),
+        (status = 404, description = "Token not found, or owned by another user"),
+        (status = 500, description = "Writing the token Secret failed"),
         (status = 503, description = "Token store unavailable"),
     )
 )]

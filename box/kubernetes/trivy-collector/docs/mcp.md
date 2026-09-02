@@ -86,6 +86,14 @@ All tools are read-only and advertise `readOnlyHint: true`. List-style tools acc
 | `get_sbom_report` | `reports:get` | `cluster`, `namespace`, `name`, `component?`, `limit` (max 200), `offset` | Report metadata plus paged components (`name`, `version`, `type`, `purl`) |
 | `search_vulnerabilities` | `reports:get` | `query` (CVE id or package substring), `limit` (max 100), `offset` | One row per affected image |
 | `search_sbom_components` | `reports:get` | `component` (substring), `version?` (exact), `limit` (max 100), `offset` | One row per image containing the component |
+| `list_alert_rules` | `alerts:get` | `package?` (substring), `enabled_only?`, `not_ready_only?`, `limit` (max 100), `offset` | One row per rule: matcher, receiver count, `ready`, `last_fired_at`, `fired_count` |
+| `get_alert_rule` | `alerts:get` | `name` | One rule in full, including its status subresource |
+
+Slack webhook URLs never appear in tool output. `get_alert_rule` replaces each one with `[redacted]` rather than dropping the field, so a caller can still see that a Slack destination is configured. A webhook URL is a credential for posting into a channel, and tool output goes straight into a model's context.
+
+Both alert tools need the Kubernetes API, so they fail with an "unavailable" message when the pod has no API access or the `AlertRule` CRD is not installed. They never answer with an empty list, which would read as "the fleet has no rules". See [Alerts](alerts.md).
+
+`not_ready_only` is the one worth asking an agent for: it returns rules the evaluator refuses to act on, which look enabled but never fire.
 
 Full report JSON is never returned in one call. `get_*_report` tools return metadata plus a paged slice, which keeps a single tool result small enough for an agent context window even for SBOMs with thousands of components.
 
@@ -162,7 +170,8 @@ Responses arrive as `text/event-stream` in session mode. Read the last `data:` l
 |---------|-------|-----|
 | `404` on `/mcp` | MCP disabled | Set `server.mcp.enabled: true` or `MCP_ENABLED=true` |
 | `401` JSON body | Missing or expired Bearer token under `auth.mode=keycloak` | Issue a new API token, check the `Authorization` header reaches the pod |
-| `403` with `"resource":"reports"` | Caller lacks `reports:get` | Grant `role:readonly` or set `RBAC_DEFAULT_POLICY` |
+| `403` with `"resource":"reports"` | Caller lacks `reports:get`, which gates the `/mcp` endpoint itself, not just the report tools | Grant `role:readonly` or set `RBAC_DEFAULT_POLICY` |
+| `403` with `"resource":"alerts"` | Caller reached `/mcp` but lacks `alerts:get` | Grant `alerts:get`; `role:readonly` already has it |
 | `403` or `421` mentioning Host | `MCP_ALLOWED_HOSTS` set but does not include the hostname clients use | Add the hostname or clear the variable |
 | Tool result `RBAC denied: stats:get` | Custom policy grants `reports:get` but not the tool's resource | Extend the policy CSV |
 | Session errors after a pod restart | Sessions are in memory | Client reconnects and re-initializes, or enable `server.mcp.stateless` |

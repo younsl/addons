@@ -207,7 +207,10 @@ import type { AlertMatchers, AlertPreviewResult, AlertRule, AlertRuleInput } fro
 export interface AlertListResponse {
   items: AlertRule[]
   total: number
-  configmap: string
+  /** `group/version` the rules are stored under, e.g. `trivy-collector.security.io/v1alpha1`. */
+  api_version: string
+  /** Plural resource name, e.g. `alertrules`. */
+  resource: string
   namespace: string
 }
 

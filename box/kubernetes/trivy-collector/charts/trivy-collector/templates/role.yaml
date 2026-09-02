@@ -7,6 +7,8 @@ metadata:
   labels:
     {{- include "trivy-collector.labels" . | nindent 4 }}
 rules:
+  # Report notes, the cluster-registration Secret, and the legacy alerts
+  # ConfigMap the collector migrates rules out of on first start.
   - apiGroups: [""]
     resources: ["configmaps", "secrets"]
     verbs:
@@ -17,4 +19,24 @@ rules:
       - update
       - patch
       - delete
+  # Alert rules. The server writes the spec on behalf of the UI, and the
+  # scraper re-lists them on every evaluation pass.
+  - apiGroups: ["trivy-collector.security.io"]
+    resources: ["alertrules"]
+    verbs:
+      - get
+      - list
+      - watch
+      - create
+      - update
+      - patch
+      - delete
+  # The status subresource is a separate grant. The server records authorship
+  # there, and the scraper records firings and the Ready condition.
+  - apiGroups: ["trivy-collector.security.io"]
+    resources: ["alertrules/status"]
+    verbs:
+      - get
+      - update
+      - patch
 {{- end }}

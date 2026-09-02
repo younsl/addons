@@ -130,6 +130,29 @@ pub struct SearchSbomComponentsParams {
     pub offset: Option<i64>,
 }
 
+#[derive(Debug, Default, Deserialize, JsonSchema)]
+pub struct ListAlertRulesParams {
+    /// Keep only rules whose matched package name contains this substring
+    /// (e.g. "log4j").
+    pub package: Option<String>,
+    /// Keep only rules that are enabled. Omit for all rules.
+    pub enabled_only: Option<bool>,
+    /// Keep only rules the evaluator refuses to act on, i.e. whose Ready
+    /// condition is False. Use this to find rules that look active but never
+    /// fire.
+    pub not_ready_only: Option<bool>,
+    /// Page size, 1-100. Default 20.
+    pub limit: Option<i64>,
+    /// Number of rules to skip. Default 0.
+    pub offset: Option<i64>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct GetAlertRuleParams {
+    /// Rule name as shown by list_alert_rules.
+    pub name: String,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

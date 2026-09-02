@@ -3,8 +3,8 @@ name: trivy-collector
 description: Multi-cluster Trivy report collector and viewer
 type: application
 deprecated: false
-version: 0.12.0
-appVersion: "1.7.0"
+version: 0.13.0
+appVersion: "1.8.0"
 keywords:
   - trivy
   - security
@@ -21,12 +21,12 @@ maintainers:
 annotations:
   artifacthub.io/changes: |
     - kind: changed
-      description: "Replace the horizontal header with a foldable sidebar; menus regrouped and search/admin pages promoted to top-level entries"
+      description: "Alert rules move out of the alerts ConfigMap and become AlertRule custom resources in the trivy-collector.security.io API group; the chart installs the CRD under crds.install"
+    - kind: added
+      description: "New crds.install and crds.annotations values, and a Role rule granting the ServiceAccount full verbs on trivy-collector.security.io alertrules"
+    - kind: added
+      description: "Existing rules are imported from the trivy-collector-alerts ConfigMap on first start; the ConfigMap is stamped, never deleted, and stays the rollback"
     - kind: changed
-      description: "Replace Swagger UI with an embedded Scalar reference at /api-docs; the bundle ships in the image, and a CSP plus config opt-out keep it from reaching Scalar's hosted platform"
-    - kind: removed
-      description: "Remove /swagger-ui; the OpenAPI document stays at /api-docs/openapi.json"
+      description: "GET /api/v1/alerts replaces the configmap field with api_version and resource; alert responses now carry real OpenAPI schemas"
     - kind: fixed
-      description: "A scraper configured to watch nothing no longer reports a permanent rebuild; hydration now separates 'nothing to watch' from 'still syncing'"
-    - kind: fixed
-      description: "export-state Job inherits the scraper's nodeSelector, tolerations and affinity; without them it stays Pending on a tainted node and blocks the pre-sync hook it precedes"
+      description: "OpenAPI document reports the status codes the alerts, hub, notes, and token endpoints actually return, and documents the OIDC login, callback, and error routes"

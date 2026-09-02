@@ -86,6 +86,7 @@ For detailed architecture documentation, see [Architecture](docs/architecture.md
 - **Stateless UI tier**: the server holds no database and scales past one replica
 - **VulnerabilityReports + SbomReports** collection from any registered cluster
 - **Keycloak OIDC authentication**: `none` or `keycloak` auth modes, with self-issued API tokens for programmatic access
+- **Alert rules as custom resources**: SBOM component detection rules are `AlertRule` objects in the `trivy-collector.security.io` API group, authored in the UI or applied from Git, delivered to Slack
 - **Embedded MCP server**: opt-in `/mcp` endpoint (Streamable HTTP) so LLM agents such as [kagent](https://kagent.dev/) can query reports with the same auth and RBAC as the API
 - **Structured logging**: JSON/pretty format with configurable levels
 - **OpenAPI documentation**: auto-generated spec at `/api-docs/openapi.json`, rendered by an embedded [Scalar](https://scalar.com/) reference at `/api-docs`. The bundle ships inside the image, so the page needs no CDN and no egress
@@ -206,9 +207,12 @@ CRDs on the central cluster itself. See [RBAC](docs/rbac.md).
 - [Architecture](docs/architecture.md): Hub-pull model, scraper/server split, data flow, registration, RBAC, operational notes
 - [Authentication](docs/authentication.md): [Keycloak](https://www.keycloak.org/) OIDC setup, API token management, and security best practices
 - [Configuration](docs/configuration.md): CLI options, environment variables, and API endpoints
+- [Alerts](docs/alerts.md): The `AlertRule` custom resource, matchers, evaluation, and the migration off the alerts ConfigMap
+- [RBAC](docs/rbac.md): CSV policy format, built-in roles, and the resource/action to endpoint mapping
 - [MCP](docs/mcp.md): Embedded MCP server, tool reference, and kagent `RemoteMCPServer` setup
 - [Helm Chart](docs/helm-chart.md): Helm values reference and installation examples
-- [Upgrading](docs/upgrading.md): Breaking changes and the migration off the PersistentVolume
+- [Upgrading](docs/upgrading.md): Breaking changes and the steps each release needs
+- [Changelog](CHANGELOG.md): What changed in each app and chart version
 - [Development](docs/development.md): Build commands, local testing (`make dev-all`), and release workflow
 - [Troubleshooting](docs/troubleshooting.md): Common issues and solutions
 

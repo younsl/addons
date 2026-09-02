@@ -61,7 +61,7 @@ Every table that used to sit on the PersistentVolume falls into one of three dur
 | report notes | authored | a human typing in the UI | ConfigMap `{release}-notes` |
 | API tokens | authored | a human minting a token | Secret `{release}-api-tokens` |
 | request logs | observational | the server's own request handler | stdout |
-| alert rules | authored | a human | ConfigMap `{release}-alerts` |
+| alert rules | authored | a human, or a Git repository | `AlertRule` custom resources in the release namespace |
 | sessions | derived | the OIDC flow | encrypted cookie |
 
 `reports` is almost all of the bytes and none of the irreplaceable data. Each watcher's stream begins with a full paginated list, so a scraper starting against an empty database rebuilds the complete report set from the source of truth with no extra code and no extra API calls beyond the ones it already makes on every restart. Starting empty also prunes what the old cache accumulated: a CR deleted while the scraper was down used to leave its row behind forever.
@@ -274,8 +274,13 @@ shared ServiceAccount:
 | Object | Scope | Permissions |
 |---|---|---|
 | `ClusterRole` | cluster-wide | Read-only (`get / list / watch`) on `aquasecurity.github.io` `vulnerabilityreports` and `sbomreports`, used by the local watcher on the Hub's own cluster |
-| `Role` | release namespace | `configmaps + secrets` `get / list / watch / create / update / patch / delete`, covers both alerts ConfigMap CRUD and cluster-registration Secret CRUD |
+| `Role` | release namespace | `configmaps + secrets` `get / list / watch / create / update / patch / delete` for report notes and cluster-registration Secrets, plus the same verbs on `trivy-collector.security.io` `alertrules` |
 | `RoleBinding` | release namespace | Binds the above `Role` to the chart ServiceAccount |
+
+The chart also installs one `CustomResourceDefinition`,
+`alertrules.trivy-collector.security.io`, which is cluster-scoped by nature.
+Set `crds.install=false` when it is applied by something else, such as an Argo
+CD Application ordered ahead of this one.
 
 The Role is deliberately namespaced to the release namespace to limit blast
 radius if the Hub is ever compromised.

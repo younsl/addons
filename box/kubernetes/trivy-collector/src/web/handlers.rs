@@ -72,7 +72,9 @@ pub async fn healthz(
     tag = "Reports",
     request_body = ReportEvent,
     responses(
-        (status = 200, description = "Report accepted"),
+        (status = 200, description = "Report forwarded to the scraper"),
+        (status = 404, description = "Unknown event type", body = ErrorResponse),
+        (status = 500, description = "The scraper rejected the report", body = ErrorResponse),
         (status = 502, description = "Scraper unreachable", body = ErrorResponse)
     )
 )]
@@ -395,7 +397,6 @@ pub async fn search_sbom_components(
     params(ComponentSuggestQuery),
     responses(
         (status = 200, description = "Component name suggestions", body = Vec<String>),
-        (status = 400, description = "Missing query parameter"),
         (status = 500, description = "Internal server error")
     )
 )]
@@ -624,6 +625,8 @@ pub async fn delete_report(
         (status = 200, description = "Notes updated successfully"),
         (status = 404, description = "Report not found", body = ErrorResponse),
         (status = 413, description = "Note too large, or the notes store is full", body = ErrorResponse),
+        (status = 500, description = "Writing the notes ConfigMap failed", body = ErrorResponse),
+        (status = 502, description = "Scraper unreachable", body = ErrorResponse),
         (status = 503, description = "Notes store unavailable", body = ErrorResponse),
     )
 )]
@@ -731,7 +734,7 @@ pub async fn get_watcher_status(State(state): State<AppState>) -> impl IntoRespo
     path = "/api/v1/hydration",
     tag = "Watcher",
     responses(
-        (status = 200, description = "Per-cluster hydration status"),
+        (status = 200, description = "Per-cluster hydration status: whether each watcher has finished its initial list"),
         (status = 502, description = "Scraper unreachable", body = ErrorResponse)
     )
 )]

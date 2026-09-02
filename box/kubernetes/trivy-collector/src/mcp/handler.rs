@@ -643,9 +643,109 @@ optionally pinned to an exact version. Returns one row per image containing the 
         })
         .await
     }
+
+    #[tool(
+        description = "List alert rules: which SBOM package each watches, and whether it has fired. \
+Filter by package substring, enabled state, or Ready condition. Slack webhook URLs are redacted. Paged.",
+        annotations(read_only_hint = true)
+    )]
+    async fn list_alert_rules(
+        &self,
+        ext: Extensions,
+        Parameters(p): Parameters<ListAlertRulesParams>,
+    ) -> Result<CallToolResult, McpError> {
+        self.observed(&ext, "list_alert_rules", async {
+            self.authorize(&ext, "alerts", "get")?;
+            let store = self.alert_store()?;
+            let limit = clamp_limit(p.limit, MAX_LIST_LIMIT);
+            let offset = clamp_offset(p.offset);
+
+            let package = p
+                .package
+                .as_deref()
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(str::to_ascii_lowercase);
+            let rules: Vec<_> = store
+                .list()
+                .await
+                .map_err(Self::alert_store_error)?
+                .into_iter()
+                .filter(|r| !p.enabled_only.unwrap_or(false) || r.enabled)
+                .filter(|r| !p.not_ready_only.unwrap_or(false) || !rule_is_ready(r))
+                .filter(|r| match &package {
+                    None => true,
+                    Some(needle) => r
+                        .matchers
+                        .package_name
+                        .as_deref()
+                        .is_some_and(|n| n.to_ascii_lowercase().contains(needle)),
+                })
+                .collect();
+
+            let total = rules.len() as i64;
+            let items: Vec<Value> = rules
+                .iter()
+                .skip(offset as usize)
+                .take(limit as usize)
+                .map(alert_rule_summary)
+                .collect();
+            Self::json_result(&Page::new(items, total, limit, offset))
+        })
+        .await
+    }
+
+    #[tool(
+        description = "Get one alert rule: its matchers, receivers, and what the evaluator has \
+observed (last fired, lifetime firing count, Ready and Delivered conditions). Slack webhook URLs are redacted.",
+        annotations(read_only_hint = true)
+    )]
+    async fn get_alert_rule(
+        &self,
+        ext: Extensions,
+        Parameters(p): Parameters<GetAlertRuleParams>,
+    ) -> Result<CallToolResult, McpError> {
+        self.observed(&ext, "get_alert_rule", async {
+            self.authorize(&ext, "alerts", "get")?;
+            let store = self.alert_store()?;
+            let name = p.name.trim();
+            if name.is_empty() {
+                return Err(McpError::invalid_params("name must not be empty", None));
+            }
+            let rule = store.get(name).await.map_err(Self::alert_store_error)?;
+            Self::json_result(&alert_rule_detail(&rule))
+        })
+        .await
+    }
 }
 
 impl TrivyMcp {
+    /// The alerts subsystem needs a Kubernetes client, so it is absent when
+    /// the pod has no API access. Report that rather than answering as if
+    /// there were no rules.
+    fn alert_store(&self) -> Result<&crate::alerts::AlertStore, McpError> {
+        self.state
+            .alerts
+            .as_ref()
+            .map(|e| e.store())
+            .ok_or_else(|| {
+                McpError::internal_error(
+                    "alert rules are unavailable (no Kubernetes API access)",
+                    None,
+                )
+            })
+    }
+
+    fn alert_store_error(e: crate::alerts::AlertStoreError) -> McpError {
+        match e {
+            crate::alerts::AlertStoreError::NotFound(name) => {
+                McpError::resource_not_found(format!("alert rule '{name}' not found"), None)
+            }
+            crate::alerts::AlertStoreError::Invalid(msg) => McpError::invalid_params(msg, None),
+            other => McpError::internal_error(other.to_string(), None),
+        }
+    }
+
     async fn list_reports(
         &self,
         report_type: &str,
@@ -685,6 +785,77 @@ impl ServerHandler for TrivyMcp {
             .with_instructions(INSTRUCTIONS)
     }
 }
+
+/// Whether the evaluator has said it will act on a rule.
+///
+/// A rule with no status has not been evaluated yet, which is not the same as
+/// broken, so it counts as ready. Only an explicit `Ready=False` does not.
+fn rule_is_ready(rule: &crate::alerts::AlertRule) -> bool {
+    rule.status.as_ref().is_none_or(|s| {
+        s.condition(crate::alerts::crd::CONDITION_READY)
+            .is_none_or(|c| c.status == "True")
+    })
+}
+
+/// One rule as a listing row.
+///
+/// Receivers are reduced to a count and their names. A Slack webhook URL is a
+/// bearer credential for posting into a channel, and this output goes straight
+/// into an LLM context, so it never appears here.
+fn alert_rule_summary(rule: &crate::alerts::AlertRule) -> Value {
+    let status = rule.status.as_ref();
+    serde_json::json!({
+        "name": rule.name,
+        "enabled": rule.enabled,
+        "description": rule.description,
+        "package_name": rule.matchers.package_name,
+        "version_expr": rule.matchers.version_expr,
+        "clusters": rule.matchers.clusters,
+        "namespace": rule.matchers.namespace,
+        "receivers": rule.receivers.len(),
+        "ready": rule_is_ready(rule),
+        "last_fired_at": status.and_then(|s| s.last_fired_at.clone()),
+        "fired_count": status.map(|s| s.fired_count).unwrap_or(0),
+    })
+}
+
+/// One rule in full, with the webhook URL replaced rather than omitted so the
+/// caller can see that a Slack destination is configured.
+fn alert_rule_detail(rule: &crate::alerts::AlertRule) -> Value {
+    let receivers: Vec<Value> = rule
+        .receivers
+        .iter()
+        .map(|r| {
+            serde_json::json!({
+                "name": r.name,
+                "slack": r.slack.as_ref().map(|s| serde_json::json!({
+                    "webhook_url": REDACTED,
+                    "channel": s.channel,
+                    "title": s.title,
+                })),
+            })
+        })
+        .collect();
+    serde_json::json!({
+        "name": rule.name,
+        "description": rule.description,
+        "enabled": rule.enabled,
+        "matchers": rule.matchers,
+        "labels": rule.labels,
+        "annotations": rule.annotations,
+        "receivers": receivers,
+        "cooldown_secs": rule.cooldown_secs,
+        "created_at": rule.created_at,
+        "created_by": rule.created_by,
+        "updated_at": rule.updated_at,
+        "updated_by": rule.updated_by,
+        "generation": rule.generation,
+        "status": rule.status,
+    })
+}
+
+/// Stand-in for a Slack webhook URL in tool output.
+const REDACTED: &str = "[redacted]";
 
 #[cfg(test)]
 mod tests {
@@ -810,10 +981,12 @@ mod tests {
             "get_sbom_report",
             "search_vulnerabilities",
             "search_sbom_components",
+            "list_alert_rules",
+            "get_alert_rule",
         ] {
             assert!(names.contains(&expected.to_string()), "missing {expected}");
         }
-        assert_eq!(names.len(), 9);
+        assert_eq!(names.len(), 11);
     }
 
     #[test]
@@ -850,6 +1023,129 @@ mod tests {
             .unwrap(),
         );
         assert_eq!(v["namespaces"], serde_json::json!(["payments"]));
+    }
+
+    fn alert_rule(name: &str, package: &str) -> crate::alerts::AlertRule {
+        crate::alerts::AlertRule {
+            name: name.to_string(),
+            description: "watch it".to_string(),
+            enabled: true,
+            matchers: crate::alerts::Matchers {
+                package_name: Some(package.to_string()),
+                version_expr: Some("<2.17.0".to_string()),
+                clusters: vec!["prod".to_string()],
+                namespace: None,
+            },
+            labels: Default::default(),
+            annotations: Default::default(),
+            receivers: vec![crate::alerts::Receiver {
+                name: "sec".to_string(),
+                slack: Some(crate::alerts::SlackReceiver {
+                    webhook_url: "https://hooks.slack.com/services/T0/B0/SECRET".to_string(),
+                    channel: Some("#sec".to_string()),
+                    title: None,
+                }),
+            }],
+            cooldown_secs: None,
+            created_at: "2026-01-01T00:00:00Z".to_string(),
+            created_by: "alice".to_string(),
+            updated_at: None,
+            updated_by: None,
+            generation: Some(1),
+            status: None,
+        }
+    }
+
+    /// A webhook URL is a credential for posting into a channel, and tool
+    /// output goes straight into an LLM context. It must never appear there,
+    /// in either shape of output.
+    #[test]
+    fn alert_tool_output_never_carries_a_webhook_url() {
+        let rule = alert_rule("log4shell", "log4j-core");
+
+        let summary = alert_rule_summary(&rule).to_string();
+        assert!(!summary.contains("SECRET"), "summary leaked the webhook");
+        assert!(!summary.contains("hooks.slack.com"));
+
+        let detail = alert_rule_detail(&rule);
+        let text = detail.to_string();
+        assert!(!text.contains("SECRET"), "detail leaked the webhook");
+        assert!(!text.contains("hooks.slack.com"));
+        // Redacted rather than dropped, so the caller can still tell a Slack
+        // destination is configured.
+        assert_eq!(detail["receivers"][0]["slack"]["webhook_url"], REDACTED);
+        assert_eq!(detail["receivers"][0]["slack"]["channel"], "#sec");
+    }
+
+    #[test]
+    fn a_summary_reports_the_matcher_and_the_firing_record() {
+        let mut rule = alert_rule("log4shell", "log4j-core");
+        rule.status = Some(crate::alerts::crd::AlertRuleStatus {
+            last_fired_at: Some("2026-09-02T09:00:00Z".to_string()),
+            fired_count: 4,
+            ..Default::default()
+        });
+        let v = alert_rule_summary(&rule);
+        assert_eq!(v["name"], "log4shell");
+        assert_eq!(v["package_name"], "log4j-core");
+        assert_eq!(v["version_expr"], "<2.17.0");
+        assert_eq!(v["receivers"], 1, "a count, not the receivers themselves");
+        assert_eq!(v["fired_count"], 4);
+        assert_eq!(v["last_fired_at"], "2026-09-02T09:00:00Z");
+        assert_eq!(v["ready"], true);
+    }
+
+    /// A rule that has never been evaluated is not broken, so it must not be
+    /// reported as not-ready. Only an explicit Ready=False is.
+    #[test]
+    fn readiness_distinguishes_unevaluated_from_rejected() {
+        let mut rule = alert_rule("log4shell", "log4j-core");
+        assert!(rule_is_ready(&rule), "no status yet is not a failure");
+
+        rule.status = Some(crate::alerts::crd::AlertRuleStatus::default());
+        assert!(
+            rule_is_ready(&rule),
+            "a status with no Ready condition either"
+        );
+
+        let mut status = crate::alerts::crd::AlertRuleStatus::default();
+        status.set_condition(
+            crate::alerts::crd::CONDITION_READY,
+            false,
+            "InvalidVersionExpr",
+            "bad",
+            None,
+        );
+        rule.status = Some(status);
+        assert!(!rule_is_ready(&rule));
+    }
+
+    /// Both alert tools need a Kubernetes client. Without one they have to say
+    /// so, not answer as though the fleet has no rules.
+    #[tokio::test]
+    async fn the_alert_tools_report_an_unavailable_subsystem() {
+        let mcp = seeded().await;
+        assert!(mcp.state.alerts.is_none());
+
+        let err = mcp
+            .list_alert_rules(
+                Extensions::new(),
+                Parameters(ListAlertRulesParams::default()),
+            )
+            .await
+            .expect_err("must not answer with an empty list");
+        assert!(err.message.contains("unavailable"), "{}", err.message);
+
+        let err = mcp
+            .get_alert_rule(
+                Extensions::new(),
+                Parameters(GetAlertRuleParams {
+                    name: "log4shell".into(),
+                }),
+            )
+            .await
+            .expect_err("must not answer as not-found");
+        assert!(err.message.contains("unavailable"), "{}", err.message);
     }
 
     #[tokio::test]

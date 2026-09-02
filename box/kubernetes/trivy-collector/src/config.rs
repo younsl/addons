@@ -75,6 +75,13 @@ impl std::fmt::Display for Mode {
 pub enum Command {
     /// Show version information
     Version,
+    /// Print the `AlertRule` CustomResourceDefinition as JSON, which `kubectl
+    /// apply -f -` accepts directly.
+    ///
+    /// The definition is generated from the Rust type the collector reads, so
+    /// this is the only place the schema is authored. `make crd` renders it
+    /// into the Helm chart.
+    Crd,
     /// One-shot migration off a PersistentVolume: read an existing SQLite
     /// database and write its authored state (API tokens, report notes) to a
     /// Secret and a ConfigMap through the API server.

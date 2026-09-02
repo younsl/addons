@@ -1,8 +1,12 @@
 //! Match an incoming SBOM report against alert rules and dispatch to
-//! receivers. Rules are reloaded from the ConfigMap on each evaluation pass;
-//! a per-rule, per-target cooldown prevents Slack flooding when reports
-//! arrive frequently. Matches from a single report are collected per rule
-//! and dispatched as one grouped message to avoid per-finding fan-out.
+//! receivers. Rules are re-listed from the API server on each evaluation
+//! pass, and a per-rule, per-target cooldown prevents Slack flooding when
+//! reports arrive frequently. Matches from a single report are collected per
+//! rule and dispatched as one grouped message to avoid per-finding fan-out.
+//!
+//! What happened is written back to each rule's status subresource, but only
+//! when it changed: a firing, or a `Ready` transition. A write per rule per
+//! report would put the API server on the ingest path.
 //!
 //! Scope: SBOM component detection only. Vulnerability/CVE-based alerting
 //! is out of scope for this subsystem.
@@ -16,7 +20,7 @@ use tracing::{debug, error};
 
 use super::expr::VersionExpr;
 use super::notifier::{AlertContext, SlackNotifier, TestDeliveryResult};
-use super::store::AlertStore;
+use super::store::{AlertStore, FiringOutcome};
 use super::types::AlertRule;
 use crate::collector::types::{ReportPayload, SbomReportData};
 use crate::storage::{ReportStore, SbomComponentMatch};
@@ -130,7 +134,31 @@ impl AlertEvaluator {
         let expr = match rule.matchers.version_expr.as_deref() {
             Some(s) => match VersionExpr::parse(s) {
                 Ok(e) => Some(e),
-                Err(_) => return,
+                // An unparseable expression used to make the rule silently
+                // inert: listed, apparently enabled, never firing. Say so on
+                // the rule itself, and only when the condition is not already
+                // saying it, so this is not an API write per report.
+                Err(msg) => {
+                    let already_reported = rule
+                        .status
+                        .as_ref()
+                        .is_some_and(|s| !s.is_condition_true(super::crd::CONDITION_READY));
+                    if !already_reported
+                        && let Err(e) = self
+                            .store
+                            .record_not_ready(
+                                &rule.name,
+                                rule.status.as_ref(),
+                                rule.generation,
+                                "InvalidVersionExpr",
+                                &msg,
+                            )
+                            .await
+                    {
+                        debug!(rule = %rule.name, error = %e, "Failed to record rule status");
+                    }
+                    return;
+                }
             },
             None => None,
         };
@@ -194,7 +222,45 @@ impl AlertEvaluator {
         )
         .await
         .unwrap_or(0);
-        self.notifier.fire(rule, &contexts, other_workloads).await;
+        let outcome = self.notifier.fire(rule, &contexts, other_workloads).await;
+        self.record_firing(rule, payload, contexts.len(), other_workloads, &outcome)
+            .await;
+    }
+
+    /// Put the firing on the rule's status subresource. Best-effort: the
+    /// notification has already gone out, and losing the record of it must not
+    /// look like a failed alert.
+    async fn record_firing(
+        &self,
+        rule: &AlertRule,
+        payload: &ReportPayload,
+        finding_count: usize,
+        other_workloads: usize,
+        outcome: &super::notifier::FireOutcome,
+    ) {
+        let workload = format!("{}/{}/{}", payload.cluster, payload.namespace, payload.name);
+        let result = self
+            .store
+            .record_firing(
+                &rule.name,
+                rule.status.as_ref(),
+                FiringOutcome {
+                    workload: &workload,
+                    finding_count: finding_count as u32,
+                    // The scope hint counts the others; the blast radius
+                    // includes the workload that just fired.
+                    matching_workloads: other_workloads.saturating_add(1) as u32,
+                    generation: rule.generation,
+                    failure: outcome
+                        .all_failed()
+                        .then_some(())
+                        .and(outcome.last_error.as_deref()),
+                },
+            )
+            .await;
+        if let Err(e) = result {
+            debug!(rule = %rule.name, error = %e, "Failed to record alert firing on the rule status");
+        }
     }
 
     async fn try_acquire(&self, key: &str, cooldown_secs: Option<u64>) -> bool {
@@ -469,6 +535,8 @@ mod tests {
             created_by: "test".to_string(),
             updated_at: None,
             updated_by: None,
+            generation: None,
+            status: None,
         }
     }
 

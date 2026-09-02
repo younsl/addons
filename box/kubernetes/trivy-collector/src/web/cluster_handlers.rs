@@ -263,7 +263,8 @@ async fn probe_cluster(parsed: &ClusterSecret) -> (bool, String, u64) {
     path = "/api/v1/hub/clusters",
     tag = "Hub",
     responses(
-        (status = 200, description = "Registered clusters", body = Vec<RegisteredCluster>)
+        (status = 200, description = "Registered clusters", body = Vec<RegisteredCluster>),
+        (status = 500, description = "Reading the registration Secret failed", body = ErrorResponse)
     )
 )]
 pub async fn list_registered_clusters(State(state): State<AppState>) -> impl IntoResponse {
@@ -331,7 +332,8 @@ pub async fn list_registered_clusters(State(state): State<AppState>) -> impl Int
     responses(
         (status = 201, description = "Cluster registered", body = RegisteredCluster),
         (status = 400, description = "Invalid request", body = ErrorResponse),
-        (status = 412, description = "Hub mode not enabled", body = ErrorResponse)
+        (status = 412, description = "Hub mode not enabled", body = ErrorResponse),
+        (status = 500, description = "Writing the registration Secret failed", body = ErrorResponse)
     )
 )]
 pub async fn register_cluster(
@@ -422,7 +424,10 @@ pub async fn register_cluster(
     params(("name" = String, Path, description = "Cluster name")),
     responses(
         (status = 204, description = "Cluster removed"),
-        (status = 404, description = "Cluster not found", body = ErrorResponse)
+        (status = 400, description = "Invalid cluster name", body = ErrorResponse),
+        (status = 403, description = "The local cluster cannot be deregistered", body = ErrorResponse),
+        (status = 404, description = "Cluster not found", body = ErrorResponse),
+        (status = 500, description = "Writing the registration Secret failed", body = ErrorResponse)
     )
 )]
 pub async fn delete_registered_cluster(

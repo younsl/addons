@@ -302,9 +302,11 @@ mod tests {
             .iter()
             .map(|t| t["name"].as_str().unwrap())
             .collect();
-        assert_eq!(names.len(), 9);
+        assert_eq!(names.len(), 11);
         assert!(names.contains(&"get_stats"));
         assert!(names.contains(&"search_sbom_components"));
+        assert!(names.contains(&"list_alert_rules"));
+        assert!(names.contains(&"get_alert_rule"));
         let stats_tool = tools["result"]["tools"]
             .as_array()
             .unwrap()

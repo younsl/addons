@@ -201,7 +201,8 @@ export default function AlertsPage() {
           <h2 className={styles.headerTitle}>Alert Rules</h2>
           {meta && (
             <div className={styles.headerMeta}>
-              ConfigMap <code>{meta.configmap}</code> in namespace <code>{meta.namespace}</code> · {meta.total} rule(s)
+              <code>{meta.resource}.{meta.api_version.split('/')[0]}</code> in namespace{' '}
+              <code>{meta.namespace}</code> · {meta.total} rule(s)
             </div>
           )}
         </div>
