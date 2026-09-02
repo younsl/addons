@@ -5,8 +5,7 @@
 [![Rust](https://img.shields.io/badge/rust-1.98.0-black?style=flat-square&logo=rust&logoColor=white)](https://www.rust-lang.org/)
 [![GitHub license](https://img.shields.io/github/license/younsl/o?style=flat-square&color=black)](https://github.com/younsl/o/blob/main/LICENSE)
 
-Prometheus exporter that polls the EC2 DescribeInstances API and publishes
-every instance's private IP and Name tag as metric labels. Built with Rust 1.98 and shipped as a statically linked musl binary (cargo-zigbuild) on a scratch image.
+Prometheus exporter that polls the EC2 DescribeInstances API and publishes every instance's identity, placement, and IMDS configuration as metric labels. Built with Rust 1.98 and shipped as a statically linked musl binary (cargo-zigbuild) on a scratch image.
 
 ## Architecture
 

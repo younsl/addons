@@ -16,8 +16,9 @@ scrapes natively.
 
 | Metric | Type | Description |
 |--------|------|-------------|
-| `ec2_metadata_instance_info{instance_id, name, private_ip, instance_type, availability_zone, state, lifecycle, architecture}` | Gauge | Always 1. One series per non-terminated instance with a private IP. `lifecycle` is `on-demand` or `spot`; `architecture` is `x86_64`, `arm64`, etc. |
+| `ec2_metadata_instance_info{instance_id, name, private_ip, private_dns_name, instance_type, availability_zone, state, lifecycle, architecture}` | Gauge | Always 1. One series per non-terminated instance with a private IP. `lifecycle` is `on-demand` or `spot`, `architecture` is `x86_64`, `arm64`, etc. `private_dns_name` is also the Kubernetes node name on EKS clusters using the default IP-based naming, so it joins directly onto `kube_node_info`. |
 | `ec2_metadata_instance_launch_time_seconds{instance_id, name}` | Gauge | Unix timestamp of the instance's most recent launch. Resets on stop/start, so `time()` minus this value is uptime since the last boot, not since creation. Omitted when EC2 returns no launch time. |
+| `ec2_metadata_instance_metadata_options{instance_id, name, http_tokens, http_endpoint, hop_limit}` | Gauge | Always 1. IMDS configuration. `http_tokens` is `required` on IMDSv2-only instances and `optional` while IMDSv1 still answers. `hop_limit` below 2 stops containers from reaching IMDS at all. Omitted when EC2 returns no metadata options block. |
 | `ec2_metadata_instances{state}` | Gauge | Instance count from the last successful scrape, broken down by instance state. Sum over `state` for the total. |
 | `ec2_metadata_scrape_errors_total` | Counter | EC2 API scrape failures. |
 | `ec2_metadata_scrape_duration_seconds` | Histogram | EC2 API scrape duration. Buckets from 50ms to ~25.6s. |
@@ -27,10 +28,11 @@ scrapes natively.
 Example output:
 
 ```
-ec2_metadata_instance_info{instance_id="i-0abc123",name="web-1",private_ip="10.0.1.10",instance_type="m5.large",availability_zone="ap-northeast-2a",state="running",lifecycle="on-demand",architecture="x86_64"} 1
+ec2_metadata_instance_info{instance_id="i-0abc123",name="web-1",private_ip="10.0.1.10",private_dns_name="ip-10-0-1-10.ap-northeast-2.compute.internal",instance_type="m5.large",availability_zone="ap-northeast-2a",state="running",lifecycle="on-demand",architecture="x86_64"} 1
 ec2_metadata_instance_launch_time_seconds{instance_id="i-0abc123",name="web-1"} 1.752994800e+09
+ec2_metadata_instance_metadata_options{instance_id="i-0abc123",name="web-1",http_tokens="required",http_endpoint="enabled",hop_limit="2"} 1
 ec2_metadata_instances{state="running"} 1
-ec2_metadata_build_info{version="0.1.1",commit="0e44eb2",rust_version="1.98.0"} 1
+ec2_metadata_build_info{version="0.2.0",commit="0e44eb2",rust_version="1.98.0"} 1
 ```
 
 Instance metrics are served from an in-memory snapshot that is swapped
@@ -55,6 +57,9 @@ snapshot lands. When a refresh fails, the previous snapshot keeps serving and
 | Scrape latency p99 | `histogram_quantile(0.99, rate(ec2_metadata_scrape_duration_seconds_bucket[5m]))` |
 | Staleness (seconds since last success) | `time() - ec2_metadata_last_scrape_success_timestamp_seconds` |
 | Deployed exporter versions | `count by (version, rust_version) (ec2_metadata_build_info)` |
+| Kubernetes node to EC2 join | `kube_node_info * on (node) group_left (instance_type, lifecycle) label_replace(ec2_metadata_instance_info, "node", "$1", "private_dns_name", "(.*)")` |
+| Instances still answering IMDSv1 | `ec2_metadata_instance_metadata_options{http_tokens="optional"}` |
+| Instances whose hop limit blocks pod IMDS access | `ec2_metadata_instance_metadata_options{hop_limit="1"}` |
 
 ## Alerting hints
 
@@ -65,6 +70,20 @@ snapshot lands. When a refresh fails, the previous snapshot keeps serving and
   usually indicates IAM or EC2 API throttling problems.
 - A rising `ec2_metadata_scrape_duration_seconds` p99 signals EC2 API
   throttling or a growing instance fleet before errors start appearing.
+- Alert on any `ec2_metadata_instance_metadata_options{http_tokens="optional"}`
+  series to catch instances that never enforced IMDSv2.
+
+## Cardinality
+
+`ec2_metadata_instance_info`, `ec2_metadata_instance_launch_time_seconds` and
+`ec2_metadata_instance_metadata_options` each produce one series per instance,
+so the exporter's series count is roughly three times the fleet size. Adding a
+label to one of those metrics costs bytes per scrape but no extra series.
+
+EC2 tags other than `Name` are not collected. On Kubernetes nodes the same
+information already arrives through `kube_node_labels`, and tag compliance
+belongs to AWS Config or the Resource Groups Tagging API rather than to a
+Prometheus exporter.
 
 ## Readiness behavior
 

@@ -2,9 +2,12 @@
 
 use aws_sdk_ec2::Client;
 use aws_sdk_ec2::primitives::DateTime;
-use aws_sdk_ec2::types::{Filter, Instance as SdkInstance, InstanceLifecycleType, Placement, Tag};
+use aws_sdk_ec2::types::{
+    Filter, Instance as SdkInstance, InstanceLifecycleType, InstanceMetadataOptionsResponse,
+    Placement, Tag,
+};
 
-use crate::types::Instance;
+use crate::types::{Instance, MetadataOptions};
 
 /// Instance states the exporter publishes. Terminated instances are excluded
 /// server-side so they never reach the snapshot.
@@ -76,6 +79,7 @@ fn convert(inst: &SdkInstance) -> Option<Instance> {
         id: inst.instance_id().unwrap_or_default().to_string(),
         name: name_tag(inst.tags()),
         private_ip,
+        private_dns_name: inst.private_dns_name().unwrap_or_default().to_string(),
         instance_type: inst
             .instance_type()
             .map(|t| t.as_str().to_string())
@@ -92,7 +96,24 @@ fn convert(inst: &SdkInstance) -> Option<Instance> {
             .map(|a| a.as_str().to_string())
             .unwrap_or_default(),
         launch_time: inst.launch_time().map(DateTime::secs),
+        metadata_options: inst.metadata_options().map(metadata_options),
     })
+}
+
+/// EC2 leaves individual metadata fields unset on older instances; an empty
+/// label value is the honest answer for those.
+fn metadata_options(opts: &InstanceMetadataOptionsResponse) -> MetadataOptions {
+    MetadataOptions {
+        http_tokens: opts
+            .http_tokens()
+            .map(|t| t.as_str().to_string())
+            .unwrap_or_default(),
+        http_endpoint: opts
+            .http_endpoint()
+            .map(|e| e.as_str().to_string())
+            .unwrap_or_default(),
+        hop_limit: opts.http_put_response_hop_limit(),
+    }
 }
 
 fn availability_zone(placement: Option<&Placement>) -> String {
@@ -126,7 +147,8 @@ mod tests {
         DescribeInstancesError, DescribeInstancesOutput,
     };
     use aws_sdk_ec2::types::{
-        ArchitectureValues, InstanceState, InstanceStateName, InstanceType, Reservation,
+        ArchitectureValues, HttpTokensState, InstanceMetadataEndpointState, InstanceState,
+        InstanceStateName, InstanceType, Reservation,
     };
     use aws_smithy_mocks::{RuleMode, mock, mock_client};
 
@@ -148,8 +170,18 @@ mod tests {
                     .build(),
             )
             .launch_time(DateTime::from_secs(1_752_994_800))
+            .metadata_options(
+                InstanceMetadataOptionsResponse::builder()
+                    .http_tokens(HttpTokensState::Required)
+                    .http_endpoint(InstanceMetadataEndpointState::Enabled)
+                    .http_put_response_hop_limit(2)
+                    .build(),
+            )
             .tags(Tag::builder().key("env").value("prod").build())
             .tags(Tag::builder().key("Name").value("web-1").build());
+        if let Some(ip) = ip {
+            b = b.private_dns_name(format!("ip-{}.internal", ip.replace('.', "-")));
+        }
         if let Some(ip) = ip {
             b = b.private_ip_address(ip);
         }
@@ -176,12 +208,18 @@ mod tests {
                 id: "i-0abc123".into(),
                 name: "web-1".into(),
                 private_ip: "10.0.1.10".into(),
+                private_dns_name: "ip-10-0-1-10.internal".into(),
                 instance_type: "m5.large".into(),
                 availability_zone: "ap-northeast-2a".into(),
                 state: "running".into(),
                 lifecycle: "on-demand".into(),
                 architecture: "x86_64".into(),
                 launch_time: Some(1_752_994_800),
+                metadata_options: Some(MetadataOptions {
+                    http_tokens: "required".into(),
+                    http_endpoint: "enabled".into(),
+                    hop_limit: Some(2),
+                }),
             }
         );
     }
@@ -197,15 +235,29 @@ mod tests {
             &SdkInstance::builder()
                 .private_ip_address("10.0.0.1")
                 .instance_lifecycle(InstanceLifecycleType::Spot)
+                .metadata_options(InstanceMetadataOptionsResponse::builder().build())
                 .build(),
         )
         .expect("has ip");
         assert_eq!(inst.id, "");
         assert_eq!(inst.name, "");
+        assert_eq!(inst.private_dns_name, "");
         assert_eq!(inst.availability_zone, "");
         assert_eq!(inst.state, "");
         assert_eq!(inst.lifecycle, "spot");
         assert_eq!(inst.launch_time, None);
+        assert_eq!(inst.metadata_options, Some(MetadataOptions::default()));
+    }
+
+    #[test]
+    fn convert_omits_metadata_options_when_absent() {
+        let inst = convert(
+            &SdkInstance::builder()
+                .private_ip_address("10.0.0.1")
+                .build(),
+        )
+        .expect("has ip");
+        assert_eq!(inst.metadata_options, None);
     }
 
     #[test]

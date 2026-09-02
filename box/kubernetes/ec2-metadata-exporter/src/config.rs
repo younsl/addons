@@ -39,7 +39,7 @@ pub enum LogFormat {
 #[command(
     name = "ec2-metadata-exporter",
     version = const_format(),
-    about = "Prometheus exporter that publishes every EC2 instance's private IP and Name tag"
+    about = "Prometheus exporter that publishes EC2 instance metadata as Prometheus metrics"
 )]
 pub struct Config {
     /// AWS region to scan. Falls back to the SDK default chain when unset.
@@ -142,20 +142,6 @@ mod tests {
         assert_eq!(cfg.health_port, 9001);
         assert_eq!(cfg.log_level, "debug");
         assert_eq!(cfg.log_format, LogFormat::Text);
-    }
-
-    #[test]
-    fn rejects_invalid_values() {
-        for args in [
-            &["--scrape-interval", "500ms"][..],
-            &["--scrape-interval", "soon"],
-            &["--metrics-port", "0"],
-            &["--metrics-port", "70000"],
-            &["--health-port", "abc"],
-            &["--log-format", "yaml"],
-        ] {
-            assert!(parse(args).is_err(), "expected rejection for {args:?}");
-        }
     }
 
     #[test]

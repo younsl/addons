@@ -1,9 +1,9 @@
 apiVersion: v2
 name: ec2-metadata-exporter
-description: Prometheus exporter that publishes every EC2 instance's private IP and Name tag via the DescribeInstances API
+description: Prometheus exporter that publishes EC2 instance metadata from the DescribeInstances API as Prometheus metrics
 type: application
-version: 0.1.0
-appVersion: "0.1.1"
+version: 0.2.0
+appVersion: "0.2.0"
 keywords:
   - aws
   - ec2

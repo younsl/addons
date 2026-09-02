@@ -143,7 +143,7 @@ impl PromCollector for SnapshotCollector {
 
         let mut info = encoder.encode_descriptor(
             "ec2_metadata_instance_info",
-            "EC2 instance metadata. Value is always 1; labels carry the private IP, Name tag, instance type, availability zone, lifecycle (on-demand or spot), and CPU architecture",
+            "EC2 instance metadata. Value is always 1; labels carry the private IP, private DNS name (the Kubernetes node name on EKS), Name tag, instance type, availability zone, state, lifecycle (on-demand or spot), and CPU architecture",
             None,
             MetricType::Gauge,
         )?;
@@ -167,6 +167,26 @@ impl PromCollector for SnapshotCollector {
                 ];
                 #[allow(clippy::cast_precision_loss)]
                 ConstGauge(ts as f64).encode(launch.encode_family(&labels)?)?;
+            }
+        }
+
+        let mut options = encoder.encode_descriptor(
+            "ec2_metadata_instance_metadata_options",
+            "Instance Metadata Service configuration. Value is always 1; http_tokens is required for IMDSv2-only instances and optional when IMDSv1 still answers, and hop_limit below 2 blocks containers from reaching IMDS",
+            None,
+            MetricType::Gauge,
+        )?;
+        for inst in &snapshot {
+            if let Some(opts) = &inst.metadata_options {
+                let hop_limit = opts.hop_limit.map(|h| h.to_string()).unwrap_or_default();
+                let labels = [
+                    ("instance_id", inst.id.as_str()),
+                    ("name", inst.name.as_str()),
+                    ("http_tokens", opts.http_tokens.as_str()),
+                    ("http_endpoint", opts.http_endpoint.as_str()),
+                    ("hop_limit", hop_limit.as_str()),
+                ];
+                ConstGauge(1.0).encode(options.encode_family(&labels)?)?;
             }
         }
 
@@ -212,6 +232,7 @@ mod tests {
     use prometheus_client::encoding::text::encode;
 
     use super::*;
+    use crate::types::MetadataOptions;
 
     #[derive(Default)]
     struct FakeSource {
@@ -246,12 +267,18 @@ mod tests {
             id: id.into(),
             name: format!("name-{id}"),
             private_ip: ip.into(),
+            private_dns_name: format!("ip-{}.internal", ip.replace('.', "-")),
             instance_type: "m5.large".into(),
             availability_zone: "ap-northeast-2a".into(),
             state: state.into(),
             lifecycle: "on-demand".into(),
             architecture: "x86_64".into(),
             launch_time: Some(1_752_994_800),
+            metadata_options: Some(MetadataOptions {
+                http_tokens: "required".into(),
+                http_endpoint: "enabled".into(),
+                hop_limit: Some(2),
+            }),
         }
     }
 
@@ -288,7 +315,10 @@ mod tests {
 
         let out = render(&registry);
         assert!(out.contains(
-            r#"ec2_metadata_instance_info{instance_id="i-1",name="name-i-1",private_ip="10.0.0.1",instance_type="m5.large",availability_zone="ap-northeast-2a",state="running",lifecycle="on-demand",architecture="x86_64"} 1"#
+            r#"ec2_metadata_instance_info{instance_id="i-1",name="name-i-1",private_ip="10.0.0.1",private_dns_name="ip-10-0-0-1.internal",instance_type="m5.large",availability_zone="ap-northeast-2a",state="running",lifecycle="on-demand",architecture="x86_64"} 1"#
+        ), "{out}");
+        assert!(out.contains(
+            r#"ec2_metadata_instance_metadata_options{instance_id="i-1",name="name-i-1",http_tokens="required",http_endpoint="enabled",hop_limit="2"} 1"#
         ), "{out}");
         assert!(out.contains(r#"ec2_metadata_instance_launch_time_seconds{instance_id="i-1",name="name-i-1"} 1752994800"#), "{out}");
         assert!(
@@ -321,6 +351,36 @@ mod tests {
         let out = render(&registry);
         assert!(!out.contains(r#"instance_id="i-1""#), "{out}");
         assert!(out.contains(r#"instance_id="i-2""#), "{out}");
+    }
+
+    #[tokio::test]
+    async fn metadata_options_omitted_when_absent() {
+        let mut inst = instance("i-1", "10.0.0.1", "running");
+        inst.metadata_options = None;
+        let (collector, _, _, registry) = setup(vec![Ok(vec![inst])]);
+        collector.refresh().await;
+        let out = render(&registry);
+        assert!(
+            !out.contains("ec2_metadata_instance_metadata_options{"),
+            "{out}"
+        );
+    }
+
+    #[tokio::test]
+    async fn metadata_options_hop_limit_empty_when_missing() {
+        let mut inst = instance("i-1", "10.0.0.1", "running");
+        inst.metadata_options = Some(MetadataOptions {
+            http_tokens: "optional".into(),
+            http_endpoint: "enabled".into(),
+            hop_limit: None,
+        });
+        let (collector, _, _, registry) = setup(vec![Ok(vec![inst])]);
+        collector.refresh().await;
+        let out = render(&registry);
+        assert!(
+            out.contains(r#"http_tokens="optional",http_endpoint="enabled",hop_limit=""#),
+            "{out}"
+        );
     }
 
     #[tokio::test]

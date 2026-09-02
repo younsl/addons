@@ -1,5 +1,6 @@
 //! Prometheus exporter that polls the EC2 `DescribeInstances` API and exposes
-//! every instance's private IP and Name tag as metric labels.
+//! every instance's identity, placement, and IMDS configuration as metric
+//! labels.
 
 mod app;
 mod aws;
