@@ -26,6 +26,15 @@ pub struct MetadataOptions {
     pub hop_limit: Option<i32>,
 }
 
+impl MetadataOptions {
+    /// Whether `IMDSv1` still answers on this instance. EC2 has no version
+    /// field: `required` tokens mean `IMDSv2` only, `optional` means both
+    /// versions answer, and a disabled endpoint answers neither.
+    pub fn imdsv1_allowed(&self) -> bool {
+        self.http_endpoint != "disabled" && self.http_tokens == "optional"
+    }
+}
+
 /// Subset of EC2 instance data the exporter publishes.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 #[allow(clippy::struct_field_names)]
@@ -61,5 +70,28 @@ impl Instance {
             &self.lifecycle,
             &self.architecture,
         ]
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn opts(endpoint: &str, tokens: &str) -> MetadataOptions {
+        MetadataOptions {
+            http_tokens: tokens.into(),
+            http_endpoint: endpoint.into(),
+            hop_limit: Some(2),
+        }
+    }
+
+    #[test]
+    fn imdsv1_allowed_only_for_enabled_optional_endpoints() {
+        assert!(opts("enabled", "optional").imdsv1_allowed());
+        assert!(!opts("enabled", "required").imdsv1_allowed());
+        assert!(!opts("disabled", "optional").imdsv1_allowed());
+        assert!(!opts("disabled", "required").imdsv1_allowed());
+        // EC2 omitted both fields, so nothing claims IMDSv1 is reachable.
+        assert!(!MetadataOptions::default().imdsv1_allowed());
     }
 }

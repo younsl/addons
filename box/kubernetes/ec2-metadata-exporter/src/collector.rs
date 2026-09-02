@@ -172,7 +172,7 @@ impl PromCollector for SnapshotCollector {
 
         let mut options = encoder.encode_descriptor(
             "ec2_metadata_instance_metadata_options",
-            "Instance Metadata Service configuration. Value is always 1; http_tokens is required for IMDSv2-only instances and optional when IMDSv1 still answers, and hop_limit below 2 blocks containers from reaching IMDS",
+            "Instance Metadata Service configuration. Value is always 1; imdsv1_allowed is true while the instance still answers IMDSv1, and hop_limit below 2 blocks containers from reaching IMDS",
             None,
             MetricType::Gauge,
         )?;
@@ -185,6 +185,14 @@ impl PromCollector for SnapshotCollector {
                     ("http_tokens", opts.http_tokens.as_str()),
                     ("http_endpoint", opts.http_endpoint.as_str()),
                     ("hop_limit", hop_limit.as_str()),
+                    (
+                        "imdsv1_allowed",
+                        if opts.imdsv1_allowed() {
+                            "true"
+                        } else {
+                            "false"
+                        },
+                    ),
                 ];
                 ConstGauge(1.0).encode(options.encode_family(&labels)?)?;
             }
@@ -318,7 +326,7 @@ mod tests {
             r#"ec2_metadata_instance_info{instance_id="i-1",name="name-i-1",private_ip="10.0.0.1",private_dns_name="ip-10-0-0-1.internal",instance_type="m5.large",availability_zone="ap-northeast-2a",state="running",lifecycle="on-demand",architecture="x86_64"} 1"#
         ), "{out}");
         assert!(out.contains(
-            r#"ec2_metadata_instance_metadata_options{instance_id="i-1",name="name-i-1",http_tokens="required",http_endpoint="enabled",hop_limit="2"} 1"#
+            r#"ec2_metadata_instance_metadata_options{instance_id="i-1",name="name-i-1",http_tokens="required",http_endpoint="enabled",hop_limit="2",imdsv1_allowed="false"} 1"#
         ), "{out}");
         assert!(out.contains(r#"ec2_metadata_instance_launch_time_seconds{instance_id="i-1",name="name-i-1"} 1752994800"#), "{out}");
         assert!(
