@@ -14,7 +14,8 @@ Alert rules become Kubernetes objects.
 
 - `AlertRule` custom resource in the `trivy-collector.security.io` API group (`v1alpha1`, namespaced, plural `alertrules`, short name `tcalert`). One object per rule, so `kubectl get alertrules` shows exactly what the UI writes and a rule can be applied from Git.
 - A `status` subresource carrying what the collector observed: `lastFiredAt`, `lastFiredWorkload`, `lastFindingCount`, `matchingWorkloads`, `firedCount`, `observedGeneration`, and `Ready` / `Delivered` conditions. `kubectl get alertrules` prints `READY`, `FIRED`, and `LAST-FIRED`.
-- `Ready=False` with reason `InvalidVersionExpr` on a rule the evaluator cannot parse. Such a rule used to be silently inert: listed, apparently enabled, never firing.
+- `Ready=False` with reason `InvalidVersionExpr` on a rule the evaluator cannot parse, or `Disabled` on one that is switched off. Such a rule used to be silently inert: listed, apparently enabled, never firing.
+- `Ready=True` is set on the first evaluation pass, not as a side effect of firing, so a correct rule watching a package nobody runs reports `Ready=True` with `firedCount: 0` rather than a blank column. Readiness is reconciled before the cluster and namespace narrowing, so a rule scoped to other clusters reports on itself too, and a newer `metadata.generation` is re-acknowledged even when the verdict is unchanged.
 - One-shot import of the `trivy-collector-alerts` ConfigMap on startup. Idempotent, skips names that already exist, stamps the ConfigMap with `trivy-collector.security.io/migrated-at`, and never deletes it.
 - `trivy-collector crd` prints the CustomResourceDefinition as JSON for `kubectl apply -f -`. `make crd` renders the same definition into the chart, so the schema is authored once, in Rust.
 - Chart values `crds.install`, `crds.keep`, `crds.annotations`, and `crds.additionalLabels`. The CRD ships in `templates/`, not `crds/`, because Helm never upgrades anything in `crds/`.

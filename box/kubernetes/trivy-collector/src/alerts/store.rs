@@ -211,6 +211,25 @@ impl AlertStore {
         Ok(())
     }
 
+    /// Record that the evaluator will act on a rule.
+    ///
+    /// Separate from `record_firing` on purpose: readiness is true as soon as
+    /// the rule is well formed, and most rules never fire. Folding it into the
+    /// firing path left every correct rule with an empty `Ready`.
+    pub async fn record_ready(
+        &self,
+        name: &str,
+        previous: Option<&AlertRuleStatus>,
+        generation: Option<i64>,
+    ) -> Result<(), AlertStoreError> {
+        let mut status = previous.cloned().unwrap_or_default();
+        status.observed_generation = generation;
+        status.set_condition(crd::CONDITION_READY, true, "Validated", "", generation);
+        self.patch_status(name, &serde_json::json!({ "status": status }))
+            .await?;
+        Ok(())
+    }
+
     /// Record that the evaluator cannot act on a rule, with the reason.
     ///
     /// Without this an unparseable version expression makes a rule silently

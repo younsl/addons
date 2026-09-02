@@ -102,10 +102,14 @@ status:
 
 | Type | `True` | `False` |
 |---|---|---|
-| `Ready` | `Validated`, the evaluator will act on the rule | `InvalidVersionExpr`, with the parse error in `message` |
+| `Ready` | `Validated`, the evaluator will act on the rule | `Disabled`, or `InvalidVersionExpr` with the parse error in `message` |
 | `Delivered` | `Delivered`, the last dispatch reached Slack | `DeliveryFailed`, with the receiver and error in `message` |
 
-`Ready=False` is the one worth alerting on yourself. Before this existed, an unparseable `versionExpr` made a rule silently inert: listed, apparently enabled, never firing.
+`Ready` says whether the evaluator will act on the rule, not whether it has ever matched anything. A rule watching a package nobody runs is `Ready=True` with `firedCount: 0`, which is the correct answer.
+
+`Ready=False` is the one worth alerting on yourself. An unparseable `versionExpr` otherwise makes a rule silently inert: listed, apparently enabled, never firing.
+
+Both conditions are absent until the scraper has seen the rule, which happens on the first SBOM report it ingests after the rule is created. On a fleet with reports flowing that is seconds; on an idle one it waits. A blank `READY` therefore means "not looked at yet", and `observedGeneration` tells you which revision was looked at.
 
 `lastTransitionTime` moves only when `status` flips, not when the evaluator re-confirms it, so it answers how long the rule has been in this state.
 
@@ -116,7 +120,7 @@ status:
 | `spec` | The UI through the server pod, or kubectl / GitOps | A person edits the rule |
 | `status` audit fields | server pod | Once per create or edit, right after the spec apply |
 | `status` firing fields and `Delivered` | scraper pod | Only on an actual firing |
-| `status.conditions[Ready]` | scraper pod | Only on a transition |
+| `status.conditions[Ready]` | scraper pod | First evaluation pass after the rule is created, then only on a change |
 
 The scraper deliberately does not write status on every ingested report. That would be one API call per rule per report, with the API server on the ingest path. It also means a single scraper replica is what makes the `firedCount` read-modify-write safe, which the chart already guarantees.
 

@@ -100,6 +100,13 @@ impl AlertEvaluator {
         // once per evaluation pass. Empty set when prev is missing or
         // unparseable; that case treats every match as new.
         let prev_keys = prev_data_json.map(extract_finding_keys).unwrap_or_default();
+        for rule in &rules {
+            // Readiness is a property of the rule, not of the report in hand,
+            // so it is reconciled before the cluster and namespace narrowing
+            // below. Otherwise a rule scoped to other clusters would never say
+            // anything about itself.
+            self.reconcile_readiness(rule).await;
+        }
         for rule in rules.iter().filter(|r| r.enabled) {
             if !rule.matchers.clusters.is_empty()
                 && !rule.matchers.clusters.contains(&payload.cluster)
@@ -112,6 +119,48 @@ impl AlertEvaluator {
                 continue;
             }
             self.evaluate_sbom(rule, payload, &prev_keys, db).await;
+        }
+    }
+
+    /// Make the rule's `Ready` condition say whether the evaluator will act on
+    /// it, writing only when that answer has changed.
+    ///
+    /// Readiness used to be recorded only as a side effect of firing, which
+    /// left every correct-but-unfired rule with no condition at all. That is
+    /// the state most rules live in, and a blank `READY` column was
+    /// indistinguishable from a rule the scraper had never looked at.
+    ///
+    /// The transition check is what keeps this off the hot path: after the
+    /// first pass the answer is already stored, so no further writes happen no
+    /// matter how many reports arrive. The status was read from the same list
+    /// call that produced `rule`, so the check costs no extra request.
+    async fn reconcile_readiness(&self, rule: &AlertRule) {
+        let Readiness {
+            ready,
+            reason,
+            message,
+        } = readiness_for(rule);
+        if readiness_already_recorded(rule, ready, reason, &message) {
+            return;
+        }
+
+        let result = if ready {
+            self.store
+                .record_ready(&rule.name, rule.status.as_ref(), rule.generation)
+                .await
+        } else {
+            self.store
+                .record_not_ready(
+                    &rule.name,
+                    rule.status.as_ref(),
+                    rule.generation,
+                    reason,
+                    &message,
+                )
+                .await
+        };
+        if let Err(e) = result {
+            debug!(rule = %rule.name, error = %e, "Failed to record alert rule readiness");
         }
     }
 
@@ -131,34 +180,12 @@ impl AlertEvaluator {
                 return;
             }
         };
+        // An unparseable expression is already reported as Ready=False by
+        // `reconcile_readiness`, so this only has to decline to match.
         let expr = match rule.matchers.version_expr.as_deref() {
             Some(s) => match VersionExpr::parse(s) {
                 Ok(e) => Some(e),
-                // An unparseable expression used to make the rule silently
-                // inert: listed, apparently enabled, never firing. Say so on
-                // the rule itself, and only when the condition is not already
-                // saying it, so this is not an API write per report.
-                Err(msg) => {
-                    let already_reported = rule
-                        .status
-                        .as_ref()
-                        .is_some_and(|s| !s.is_condition_true(super::crd::CONDITION_READY));
-                    if !already_reported
-                        && let Err(e) = self
-                            .store
-                            .record_not_ready(
-                                &rule.name,
-                                rule.status.as_ref(),
-                                rule.generation,
-                                "InvalidVersionExpr",
-                                &msg,
-                            )
-                            .await
-                    {
-                        debug!(rule = %rule.name, error = %e, "Failed to record rule status");
-                    }
-                    return;
-                }
+                Err(_) => return,
             },
             None => None,
         };
@@ -278,6 +305,63 @@ impl AlertEvaluator {
         }
         true
     }
+}
+
+/// What a rule's `Ready` condition should say.
+struct Readiness {
+    ready: bool,
+    reason: &'static str,
+    message: String,
+}
+
+/// Decide whether the evaluator will act on a rule.
+///
+/// Readiness does not depend on whether the rule has ever matched anything: a
+/// rule watching a package nobody runs is correct and ready, it simply has
+/// nothing to fire on.
+fn readiness_for(rule: &AlertRule) -> Readiness {
+    if !rule.enabled {
+        return Readiness {
+            ready: false,
+            reason: "Disabled",
+            message: String::new(),
+        };
+    }
+    match rule.matchers.version_expr.as_deref() {
+        Some(expr) => match VersionExpr::parse(expr) {
+            Ok(_) => Readiness {
+                ready: true,
+                reason: "Validated",
+                message: String::new(),
+            },
+            Err(message) => Readiness {
+                ready: false,
+                reason: "InvalidVersionExpr",
+                message,
+            },
+        },
+        None => Readiness {
+            ready: true,
+            reason: "Validated",
+            message: String::new(),
+        },
+    }
+}
+
+/// Whether the rule's stored condition already says exactly this, in which
+/// case there is nothing to write. `observedGeneration` is part of the
+/// comparison so an edit is re-acknowledged even when the verdict is
+/// unchanged.
+fn readiness_already_recorded(rule: &AlertRule, ready: bool, reason: &str, message: &str) -> bool {
+    rule.status
+        .as_ref()
+        .and_then(|s| s.condition(super::crd::CONDITION_READY))
+        .is_some_and(|c| {
+            c.status == if ready { "True" } else { "False" }
+                && c.reason == reason
+                && c.message == message
+                && c.observed_generation == rule.generation
+        })
 }
 
 #[derive(serde::Deserialize)]
@@ -577,6 +661,126 @@ mod tests {
         .await
         .unwrap();
         db
+    }
+
+    /// The bug this covers: readiness used to be written only as a side effect
+    /// of firing, so a correct rule watching a package nobody runs stayed
+    /// blank forever. That is the state most rules live in.
+    #[test]
+    fn a_correct_rule_is_ready_before_it_has_ever_fired() {
+        let rule = rule_for_axios(Some("<2.17.0"));
+        assert!(rule.status.is_none(), "never evaluated yet");
+
+        let r = readiness_for(&rule);
+        assert!(r.ready);
+        assert_eq!(r.reason, "Validated");
+        assert!(r.message.is_empty());
+    }
+
+    #[test]
+    fn a_rule_without_a_version_expression_is_ready() {
+        let r = readiness_for(&rule_for_axios(None));
+        assert!(r.ready);
+        assert_eq!(r.reason, "Validated");
+    }
+
+    #[test]
+    fn an_unparseable_version_expression_is_not_ready_and_carries_the_error() {
+        let r = readiness_for(&rule_for_axios(Some(">=")));
+        assert!(!r.ready);
+        assert_eq!(r.reason, "InvalidVersionExpr");
+        assert!(!r.message.is_empty(), "the parse error is the useful part");
+    }
+
+    /// A disabled rule is stored and listed but never evaluated, so it has to
+    /// say that rather than leave the column blank.
+    #[test]
+    fn a_disabled_rule_reports_why_it_is_not_ready() {
+        let mut rule = rule_for_axios(None);
+        rule.enabled = false;
+        let r = readiness_for(&rule);
+        assert!(!r.ready);
+        assert_eq!(r.reason, "Disabled");
+    }
+
+    /// The transition check is what keeps readiness off the hot path: after
+    /// the first pass no further writes happen however many reports arrive.
+    #[test]
+    fn readiness_is_written_once_and_then_left_alone() {
+        let mut rule = rule_for_axios(None);
+        rule.generation = Some(3);
+        let r = readiness_for(&rule);
+        assert!(
+            !readiness_already_recorded(&rule, r.ready, r.reason, &r.message),
+            "nothing stored yet, so the first pass must write"
+        );
+
+        let mut status = crate::alerts::crd::AlertRuleStatus::default();
+        status.set_condition(
+            crate::alerts::crd::CONDITION_READY,
+            r.ready,
+            r.reason,
+            &r.message,
+            rule.generation,
+        );
+        rule.status = Some(status);
+        assert!(
+            readiness_already_recorded(&rule, r.ready, r.reason, &r.message),
+            "the stored condition already says this, so no second write"
+        );
+    }
+
+    /// An edit bumps the generation, and the acknowledgement has to follow it
+    /// even when the verdict is unchanged, or observedGeneration would sit
+    /// permanently behind.
+    #[test]
+    fn an_edit_is_re_acknowledged_even_when_the_verdict_is_unchanged() {
+        let mut rule = rule_for_axios(None);
+        rule.generation = Some(1);
+        let r = readiness_for(&rule);
+        let mut status = crate::alerts::crd::AlertRuleStatus::default();
+        status.set_condition(
+            crate::alerts::crd::CONDITION_READY,
+            r.ready,
+            r.reason,
+            &r.message,
+            Some(1),
+        );
+        rule.status = Some(status);
+        assert!(readiness_already_recorded(
+            &rule, r.ready, r.reason, &r.message
+        ));
+
+        rule.generation = Some(2);
+        assert!(
+            !readiness_already_recorded(&rule, r.ready, r.reason, &r.message),
+            "a newer generation must be acknowledged"
+        );
+    }
+
+    /// A rule that goes from broken to fixed has to flip, not stay stuck on
+    /// the stored failure.
+    #[test]
+    fn a_fixed_expression_flips_the_stored_verdict() {
+        let mut rule = rule_for_axios(Some(">="));
+        let bad = readiness_for(&rule);
+        let mut status = crate::alerts::crd::AlertRuleStatus::default();
+        status.set_condition(
+            crate::alerts::crd::CONDITION_READY,
+            bad.ready,
+            bad.reason,
+            &bad.message,
+            rule.generation,
+        );
+        rule.status = Some(status);
+
+        rule.matchers.version_expr = Some("<2.17.0".to_string());
+        let good = readiness_for(&rule);
+        assert!(good.ready);
+        assert!(
+            !readiness_already_recorded(&rule, good.ready, good.reason, &good.message),
+            "the stored condition still says InvalidVersionExpr, so this must write"
+        );
     }
 
     #[tokio::test]

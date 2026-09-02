@@ -21,12 +21,18 @@ maintainers:
 annotations:
   artifacthub.io/changes: |
     - kind: changed
-      description: "Alert rules move out of the alerts ConfigMap and become AlertRule custom resources in the trivy-collector.security.io API group; the chart installs the CRD under crds.install"
+      description: "Alert rules move out of the alerts ConfigMap and become AlertRule custom resources in the trivy-collector.security.io API group. The chart installs the CRD under crds.install"
     - kind: added
-      description: "New crds.install and crds.annotations values, and a Role rule granting the ServiceAccount full verbs on trivy-collector.security.io alertrules"
+      description: "New crds.install, crds.keep, crds.annotations and crds.additionalLabels values, and Role rules granting the ServiceAccount full verbs on trivy-collector.security.io alertrules plus the alertrules/status subresource"
     - kind: added
-      description: "Existing rules are imported from the trivy-collector-alerts ConfigMap on first start; the ConfigMap is stamped, never deleted, and stays the rollback"
+      description: "A status subresource records who authored a rule, when it last fired, its lifetime firing count, and Ready and Delivered conditions. kubectl get alertrules prints READY, FIRED and LAST-FIRED"
+    - kind: added
+      description: "Existing rules are imported from the trivy-collector-alerts ConfigMap on first start. The ConfigMap is stamped, never deleted, and stays the rollback"
+    - kind: added
+      description: "MCP tools list_alert_rules and get_alert_rule, gated on alerts:get, with Slack webhook URLs redacted"
     - kind: changed
-      description: "GET /api/v1/alerts replaces the configmap field with api_version and resource; alert responses now carry real OpenAPI schemas"
+      description: "GET /api/v1/alerts replaces the configmap field with api_version and resource. Alert responses now carry real OpenAPI schemas"
+    - kind: fixed
+      description: "A rule's Ready condition is set on the first evaluation pass rather than only when the rule fires, so a correct rule watching a package nobody runs reports Ready=True with firedCount 0. A disabled rule reports Ready=False with reason Disabled"
     - kind: fixed
       description: "OpenAPI document reports the status codes the alerts, hub, notes, and token endpoints actually return, and documents the OIDC login, callback, and error routes"
