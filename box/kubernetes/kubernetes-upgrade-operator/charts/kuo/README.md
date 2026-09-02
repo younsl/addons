@@ -74,7 +74,9 @@ The following table lists the configurable parameters and their default values.
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | crds.install | bool | `true` | Whether to install CRDs. Set to false if CRDs are managed externally. |
+| crds.keep | bool | `true` | Whether to keep CRDs on chart uninstall. |
 | crds.annotations | object | `{}` | Annotations to add to the CRD resources. |
+| crds.additionalLabels | object | `{}` | Additional labels to add to the CRD resources. |
 | replicaCount | int | `1` | Number of operator replicas to run. |
 | revisionHistoryLimit | int | `5` | Number of old ReplicaSets to retain for rollback. |
 | image.registry | string | `"ghcr.io"` | Container image registry host, prefixed to `repository`. Set empty when `repository` carries the full path. |

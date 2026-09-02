@@ -1,8 +1,12 @@
 crds:
   # -- (bool) Whether to install CRDs. Set to false if CRDs are managed externally.
   install: true
+  # -- (bool) Whether to keep CRDs on chart uninstall.
+  keep: true
   # -- (object) Annotations to add to the CRD resources.
   annotations: {}
+  # -- (object) Additional labels to add to the CRD resources.
+  additionalLabels: {}
 
 # -- (int) Number of operator replicas to run.
 replicaCount: 1

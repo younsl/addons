@@ -28,3 +28,7 @@ annotations:
       description: "Verify the Grafana endpoint is reachable at startup, classifying an unreachable endpoint apart from a refused token, and log the response code and latency of every Grafana request"
     - kind: changed
       description: "A missing or refused Grafana token logs a warning and disables annotating instead of stopping the operator, so annotation setup can never block an upgrade"
+    - kind: added
+      description: "Add crds.keep to set helm.sh/resource-policy: keep on the CRD so an uninstall leaves EKSUpgrade objects in place, defaulting to true"
+    - kind: added
+      description: "Add crds.additionalLabels to label the CRD alongside the chart's own labels"

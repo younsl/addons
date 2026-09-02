@@ -5,9 +5,17 @@ metadata:
   name: eksupgrades.kuo.io
   labels:
     {{- include "kuo.labels" . | nindent 4 }}
-  {{- with .Values.crds.annotations }}
-  annotations:
+    {{- with .Values.crds.additionalLabels }}
     {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- if or .Values.crds.keep .Values.crds.annotations }}
+  annotations:
+    {{- if .Values.crds.keep }}
+    helm.sh/resource-policy: keep
+    {{- end }}
+    {{- with .Values.crds.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
   {{- end }}
 spec:
   group: kuo.io
