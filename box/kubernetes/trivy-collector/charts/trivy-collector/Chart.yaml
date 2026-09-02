@@ -33,6 +33,6 @@ annotations:
     - kind: changed
       description: "GET /api/v1/alerts replaces the configmap field with api_version and resource. Alert responses now carry real OpenAPI schemas"
     - kind: fixed
-      description: "A rule's Ready condition is set on the first evaluation pass rather than only when the rule fires, so a correct rule watching a package nobody runs reports Ready=True with firedCount 0. A disabled rule reports Ready=False with reason Disabled"
+      description: "A rule's Ready condition is answered by a watch on the rules rather than only when the rule fires, so a correct rule watching a package nobody runs reports Ready=True with firedCount 0 and a new rule is answered immediately. A disabled rule reports Ready=False with reason Disabled"
     - kind: fixed
       description: "OpenAPI document reports the status codes the alerts, hub, notes, and token endpoints actually return, and documents the OIDC login, callback, and error routes"

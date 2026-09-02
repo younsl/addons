@@ -60,7 +60,9 @@ impl AlertStore {
         crd::PLURAL
     }
 
-    fn api(&self) -> Api<crd::AlertRule> {
+    /// The typed API for the rules. Public so `alerts::readiness` can watch
+    /// them without being handed a second client.
+    pub fn api(&self) -> Api<crd::AlertRule> {
         Api::namespaced(self.client.clone(), &self.namespace)
     }
 

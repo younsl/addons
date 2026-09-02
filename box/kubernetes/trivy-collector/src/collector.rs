@@ -88,6 +88,18 @@ pub async fn run(
     // identically to the hub's own cluster and to every registered edge.
     let scope = WatchScope::from_config(&config);
 
+    // Rule readiness is watched, not polled, and deliberately not driven off
+    // the report ingest path: whether the evaluator will act on a rule has
+    // nothing to do with when Trivy Operator next rescans. See
+    // `alerts::readiness`.
+    let rule_readiness_handle = alerts.as_ref().map(|eval| {
+        let store = eval.store().clone();
+        let shutdown_rx = shutdown.clone();
+        tokio::spawn(async move {
+            crate::alerts::readiness::run_watch(store, shutdown_rx).await;
+        })
+    });
+
     let local_handle =
         spawn_local_watcher(&config, &db, &watcher_status, &alerts, &scope, &shutdown);
     let hub_handle = spawn_hub_watcher(&config, &db, &watcher_status, &alerts, &scope, &shutdown);
@@ -111,6 +123,7 @@ pub async fn run(
         Some(api_handle),
         local_handle,
         hub_handle,
+        rule_readiness_handle,
         Some(readiness),
         Some(metrics_handle),
     ]
