@@ -311,7 +311,7 @@ pub struct PreviewRequest {
 
 #[utoipa::path(
     post,
-    path = "/api/v1/alerts/preview",
+    path = "/api/v1/alert-drafts/preview",
     tag = "Alerts",
     request_body = PreviewRequest,
     responses(
@@ -335,7 +335,7 @@ pub async fn preview_alert(
 
 #[utoipa::path(
     post,
-    path = "/api/v1/alerts/test",
+    path = "/api/v1/alert-drafts/test",
     tag = "Alerts",
     request_body = AlertRuleInput,
     responses(
@@ -553,13 +553,30 @@ mod tests {
         assert!(state.alerts.is_none());
         Router::new()
             .route("/api/v1/alerts", get(list_alerts).post(create_alert))
-            .route("/api/v1/alerts/preview", post(preview_alert))
-            .route("/api/v1/alerts/test", post(test_alert_draft))
+            .route("/api/v1/alert-drafts/preview", post(preview_alert))
+            .route("/api/v1/alert-drafts/test", post(test_alert_draft))
             .route(
                 "/api/v1/alerts/{name}",
                 get(get_alert).put(update_alert).delete(delete_alert),
             )
             .with_state(state)
+    }
+
+    fn rule_body(name: &str) -> String {
+        serde_json::json!({
+            "name": name,
+            "description": "",
+            "enabled": true,
+            "matchers": {"package_name": "axios"},
+            "labels": {},
+            "annotations": {},
+            "receivers": [{
+                "name": "sec",
+                "slack": {"webhook_url": "https://hooks.slack.com/services/T0/B0/x"}
+            }],
+            "cooldown_secs": null
+        })
+        .to_string()
     }
 
     fn slack_receiver(name: &str, webhook_url: &str) -> Receiver {
@@ -612,7 +629,7 @@ mod tests {
             ("POST", "/api/v1/alerts", Some(draft.as_str())),
             ("PUT", "/api/v1/alerts/log4j", Some(draft.as_str())),
             ("DELETE", "/api/v1/alerts/log4j", None),
-            ("POST", "/api/v1/alerts/test", Some(draft.as_str())),
+            ("POST", "/api/v1/alert-drafts/test", Some(draft.as_str())),
         ] {
             let resp = send(method, uri, body).await;
             assert_eq!(
@@ -629,12 +646,35 @@ mod tests {
         }
     }
 
+    /// The draft actions still answer on their own collection, which is the
+    /// other half of the move.
+    #[tokio::test]
+    async fn the_draft_actions_answer_under_alert_drafts() {
+        let resp = send(
+            "POST",
+            "/api/v1/alert-drafts/preview",
+            Some(r#"{"matchers":{"package_name":"axios"}}"#),
+        )
+        .await;
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        // No Kubernetes client in this harness, so test dispatch is
+        // unavailable rather than 404 or 405.
+        let resp = send(
+            "POST",
+            "/api/v1/alert-drafts/test",
+            Some(rule_body("draft").as_str()),
+        )
+        .await;
+        assert_eq!(resp.status(), StatusCode::SERVICE_UNAVAILABLE);
+    }
+
     #[tokio::test]
     async fn preview_runs_off_the_report_store_not_the_alert_store() {
         // Preview only reads reports, so it works even with no Kubernetes API.
         let resp = send(
             "POST",
-            "/api/v1/alerts/preview",
+            "/api/v1/alert-drafts/preview",
             Some(r#"{"matchers":{"package_name":"log4j-core"}}"#),
         )
         .await;
@@ -650,7 +690,7 @@ mod tests {
     async fn preview_rejects_an_unparseable_version_expression() {
         let resp = send(
             "POST",
-            "/api/v1/alerts/preview",
+            "/api/v1/alert-drafts/preview",
             Some(r#"{"matchers":{"package_name":"axios","version_expr":">="}}"#),
         )
         .await;

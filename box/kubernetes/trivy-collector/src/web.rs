@@ -591,12 +591,18 @@ pub(crate) fn build_router(
             "/api/v1/alerts",
             get(alert_handlers::list_alerts).post(alert_handlers::create_alert),
         )
+        // Preview and test act on an unsaved draft, not on a stored rule, so
+        // they get their own collection. Under `/api/v1/alerts/` they were
+        // static segments, and matchit prefers a static segment over `{name}`,
+        // which made a rule actually named `test` or `preview` unreachable for
+        // GET, PUT and DELETE: the request matched the action route, which
+        // only accepts POST, and came back 405.
         .route(
-            "/api/v1/alerts/preview",
+            "/api/v1/alert-drafts/preview",
             post(alert_handlers::preview_alert),
         )
         .route(
-            "/api/v1/alerts/test",
+            "/api/v1/alert-drafts/test",
             post(alert_handlers::test_alert_draft),
         )
         .route(
@@ -938,7 +944,7 @@ mod tests {
         for path in [
             "/api/v1/alerts",
             "/api/v1/alerts/{name}",
-            "/api/v1/alerts/test",
+            "/api/v1/alert-drafts/test",
         ] {
             let methods = doc["paths"][path].as_object().expect(path);
             for (method, op) in methods {
@@ -974,6 +980,65 @@ mod tests {
             "/api/v1/auth/me",
         ] {
             assert_eq!(get(uri).await.status(), StatusCode::OK, "{uri}");
+        }
+    }
+
+    /// A rule named `test` or `preview` used to be unreachable through the
+    /// real router. The draft actions sat at `/api/v1/alerts/test` and
+    /// `/api/v1/alerts/preview`, and matchit prefers a static path segment
+    /// over a `{name}` parameter, so `DELETE /api/v1/alerts/test` matched the
+    /// POST-only action route and came back 405 instead of deleting the rule.
+    /// Observed in production on a rule somebody had, reasonably, called
+    /// `test`.
+    ///
+    /// This has to exercise `build_router`, not a hand-rolled route table: the
+    /// bug was in how the production routes shadow each other, so a test that
+    /// registers its own routes would pass either way.
+    #[tokio::test]
+    async fn a_rule_named_after_a_draft_action_is_still_addressable() {
+        for name in ["test", "preview"] {
+            for method in ["GET", "PUT", "DELETE"] {
+                let uri = format!("/api/v1/alerts/{name}");
+                let request = axum::http::Request::builder()
+                    .method(method)
+                    .uri(&uri)
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from("{}"))
+                    .unwrap();
+                let resp = router_without_auth().await.oneshot(request).await.unwrap();
+                assert_ne!(
+                    resp.status(),
+                    StatusCode::METHOD_NOT_ALLOWED,
+                    "{method} {uri} matched the draft action route instead of the rule"
+                );
+            }
+        }
+    }
+
+    /// The other half of that move: the draft actions still answer, on their
+    /// own collection.
+    #[tokio::test]
+    async fn the_draft_actions_are_routed_under_alert_drafts() {
+        for path in ["/api/v1/alert-drafts/preview", "/api/v1/alert-drafts/test"] {
+            let request = axum::http::Request::builder()
+                .method("POST")
+                .uri(path)
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(
+                    r#"{"matchers":{"package_name":"axios"},"name":"d","receivers":[]}"#,
+                ))
+                .unwrap();
+            let resp = router_without_auth().await.oneshot(request).await.unwrap();
+            assert_ne!(
+                resp.status(),
+                StatusCode::METHOD_NOT_ALLOWED,
+                "POST {path} is not routed"
+            );
+            assert_ne!(
+                resp.status(),
+                StatusCode::NOT_FOUND,
+                "POST {path} is not routed"
+            );
         }
     }
 

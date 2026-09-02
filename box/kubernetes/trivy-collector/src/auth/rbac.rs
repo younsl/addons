@@ -315,10 +315,12 @@ fn resolve_post(path: &str) -> Option<(&'static str, &'static str)> {
     if path == "/api/v1/auth/tokens" {
         return Some(("tokens", "create"));
     }
-    if path == "/api/v1/alerts/preview" {
+    // Draft actions. Reading what a matcher would match is a read, sending a
+    // real Slack message is not.
+    if path == "/api/v1/alert-drafts/preview" {
         return Some(("alerts", "get"));
     }
-    if path == "/api/v1/alerts/test" {
+    if path == "/api/v1/alert-drafts/test" {
         return Some(("alerts", "create"));
     }
     if path == "/api/v1/alerts" {

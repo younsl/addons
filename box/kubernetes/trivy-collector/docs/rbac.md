@@ -43,8 +43,8 @@ g, platform-team, role:admin
 | `tokens` | `get` | `GET /api/v1/auth/tokens` |
 | `tokens` | `create` | `POST /api/v1/auth/tokens` |
 | `tokens` | `delete` | `DELETE /api/v1/auth/tokens/{prefix}` |
-| `alerts` | `get` | `GET /api/v1/alerts`, `GET /api/v1/alerts/{name}`, `POST /api/v1/alerts/preview`, and the `list_alert_rules` / `get_alert_rule` MCP tools |
-| `alerts` | `create` | `POST /api/v1/alerts` (create rule), `POST /api/v1/alerts/test` (send Slack test) |
+| `alerts` | `get` | `GET /api/v1/alerts`, `GET /api/v1/alerts/{name}`, `POST /api/v1/alert-drafts/preview`, and the `list_alert_rules` / `get_alert_rule` MCP tools |
+| `alerts` | `create` | `POST /api/v1/alerts` (create rule), `POST /api/v1/alert-drafts/test` (send Slack test) |
 | `alerts` | `update` | `PUT /api/v1/alerts/{name}` |
 | `alerts` | `delete` | `DELETE /api/v1/alerts/{name}` |
 

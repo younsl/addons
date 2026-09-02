@@ -33,6 +33,7 @@ Alert rules become Kubernetes objects.
 
 ### Fixed
 
+- A rule named `test` or `preview` is addressable. The draft actions sat at `POST /api/v1/alerts/test` and `/api/v1/alerts/preview`, and a static path segment beats a `{name}` parameter, so `GET`, `PUT` and `DELETE` on a rule with either name matched the POST-only action route and returned `405`. Both moved to `POST /api/v1/alert-drafts/{preview,test}`, which cannot collide with a rule name.
 - The OpenAPI document reports the status codes the alerts, hub, notes, and token endpoints actually return. Previously undocumented `400`, `422`, `500`, `502`, and `503` cases now appear, a `400` the SBOM component suggest endpoint never returns is gone, and `POST /api/v1/auth/tokens` declares the request body it takes.
 - The OIDC `/auth/login`, `/auth/callback`, and `/auth/error` routes are documented rather than served but absent from the spec.
 - A Slack delivery failure is recorded on the rule as `Delivered=False` with the receiver and error, instead of only a log line.

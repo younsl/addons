@@ -34,5 +34,7 @@ annotations:
       description: "GET /api/v1/alerts replaces the configmap field with api_version and resource. Alert responses now carry real OpenAPI schemas"
     - kind: fixed
       description: "A rule's Ready condition is answered by a watch on the rules rather than only when the rule fires, so a correct rule watching a package nobody runs reports Ready=True with firedCount 0 and a new rule is answered immediately. A disabled rule reports Ready=False with reason Disabled"
+    - kind: changed
+      description: "Alert preview and test move from POST /api/v1/alerts/{preview,test} to POST /api/v1/alert-drafts/{preview,test}. Under the old paths a rule named test or preview was unreachable for GET, PUT and DELETE, because a static path segment wins over the name parameter and the action route accepts only POST"
     - kind: fixed
       description: "OpenAPI document reports the status codes the alerts, hub, notes, and token endpoints actually return, and documents the OIDC login, callback, and error routes"

@@ -259,7 +259,7 @@ export async function updateAlert(name: string, rule: AlertRuleInput): Promise<A
 }
 
 export async function previewAlert(matchers: AlertMatchers): Promise<AlertPreviewResult> {
-  const res = await fetch('/api/v1/alerts/preview', {
+  const res = await fetch('/api/v1/alert-drafts/preview', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ matchers }),
@@ -279,7 +279,7 @@ export async function previewAlert(matchers: AlertMatchers): Promise<AlertPrevie
 export async function testAlertDraft(
   rule: AlertRuleInput,
 ): Promise<import('./types').AlertTestResponse> {
-  const res = await fetch('/api/v1/alerts/test', {
+  const res = await fetch('/api/v1/alert-drafts/test', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(rule),

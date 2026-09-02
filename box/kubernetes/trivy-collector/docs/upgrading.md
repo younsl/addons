@@ -31,6 +31,12 @@ Leaving it in place is harmless: once stamped, it is never read again. Deleting 
 
 `templates/role.yaml` now also grants full verbs on `trivy-collector.security.io` `alertrules`. A release with `serviceAccount.create=false` needs that rule added to whatever Role you bind yourself, or every alerts read and write returns `403`.
 
+### Alert preview and test moved
+
+`POST /api/v1/alerts/preview` and `POST /api/v1/alerts/test` are now `POST /api/v1/alert-drafts/preview` and `POST /api/v1/alert-drafts/test`. The UI ships with the image, so nothing to do unless you call them directly.
+
+They had to move: a static path segment beats a `{name}` parameter, so a rule actually named `test` or `preview` was unreachable for `GET`, `PUT` and `DELETE`, returning `405` from the POST-only action route. The RBAC pairs are unchanged, `alerts:get` for preview and `alerts:create` for test.
+
 ### The alerts API response changed shape
 
 `GET /api/v1/alerts` replaced `configmap` with `api_version` and `resource`, naming the Kubernetes resource the rules came from. `items` is unchanged: the HTTP schema stays snake_case, and the camelCase custom resource is converted in one place. Every other alerts endpoint is unchanged.

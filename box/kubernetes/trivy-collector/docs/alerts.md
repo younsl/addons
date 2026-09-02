@@ -158,8 +158,10 @@ The HTTP API is snake_case, as the rest of this API is, while the stored object 
 
 Two endpoints let an author check a rule before saving it:
 
-- `POST /api/v1/alerts/preview` reports which workloads in the current report store match a set of matchers. It reads only reports, so it works even with no Kubernetes API access.
-- `POST /api/v1/alerts/test` sends a real Slack message built from stored reports, so the operator sees what a production firing will look like rather than a mock. It returns `422` when nothing matches, because there is nothing realistic to send.
+- `POST /api/v1/alert-drafts/preview` reports which workloads in the current report store match a set of matchers. It reads only reports, so it works even with no Kubernetes API access.
+- `POST /api/v1/alert-drafts/test` sends a real Slack message built from stored reports, so the operator sees what a production firing will look like rather than a mock. It returns `422` when nothing matches, because there is nothing realistic to send.
+
+They live under `alert-drafts` rather than `alerts` because they act on a payload that was never stored. Under `/api/v1/alerts/` they were static path segments, and a static segment beats a `{name}` parameter, so a rule actually named `test` or `preview` became unreachable for `GET`, `PUT` and `DELETE`: the request matched the action route, which accepts only `POST`, and came back `405`.
 
 ## Installing the CRD
 
