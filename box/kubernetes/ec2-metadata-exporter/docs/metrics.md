@@ -58,9 +58,42 @@ snapshot lands. When a refresh fails, the previous snapshot keeps serving and
 | Staleness (seconds since last success) | `time() - ec2_metadata_last_scrape_success_timestamp_seconds` |
 | Deployed exporter versions | `count by (version, rust_version) (ec2_metadata_build_info)` |
 | Kubernetes node to EC2 join | `kube_node_info * on (node) group_left (instance_type, lifecycle) label_replace(ec2_metadata_instance_info, "node", "$1", "private_dns_name", "(.*)")` |
-| Instances still answering IMDSv1 | `ec2_metadata_instance_metadata_options{imdsv1_allowed="true"}` |
-| IMDSv2 enforcement ratio | `count(ec2_metadata_instance_metadata_options{imdsv1_allowed="false"}) / count(ec2_metadata_instance_metadata_options)` |
 | Instances whose hop limit blocks pod IMDS access | `ec2_metadata_instance_metadata_options{hop_limit="1"}` |
+
+## Telling IMDSv1 and IMDSv2 apart
+
+EC2 has no IMDS version field. `http_endpoint` and `http_tokens` together
+describe which versions the instance answers, and `imdsv1_allowed` is the
+derived form of that pair.
+
+| `http_endpoint` | `http_tokens` | `imdsv1_allowed` | Instance answers |
+|-----------------|---------------|------------------|------------------|
+| `enabled` | `required` | `false` | IMDSv2 only |
+| `enabled` | `optional` | `true` | Both IMDSv1 and IMDSv2 |
+| `disabled` | any | `false` | Neither version |
+
+There is no "IMDSv1 instance". `optional` means IMDSv1 is still reachable, not
+that IMDSv2 is unavailable, so treat that value as remaining work rather than
+as a version.
+
+| Purpose | PromQL |
+|---------|--------|
+| Instances where IMDSv1 is still reachable | `ec2_metadata_instance_metadata_options{imdsv1_allowed="true"}` |
+| IMDSv2-only instances | `ec2_metadata_instance_metadata_options{http_endpoint="enabled",http_tokens="required"}` |
+| Instances with IMDS switched off entirely | `ec2_metadata_instance_metadata_options{http_endpoint="disabled"}` |
+| Full posture breakdown from the raw labels | `count by (http_endpoint, http_tokens) (ec2_metadata_instance_metadata_options)` |
+| Enforcement ratio (1.0 means the whole fleet is IMDSv2-only) | `count(ec2_metadata_instance_metadata_options{imdsv1_allowed="false"}) / count(ec2_metadata_instance_metadata_options)` |
+| Remaining instances to migrate | `count(ec2_metadata_instance_metadata_options{imdsv1_allowed="true"})` |
+| Migration progress over a week | `count(ec2_metadata_instance_metadata_options{imdsv1_allowed="true"}) - count(ec2_metadata_instance_metadata_options{imdsv1_allowed="true"} offset 7d)` |
+| Names of the instances left to migrate | `count by (name) (ec2_metadata_instance_metadata_options{imdsv1_allowed="true"})` |
+
+These metrics report configuration, not traffic. An `imdsv1_allowed="true"`
+instance may already receive nothing but IMDSv2 calls, and flipping it to
+`required` breaks any workload still on an old SDK. The only evidence of real
+IMDSv1 usage is the `MetadataNoToken` metric in the CloudWatch `AWS/EC2`
+namespace, which this exporter does not collect. Use these queries to build
+the candidate list, then migrate the instances whose `MetadataNoToken` has
+stayed at zero.
 
 ## Alerting hints
 
@@ -72,7 +105,9 @@ snapshot lands. When a refresh fails, the previous snapshot keeps serving and
 - A rising `ec2_metadata_scrape_duration_seconds` p99 signals EC2 API
   throttling or a growing instance fleet before errors start appearing.
 - Alert on any `ec2_metadata_instance_metadata_options{imdsv1_allowed="true"}`
-  series to catch instances that never enforced IMDSv2.
+  series to catch instances that never enforced IMDSv2. See
+  [Telling IMDSv1 and IMDSv2 apart](#telling-imdsv1-and-imdsv2-apart) for what
+  that label does and does not prove.
 
 ## Cardinality
 
