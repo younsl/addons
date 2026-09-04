@@ -8,13 +8,13 @@ box/kubernetes/trivy-collector/src/web/types.rs:generic-api-key:503
 
 # Same two findings as they appear in history. The repository is periodically
 # re-rooted by commit-history-cleaner, so each orphan root reintroduces them.
-1a8ade2:box/kubernetes/aurora-database-insights-exporter/docs/limitation.md:generic-api-key:22
-1a8ade2:box/kubernetes/aurora-database-insights-exporter/docs/limitation.md:generic-api-key:29
-1a8ade2:box/kubernetes/trivy-collector/src/web/types.rs:generic-api-key:503
-637d7bd:box/kubernetes/aurora-database-insights-exporter/docs/limitation.md:generic-api-key:22
-637d7bd:box/kubernetes/aurora-database-insights-exporter/docs/limitation.md:generic-api-key:29
-637d7bd:box/kubernetes/trivy-collector/src/web/types.rs:generic-api-key:503
-0ad5be4:box/kubernetes/aurora-database-insights-exporter/docs/limitation.md:generic-api-key:22
-0ad5be4:box/kubernetes/aurora-database-insights-exporter/docs/limitation.md:generic-api-key:29
-0ad5be4:box/kubernetes/trivy-collector/src/web/types.rs:generic-api-key:503
-43a72bf:box/kubernetes/trivy-collector/src/web/types.rs:generic-api-key:441
+1a8ade2d:box/kubernetes/aurora-database-insights-exporter/docs/limitation.md:generic-api-key:22
+1a8ade2d:box/kubernetes/aurora-database-insights-exporter/docs/limitation.md:generic-api-key:29
+1a8ade2d:box/kubernetes/trivy-collector/src/web/types.rs:generic-api-key:503
+637d7bd9:box/kubernetes/aurora-database-insights-exporter/docs/limitation.md:generic-api-key:22
+637d7bd9:box/kubernetes/aurora-database-insights-exporter/docs/limitation.md:generic-api-key:29
+637d7bd9:box/kubernetes/trivy-collector/src/web/types.rs:generic-api-key:503
+0ad5be4c:box/kubernetes/aurora-database-insights-exporter/docs/limitation.md:generic-api-key:22
+0ad5be4c:box/kubernetes/aurora-database-insights-exporter/docs/limitation.md:generic-api-key:29
+0ad5be4c:box/kubernetes/trivy-collector/src/web/types.rs:generic-api-key:503
+43a72bfa:box/kubernetes/trivy-collector/src/web/types.rs:generic-api-key:441
