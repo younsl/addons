@@ -20,9 +20,9 @@ maintainers:
   - name: younsl
     email: cysl@kakao.com
     url: https://github.com/younsl
-home: https://github.com/younsl/o
+home: https://github.com/younsl/addons
 sources:
-  - https://github.com/younsl/o/tree/main/box/kubernetes/grafana-dashboards
+  - https://github.com/younsl/addons/tree/main/box/kubernetes/grafana-dashboards
 annotations:
   artifacthub.io/changes: |
     - kind: added

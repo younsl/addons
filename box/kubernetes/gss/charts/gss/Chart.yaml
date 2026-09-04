@@ -13,9 +13,9 @@ keywords:
   - schedule
   - scheduled-workflow
   - cronjob
-home: https://github.com/younsl/o
+home: https://github.com/younsl/addons
 sources:
-  - https://github.com/younsl/o/tree/main/box/kubernetes/gss
+  - https://github.com/younsl/addons/tree/main/box/kubernetes/gss
 
 maintainers:
   - name: younsl
@@ -31,7 +31,7 @@ annotations:
   artifacthub.io/package-type: helm
   artifacthub.io/alternate-name: gss
   artifacthub.io/display-name: GHES Schedule Scanner
-  artifacthub.io/repository: younsl/o
+  artifacthub.io/repository: younsl/addons
   artifacthub.io/license: Apache-2.0
   artifacthub.io/operator: "false"
   artifacthub.io/changes: |

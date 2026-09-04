@@ -7,7 +7,7 @@ authors = ["younsl <cysl@kakao.com>"]
 license = "Apache-2.0"
 description = "Posts Alertmanager alerts to Slack and replies in-thread with an analysis from a kagent agent over A2A"
 readme = "README.md"
-repository = "https://github.com/younsl/o"
+repository = "https://github.com/younsl/addons"
 
 [[bin]]
 name = "kagent-gateway"

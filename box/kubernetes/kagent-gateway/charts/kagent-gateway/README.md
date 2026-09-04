@@ -4,7 +4,7 @@
 
 Posts Alertmanager alerts to Slack and replies in-thread with an analysis from a kagent agent over A2A
 
-**Homepage:** <https://github.com/younsl/o>
+**Homepage:** <https://github.com/younsl/addons>
 
 ## Installation
 
@@ -175,7 +175,7 @@ The following table lists the configurable parameters and their default values.
 
 ## Source Code
 
-* <https://github.com/younsl/o/tree/main/box/kubernetes/kagent-gateway>
+* <https://github.com/younsl/addons/tree/main/box/kubernetes/kagent-gateway>
 
 ## Maintainers
 
@@ -185,7 +185,7 @@ The following table lists the configurable parameters and their default values.
 
 ## License
 
-This chart is licensed under the Apache License 2.0. See the [LICENSE](https://github.com/younsl/o/blob/main/LICENSE) file for details.
+This chart is licensed under the Apache License 2.0. See the [LICENSE](https://github.com/younsl/addons/blob/main/LICENSE) file for details.
 
 ## Contributing
 

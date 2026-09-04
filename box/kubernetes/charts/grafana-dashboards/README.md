@@ -6,7 +6,7 @@ Helm chart that deploys Grafana dashboards as Kubernetes ConfigMaps.
 Works with Grafana sidecar to automatically provision dashboards.
 Supports per-dashboard folder, labels, and annotations configuration.
 
-**Homepage:** <https://github.com/younsl/o>
+**Homepage:** <https://github.com/younsl/addons>
 
 ## Installation
 
@@ -87,7 +87,7 @@ The following table lists the configurable parameters and their default values.
 
 ## Source Code
 
-* <https://github.com/younsl/o/tree/main/box/kubernetes/grafana-dashboards>
+* <https://github.com/younsl/addons/tree/main/box/kubernetes/grafana-dashboards>
 
 ## Maintainers
 
@@ -97,7 +97,7 @@ The following table lists the configurable parameters and their default values.
 
 ## License
 
-This chart is licensed under the Apache License 2.0. See the [LICENSE](https://github.com/younsl/o/blob/main/LICENSE) file for details.
+This chart is licensed under the Apache License 2.0. See the [LICENSE](https://github.com/younsl/addons/blob/main/LICENSE) file for details.
 
 ## Contributing
 

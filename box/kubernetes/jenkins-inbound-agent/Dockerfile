@@ -27,7 +27,7 @@ LABEL maintainer="Younsung Lee <cysl@kakao.com>" \
       org.opencontainers.image.description="Jenkins inbound agent with sshpass and AWS CLI v2 baked in" \
       org.opencontainers.image.version="3355.v388858a_47b_33-19" \
       org.opencontainers.image.base.name="docker.io/jenkins/inbound-agent:3355.v388858a_47b_33-19" \
-      org.opencontainers.image.source="https://github.com/younsl/o" \
+      org.opencontainers.image.source="https://github.com/younsl/addons" \
       org.opencontainers.image.deprecated="false"
 
 USER root

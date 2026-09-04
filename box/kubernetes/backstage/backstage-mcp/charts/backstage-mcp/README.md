@@ -4,7 +4,7 @@
 
 Read-only MCP server exposing the Backstage catalog, search, TechDocs and in-house plugins to AI agents such as kagent
 
-**Homepage:** <https://github.com/younsl/o>
+**Homepage:** <https://github.com/younsl/addons>
 
 ## Installation
 
@@ -133,7 +133,7 @@ The following table lists the configurable parameters and their default values.
 
 ## Source Code
 
-* <https://github.com/younsl/o/tree/main/box/kubernetes/backstage/backstage-mcp>
+* <https://github.com/younsl/addons/tree/main/box/kubernetes/backstage/backstage-mcp>
 
 ## Maintainers
 
@@ -143,7 +143,7 @@ The following table lists the configurable parameters and their default values.
 
 ## License
 
-This chart is licensed under the Apache License 2.0. See the [LICENSE](https://github.com/younsl/o/blob/main/LICENSE) file for details.
+This chart is licensed under the Apache License 2.0. See the [LICENSE](https://github.com/younsl/addons/blob/main/LICENSE) file for details.
 
 ## Contributing
 

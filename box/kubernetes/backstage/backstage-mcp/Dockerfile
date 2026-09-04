@@ -8,7 +8,7 @@ LABEL org.opencontainers.image.title="backstage-mcp" \
       org.opencontainers.image.description="Read-only MCP server exposing the Backstage catalog, search, TechDocs and in-house plugins to AI agents" \
       org.opencontainers.image.version="0.1.0" \
       org.opencontainers.image.licenses="Apache-2.0" \
-      org.opencontainers.image.source="https://github.com/younsl/o" \
+      org.opencontainers.image.source="https://github.com/younsl/addons" \
       org.opencontainers.image.base.name="scratch" \
       org.opencontainers.image.deprecated="false"
 

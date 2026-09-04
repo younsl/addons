@@ -6,7 +6,7 @@ rust-version = "1.98.0"
 authors = ["younsl <cysl@kakao.com>"]
 description = "Multi-cluster Trivy report collector and viewer"
 license = "Apache-2.0"
-repository = "https://github.com/younsl/o"
+repository = "https://github.com/younsl/addons"
 
 [dependencies]
 # Async runtime

@@ -1,9 +1,9 @@
 # backstage-mcp
 
-[![GitHub Container Registry](https://img.shields.io/badge/ghcr.io-backstage--mcp-black?style=flat-square&logo=docker&logoColor=white)](https://github.com/younsl/o/pkgs/container/backstage-mcp)
-[![Helm Chart](https://img.shields.io/badge/ghcr.io-charts%2Fbackstage--mcp-black?style=flat-square&logo=helm&logoColor=white)](https://github.com/younsl/o/pkgs/container/charts%2Fbackstage-mcp)
+[![GitHub Container Registry](https://img.shields.io/badge/ghcr.io-backstage--mcp-black?style=flat-square&logo=docker&logoColor=white)](https://github.com/younsl/addons/pkgs/container/backstage-mcp)
+[![Helm Chart](https://img.shields.io/badge/ghcr.io-charts%2Fbackstage--mcp-black?style=flat-square&logo=helm&logoColor=white)](https://github.com/younsl/addons/pkgs/container/charts%2Fbackstage-mcp)
 [![Rust](https://img.shields.io/badge/rust-1.98.0-black?style=flat-square&logo=rust&logoColor=white)](https://www.rust-lang.org/)
-[![GitHub license](https://img.shields.io/github/license/younsl/o?style=flat-square&color=black)](https://github.com/younsl/o/blob/main/LICENSE)
+[![GitHub license](https://img.shields.io/github/license/younsl/addons?style=flat-square&color=black)](https://github.com/younsl/addons/blob/main/LICENSE)
 
 Read-only [Model Context Protocol](https://modelcontextprotocol.io) server for the [Backstage](../README.md) instance in this directory. It turns the catalog, search, TechDocs and every in-house plugin page into tools an AI agent such as [kagent](https://kagent.dev) can call, and it never writes anything back. Built with Rust 1.98 on [rmcp](https://github.com/modelcontextprotocol/rust-sdk) and shipped as a statically linked musl binary on a scratch image, cross-compiled with cargo-zigbuild.
 

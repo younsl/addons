@@ -6,9 +6,9 @@ deprecated: false
 version: 0.1.0
 appVersion: "0.1.0"
 kubeVersion: ">=1.30.0-0"
-home: https://github.com/younsl/o
+home: https://github.com/younsl/addons
 sources:
-  - https://github.com/younsl/o/tree/main/box/kubernetes/argocd-canary-gate
+  - https://github.com/younsl/addons/tree/main/box/kubernetes/argocd-canary-gate
 maintainers:
   - name: younsl
     email: cysl@kakao.com

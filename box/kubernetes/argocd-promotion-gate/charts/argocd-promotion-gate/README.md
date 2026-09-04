@@ -4,7 +4,7 @@
 
 Admission gate that blocks an Argo CD Application sync until the same app is promoted in the upstream environment
 
-**Homepage:** <https://github.com/younsl/o>
+**Homepage:** <https://github.com/younsl/addons>
 
 ## Requirements
 
@@ -153,7 +153,7 @@ The following table lists the configurable parameters and their default values.
 
 ## Source Code
 
-* <https://github.com/younsl/o/tree/main/box/kubernetes/argocd-promotion-gate>
+* <https://github.com/younsl/addons/tree/main/box/kubernetes/argocd-promotion-gate>
 
 ## Maintainers
 
@@ -163,7 +163,7 @@ The following table lists the configurable parameters and their default values.
 
 ## License
 
-This chart is licensed under the Apache License 2.0. See the [LICENSE](https://github.com/younsl/o/blob/main/LICENSE) file for details.
+This chart is licensed under the Apache License 2.0. See the [LICENSE](https://github.com/younsl/addons/blob/main/LICENSE) file for details.
 
 ## Contributing
 

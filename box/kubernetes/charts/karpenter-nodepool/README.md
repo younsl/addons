@@ -126,7 +126,7 @@ The following table lists the configurable parameters and their default values.
 ## Source Code
 
 * <https://karpenter.sh/>
-* <https://github.com/younsl/o>
+* <https://github.com/younsl/addons>
 
 ## Maintainers
 
@@ -136,7 +136,7 @@ The following table lists the configurable parameters and their default values.
 
 ## License
 
-This chart is licensed under the Apache License 2.0. See the [LICENSE](https://github.com/younsl/o/blob/main/LICENSE) file for details.
+This chart is licensed under the Apache License 2.0. See the [LICENSE](https://github.com/younsl/addons/blob/main/LICENSE) file for details.
 
 ## Contributing
 

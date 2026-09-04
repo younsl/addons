@@ -7,7 +7,7 @@ authors = ["younsl <cysl@kakao.com>"]
 license = "Apache-2.0"
 description = "Admission gate that blocks an Argo CD Application sync until the same app is promoted in the upstream environment"
 readme = "README.md"
-repository = "https://github.com/younsl/o"
+repository = "https://github.com/younsl/addons"
 
 [[bin]]
 name = "argocd-promotion-gate"

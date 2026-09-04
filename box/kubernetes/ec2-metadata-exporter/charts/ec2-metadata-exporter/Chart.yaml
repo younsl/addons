@@ -10,9 +10,9 @@ keywords:
   - prometheus
   - exporter
   - metrics
-home: https://github.com/younsl/o
+home: https://github.com/younsl/addons
 sources:
-  - https://github.com/younsl/o/tree/main/box/kubernetes/ec2-metadata-exporter
+  - https://github.com/younsl/addons/tree/main/box/kubernetes/ec2-metadata-exporter
 maintainers:
   - name: younsl
     email: cysl@kakao.com

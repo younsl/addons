@@ -7,7 +7,7 @@ authors = ["younsl <cysl@kakao.com>"]
 license = "Apache-2.0"
 description = "Prometheus exporter that publishes every EC2 instance's private IP and Name tag via the DescribeInstances API"
 readme = "README.md"
-repository = "https://github.com/younsl/o"
+repository = "https://github.com/younsl/addons"
 
 [[bin]]
 name = "ec2-metadata-exporter"

@@ -4,7 +4,7 @@
 
 A Helm chart for deploying the GHES Schedule Scanner
 
-**Homepage:** <https://github.com/younsl/o>
+**Homepage:** <https://github.com/younsl/addons>
 
 ## Installation
 
@@ -117,7 +117,7 @@ The following table lists the configurable parameters and their default values.
 
 ## Source Code
 
-* <https://github.com/younsl/o/tree/main/box/kubernetes/gss>
+* <https://github.com/younsl/addons/tree/main/box/kubernetes/gss>
 
 ## Maintainers
 
@@ -128,7 +128,7 @@ The following table lists the configurable parameters and their default values.
 
 ## License
 
-This chart is licensed under the Apache License 2.0. See the [LICENSE](https://github.com/younsl/o/blob/main/LICENSE) file for details.
+This chart is licensed under the Apache License 2.0. See the [LICENSE](https://github.com/younsl/addons/blob/main/LICENSE) file for details.
 
 ## Contributing
 

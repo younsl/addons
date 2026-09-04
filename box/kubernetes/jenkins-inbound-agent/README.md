@@ -1,6 +1,6 @@
 # jenkins-inbound-agent
 
-[![GHCR](https://img.shields.io/badge/ghcr.io-younsl%2Fjenkins--inbound--agent-000000?style=flat-square&logo=github&logoColor=white)](https://github.com/younsl/o/pkgs/container/jenkins-inbound-agent)
+[![GHCR](https://img.shields.io/badge/ghcr.io-younsl%2Fjenkins--inbound--agent-000000?style=flat-square&logo=github&logoColor=white)](https://github.com/younsl/addons/pkgs/container/jenkins-inbound-agent)
 [![Jenkins](https://img.shields.io/badge/inbound--agent-3355.v388858a__47b__33--19-d33833?style=flat-square&logo=jenkins&logoColor=white)](https://github.com/jenkinsci/docker-inbound-agent)
 [![AWS CLI](https://img.shields.io/badge/aws--cli-2.22.35-232f3e?style=flat-square&logo=amazonwebservices&logoColor=white)](https://github.com/aws/aws-cli)
 

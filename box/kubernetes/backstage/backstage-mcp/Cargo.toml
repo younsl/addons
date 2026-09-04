@@ -7,8 +7,8 @@ authors = ["younsl <cysl@kakao.com>"]
 license = "Apache-2.0"
 description = "Read-only MCP server exposing the Backstage catalog, search, TechDocs and in-house plugins to AI agents"
 readme = "README.md"
-repository = "https://github.com/younsl/o"
-homepage = "https://github.com/younsl/o/tree/main/box/kubernetes/backstage/backstage-mcp"
+repository = "https://github.com/younsl/addons"
+homepage = "https://github.com/younsl/addons/tree/main/box/kubernetes/backstage/backstage-mcp"
 
 [[bin]]
 name = "backstage-mcp"

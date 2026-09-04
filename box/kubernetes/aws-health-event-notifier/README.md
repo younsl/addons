@@ -1,9 +1,9 @@
 # aws-health-event-notifier
 
-[![GitHub Container Registry](https://img.shields.io/badge/ghcr.io-aws--health--event--notifier-black?style=flat-square&logo=docker&logoColor=white)](https://github.com/younsl/o/pkgs/container/aws-health-event-notifier)
-[![Helm Chart](https://img.shields.io/badge/ghcr.io-charts%2Faws--health--event--notifier-black?style=flat-square&logo=helm&logoColor=white)](https://github.com/younsl/o/pkgs/container/charts%2Faws-health-event-notifier)
+[![GitHub Container Registry](https://img.shields.io/badge/ghcr.io-aws--health--event--notifier-black?style=flat-square&logo=docker&logoColor=white)](https://github.com/younsl/addons/pkgs/container/aws-health-event-notifier)
+[![Helm Chart](https://img.shields.io/badge/ghcr.io-charts%2Faws--health--event--notifier-black?style=flat-square&logo=helm&logoColor=white)](https://github.com/younsl/addons/pkgs/container/charts%2Faws-health-event-notifier)
 [![Rust](https://img.shields.io/badge/rust-1.98.0-black?style=flat-square&logo=rust&logoColor=white)](https://www.rust-lang.org/)
-[![GitHub license](https://img.shields.io/github/license/younsl/o?style=flat-square&color=black)](https://github.com/younsl/o/blob/main/LICENSE)
+[![GitHub license](https://img.shields.io/github/license/younsl/addons?style=flat-square&color=black)](https://github.com/younsl/addons/blob/main/LICENSE)
 
 Polls the [AWS Health API](https://docs.aws.amazon.com/health/latest/ug/health-api.html) and posts events to Slack, emitting a Kubernetes Event alongside each published alarm.
 

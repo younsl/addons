@@ -7,7 +7,7 @@ authors = ["younsl <cysl@kakao.com>"]
 license = "Apache-2.0"
 description = "Auto-expands the root filesystem (ext2/3/4 or XFS) of standalone EC2 instances via EBS ModifyVolume and SSM"
 readme = "README.md"
-repository = "https://github.com/younsl/o"
+repository = "https://github.com/younsl/addons"
 
 [[bin]]
 name = "external-ebs-autoresizer"

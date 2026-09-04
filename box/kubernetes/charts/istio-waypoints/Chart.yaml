@@ -19,7 +19,7 @@ maintainers:
 home: https://istio.io/latest/docs/ambient/usage/waypoint/
 sources:
   - https://github.com/istio/istio
-  - https://github.com/younsl/o/tree/main/box/kubernetes/charts/istio-waypoints
+  - https://github.com/younsl/addons/tree/main/box/kubernetes/charts/istio-waypoints
 annotations:
   "helm.sh/skip-test": "true"
   "helm.sh/skip-test-reason": "Only CRD resources, requires Istio ambient and Gateway API to be installed"

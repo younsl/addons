@@ -1,10 +1,10 @@
 # argocd-canary-gate
 
-[![GitHub Container Registry](https://img.shields.io/badge/ghcr.io-argocd--canary--gate-black?style=flat-square&logo=docker&logoColor=white)](https://github.com/younsl/o/pkgs/container/argocd-canary-gate)
-[![Helm Chart](https://img.shields.io/badge/ghcr.io-charts%2Fargocd--canary--gate-black?style=flat-square&logo=helm&logoColor=white)](https://github.com/younsl/o/pkgs/container/charts%2Fargocd-canary-gate)
+[![GitHub Container Registry](https://img.shields.io/badge/ghcr.io-argocd--canary--gate-black?style=flat-square&logo=docker&logoColor=white)](https://github.com/younsl/addons/pkgs/container/argocd-canary-gate)
+[![Helm Chart](https://img.shields.io/badge/ghcr.io-charts%2Fargocd--canary--gate-black?style=flat-square&logo=helm&logoColor=white)](https://github.com/younsl/addons/pkgs/container/charts%2Fargocd-canary-gate)
 [![Rust](https://img.shields.io/badge/rust-1.98.0-black?style=flat-square&logo=rust&logoColor=white)](https://www.rust-lang.org/)
 [![Argo Rollouts](https://img.shields.io/badge/argo%20rollouts-v1.8-black?style=flat-square&logo=argo&logoColor=white)](https://argoproj.github.io/rollouts/)
-[![GitHub license](https://img.shields.io/github/license/younsl/o?style=flat-square&color=black)](https://github.com/younsl/o/blob/main/LICENSE)
+[![GitHub license](https://img.shields.io/github/license/younsl/addons?style=flat-square&color=black)](https://github.com/younsl/addons/blob/main/LICENSE)
 
 Blocks an [Argo CD Application](https://argo-cd.readthedocs.io/en/stable/operator-manual/declarative-setup/#applications) sync while an [Argo Rollouts](https://argoproj.github.io/rollouts/) canary owned by that Application is still in progress. A sync that lands mid-canary hands the Rollout new desired state, which restarts the step progression and throws away the analysis the canary was running. The gate refuses that sync until the rollout is promoted, finished, or aborted. An Application that manages no Rollout syncs freely.
 

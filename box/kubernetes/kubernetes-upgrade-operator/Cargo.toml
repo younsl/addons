@@ -6,7 +6,7 @@ rust-version = "1.98.0"
 authors = ["Younsung Lee <cysl@kakao.com>"]
 license = "Apache-2.0"
 description = "Kubernetes Upgrade Operator for EKS clusters"
-repository = "https://github.com/younsl/o"
+repository = "https://github.com/younsl/addons"
 readme = "README.md"
 
 [dependencies]

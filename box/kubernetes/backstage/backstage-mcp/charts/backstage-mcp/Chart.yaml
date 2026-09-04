@@ -9,9 +9,9 @@ keywords:
   - mcp
   - kagent
   - developer-portal
-home: https://github.com/younsl/o
+home: https://github.com/younsl/addons
 sources:
-  - https://github.com/younsl/o/tree/main/box/kubernetes/backstage/backstage-mcp
+  - https://github.com/younsl/addons/tree/main/box/kubernetes/backstage/backstage-mcp
 maintainers:
   - name: younsl
     email: cysl@kakao.com
