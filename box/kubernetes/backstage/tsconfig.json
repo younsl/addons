@@ -86,6 +86,9 @@
     },
     {
       "path": "plugins/s3-log-extract-backend"
+    },
+    {
+      "path": "plugins/slack-mr-bot-backend"
     }
   ],
   "files": []

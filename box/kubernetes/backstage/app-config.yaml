@@ -253,6 +253,24 @@ iamUserAudit:
     # -- (string) Cron for Slack notification. Evaluated in UTC
     cron: '0 10 * * 1-5'
 
+slackMrBot:
+  # -- (bool) Enable the Slack MR review request bot (Socket Mode)
+  enabled: true
+  # -- (string) Slack bot token (xoxb-...). Requires scopes: commands, chat:write
+  botToken: ${SLACK_MR_BOT_TOKEN}
+  # -- (string) Slack app-level token (xapp-...) for Socket Mode. Requires scope: connections:write
+  appToken: ${SLACK_MR_BOT_APP_TOKEN}
+  # -- (string) Slash command registered in the Slack app
+  command: /mr
+  # -- (string) First line of the posted message
+  headerText: 'MR 리뷰 부탁드립니다~'
+  # -- (object) Review providers. Omit to reuse the `integrations` hosts and tokens
+  # providers:
+  #   gitlab:
+  #     - host: gitlab.example.com
+  #       apiBaseUrl: https://gitlab.example.com/api/v4
+  #       token: ${GITLAB_TOKEN}
+
 s3LogExtract:
   # -- (string) S3 bucket name
   bucket: ${S3_LOG_BUCKET}

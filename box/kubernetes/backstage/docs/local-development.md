@@ -43,9 +43,70 @@ SONARQUBE_API_KEY
 SLACK_WEBHOOK_URL
 IAM_AUDIT_ASSUME_ROLE_ARN
 IAM_AUDIT_SLACK_BOT_TOKEN
+SLACK_MR_BOT_TOKEN
+SLACK_MR_BOT_APP_TOKEN
 ```
 
 Missing keys disable the matching integration rather than crash the app, so a partial `.env` is fine for working on a single plugin.
+
+### app-config.local.yaml
+
+`app-config.yaml` is written for the deployed instance, so a laptop run needs two things overridden. Neither belongs in the committed config, which is why this file exists and is git-ignored.
+
+The catalog Keycloak module treats its provider config as required and **fails backend startup** when `KEYCLOAK_BASE_URL` and friends are absent, so a run without Keycloak credentials needs placeholder values. The plugins that talk to the cluster, AWS or OpenSearch cannot reach anything from here and otherwise fill the log with connection and permission errors, so turn off the ones you are not working on. Every in-house plugin reads an `app.plugins.<name>` flag that defaults to on.
+
+A file that leaves only one plugin running:
+
+```yaml
+# Keycloak env vars are absent locally, and the catalog keycloak module fails
+# backend startup on a missing baseUrl. The provider's own sync errors after
+# this are harmless.
+catalog:
+  providers:
+    keycloakOrg:
+      yourProviderId:
+        baseUrl: http://localhost:8080
+        loginRealm: local
+        realm: local
+        clientId: local
+        clientSecret: local
+
+# Plugins that need cluster or AWS access this machine does not have.
+app:
+  plugins:
+    argocdAppSet: false
+    iamUserAudit: false
+    catalogHealth: false
+    opencost: false
+    opensearchAccount: false
+    opensearchScaling: false
+    opensearchViewer: false
+    gitlabTokenAudit: false
+    s3LogExtract: false
+```
+
+The flag names are the ones in the plugin's `plugin.ts`; `app.plugins.slackMrBot` does not exist, since that plugin turns itself off when `slackMrBot.botToken` is unset.
+
+Other overrides worth keeping here rather than in `.env`: an on-disk SQLite database (`backend.database.connection.directory`, remembering the directory is not git-ignored), a longer schedule for a noisy task, or a plugin's own config such as `slackMrBot.command` (see below).
+
+### Plugins holding an outbound connection
+
+A plugin that keeps a connection open — the Slack MR bot's Socket Mode link, for one — competes with the deployed instance when both use the same credentials: Slack delivers each event to exactly one connection, so a slash command lands on the pod or on the laptop at random and the local run looks broken.
+
+Either take the deployed instance out of the way for the duration:
+
+```bash
+kubectl -n backstage scale deploy/backstage --replicas=0   # remember to scale back
+```
+
+or, better, register a second Slack app for development with its own tokens and a command of its own:
+
+```yaml
+slackMrBot:
+  command: /mr-dev
+```
+
+The second way leaves the deployed bot serving the team while you iterate.
 
 ## AWS access for IAM auditing
 

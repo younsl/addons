@@ -12,14 +12,16 @@
 #     --from-literal=GITLAB_TOKEN=glpat-xxxxxxxxxxxx \
 #     --from-literal=SONARQUBE_TOKEN=squ_xxxxxxxxxxxx \
 #     --from-literal=POSTGRES_PASSWORD=your-password \
-#     --from-literal=KEYCLOAK_CATALOG_CLIENT_SECRET=your-client-secret
+#     --from-literal=KEYCLOAK_CATALOG_CLIENT_SECRET=your-client-secret \
+#     --from-literal=SLACK_MR_BOT_TOKEN=xoxb-xxxxxxxxxxxx \
+#     --from-literal=SLACK_MR_BOT_APP_TOKEN=xapp-xxxxxxxxxxxx
 # ==============================================================================
 
 backstage:
   image:
     registry: ghcr.io
     repository: younsl/backstage
-    tag: "1.54.6-1"
+    tag: "1.54.6-3"
     pullPolicy: IfNotPresent
 
   extraEnvVars:
@@ -64,6 +66,16 @@ backstage:
         secretKeyRef:
           name: backstage-secrets
           key: BACKSTAGE_MCP_TOKEN
+    - name: SLACK_MR_BOT_TOKEN
+      valueFrom:
+        secretKeyRef:
+          name: backstage-secrets
+          key: SLACK_MR_BOT_TOKEN
+    - name: SLACK_MR_BOT_APP_TOKEN
+      valueFrom:
+        secretKeyRef:
+          name: backstage-secrets
+          key: SLACK_MR_BOT_APP_TOKEN
 
   appConfig:
     app:
@@ -214,6 +226,14 @@ backstage:
     iamUserAudit:
       inactiveDays: 90
       warningDays: 14
+
+    slackMrBot:
+      enabled: true
+      botToken: ${SLACK_MR_BOT_TOKEN}
+      appToken: ${SLACK_MR_BOT_APP_TOKEN}
+      command: /mr
+      headerText: 'MR 리뷰 부탁드립니다~'
+      # Omit `providers` to reuse the `integrations.gitlab` hosts and tokens.
 
     catalogHealth:
       # Concurrent requests when checking catalog-info.yaml (default: 10)

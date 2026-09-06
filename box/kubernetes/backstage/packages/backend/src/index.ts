@@ -70,6 +70,8 @@ if (!disableGitlab) {
   backend.add(import('@internal/plugin-gitlab-token-audit-backend'));
 }
 
+backend.add(import('@internal/plugin-slack-mr-bot-backend'));
+
 backend.add(import('@backstage-community/plugin-sonarqube-backend'));
 
 backend.add(import('@backstage/plugin-permission-backend'));

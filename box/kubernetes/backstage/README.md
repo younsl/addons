@@ -23,6 +23,7 @@ Authentication is Keycloak OIDC only. Guest login is disabled.
 ## Documentation
 
 - [Installation](docs/installation.md)
+- [Local Development](docs/local-development.md)
 - [Plugins](docs/plugins.md)
 - [Helm Chart](docs/helm-chart.md)
 - [Changelog](docs/changelog.md)
@@ -36,4 +37,5 @@ Authentication is Keycloak OIDC only. Guest login is disabled.
 - [IAM User Audit](docs/plugins/iam-user-audit/overview.md)
 - [OpenCost](docs/plugins/opencost/overview.md)
 - [OpenCost ERD](docs/plugins/opencost/erd.md)
+- [Slack MR Bot](docs/plugins/slack-mr-bot/overview.md)
 - [OpenSearch Account](docs/plugins/opensearch-account/overview.md)
