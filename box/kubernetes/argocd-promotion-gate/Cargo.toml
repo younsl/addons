@@ -2,7 +2,7 @@
 name = "argocd-promotion-gate"
 version = "0.2.0"
 edition = "2024"
-rust-version = "1.98.0"
+rust-version = "1.98.1"
 authors = ["younsl <cysl@kakao.com>"]
 license = "Apache-2.0"
 description = "Admission gate that blocks an Argo CD Application sync until the same app is promoted in the upstream environment"

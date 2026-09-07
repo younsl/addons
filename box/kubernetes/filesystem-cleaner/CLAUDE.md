@@ -4,7 +4,7 @@ Guidance for Claude Code working in this directory. Only non-derivable conventio
 
 ## Overview
 
-Filesystem cleaner for Kubernetes, run as an init container (`once` mode) or sidecar (`interval` mode). Rust 1.98.0, edition 2024, statically linked musl binary on `scratch` built with cargo-zigbuild. Keep the dependency set small: the tool is a single binary with no network surface.
+Filesystem cleaner for Kubernetes, run as an init container (`once` mode) or sidecar (`interval` mode). Rust 1.98.1, edition 2024, statically linked musl binary on `scratch` built with cargo-zigbuild. Keep the dependency set small: the tool is a single binary with no network surface.
 
 ## Traps
 

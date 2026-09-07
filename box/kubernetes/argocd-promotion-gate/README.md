@@ -2,7 +2,7 @@
 
 [![GitHub Container Registry](https://img.shields.io/badge/ghcr.io-argocd--promotion--gate-black?style=flat-square&logo=docker&logoColor=white)](https://github.com/younsl/addons/pkgs/container/argocd-promotion-gate)
 [![Helm Chart](https://img.shields.io/badge/ghcr.io-charts%2Fargocd--promotion--gate-black?style=flat-square&logo=helm&logoColor=white)](https://github.com/younsl/addons/pkgs/container/charts%2Fargocd-promotion-gate)
-[![Rust](https://img.shields.io/badge/rust-1.98.0-black?style=flat-square&logo=rust&logoColor=white)](https://www.rust-lang.org/)
+[![Rust](https://img.shields.io/badge/rust-1.98.1-black?style=flat-square&logo=rust&logoColor=white)](https://www.rust-lang.org/)
 [![Argo CD](https://img.shields.io/badge/argo%20cd-v3.4.5-black?style=flat-square&logo=argo&logoColor=white)](https://argo-cd.readthedocs.io/en/stable/)
 [![GitHub license](https://img.shields.io/github/license/younsl/addons?style=flat-square&color=black)](https://github.com/younsl/addons/blob/main/LICENSE)
 

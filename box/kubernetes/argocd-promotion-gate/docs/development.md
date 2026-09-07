@@ -14,7 +14,7 @@ make coverage   # cargo llvm-cov, enforce the 70% floor
 make zigbuild   # static linux/amd64 and linux/arm64 binaries via cargo-zigbuild
 ```
 
-The toolchain is Rust 1.98.0, edition 2024. Cross-compilation uses [cargo-zigbuild](https://github.com/rust-cross/cargo-zigbuild) against the musl targets, which is what the release workflow does too, so `make zigbuild` reproduces the shipped binary locally.
+The toolchain is Rust 1.98.1, edition 2024. Cross-compilation uses [cargo-zigbuild](https://github.com/rust-cross/cargo-zigbuild) against the musl targets, which is what the release workflow does too, so `make zigbuild` reproduces the shipped binary locally.
 
 ## Layout
 

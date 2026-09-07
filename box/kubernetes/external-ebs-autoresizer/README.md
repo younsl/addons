@@ -2,7 +2,7 @@
 
 [![GitHub Container Registry](https://img.shields.io/badge/ghcr.io-external--ebs--autoresizer-black?style=flat-square&logo=docker&logoColor=white)](https://github.com/younsl/addons/pkgs/container/external-ebs-autoresizer)
 [![Helm Chart](https://img.shields.io/badge/ghcr.io-charts%2Fexternal--ebs--autoresizer-black?style=flat-square&logo=helm&logoColor=white)](https://github.com/younsl/addons/pkgs/container/charts%2Fexternal-ebs-autoresizer)
-[![Rust](https://img.shields.io/badge/rust-1.98.0-black?style=flat-square&logo=rust&logoColor=white)](https://www.rust-lang.org/)
+[![Rust](https://img.shields.io/badge/rust-1.98.1-black?style=flat-square&logo=rust&logoColor=white)](https://www.rust-lang.org/)
 [![GitHub license](https://img.shields.io/github/license/younsl/addons?style=flat-square&color=black)](https://github.com/younsl/addons/blob/main/LICENSE)
 
 Automatically grows the [root filesystem][ebs-extend-fs] (ext2/3/4 or XFS) of
@@ -17,7 +17,7 @@ narrow the candidate set further. For each instance over the threshold it [grows
 the root EBS volume][ebs-modify] and [extends the filesystem][ebs-extend-fs] in
 place. Every step is driven and logged by the addon itself rather than delegated
 to an opaque SSM runbook, so each action has clear ownership and granular logs.
-Built with Rust 1.98.0 and shipped as a statically linked musl binary
+Built with Rust 1.98.1 and shipped as a statically linked musl binary
 (cargo-zigbuild) on a `scratch` image for `linux/amd64` and `linux/arm64`.
 
 [ebs-modify]: https://docs.aws.amazon.com/ebs/latest/userguide/requesting-ebs-volume-modifications.html

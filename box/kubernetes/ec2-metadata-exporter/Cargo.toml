@@ -2,7 +2,7 @@
 name = "ec2-metadata-exporter"
 version = "0.2.0"
 edition = "2024"
-rust-version = "1.98.0"
+rust-version = "1.98.1"
 authors = ["younsl <cysl@kakao.com>"]
 license = "Apache-2.0"
 description = "Prometheus exporter that publishes every EC2 instance's private IP and Name tag via the DescribeInstances API"

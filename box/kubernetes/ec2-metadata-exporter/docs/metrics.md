@@ -32,7 +32,7 @@ ec2_metadata_instance_info{instance_id="i-0abc123",name="web-1",private_ip="10.0
 ec2_metadata_instance_launch_time_seconds{instance_id="i-0abc123",name="web-1"} 1.752994800e+09
 ec2_metadata_instance_metadata_options{instance_id="i-0abc123",name="web-1",http_tokens="required",http_endpoint="enabled",hop_limit="2",imdsv1_allowed="false"} 1
 ec2_metadata_instances{state="running"} 1
-ec2_metadata_build_info{version="0.2.0",commit="0e44eb2",rust_version="1.98.0"} 1
+ec2_metadata_build_info{version="0.2.0",commit="0e44eb2",rust_version="1.98.1"} 1
 ```
 
 Instance metrics are served from an in-memory snapshot that is swapped

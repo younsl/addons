@@ -2,7 +2,7 @@
 name = "external-ebs-autoresizer"
 version = "0.6.0"
 edition = "2024"
-rust-version = "1.98.0"
+rust-version = "1.98.1"
 authors = ["younsl <cysl@kakao.com>"]
 license = "Apache-2.0"
 description = "Auto-expands the root filesystem (ext2/3/4 or XFS) of standalone EC2 instances via EBS ModifyVolume and SSM"

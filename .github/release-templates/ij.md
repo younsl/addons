@@ -47,7 +47,7 @@ ij --version
 
 ### From Source
 
-Requires Rust 1.92 or later:
+Requires Rust 1.98.1 or later:
 
 ```bash
 git clone https://github.com/${REPOSITORY}.git
@@ -85,7 +85,7 @@ ij -L 3306:rds.example.com:3306 -r ap-northeast-2 prod
 
 ## Built With
 
-- **Rust 1.92+ Edition 2024** - Memory safety, zero-cost abstractions
+- **Rust 1.98.1+ Edition 2024** - Memory safety, zero-cost abstractions
 - **Tokio** - Async runtime for parallel region scanning
 - **Clap** - CLI argument parsing
 - **aws-sdk-ec2** - AWS EC2 API client

@@ -2,7 +2,7 @@
 name = "filesystem-cleaner"
 version = "0.4.0"
 edition = "2024"
-rust-version = "1.98.0"
+rust-version = "1.98.1"
 authors = ["younsl <cysl@kakao.com>"]
 license = "Apache-2.0"
 description = "Kubernetes sidecar/init filesystem cleaner for managing disk space"
