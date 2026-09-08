@@ -286,7 +286,7 @@ impl Gateway {
             context_id: context_id.clone(),
             on_progress: Some(hook),
         };
-        let result = self.agent.send(req, deadline).await;
+        let result = self.chat_agent.send(req, deadline).await;
         tracker.stop().await;
         let elapsed = started.elapsed();
 
@@ -622,7 +622,7 @@ fn state_phrase(state: &str, with_alert: bool) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::super::testing::{Call, FakeSlack, config, gateway};
+    use super::super::testing::{Call, FakeSlack, config, gateway, gateway_split};
     use super::*;
     use crate::config::Config;
     use crate::observability::metrics::{AgentResultLabels, KindResultLabels, ResultLabels};
@@ -674,6 +674,16 @@ mod tests {
                 result: result.into(),
             },
         )
+    }
+
+    #[tokio::test]
+    async fn mention_runs_on_the_chat_client() {
+        let (g, alert, chat) = gateway_split(chat_config());
+        g.set_bot_user_id("UBOT");
+        run(&g, mention("<@UBOT> why did this fire?")).await;
+
+        assert_eq!(chat.requests().len(), 1);
+        assert!(alert.requests().is_empty());
     }
 
     #[tokio::test]

@@ -97,6 +97,7 @@ pub struct Config {
     /// `slack_channel_map` it is not an alias table: a value it does not carry
     /// falls back to `kagent_agent` rather than being used as an agent name.
     pub kagent_agent_routing_map: HashMap<String, String>,
+    /// Identity the alert path submits as, sent as `X-User-Id`.
     pub kagent_user_id: String,
     /// Deadline for one whole analysis: queueing for a slot, the parent
     /// lookup, and the polled agent run.
@@ -130,6 +131,12 @@ pub struct Config {
     /// channels.
     pub chat_allowed_users: HashSet<String>,
     pub chat_instructions: String,
+    /// Identity the mention path submits as. Defaults to `kagent_user_id`, so
+    /// a deployment that does not set it keeps both paths under one owner.
+    /// Splitting them matters once agents carry long-term memory: memory is
+    /// keyed by agent and user, so a shared identity lets the unattended alert
+    /// path write into the pool a person's questions read from.
+    pub chat_user_id: String,
     /// Deadline for one whole turn, including queueing.
     pub chat_timeout: Duration,
     /// How long a thread keeps its A2A `contextId` after its last turn.
@@ -176,6 +183,7 @@ impl Config {
         let env = Env(&env);
         let channel_label = env.string("SLACK_CHANNEL_LABEL", "slack_channel");
         let kagent_agent = env.string("KAGENT_AGENT", "alert-triage-agent");
+        let kagent_user_id = env.string("KAGENT_USER_ID", "gateway@kagent.dev");
 
         let parent_mode = match env.string("SLACK_PARENT_MODE", "lookup").as_str() {
             "lookup" => ParentMode::Lookup,
@@ -238,7 +246,7 @@ impl Config {
             kagent_agent: kagent_agent.clone(),
             kagent_agent_routing_label: env.string("KAGENT_AGENT_ROUTING_LABEL", &channel_label),
             kagent_agent_routing_map: env.pairs("KAGENT_AGENT_ROUTING_MAP")?,
-            kagent_user_id: env.string("KAGENT_USER_ID", "gateway@kagent.dev"),
+            kagent_user_id: kagent_user_id.clone(),
             kagent_timeout: env.duration(
                 "KAGENT_TIMEOUT",
                 Duration::from_secs(120),
@@ -269,6 +277,7 @@ impl Config {
             chat_channels: env.list("CHAT_CHANNELS"),
             chat_allowed_users: env.set("CHAT_ALLOWED_USERS", ""),
             chat_instructions: env.string("CHAT_INSTRUCTIONS", DEFAULT_CHAT_INSTRUCTIONS),
+            chat_user_id: env.string("CHAT_USER_ID", &kagent_user_id),
             chat_timeout: env.duration(
                 "CHAT_TIMEOUT",
                 Duration::from_secs(180),
@@ -539,12 +548,27 @@ mod tests {
     }
 
     #[test]
+    fn chat_user_id_follows_the_alert_identity_until_set() {
+        let mut env = base();
+        env.push(("KAGENT_USER_ID", "bot@kagent.dev"));
+        let cfg = Config::from_env(env_from(&env)).unwrap();
+        assert_eq!(cfg.kagent_user_id, "bot@kagent.dev");
+        assert_eq!(cfg.chat_user_id, "bot@kagent.dev");
+
+        env.push(("CHAT_USER_ID", "chat@kagent.dev"));
+        let cfg = Config::from_env(env_from(&env)).unwrap();
+        assert_eq!(cfg.kagent_user_id, "bot@kagent.dev");
+        assert_eq!(cfg.chat_user_id, "chat@kagent.dev");
+    }
+
+    #[test]
     fn defaults_apply() {
         let cfg = Config::from_env(env_from(&base())).unwrap();
         assert_eq!(cfg.slack_api_url, "https://slack.com/api");
         assert_eq!(cfg.parent_mode, ParentMode::Lookup);
         assert_eq!(cfg.kagent_agent, "alert-triage-agent");
         assert_eq!(cfg.chat_agent, "alert-triage-agent");
+        assert_eq!(cfg.chat_user_id, "gateway@kagent.dev");
         assert_eq!(cfg.kagent_agent_routing_label, "slack_channel");
         assert_eq!(cfg.kagent_timeout, Duration::from_secs(120));
         assert_eq!(cfg.dedupe_ttl, Duration::from_hours(12));

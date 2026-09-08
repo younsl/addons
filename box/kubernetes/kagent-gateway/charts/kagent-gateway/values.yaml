@@ -79,6 +79,8 @@ chat:
     # - U01234567
   # -- (string) Instructions appended to every mention prompt. Empty uses the built-in English instructions, which are separate from `analysis.instructions` because a question has no alert sections to fill.
   instructions: ""
+  # -- (string) Identity sent as X-User-Id for mention turns, which owns the kagent sessions a person's questions create. Empty falls back to `kagent.userID`. Set it to split the two paths once agents carry long-term memory, which is keyed by agent and user: sharing one identity lets the unattended alert path write into the pool the questions read from.
+  userID: ""
   # -- (string) Deadline for one whole turn including queueing, as a duration (30s, 5m, 1h). The kagent controller caps a turn at 3 minutes in the v0.9.x line, so raising this above `180s` buys nothing; lowering it makes the gateway's own expiry fire first and cancel the task.
   timeout: "180s"
   # -- (string) How long a thread keeps its A2A `contextId` after its last turn, as a duration (30s, 5m, 1h). Within it a follow-up mention continues the same agent session. `0s` makes every mention a cold turn.

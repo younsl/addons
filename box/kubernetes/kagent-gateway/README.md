@@ -166,6 +166,7 @@ All optional except the app-level token, which is what enables the feature.
 | `CHAT_CHANNELS` | empty | Channel names or IDs allowed to invoke the bot. Empty allows every channel the bot is a member of. |
 | `CHAT_ALLOWED_USERS` | empty | Slack member IDs allowed to invoke the bot. Empty allows everyone in the allowed channels. |
 | `CHAT_INSTRUCTIONS` | built-in English text | Instructions appended to every mention prompt. Separate from `ANALYSIS_INSTRUCTIONS`, because a question has no alert sections to fill. |
+| `CHAT_USER_ID` | value of `KAGENT_USER_ID` | Sent as `X-User-Id` for mention turns. Splitting it from `KAGENT_USER_ID` keeps a person's questions and the unattended alert path on separate kagent sessions, which matters once agents carry long-term memory: memory is keyed by agent and user. |
 | `CHAT_TIMEOUT` | `180s` | Deadline for one whole turn including queueing. Matches the controller's 3 minute cap; lower it to make the gateway's own expiry fire first and cancel the task. |
 | `CHAT_SESSION_TTL` | `2h` | How long a thread keeps its `contextId` after its last turn. `0s` makes every mention a cold turn. |
 | `CHAT_STATUS_INTERVAL` | `10s` | How often the in-thread status message is rewritten while the agent works. Each rewrite is one `chat.update` call. |

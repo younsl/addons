@@ -1,6 +1,6 @@
 # kagent-gateway
 
-![Version: 0.1.0](https://img.shields.io/badge/Version-0.1.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.1.0](https://img.shields.io/badge/AppVersion-0.1.0-informational?style=flat-square)
+![Version: 0.2.0](https://img.shields.io/badge/Version-0.2.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.2.0](https://img.shields.io/badge/AppVersion-0.2.0-informational?style=flat-square)
 
 Posts Alertmanager alerts to Slack and replies in-thread with an analysis from a kagent agent over A2A
 
@@ -39,7 +39,7 @@ helm install kagent-gateway oci://ghcr.io/younsl/charts/kagent-gateway -f values
 Install a specific version:
 
 ```console
-helm install kagent-gateway oci://ghcr.io/younsl/charts/kagent-gateway --version 0.1.0
+helm install kagent-gateway oci://ghcr.io/younsl/charts/kagent-gateway --version 0.2.0
 ```
 
 ### Install from local chart
@@ -47,7 +47,7 @@ helm install kagent-gateway oci://ghcr.io/younsl/charts/kagent-gateway --version
 Download kagent-gateway chart and install from local directory:
 
 ```console
-helm pull oci://ghcr.io/younsl/charts/kagent-gateway --untar --version 0.1.0
+helm pull oci://ghcr.io/younsl/charts/kagent-gateway --untar --version 0.2.0
 helm install kagent-gateway ./kagent-gateway
 ```
 
@@ -106,6 +106,7 @@ The following table lists the configurable parameters and their default values.
 | chat.channels | list | `[]` | Channel names or IDs allowed to invoke the bot. Empty allows every channel the bot is a member of. |
 | chat.allowedUsers | list | `[]` | Slack member IDs allowed to invoke the bot. Empty allows everyone in the allowed channels. |
 | chat.instructions | string | `""` | Instructions appended to every mention prompt. Empty uses the built-in English instructions, which are separate from `analysis.instructions` because a question has no alert sections to fill. |
+| chat.userID | string | `""` | Identity sent as X-User-Id for mention turns, which owns the kagent sessions a person's questions create. Empty falls back to `kagent.userID`. Set it to split the two paths once agents carry long-term memory, which is keyed by agent and user: sharing one identity lets the unattended alert path write into the pool the questions read from. |
 | chat.timeout | string | `"180s"` | Deadline for one whole turn including queueing, as a duration (30s, 5m, 1h). The kagent controller caps a turn at 3 minutes in the v0.9.x line, so raising this above `180s` buys nothing; lowering it makes the gateway's own expiry fire first and cancel the task. |
 | chat.sessionTTL | string | `"2h"` | How long a thread keeps its A2A `contextId` after its last turn, as a duration (30s, 5m, 1h). Within it a follow-up mention continues the same agent session. `0s` makes every mention a cold turn. |
 | chat.statusInterval | string | `"10s"` | How often the in-thread status message is rewritten while the agent works, as a duration (30s, 5m, 1h). Each rewrite is one `chat.update` call, so a short interval buys a livelier status line at the cost of Slack rate limit budget. |

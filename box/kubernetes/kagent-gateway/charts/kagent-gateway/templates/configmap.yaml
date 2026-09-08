@@ -42,6 +42,7 @@ data:
   CHAT_SESSION_TTL: {{ .Values.chat.sessionTTL | quote }}
   CHAT_STATUS_INTERVAL: {{ .Values.chat.statusInterval | quote }}
   MAX_CONCURRENT_CHATS: {{ .Values.chat.maxConcurrent | quote }}
+  CHAT_USER_ID: {{ default .Values.kagent.userID .Values.chat.userID | quote }}
   {{- with .Values.chat.instructions }}
   CHAT_INSTRUCTIONS: {{ . | quote }}
   {{- end }}

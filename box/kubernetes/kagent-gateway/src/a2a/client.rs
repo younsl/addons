@@ -224,6 +224,21 @@ impl Client {
         }
     }
 
+    /// Returns the same client submitting as a different session owner.
+    /// `reqwest::Client` is a handle onto a shared connection pool, so the
+    /// clone opens no new connections; only the `X-User-Id` differs.
+    #[must_use]
+    pub fn with_user_id(&self, user_id: &str) -> Self {
+        Self {
+            http: self.http.clone(),
+            base_url: self.base_url.clone(),
+            namespace: self.namespace.clone(),
+            user_id: user_id.to_string(),
+            metrics: Arc::clone(&self.metrics),
+            poll_interval: self.poll_interval,
+        }
+    }
+
     /// The A2A JSON-RPC endpoint one agent is served on.
     #[must_use]
     pub fn endpoint(&self, agent: &str) -> String {
@@ -750,6 +765,27 @@ mod tests {
 
     fn far() -> Instant {
         Instant::now() + Duration::from_secs(30)
+    }
+
+    #[tokio::test]
+    async fn with_user_id_changes_the_session_owner() {
+        let server = MockServer::start().await;
+        let metrics = Arc::new(Metrics::new());
+        Mock::given(method("POST"))
+            .and(path("/api/a2a/kagent/agent"))
+            .and(header("X-User-Id", "chat@kagent.dev"))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_json(task("completed", Some("all good"))),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+        let reply = client(&server, metrics)
+            .with_user_id("chat@kagent.dev")
+            .send(request("hi"), far())
+            .await
+            .unwrap();
+        assert_eq!(reply.text, "all good");
     }
 
     #[tokio::test]

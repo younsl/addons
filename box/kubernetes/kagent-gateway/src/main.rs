@@ -73,6 +73,23 @@ async fn main() -> Result<()> {
 }
 
 /// Wires the gateway and HTTP servers and blocks until shutdown.
+/// The two controller clients, alert path first. They share one connection
+/// pool and differ only in the identity they submit as, which is what keeps a
+/// person's questions and the unattended alert path on separate kagent
+/// sessions.
+fn agent_clients(cfg: &Config, metrics: &Arc<Metrics>) -> (Arc<a2a::Client>, Arc<a2a::Client>) {
+    let alert = a2a::Client::new(
+        &cfg.kagent_url,
+        &cfg.kagent_namespace,
+        &cfg.kagent_user_id,
+        cfg.kagent_request_timeout,
+        cfg.kagent_poll_interval,
+        metrics.clone(),
+    );
+    let chat = Arc::new(alert.with_user_id(&cfg.chat_user_id));
+    (Arc::new(alert), chat)
+}
+
 async fn run(cfg: Config, shutdown: CancellationToken) -> Result<()> {
     info!(
         version = env!("CARGO_PKG_VERSION"),
@@ -124,15 +141,14 @@ async fn run(cfg: Config, shutdown: CancellationToken) -> Result<()> {
         Duration::from_secs(30),
         metrics.clone(),
     ));
-    let agent = Arc::new(a2a::Client::new(
-        &cfg.kagent_url,
-        &cfg.kagent_namespace,
-        &cfg.kagent_user_id,
-        cfg.kagent_request_timeout,
-        cfg.kagent_poll_interval,
+    let (agent, chat_agent) = agent_clients(&cfg, &metrics);
+    let gateway = gateway::Gateway::new(
+        cfg.clone(),
+        slack_client.clone(),
+        agent,
+        chat_agent,
         metrics.clone(),
-    ));
-    let gateway = gateway::Gateway::new(cfg.clone(), slack_client.clone(), agent, metrics.clone());
+    );
 
     if cfg.chat_enabled() {
         start_chat(&cfg, &slack_client, &gateway, &metrics, shutdown.clone()).await;

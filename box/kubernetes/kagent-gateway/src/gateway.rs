@@ -82,6 +82,10 @@ pub struct Gateway {
     /// sharing one would let a question queue behind an alert analysis, or
     /// worse, delay an analysis behind questions.
     chat_sem: Arc<Semaphore>,
+    /// Submits mention turns. It is the same controller client as `agent` with
+    /// a different `X-User-Id`, so a person's questions and the unattended
+    /// alert path own separate kagent sessions, and separate long-term memory.
+    chat_agent: Arc<dyn AgentClient>,
     sessions: Mutex<SessionStore>,
     envelopes: Mutex<Store>,
     /// The bot's own user id, resolved once at startup. It is the loop guard:
@@ -105,6 +109,7 @@ impl Gateway {
         cfg: Config,
         slack: Arc<dyn SlackClient>,
         agent: Arc<dyn AgentClient>,
+        chat_agent: Arc<dyn AgentClient>,
         metrics: Arc<Metrics>,
     ) -> Arc<Self> {
         // Publishing the limits as series lets a dashboard express saturation
@@ -128,6 +133,7 @@ impl Gateway {
             cfg,
             slack,
             agent,
+            chat_agent,
             metrics,
         })
     }
@@ -965,9 +971,33 @@ pub mod testing {
         let slack = Arc::new(FakeSlack::default());
         let agent = Arc::new(FakeAgent::default());
         let metrics = Arc::new(Metrics::new());
-        let g = Gateway::new(cfg, slack.clone(), agent.clone(), metrics.clone())
-            .with_lookup_backoff(Duration::from_millis(1));
+        let g = Gateway::new(
+            cfg,
+            slack.clone(),
+            agent.clone(),
+            agent.clone(),
+            metrics.clone(),
+        )
+        .with_lookup_backoff(Duration::from_millis(1));
         (g, slack, agent, metrics)
+    }
+
+    /// A gateway whose two paths hold different agent clients, which is what
+    /// production looks like once the mention path submits under its own
+    /// identity. Returns the alert client first, then the mention client.
+    pub fn gateway_split(cfg: Config) -> (Arc<Gateway>, Arc<FakeAgent>, Arc<FakeAgent>) {
+        let slack = Arc::new(FakeSlack::default());
+        let alert = Arc::new(FakeAgent::default());
+        let chat = Arc::new(FakeAgent::default());
+        let g = Gateway::new(
+            cfg,
+            slack,
+            alert.clone(),
+            chat.clone(),
+            Arc::new(Metrics::new()),
+        )
+        .with_lookup_backoff(Duration::from_millis(1));
+        (g, alert, chat)
     }
 
     pub fn payload(alertname: &str, severity: &str) -> serde_json::Value {
