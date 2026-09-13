@@ -1,0 +1,453 @@
+# -- CustomResourceDefinitions for alert rules
+crds:
+  # -- (bool) Install and upgrade CRDs
+  install: true
+  # -- (bool) Keep CRDs on chart uninstall
+  keep: true
+  # -- (object) Additional annotations to be added to all CRDs
+  annotations: {}
+  # -- (object) Additional labels to be added to all CRDs
+  additionalLabels: {}
+
+# -- (string) Override the name of the chart
+nameOverride: ""
+
+# -- (string) Override the full name of the chart
+fullnameOverride: ""
+
+# -- (int) Default replica count (deprecated, use server.replicaCount for UI pods;
+# scraper always runs as a single replica to avoid split-brain writes).
+replicaCount: 1
+
+# -- (int) Number of old ReplicaSets to retain for rollback
+revisionHistoryLimit: 10
+
+# -- Container image configuration
+image:
+  # -- (string) Container image registry host
+  registry: ghcr.io
+  # -- (string) Container image repository path without registry prefix
+  repository: younsl/trivy-collector
+  # -- (string) Image pull policy
+  pullPolicy: IfNotPresent
+  # -- (string) Image tag (defaults to chart appVersion)
+  tag: ""
+
+# -- (list) Image pull secrets for private registries
+imagePullSecrets: []
+
+# -- ServiceAccount configuration
+serviceAccount:
+  # -- (bool) Create a ServiceAccount
+  create: true
+  # -- (bool) Automount service account token
+  automount: true
+  # -- (object) Annotations to add to the ServiceAccount
+  annotations: {}
+  # -- (string) Name of the ServiceAccount (auto-generated if empty)
+  name: ""
+
+# -- (object) Annotations to add to the pod
+podAnnotations: {}
+
+# -- (object) Labels to add to the pod
+podLabels: {}
+
+# -- Pod security context configuration
+podSecurityContext:
+  # -- (bool) Run as non-root user
+  runAsNonRoot: true
+  # -- (int) User ID to run as
+  runAsUser: 1000
+  # -- (int) Group ID to run as
+  runAsGroup: 1000
+  # -- (int) Filesystem group ID
+  fsGroup: 1000
+
+# -- Container security context configuration
+securityContext:
+  # -- (bool) Disallow privilege escalation
+  allowPrivilegeEscalation: false
+  # -- Capabilities to drop
+  capabilities:
+    drop:
+      - ALL
+  # -- (bool) Mount root filesystem as read-only
+  readOnlyRootFilesystem: true
+
+# -- (string) Cluster name identifier recorded on the Hub's own reports.
+clusterName: "local"
+
+# -- Scraper pod settings. Runs --mode=scraper and owns the only database in
+# the release, on its own emptyDir. Also serves the internal read API the
+# server pods proxy through, and evaluates alert rules on the ingest path.
+# One replica by choice: a second would double the watch load for no benefit.
+scraper:
+  # -- (list) Namespaces the local watcher scans on the Hub's own cluster
+  # (empty = all).
+  namespaces: []
+  # -- (bool) Enable the local-cluster watcher (Hub itself). Set to false if
+  # Trivy Operator is not installed on the central cluster.
+  watchLocal: true
+  # -- Report kinds to watch. Applies to the Hub and to every registered edge
+  # cluster. Disabling a kind stops its watch everywhere and excludes it from
+  # hydration accounting, so readiness still clears. SbomReports are the bulk
+  # of the data, so turning them off is the main lever on database size.
+  collect:
+    # -- (bool) Watch VulnerabilityReports.
+    vulnerabilityReports: true
+    # -- (bool) Watch SbomReports.
+    sbomReports: true
+  # -- Ephemeral storage for the report database. Reports are a mirror of the
+  # CRs that exist right now, so an empty start costs one relist and nothing
+  # else, and it prunes the rows a deleted CR used to leave behind forever.
+  storage:
+    # -- (string) Where the database lives inside the container.
+    mountPath: /data
+    # -- (string) emptyDir sizeLimit. Must cover the database plus the WAL and
+    # rebuild churn that can briefly double it. Keep it in step with the
+    # container's ephemeral-storage limit below.
+    sizeLimit: 2Gi
+    # -- (string) emptyDir medium. Empty uses node disk; "Memory" trades node
+    # memory for speed and counts against the pod's memory limit.
+    medium: ""
+  # -- (object) Deployment strategy. RollingUpdate is safe now that each pod
+  # owns its own emptyDir and reports unready until the fleet is hydrated:
+  # the outgoing pod keeps serving reads for the whole rebuild.
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  # -- (object) Readiness probe. Stays failing until every registered cluster
+  # has replayed its initial list, so the server is never routed to a partial
+  # report set. failureThreshold is generous because a large fleet's first
+  # sync takes minutes.
+  readinessProbe:
+    httpGet:
+      path: /readyz
+      port: health
+    initialDelaySeconds: 5
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 60
+  # -- (object) Resource requests and limits. The scraper now holds the SQLite
+  # page cache and builds query results, so memory moved here from the server.
+  # ephemeral-storage must be declared because the database sits on an
+  # emptyDir drawn from the node.
+  resources:
+    limits:
+      memory: 512Mi
+      ephemeral-storage: 2Gi
+    requests:
+      cpu: 50m
+      memory: 256Mi
+      ephemeral-storage: 2Gi
+  # -- (list) Container resize policy for in-place resource updates.
+  resizePolicy: []
+  # -- (object) Node selector.
+  nodeSelector: {}
+  # -- (list) Tolerations.
+  tolerations: []
+  # -- (object) Affinity rules.
+  affinity: {}
+  # -- (list) Topology spread constraints.
+  topologySpreadConstraints: []
+  # -- ServiceMonitor for scraper (requires Prometheus Operator).
+  serviceMonitor:
+    # -- (bool) Create a ServiceMonitor for the scraper pod.
+    enabled: false
+    # -- (string) Scrape interval.
+    interval: 30s
+    # -- (string) Scrape timeout (defaults to Prometheus global when empty).
+    scrapeTimeout: ""
+    # -- (object) Additional labels to attach to the ServiceMonitor.
+    additionalLabels: {}
+    # -- (object) Annotations to attach to the ServiceMonitor.
+    annotations: {}
+
+# -- Server pod settings. Runs --mode=server. Holds no database and mounts no
+# volume: reports come from the scraper's internal API, notes and API tokens
+# from a watched ConfigMap and Secret, request logs from stdout. Scale it
+# freely.
+server:
+  # -- (int) Replica count for the UI / API pod. More than one is supported
+  # now that this tier is stateless; set server.mcp.stateless when raising it.
+  replicaCount: 1
+  # -- PodDisruptionBudget for the UI tier. Only meaningful with more than one
+  # replica, and skipped otherwise.
+  podDisruptionBudget:
+    # -- (bool) Create a PodDisruptionBudget.
+    enabled: true
+    # -- (string) Minimum available pods. Takes precedence when set.
+    minAvailable: ""
+    # -- (int) Maximum unavailable pods.
+    maxUnavailable: 1
+  # -- (int) HTTP server port
+  port: 3000
+  # -- (string) Explicit external URL used to render "View report" deep
+  # links in outbound notifications (e.g. `https://trivy.example.com`).
+  # Leave empty to auto-derive from gateway.hostnames.
+  externalUrl: ""
+  # -- (object) Resource requests and limits. Lower than before: this pod no
+  # longer holds a connection pool or materializes query results from a local
+  # file, so that memory moved to the scraper.
+  resources:
+    limits:
+      memory: 96Mi
+    requests:
+      cpu: 20m
+      memory: 48Mi
+  # -- (list) Container resize policy for in-place resource updates.
+  resizePolicy: []
+  # -- (object) Node selector.
+  nodeSelector: {}
+  # -- (list) Tolerations.
+  tolerations: []
+  # -- (object) Affinity rules.
+  affinity: {}
+  # -- (list) Topology spread constraints.
+  topologySpreadConstraints: []
+  # -- Embedded MCP (Model Context Protocol) server for LLM agents such as kagent.
+  # Served by the server pod at `/mcp` over the Streamable HTTP transport and
+  # gated by the same auth and RBAC as the REST API.
+  mcp:
+    # -- (bool) Mount the MCP endpoint at `/mcp`.
+    enabled: false
+    # -- (list) Allowed `Host` header values for `/mcp`. Leave empty to disable
+    # Host validation, which is required for in-cluster access via Service DNS.
+    allowedHosts: []
+    # -- (bool) Serve MCP without sessions. Set true when server.replicaCount > 1.
+    stateless: false
+  # -- ServiceMonitor for server (requires Prometheus Operator).
+  serviceMonitor:
+    # -- (bool) Create a ServiceMonitor for the server pod.
+    enabled: false
+    # -- (string) Scrape interval.
+    interval: 30s
+    # -- (string) Scrape timeout (defaults to Prometheus global when empty).
+    scrapeTimeout: ""
+    # -- (object) Additional labels to attach to the ServiceMonitor.
+    additionalLabels: {}
+    # -- (object) Annotations to attach to the ServiceMonitor.
+    annotations: {}
+
+  # -- Gateway API HTTPRoute configuration. The only ingress path this chart
+  # supports; plain Ingress was removed in favour of Gateway API.
+  gateway:
+    # -- (bool) Enable HTTPRoute
+    enabled: false
+    # -- (string) HTTPRoute name (defaults to fullname)
+    name: ""
+    # -- (list) Parent Gateway references
+    parentRefs:
+      - group: gateway.networking.k8s.io
+        kind: Gateway
+        name: main-gateway
+        namespace: gateway-system
+        sectionName: https
+    # -- (list) Hostnames for the route
+    hostnames:
+      - trivy.example.com
+    # -- (list) HTTP route rules
+    rules:
+      - matches:
+          - path:
+              type: PathPrefix
+              value: /
+        # -- (list) HTTPRoute filters (RequestHeaderModifier, ResponseHeaderModifier, RequestRedirect, URLRewrite, RequestMirror, ExtensionRef)
+        filters: []
+        # -- (list) HTTPBackendRefs. Each entry is rendered verbatim (group,
+        # kind, name, port, weight). Empty `name` defaults to the server
+        # pod's Service at render time.
+        backendRefs:
+          - group: ""
+            kind: Service
+            name: ""
+            port: 3000
+            weight: 1
+
+  # -- Authentication configuration (server mode only)
+  auth:
+    # -- (string) Authentication mode: "none" (anonymous) or "keycloak" (OIDC)
+    mode: "none"
+    # -- RBAC configuration (ArgoCD-style CSV policy)
+    rbac:
+      # -- (string) RBAC policy CSV (ArgoCD format)
+      # @default -- See values
+      policy: |
+        p, role:readonly, reports, get, allow
+        p, role:readonly, clusters, get, allow
+        p, role:readonly, stats, get, allow
+        p, role:readonly, tokens, get, allow
+        p, role:readonly, tokens, create, allow
+        p, role:admin, *, *, allow
+        g, admin, role:admin
+      # -- (string) Default RBAC policy for authenticated users without explicit group bindings
+      defaultPolicy: "role:readonly"
+    # -- SSO configuration (only used when auth.mode is "keycloak")
+    sso:
+      # -- (string) OIDC issuer URL (e.g., https://keycloak.example.com/realms/trivy)
+      issuer: ""
+      # -- OIDC client ID configuration
+      clientId:
+        # -- (string) Plaintext client ID value (used if set, takes precedence over secret reference)
+        value: ""
+        # -- (string) Secret name containing client ID
+        name: ""
+        # -- (string) Secret key for client ID
+        key: client-id
+      # -- OIDC client secret configuration
+      clientSecret:
+        # -- (string) Plaintext client secret value (used if set, takes precedence over secret reference)
+        value: ""
+        # -- (string) Secret name containing client secret
+        name: ""
+        # -- (string) Secret key for client secret
+        key: client-secret
+      # -- (string) OIDC redirect URL (full callback URL, e.g., https://trivy.example.com/auth/callback)
+      redirectUrl: ""
+      # -- (list) OIDC scopes
+      scopes:
+        - openid
+        - profile
+        - email
+        - groups
+
+# -- Service configuration
+service:
+  # -- (string) Service type
+  type: ClusterIP
+  # -- (int) Service port
+  port: 3000
+  # -- (object) Annotations to add to the Service
+  annotations: {}
+
+# -- Internal API between the scraper (which owns the database) and the server
+# pods. It returns every report in the fleet with no per-user filtering,
+# because RBAC is applied above it in the server, so it is never exposed
+# through the Ingress, the HTTPRoute, or a ServiceMonitor.
+internal:
+  # -- (int) Port the scraper serves the internal read API on.
+  port: 8081
+  # -- (string) Shared token, compared in constant time on every internal
+  # request. Leave empty to generate one on first install and keep it across
+  # upgrades. A GitOps controller that renders without cluster access cannot
+  # read the existing value, so set this (or internal.existingSecret) there.
+  token: ""
+  # -- (string) Use an existing Secret for the token instead of managing one.
+  existingSecret: ""
+  # -- (string) Key inside the token Secret.
+  secretKey: token
+  # -- NetworkPolicy fencing the internal port to the server pods. A second
+  # fence alongside the shared token.
+  networkPolicy:
+    # -- (bool) Create the NetworkPolicy. On a cluster whose CNI does not
+    # enforce policy this is inert rather than harmful, so it defaults on.
+    enabled: true
+    # -- (list) Additional `from` selectors allowed to reach the internal port.
+    extraFrom: []
+
+# -- Health check configuration
+health:
+  # -- (int) Health check server port
+  port: 8080
+
+# -- Logging configuration
+logging:
+  # -- (string) Log format: "json" or "pretty"
+  format: json
+  # -- (string) Log level: trace, debug, info, warn, error
+  level: info
+
+# -- Liveness probe configuration
+livenessProbe:
+  httpGet:
+    path: /healthz
+    port: health
+  # -- (int) Initial delay before starting probes
+  initialDelaySeconds: 10
+  # -- (int) Probe interval
+  periodSeconds: 30
+  # -- (int) Probe timeout
+  timeoutSeconds: 5
+  # -- (int) Number of failures before marking unhealthy
+  failureThreshold: 3
+
+# -- Readiness probe configuration
+readinessProbe:
+  httpGet:
+    path: /readyz
+    port: health
+  # -- (int) Initial delay before starting probes
+  initialDelaySeconds: 5
+  # -- (int) Probe interval
+  periodSeconds: 10
+  # -- (int) Probe timeout
+  timeoutSeconds: 5
+  # -- (int) Number of failures before marking not ready
+  failureThreshold: 3
+
+# -- (string) DNS policy for the pod (ClusterFirst, ClusterFirstWithHostNet, Default, None)
+# @default -- ""
+dnsPolicy: ""
+
+# -- (object) DNS configuration for the pod
+# @default -- {}
+dnsConfig: {}
+  # nameservers:
+  #   - 8.8.8.8
+  # searches:
+  #   - example.com
+  # options:
+  #   - name: ndots
+  #     value: "2"
+
+# -- One-shot migration off the PersistentVolume. Reports need no export, the
+# next scraper start relists them, but API tokens and report notes are
+# unrecoverable, so they are read out of the legacy database and written to a
+# Secret and a ConfigMap before the volume goes away.
+#
+# Run with exportState.enabled and the old PVC name, verify both objects, then
+# disable it and delete the PVC. Until then the PVC is the rollback.
+migration:
+  exportState:
+    # -- (bool) Run the export as a pre-install/pre-upgrade hook Job.
+    enabled: false
+    # -- (string) Name of the existing PVC holding the legacy database.
+    existingClaim: ""
+    # -- (string) Path to the legacy database inside that volume.
+    dbPath: /data/trivy.db
+    # -- (bool) Report what would be written without writing it.
+    dryRun: false
+    # -- (int) Job backoff limit.
+    backoffLimit: 2
+    # -- (int) Seconds to keep the finished Job.
+    ttlSecondsAfterFinished: 3600
+    # -- (object) Node selector. Defaults to the scraper's, because the legacy
+    # PVC is ReadWriteOnce and this Job can only mount it where the scraper
+    # already has it attached.
+    nodeSelector: {}
+    # -- (list) Tolerations. Defaults to the scraper's. Without them a Job on a
+    # tainted node stays Pending, and a pending pre-sync hook blocks the
+    # upgrade it was meant to precede.
+    tolerations: []
+    # -- (object) Affinity rules. Defaults to the scraper's.
+    affinity: {}
+    # -- (object) Resource requests and limits.
+    resources:
+      limits:
+        memory: 128Mi
+      requests:
+        cpu: 50m
+        memory: 64Mi
+
+# -- (list) Extra Kubernetes objects to deploy alongside the chart
+# @default -- []
+extraObjects: []
+  # - apiVersion: v1
+  #   kind: ConfigMap
+  #   metadata:
+  #     name: extra-config
+  #   data:
+  #     key: value

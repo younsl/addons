@@ -1,0 +1,17 @@
+{
+  "box/kubernetes/aurora-database-insights-exporter/Dockerfile": { "binary": "adie" },
+  "box/kubernetes/aws-health-event-notifier/Dockerfile":         {},
+  "box/kubernetes/aws-vpn-maintenance-handler/Dockerfile":       {},
+  "box/kubernetes/ec2-metadata-exporter/Dockerfile":             {},
+  "box/kubernetes/gss/Dockerfile":                               { "binary": "ghes-schedule-scanner" },
+  "box/kubernetes/trivy-collector/Dockerfile":                   { "frontend_manager": "npm", "frontend_dir": "frontend", "embed_dir": "static" },
+  "box/kubernetes/kubernetes-upgrade-operator/Dockerfile":       { "project": "kuo" },
+  "box/kubernetes/kagent-gateway/Dockerfile":                    {},
+  "box/kubernetes/argocd-promotion-gate/Dockerfile":             {},
+  "box/kubernetes/argocd-canary-gate/Dockerfile":                {},
+  "box/kubernetes/filesystem-cleaner/Dockerfile":                {},
+  "box/kubernetes/external-ebs-autoresizer/Dockerfile":          {},
+  "box/kubernetes/backstage/backstage-mcp/Dockerfile":           {},
+  "box/kubernetes/forklift/Dockerfile":                          { "frontend_manager": "pnpm", "frontend_dir": "web", "embed_dir": "src/webui/dist" },
+  "box/kubernetes/forklift/Dockerfile.mcp":                      { "project": "forklift-mcp" }
+}

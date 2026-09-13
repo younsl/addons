@@ -1,0 +1,40 @@
+apiVersion: v2
+name: trivy-collector
+description: Multi-cluster Trivy report collector and viewer
+type: application
+deprecated: false
+version: 0.13.0
+appVersion: "1.8.0"
+keywords:
+  - trivy
+  - security
+  - vulnerability
+  - sbom
+  - kubernetes
+home: https://github.com/younsl/addons
+sources:
+  - https://github.com/younsl/addons/tree/main/box/kubernetes/trivy-collector
+maintainers:
+  - name: younsl
+    email: cysl@kakao.com
+    url: https://github.com/younsl
+annotations:
+  artifacthub.io/changes: |
+    - kind: changed
+      description: "Alert rules move out of the alerts ConfigMap and become AlertRule custom resources in the trivy-collector.security.io API group. The chart installs the CRD under crds.install"
+    - kind: added
+      description: "New crds.install, crds.keep, crds.annotations and crds.additionalLabels values, and Role rules granting the ServiceAccount full verbs on trivy-collector.security.io alertrules plus the alertrules/status subresource"
+    - kind: added
+      description: "A status subresource records who authored a rule, when it last fired, its lifetime firing count, and Ready and Delivered conditions. kubectl get alertrules prints READY, FIRED and LAST-FIRED"
+    - kind: added
+      description: "Existing rules are imported from the trivy-collector-alerts ConfigMap on first start. The ConfigMap is stamped, never deleted, and stays the rollback"
+    - kind: added
+      description: "MCP tools list_alert_rules and get_alert_rule, gated on alerts:get, with Slack webhook URLs redacted"
+    - kind: changed
+      description: "GET /api/v1/alerts replaces the configmap field with api_version and resource. Alert responses now carry real OpenAPI schemas"
+    - kind: fixed
+      description: "A rule's Ready condition is answered by a watch on the rules rather than only when the rule fires, so a correct rule watching a package nobody runs reports Ready=True with firedCount 0 and a new rule is answered immediately. A disabled rule reports Ready=False with reason Disabled"
+    - kind: changed
+      description: "Alert preview and test move from POST /api/v1/alerts/{preview,test} to POST /api/v1/alert-drafts/{preview,test}. Under the old paths a rule named test or preview was unreachable for GET, PUT and DELETE, because a static path segment wins over the name parameter and the action route accepts only POST"
+    - kind: fixed
+      description: "OpenAPI document reports the status codes the alerts, hub, notes, and token endpoints actually return, and documents the OIDC login, callback, and error routes"

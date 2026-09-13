@@ -1,0 +1,66 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 400" font-family="-apple-system, Segoe UI, Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L8,3 L0,6 Z" fill="#111111"/>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="900" height="400" fill="#ffffff"/>
+
+  <!-- cluster boundary -->
+  <rect x="170" y="30" width="710" height="340" rx="10" fill="#ffffff" stroke="#111111" stroke-width="1.5" stroke-dasharray="6 4"/>
+  <text x="186" y="52" font-size="14" font-weight="700" fill="#111111">Kubernetes cluster</text>
+
+  <!-- client (actor, outside the cluster) -->
+  <g font-size="12">
+    <rect x="24" y="170" width="120" height="60" rx="6" fill="#111111" stroke="#111111"/>
+    <text x="84" y="196" text-anchor="middle" font-weight="700" fill="#ffffff">Client</text>
+    <text x="84" y="213" text-anchor="middle" font-size="9.5" fill="#cccccc">browser / mvn npm pip</text>
+  </g>
+
+  <!-- istio ingress gateway -->
+  <g font-size="12">
+    <rect x="196" y="170" width="130" height="60" rx="6" fill="#ffffff" stroke="#111111" stroke-width="1.5"/>
+    <text x="261" y="196" text-anchor="middle" font-weight="700" fill="#111111">Istio Ingress</text>
+    <text x="261" y="212" text-anchor="middle" font-weight="700" fill="#111111">Gateway</text>
+  </g>
+
+  <!-- httproute -->
+  <g font-size="12">
+    <rect x="374" y="170" width="110" height="60" rx="6" fill="#ffffff" stroke="#111111" stroke-width="1.5"/>
+    <text x="429" y="196" text-anchor="middle" font-weight="700" fill="#111111">HTTPRoute</text>
+    <text x="429" y="212" text-anchor="middle" font-size="9.5" fill="#555555">path prefix rules</text>
+  </g>
+
+  <!-- forklift namespace -->
+  <rect x="540" y="60" width="320" height="290" rx="10" fill="#ffffff" stroke="#111111" stroke-width="1.5" stroke-dasharray="6 4"/>
+  <text x="556" y="82" font-size="13" font-weight="700" fill="#111111">forklift namespace</text>
+
+  <!-- FE pod -->
+  <g font-size="12">
+    <rect x="576" y="104" width="248" height="66" rx="6" fill="#ffffff" stroke="#111111" stroke-width="1.5"/>
+    <text x="700" y="130" text-anchor="middle" font-weight="700" fill="#111111">FE Pod (forklift-web)</text>
+    <text x="700" y="148" text-anchor="middle" font-size="9.5" fill="#555555">Next.js SSR :3000</text>
+  </g>
+
+  <!-- BE pod -->
+  <g font-size="12">
+    <rect x="576" y="252" width="248" height="66" rx="6" fill="#ffffff" stroke="#111111" stroke-width="1.5"/>
+    <text x="700" y="278" text-anchor="middle" font-weight="700" fill="#111111">BE Pod (forklift)</text>
+    <text x="700" y="296" text-anchor="middle" font-size="9.5" fill="#555555">Go API + package routes :8080</text>
+  </g>
+
+  <!-- arrows -->
+  <line x1="144" y1="200" x2="192" y2="200" stroke="#111111" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="326" y1="200" x2="370" y2="200" stroke="#111111" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <line x1="484" y1="188" x2="572" y2="144" stroke="#111111" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <text x="516" y="150" font-size="9.5" fill="#555555">/</text>
+
+  <line x1="484" y1="212" x2="572" y2="278" stroke="#111111" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <text x="356" y="254" font-size="9.5" fill="#555555">/api/v1, /auth, /maven,</text>
+  <text x="356" y="267" font-size="9.5" fill="#555555">/npm, /cargo, /go, /pypi, /raw</text>
+
+  <line x1="700" y1="170" x2="700" y2="248" stroke="#111111" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <text x="710" y="214" font-size="9.5" fill="#555555">SSR fetch (cluster-internal)</text>
+</svg>

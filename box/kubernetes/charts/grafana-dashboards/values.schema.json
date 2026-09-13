@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "title": "grafana-dashboards values",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "global": {
+      "type": "object"
+    },
+    "nameOverride": {
+      "type": ["string", "null"]
+    },
+    "fullnameOverride": {
+      "type": ["string", "null"]
+    },
+    "sidecar": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["labels", "folderAnnotation"],
+      "properties": {
+        "labels": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "folderAnnotation": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "dashboards": {
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$"
+      },
+      "additionalProperties": {
+        "$ref": "#/definitions/dashboard"
+      }
+    }
+  },
+  "definitions": {
+    "dashboard": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled", "file"],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "file": {
+          "type": "string",
+          "pattern": "\\.json$"
+        },
+        "folder": {
+          "type": "string"
+        },
+        "labels": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "annotations": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

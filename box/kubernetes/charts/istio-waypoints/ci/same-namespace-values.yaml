@@ -1,0 +1,21 @@
+# CI test values for istio-waypoints chart: multiple waypoints in one namespace
+
+waypoints:
+  # Test: namespace-wide waypoint with chart defaults
+  backend:
+    namespace: backend
+    name: waypoint
+
+  # Test: second waypoint in the same namespace, workload addressing, no parametersRef
+  backend-orders:
+    namespace: backend
+    name: orders-waypoint
+    waypointFor: all
+    gatewayApiVersion: gateway.networking.k8s.io/v1beta1
+    container: ~
+    parameters:
+      deployment: ~
+      horizontalPodAutoscaler: ~
+      podDisruptionBudget: ~
+    telemetry:
+      enabled: false

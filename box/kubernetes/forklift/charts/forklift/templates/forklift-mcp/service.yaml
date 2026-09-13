@@ -1,0 +1,30 @@
+{{- if .Values.mcp.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "forklift.fullname" . }}-mcp
+  labels:
+    {{- include "forklift.mcp.labels" . | nindent 4 }}
+  {{- with .Values.mcp.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.mcp.service.type }}
+  {{- with .Values.mcp.service.trafficDistribution }}
+  trafficDistribution: {{ . }}
+  {{- end }}
+  selector:
+    {{- include "forklift.mcp.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ .Values.mcp.service.port }}
+      targetPort: http
+      protocol: TCP
+    {{- if .Values.mcp.service.metricsPort }}
+    - name: metrics
+      port: {{ .Values.mcp.service.metricsPort }}
+      targetPort: metrics
+      protocol: TCP
+    {{- end }}
+{{- end }}

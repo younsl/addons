@@ -1,0 +1,146 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "trivy-collector.serverName" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "trivy-collector.serverSelectorLabels" . | nindent 4 }}
+    helm.sh/chart: {{ include "trivy-collector.chart" . }}
+    {{- if .Chart.AppVersion }}
+    app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
+    {{- end }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+spec:
+  replicas: {{ .Values.server.replicaCount | default 1 }}
+  revisionHistoryLimit: {{ .Values.revisionHistoryLimit }}
+  selector:
+    matchLabels:
+      {{- include "trivy-collector.serverSelectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "trivy-collector.serverSelectorLabels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "trivy-collector.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: server
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          image: "{{ .Values.image.registry }}/{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args:
+            - --mode=server
+          env:
+            - name: MODE
+              value: "server"
+            {{- include "trivy-collector.commonEnv" . | nindent 12 }}
+            - name: SERVER_PORT
+              value: {{ .Values.server.port | quote }}
+            - name: SCRAPER_URL
+              value: {{ include "trivy-collector.scraperUrl" . | quote }}
+            - name: NOTES_CONFIGMAP
+              value: {{ include "trivy-collector.notesConfigMapName" . | quote }}
+            - name: API_TOKENS_SECRET
+              value: {{ include "trivy-collector.apiTokensSecretName" . | quote }}
+            - name: HUB_SECRET_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            {{- $externalUrl := include "trivy-collector.externalUrl" . }}
+            {{- if $externalUrl }}
+            - name: EXTERNAL_URL
+              value: {{ $externalUrl | quote }}
+            {{- end }}
+            {{- if .Values.server.mcp.enabled }}
+            - name: MCP_ENABLED
+              value: "true"
+            {{- with .Values.server.mcp.allowedHosts }}
+            - name: MCP_ALLOWED_HOSTS
+              value: {{ join "," . | quote }}
+            {{- end }}
+            {{- if .Values.server.mcp.stateless }}
+            - name: MCP_STATELESS
+              value: "true"
+            {{- end }}
+            {{- end }}
+            {{- if eq .Values.server.auth.mode "keycloak" }}
+            - name: AUTH_MODE
+              valueFrom: { configMapKeyRef: { name: {{ include "trivy-collector.fullname" . }}-auth, key: AUTH_MODE } }
+            - name: OIDC_ISSUER_URL
+              valueFrom: { configMapKeyRef: { name: {{ include "trivy-collector.fullname" . }}-auth, key: OIDC_ISSUER_URL } }
+            - name: OIDC_REDIRECT_URL
+              valueFrom: { configMapKeyRef: { name: {{ include "trivy-collector.fullname" . }}-auth, key: OIDC_REDIRECT_URL } }
+            - name: OIDC_SCOPES
+              valueFrom: { configMapKeyRef: { name: {{ include "trivy-collector.fullname" . }}-auth, key: OIDC_SCOPES } }
+            - name: OIDC_CLIENT_ID
+              {{- if .Values.server.auth.sso.clientId.value }}
+              value: {{ .Values.server.auth.sso.clientId.value | quote }}
+              {{- else }}
+              valueFrom:
+                secretKeyRef: { name: {{ .Values.server.auth.sso.clientId.name }}, key: {{ .Values.server.auth.sso.clientId.key }} }
+              {{- end }}
+            - name: OIDC_CLIENT_SECRET
+              {{- if .Values.server.auth.sso.clientSecret.value }}
+              value: {{ .Values.server.auth.sso.clientSecret.value | quote }}
+              {{- else }}
+              valueFrom:
+                secretKeyRef: { name: {{ .Values.server.auth.sso.clientSecret.name }}, key: {{ .Values.server.auth.sso.clientSecret.key }} }
+              {{- end }}
+            - name: RBAC_POLICY_CSV
+              valueFrom: { configMapKeyRef: { name: {{ include "trivy-collector.fullname" . }}-auth, key: RBAC_POLICY_CSV } }
+            - name: RBAC_DEFAULT_POLICY
+              valueFrom: { configMapKeyRef: { name: {{ include "trivy-collector.fullname" . }}-auth, key: RBAC_DEFAULT_POLICY } }
+            {{- end }}
+          ports:
+            - name: health
+              containerPort: {{ .Values.health.port }}
+              protocol: TCP
+            - name: http
+              containerPort: {{ .Values.server.port }}
+              protocol: TCP
+          livenessProbe:
+            {{- toYaml .Values.livenessProbe | nindent 12 }}
+          readinessProbe:
+            {{- toYaml .Values.readinessProbe | nindent 12 }}
+          resources:
+            {{- toYaml .Values.server.resources | nindent 12 }}
+          {{- with .Values.server.resizePolicy }}
+          resizePolicy:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      {{- with .Values.server.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.server.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.server.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.server.topologySpreadConstraints }}
+      topologySpreadConstraints:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.dnsPolicy }}
+      dnsPolicy: {{ . }}
+      {{- end }}
+      {{- with .Values.dnsConfig }}
+      dnsConfig:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

@@ -1,0 +1,25 @@
+apiVersion: v2
+name: istio-waypoints
+description: A Helm chart for managing Istio ambient waypoint proxies. Declares one Gateway per waypoint with its parametersRef ConfigMap, Telemetry and AuthorizationPolicy, so many waypoints across namespaces are managed from a single values file.
+deprecated: false
+type: application
+version: 0.2.0
+appVersion: "0.2.0"
+kubeVersion: ">=1.30.0-0"
+keywords:
+  - istio
+  - ambient
+  - waypoint
+  - gateway-api
+  - service-mesh
+maintainers:
+  - name: younsl
+    email: cysl@kakao.com
+    url: https://github.com/younsl
+home: https://istio.io/latest/docs/ambient/usage/waypoint/
+sources:
+  - https://github.com/istio/istio
+  - https://github.com/younsl/addons/tree/main/box/kubernetes/charts/istio-waypoints
+annotations:
+  "helm.sh/skip-test": "true"
+  "helm.sh/skip-test-reason": "Only CRD resources, requires Istio ambient and Gateway API to be installed"

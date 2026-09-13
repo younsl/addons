@@ -1,0 +1,789 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>forklift — Go에서 Rust로</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  :root {
+    --bg: #000;
+    --fg: #ededed;
+    --muted: #888;
+    --dim: #444;
+    --line: #262626;
+    --panel: #0a0a0a;
+    --white: #fff;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    background: var(--bg); color: var(--fg);
+    font-family: ui-sans-serif, -apple-system, "Pretendard", "Inter", "Geist", sans-serif;
+    font-weight: 400;
+    -webkit-font-smoothing: antialiased;
+  }
+  body { overflow: hidden; }
+  a { color: var(--fg); text-decoration: none; }
+  code, .mono { font-family: ui-monospace, "Geist Mono", "JetBrains Mono", monospace; }
+  code { font-size: 0.9em; color: var(--fg); background: var(--panel); padding: 1px 5px; border: 1px solid var(--line); }
+
+  .deck { position: relative; width: 100vw; height: 100vh; }
+  .slide {
+    position: absolute; inset: 0;
+    padding: 5vh 5vw;
+    display: none;
+    flex-direction: column;
+    justify-content: center;
+  }
+  .slide.active { display: flex; }
+
+  .eyebrow { text-transform: uppercase; letter-spacing: 0.22em; font-size: 11px; color: var(--muted); margin-bottom: 16px; }
+  h1 { font-size: clamp(48px, 6.4vw, 92px); margin: 0 0 16px; font-weight: 700; letter-spacing: -0.03em; line-height: 1.02; }
+  h2 { font-size: clamp(26px, 3.2vw, 42px); margin: 0 0 6px; font-weight: 700; letter-spacing: -0.02em; line-height: 1.1; }
+  .sub { font-size: clamp(14px, 1.2vw, 17px); color: var(--muted); max-width: 90ch; line-height: 1.5; margin: 0 0 18px; }
+  .rule { height: 1px; background: var(--fg); width: 64px; margin: 0 0 28px; opacity: 0.85; }
+  .meta-row { display: flex; gap: 32px; margin-top: 24px; font-size: 12px; color: var(--muted); letter-spacing: 0.08em; text-transform: uppercase; }
+  .meta-row span strong { color: var(--fg); font-weight: 600; letter-spacing: 0.02em; text-transform: none; font-size: 15px; }
+
+  .grid { display: grid; gap: 16px; margin-top: 8px; }
+  .g2 { grid-template-columns: 1fr 1fr; }
+  .g3 { grid-template-columns: 1fr 1fr 1fr; }
+  .g4 { grid-template-columns: repeat(4, 1fr); }
+  .card { border: 1px solid var(--line); background: var(--panel); padding: 20px 22px; min-height: 0; }
+  .card.hi { border-color: var(--fg); }
+  .card .tag { font-family: ui-monospace, monospace; font-size: 11px; color: var(--muted); letter-spacing: 0.18em; text-transform: uppercase; margin-bottom: 8px; }
+  .card ul { margin: 0; padding-left: 16px; line-height: 1.55; font-size: clamp(12px, 1.05vw, 15px); color: #c8c8c8; }
+  .card li + li { margin-top: 3px; }
+
+  .kpi { display: flex; flex-direction: column; gap: 6px; }
+  .kpi .num { font-size: clamp(40px, 5vw, 72px); font-weight: 700; letter-spacing: -0.04em; line-height: 1; color: var(--white); }
+  .kpi .num small { font-size: 0.35em; color: var(--muted); margin-left: 6px; font-weight: 400; letter-spacing: 0; }
+  .kpi .lbl { font-size: 12.5px; color: var(--muted); letter-spacing: 0.04em; line-height: 1.4; }
+  .kpi.dim .num { color: var(--muted); }
+
+  .arch { flex: 1; display: flex; align-items: center; justify-content: center; min-height: 0; }
+  .arch svg { width: 100%; height: 100%; max-height: 72vh; }
+  .arch text { font-family: ui-sans-serif, -apple-system, "Pretendard", "Inter", sans-serif; }
+  .arch .mono { font-family: ui-monospace, "JetBrains Mono", monospace; }
+
+  svg .box { fill: #0a0a0a; stroke: #262626; stroke-width: 1.2; }
+  svg .box.hi { stroke: #ededed; }
+  svg .box.dark { fill: #000; }
+  svg .zone { fill: none; stroke: #262626; stroke-dasharray: 5 5; }
+  svg .zt { fill: #888; font-size: 12px; letter-spacing: 2px; }
+  svg .t { fill: #ededed; font-size: 14px; font-weight: 600; }
+  svg .s { fill: #888; font-size: 11.5px; }
+  svg .m { fill: #c8c8c8; font-size: 11px; font-family: ui-monospace, monospace; }
+  svg .fl { stroke: #888; stroke-width: 1.4; fill: none; marker-end: url(#ah); }
+  svg .fl.hi { stroke: #ededed; }
+  svg .axis { stroke: #262626; stroke-width: 1; }
+  svg .tick { fill: #666; font-size: 10.5px; font-family: ui-monospace, monospace; }
+  svg .bar { fill: #ededed; }
+  svg .bar.dim { fill: #333; }
+  svg .big { fill: #fff; font-size: 34px; font-weight: 700; letter-spacing: -1.5px; }
+
+  table.t { width: 100%; border-collapse: collapse; font-size: clamp(12px, 1.05vw, 15px); }
+  table.t th, table.t td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  table.t th { color: var(--muted); font-weight: 500; letter-spacing: 0.08em; text-transform: uppercase; font-size: 11px; }
+  table.t td.n { text-align: right; font-family: ui-monospace, monospace; font-variant-numeric: tabular-nums; }
+  table.t th.n { text-align: right; }
+  table.t td.hl { color: var(--white); font-weight: 600; }
+  .dot { display: inline-block; width: 11px; height: 11px; border-radius: 50%; border: 1.5px solid var(--fg); vertical-align: middle; }
+  .dot.full { background: var(--fg); }
+  .dot.half { background: linear-gradient(90deg, var(--fg) 50%, transparent 50%); }
+  .dot.none { border-color: var(--dim); }
+
+  .refs { display: grid; grid-template-columns: 1fr 1fr; gap: 16px 40px; margin-top: 14px; }
+  .refs h3 { margin: 0 0 8px; font-size: 11px; color: var(--muted); letter-spacing: 0.18em; text-transform: uppercase; font-family: ui-monospace, monospace; font-weight: 500; }
+  .refs ul { margin: 0 0 14px; padding-left: 16px; font-size: clamp(11.5px, 0.95vw, 13.5px); line-height: 1.55; color: #c8c8c8; }
+  .refs li + li { margin-top: 3px; }
+  .refs a { color: var(--fg); text-decoration: underline; text-decoration-color: var(--dim); text-underline-offset: 3px; }
+  .refs a:hover { text-decoration-color: var(--fg); }
+
+  .chrome { position: fixed; bottom: 20px; left: 5vw; right: 5vw; display: flex; justify-content: space-between; align-items: center; font-size: 11px; color: var(--muted); letter-spacing: 0.18em; text-transform: uppercase; pointer-events: none; }
+  .pager { font-variant-numeric: tabular-nums; }
+  .hint { pointer-events: auto; }
+  .kbd { display: inline-block; border: 1px solid var(--line); padding: 1px 6px; font-family: ui-monospace, monospace; font-size: 10px; color: var(--fg); background: var(--panel); }
+  .foot { margin-top: 14px; font-size: 12px; color: var(--muted); line-height: 1.5; }
+
+  @page { size: 1600px 898px; margin: 0; }
+  @media print {
+    * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+    html, body { width: 1600px; height: auto; overflow: visible; background: #fff; }
+    .deck { width: 1600px; height: auto; position: static; }
+    .slide { display: flex !important; position: relative; inset: auto; width: 1600px; height: 898px; overflow: hidden; background: var(--bg); }
+    .slide + .slide { page-break-before: always; break-before: page; }
+    .chrome { display: none !important; }
+  }
+</style>
+</head>
+<body>
+<div class="deck">
+
+<!-- 1. 표지 -->
+<section class="slide active">
+  <div class="eyebrow">DevOps · Platform · 2026-09-10</div>
+  <h1>forklift<br>Go에서 Rust로</h1>
+  <p class="sub">3주간 다섯 번 리소스를 올리며 버티다 런타임을 바꿨다. 상주 메모리 86% 감소.</p>
+  <div class="rule"></div>
+  <div class="meta-row">
+    <span>전환 <strong>2026-09-09 01:32 KST</strong></span>
+    <span>버전 <strong>0.12.2 → 0.13.0</strong></span>
+    <span>런타임 <strong>Go → Rust 1.98.1</strong></span>
+  </div>
+</section>
+
+<!-- 1b. 포팅 규모 -->
+<section class="slide">
+  <div class="eyebrow">01 · 포팅 규모</div>
+  <h1 style="font-size:clamp(56px,8.6vw,132px)">이틀 만에<br>62.8k 라인</h1>
+  <div class="rule"></div>
+  <p class="sub" style="font-size:clamp(15px,1.5vw,21px)">Go 275 파일 62.8k LOC 를 Rust 276 파일 92.3k LOC 로 옮겼다. 재작성이 아니라 모듈 대 모듈 1:1 포팅 · 커밋 1개 · 테스트 714건.</p>
+</section>
+
+<!-- 2. 요약 -->
+<section class="slide">
+  <div class="eyebrow">02 · 요약</div>
+  <h2>숫자 넷</h2>
+  <div class="grid g4" style="margin-top:24px">
+    <div class="card kpi"><div class="num">−61<small>%</small></div><div class="lbl">리더 파드 rss p50 · 138 → 55 MiB</div></div>
+    <div class="card kpi"><div class="num">−75<small>%</small></div><div class="lbl">CPU request · 1000m → 250m</div></div>
+    <div class="card kpi"><div class="num">−22<small>%</small></div><div class="lbl">메모리 limit · 2100Mi → 1638Mi · request 900Mi → 512Mi</div></div>
+    <div class="card kpi"><div class="num">−70<small>%</small></div><div class="lbl">리더 파드 working set p50 · 640 → 194 MiB</div></div>
+  </div>
+</section>
+
+<!-- 2b. 운영 부담 -->
+<section class="slide">
+  <div class="eyebrow">03 · 배경 · 3주간의 개입</div>
+  <h2>OOM 을 막으려 3주 동안 다섯 번 올렸다</h2>
+  <div class="arch" style="max-height:60vh">
+<svg viewBox="0 0 1400 420" role="img" aria-label="three weeks of right-sizing interventions">
+<rect x="138.7" y="60" width="927.4" height="290" fill="#ededed" opacity="0.05"/>
+<text class="s" x="146.7" y="82">GO · 3주 · OOM 방지 개입 5회 · 전부 증설</text>
+<line class="axis" x1="100" y1="300" x2="1300" y2="300"/>
+<text class="tick" x="158.1" y="324" text-anchor="middle">08-11</text>
+<text class="tick" x="429.0" y="324" text-anchor="middle">08-18</text>
+<text class="tick" x="700.0" y="324" text-anchor="middle">08-25</text>
+<text class="tick" x="971.0" y="324" text-anchor="middle">09-01</text>
+<text class="tick" x="1241.9" y="324" text-anchor="middle">09-08</text>
+<line x1="158.1" y1="238" x2="158.1" y2="300" stroke="#444"/>
+<circle cx="158.1" cy="300" r="7" fill="#ededed"/>
+<text class="m" x="158.1" y="204" text-anchor="middle">08-11</text>
+<text class="t" x="158.1" y="224" text-anchor="middle">CPU request</text>
+<text class="s" x="158.1" y="242" text-anchor="middle">200m → 500m</text>
+<line x1="429.0" y1="168" x2="429.0" y2="300" stroke="#444"/>
+<circle cx="429.0" cy="300" r="7" fill="#ededed"/>
+<text class="m" x="429.0" y="134" text-anchor="middle">08-18</text>
+<text class="t" x="429.0" y="154" text-anchor="middle">CPU request</text>
+<text class="s" x="429.0" y="172" text-anchor="middle">500m → 1000m</text>
+<line x1="506.5" y1="238" x2="506.5" y2="300" stroke="#444"/>
+<circle cx="506.5" cy="300" r="7" fill="#ededed"/>
+<text class="m" x="506.5" y="204" text-anchor="middle">08-20</text>
+<text class="t" x="506.5" y="224" text-anchor="middle">memory</text>
+<text class="s" x="506.5" y="242" text-anchor="middle">request 600 → 900Mi · limit 1200 → 1800Mi</text>
+<line x1="932.3" y1="168" x2="932.3" y2="300" stroke="#444"/>
+<circle cx="932.3" cy="300" r="7" fill="#ededed"/>
+<text class="m" x="932.3" y="134" text-anchor="middle">08-31</text>
+<text class="t" x="932.3" y="154" text-anchor="middle">memory limit</text>
+<text class="s" x="932.3" y="172" text-anchor="middle">1800 → 2100Mi</text>
+<line x1="1048.4" y1="238" x2="1048.4" y2="300" stroke="#444"/>
+<circle cx="1048.4" cy="300" r="7" fill="#ededed"/>
+<text class="m" x="1048.4" y="204" text-anchor="middle">09-03</text>
+<text class="t" x="1048.4" y="224" text-anchor="middle">앱 완화</text>
+<text class="s" x="1048.4" y="242" text-anchor="middle">스냅샷 스킵 · 감사 로그 배치</text>
+<line x1="1262.9" y1="120" x2="1262.9" y2="300" stroke="#fff" stroke-dasharray="4 4"/>
+<circle cx="1262.9" cy="300" r="9" fill="#ffe66d"/>
+<text class="m" x="1262.9" y="94" text-anchor="middle">09-09</text>
+<text class="t" x="1262.9" y="114" text-anchor="middle" style="fill:#ffe66d">Rust 전환</text>
+<text class="s" x="1250.9" y="370" text-anchor="end">이후 첫 하향 · 250m · 512Mi · limit 1638Mi</text>
+<text class="s" x="100" y="400">DevOps Engineer 가 매일 메모리 지표를 보며 limit 에 닿기 전에 올렸다. 요청이 늘면 다시 올려야 하는 구조.</text>
+<!-- Rust logo · rust-lang.org (CC BY 4.0, monochrome) -->
+<g transform="translate(1237.0 16.0) scale(0.3611)" fill="#ededed" aria-label="Rust">
+<path d="m71.05 23.68c-26.06 0-47.27 21.22-47.27 47.27s21.22 47.27 47.27 47.27 47.27-21.22 47.27-47.27-21.22-47.27-47.27-47.27zm-.07 4.2a3.1 3.11 0 0 1 3.02 3.11 3.11 3.11 0 0 1 -6.22 0 3.11 3.11 0 0 1 3.2-3.11zm7.12 5.12a38.27 38.27 0 0 1 26.2 18.66l-3.67 8.28c-.63 1.43.02 3.11 1.44 3.75l7.06 3.13a38.27 38.27 0 0 1 .08 6.64h-3.93c-.39 0-.55.26-.55.64v1.8c0 4.24-2.39 5.17-4.49 5.4-2 .23-4.21-.84-4.49-2.06-1.18-6.63-3.14-8.04-6.24-10.49 3.85-2.44 7.85-6.05 7.85-10.87 0-5.21-3.57-8.49-6-10.1-3.42-2.25-7.2-2.7-8.22-2.7h-40.6a38.27 38.27 0 0 1 21.41-12.08l4.79 5.02c1.08 1.13 2.87 1.18 4 .09zm-44.2 23.02a3.11 3.11 0 0 1 3.02 3.11 3.11 3.11 0 0 1 -6.22 0 3.11 3.11 0 0 1 3.2-3.11zm74.15.14a3.11 3.11 0 0 1 3.02 3.11 3.11 3.11 0 0 1 -6.22 0 3.11 3.11 0 0 1 3.2-3.11zm-68.29.5h5.42v24.44h-10.94a38.27 38.27 0 0 1 -1.24-14.61l6.7-2.98c1.43-.64 2.08-2.31 1.44-3.74zm22.62.26h12.91c.67 0 4.71.77 4.71 3.8 0 2.51-3.1 3.41-5.65 3.41h-11.98zm0 17.56h9.89c.9 0 4.83.26 6.08 5.28.39 1.54 1.26 6.56 1.85 8.17.59 1.8 2.98 5.4 5.53 5.4h16.14a38.27 38.27 0 0 1 -3.54 4.1l-6.57-1.41c-1.53-.33-3.04.65-3.37 2.18l-1.56 7.28a38.27 38.27 0 0 1 -31.91-.15l-1.56-7.28c-.33-1.53-1.83-2.51-3.36-2.18l-6.43 1.38a38.27 38.27 0 0 1 -3.32-3.92h31.27c.35 0 .59-.06.59-.39v-11.06c0-.32-.24-.39-.59-.39h-9.15zm-14.43 25.33a3.11 3.11 0 0 1 3.02 3.11 3.11 3.11 0 0 1 -6.22 0 3.11 3.11 0 0 1 3.2-3.11zm46.05.14a3.11 3.11 0 0 1 3.02 3.11 3.11 3.11 0 0 1 -6.22 0 3.11 3.11 0 0 1 3.2-3.11z"/>
+<path d="m115.68 70.95a44.63 44.63 0 0 1 -44.63 44.63 44.63 44.63 0 0 1 -44.63-44.63 44.63 44.63 0 0 1 44.63-44.63 44.63 44.63 0 0 1 44.63 44.63zm-.84-4.31 6.96 4.31-6.96 4.31 5.98 5.59-7.66 2.87 4.78 6.65-8.09 1.32 3.4 7.46-8.19-.29 1.88 7.98-7.98-1.88.29 8.19-7.46-3.4-1.32 8.09-6.65-4.78-2.87 7.66-5.59-5.98-4.31 6.96-4.31-6.96-5.59 5.98-2.87-7.66-6.65 4.78-1.32-8.09-7.46 3.4.29-8.19-7.98 1.88 1.88-7.98-8.19.29 3.4-7.46-8.09-1.32 4.78-6.65-7.66-2.87 5.98-5.59-6.96-4.31 6.96-4.31-5.98-5.59 7.66-2.87-4.78-6.65 8.09-1.32-3.4-7.46 8.19.29-1.88-7.98 7.98 1.88-.29-8.19 7.46 3.4 1.32-8.09 6.65 4.78 2.87-7.66 5.59 5.98 4.31-6.96 4.31 6.96 5.59-5.98 2.87 7.66 6.65-4.78 1.32 8.09 7.46-3.4-.29 8.19 7.98-1.88-1.88 7.98 8.19-.29-3.4 7.46 8.09 1.32-4.78 6.65 7.66 2.87z" fill-rule="evenodd" stroke="#ededed" stroke-linecap="round" stroke-linejoin="round" stroke-width="3"/>
+</g>
+</svg>
+  </div>
+</section>
+
+<!-- 3. 아키텍처 -->
+<section class="slide">
+  <div class="eyebrow">04 · forklift</div>
+  <h2>CI/CD 전체가 지나가는 경로</h2>
+  <div class="arch">
+    <svg viewBox="0 0 1400 400" role="img" aria-label="forklift architecture">
+      <defs>
+        <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" fill="#888"/>
+        </marker>
+      </defs>
+      <rect class="box" x="20" y="130" width="240" height="140"/>
+      <text class="zt" x="40" y="156">CLIENTS</text>
+      <text class="t" x="40" y="190">Jenkins · GitLab CI</text>
+      <text class="s" x="40" y="214">maven · npm · cargo · go · pypi · OCI</text>
+      <text class="s" x="40" y="232">39만 req/일 · 최대 68 req/s</text>
+      <path class="fl" d="M260 200 L330 200"/>
+
+      <rect class="zone" x="330" y="40" width="740" height="320"/>
+      <text class="zt" x="346" y="62">KUBERNETES · forklift</text>
+      <rect class="box hi" x="360" y="90" width="310" height="110"/>
+      <text class="t" x="380" y="120">forklift · leader</text>
+      <text class="s" x="380" y="144">Service 는 role=leader 만 선택</text>
+      <text class="m" x="380" y="176">250m · 512Mi · limit 1638Mi</text>
+      <rect class="box" x="360" y="240" width="310" height="90"/>
+      <text class="t" x="380" y="270">forklift · standby</text>
+      <text class="s" x="380" y="294">Lease 선출 · 유휴 23 MiB</text>
+      <rect class="box" x="720" y="90" width="320" height="110"/>
+      <text class="t" x="740" y="120">SQLite 메타데이터</text>
+      <text class="s" x="740" y="144">1.3 GiB · 스냅샷을 S3 로 동기화</text>
+      <rect class="box" x="720" y="240" width="320" height="90"/>
+      <text class="t" x="740" y="270">forklift-mcp</text>
+      <text class="s" x="740" y="294">kagent · 10m · 32Mi</text>
+      <path class="fl" d="M670 145 L720 145"/>
+      <path class="fl" d="M670 285 L720 285"/>
+
+      <path class="fl" d="M1070 200 L1130 200"/>
+      <rect class="box" x="1130" y="130" width="250" height="140"/>
+      <text class="zt" x="1150" y="156">UPSTREAM · BLOB</text>
+      <text class="t" x="1150" y="190">S3 · MinIO</text>
+      <text class="t" x="1150" y="222">Maven Central · npmjs</text>
+      <text class="s" x="1150" y="246">crates.io · goproxy · pypi</text>
+    </svg>
+  </div>
+</section>
+
+<!-- 4. 문제 -->
+<section class="slide">
+  <div class="eyebrow">05 · 문제 · Go 0.12.2 · 14일</div>
+  <h2>working set 은 limit 에 붙고, rss 는 부하마다 튀었다</h2>
+  <div class="arch" style="max-height:56vh">
+<svg viewBox="0 0 1400 380" role="img">
+<text class="t" x="314" y="58.0" text-anchor="end">memory limit</text>
+<text class="s" x="314" y="75.0" text-anchor="end">2100Mi</text>
+<rect x="330" y="43" width="970" height="28" fill="#111"/>
+<rect x="330" y="43" width="925.9" height="28" fill="#333"/>
+<text class="m" x="1245.9" y="61.0" text-anchor="end" style="fill:#000;font-size:13px">2,100 MiB</text>
+<text class="t" x="314" y="118.0" text-anchor="end">working set p95</text>
+<text class="s" x="314" y="135.0" text-anchor="end">14일</text>
+<rect x="330" y="103" width="970" height="28" fill="#111"/>
+<rect x="330" y="103" width="915.8" height="28" fill="#ededed"/>
+<text class="m" x="1235.8" y="121.0" text-anchor="end" style="fill:#000;font-size:13px">2,077 MiB · limit 에 고정</text>
+<text class="t" x="314" y="178.0" text-anchor="end">rss 최대</text>
+<text class="s" x="314" y="195.0" text-anchor="end">14일</text>
+<rect x="330" y="163" width="970" height="28" fill="#111"/>
+<rect x="330" y="163" width="260.1" height="28" fill="#ededed"/>
+<text class="m" x="600.1" y="181.0" text-anchor="start" style="fill:#ededed;font-size:13px">590 MiB · 부하마다 스파이크</text>
+<text class="t" x="314" y="238.0" text-anchor="end">rss p50</text>
+<text class="s" x="314" y="255.0" text-anchor="end">5.5일</text>
+<rect x="330" y="223" width="970" height="28" fill="#111"/>
+<rect x="330" y="223" width="60.8" height="28" fill="#555"/>
+<text class="m" x="400.8" y="241.0" text-anchor="start" style="fill:#ededed;font-size:13px">138 MiB</text>
+<text class="t" x="314" y="298.0" text-anchor="end">디스크 write p95</text>
+<text class="s" x="314" y="315.0" text-anchor="end">8월 말 세대</text>
+<rect x="330" y="283" width="970" height="28" fill="#111"/>
+<rect x="330" y="283" width="15.4" height="28" fill="#333"/>
+<text class="m" x="355.4" y="301.0" text-anchor="start" style="fill:#ededed;font-size:13px">35 MiB/s · 스냅샷 매 30초 재작성</text>
+</svg>
+  </div>
+  <p class="foot">OOMKilled 0건. 사고는 없었지만 GC 가 힙을 돌려주는 시점을 앱이 정하지 못했다.</p>
+</section>
+
+<!-- 5. 1차 완화 -->
+<section class="slide">
+  <div class="eyebrow">06 · 1차 완화 · 09-03</div>
+  <h2>I/O 는 앱 튜닝으로 잡혔다. 메모리는 남았다</h2>
+  <div class="arch" style="max-height:44vh">
+<svg viewBox="0 0 1400 260" role="img">
+<text class="t" x="314" y="61.0" text-anchor="end">Go · 8월 말</text>
+<text class="s" x="314" y="78.0" text-anchor="end">앱 튜닝 전</text>
+<rect x="330" y="43" width="970" height="34" fill="#111"/>
+<rect x="330" y="43" width="943.1" height="34" fill="#555"/>
+<text class="m" x="1263.1" y="64.0" text-anchor="end" style="fill:#000;font-size:13px">35 MiB/s</text>
+<text class="t" x="314" y="131.0" text-anchor="end">Go · 09-03 이후</text>
+<text class="s" x="314" y="148.0" text-anchor="end">앱 튜닝 후</text>
+<rect x="330" y="113" width="970" height="34" fill="#111"/>
+<rect x="330" y="113" width="123.9" height="34" fill="#ededed"/>
+<text class="m" x="463.9" y="134.0" text-anchor="start" style="fill:#ededed;font-size:13px">4.6 MiB/s · 스냅샷 변경 시에만</text>
+<text class="t" x="314" y="201.0" text-anchor="end">Rust · 09-09 이후</text>
+<text class="s" x="314" y="218.0" text-anchor="end">0.13.0</text>
+<rect x="330" y="183" width="970" height="34" fill="#111"/>
+<rect x="330" y="183" width="123.9" height="34" fill="#ffe66d"/>
+<text class="m" x="463.9" y="204.0" text-anchor="start" style="fill:#ededed;font-size:13px">4.6 MiB/s · 동일</text>
+</svg>
+  </div>
+  <p class="foot">스냅샷은 data_version 변경 시에만, 다운로드는 ETag 변경 시에만, 감사 로그는 256건 배치. rss 스파이크는 그대로.</p>
+</section>
+
+<!-- 6. 왜 Rust -->
+<section class="slide">
+  <div class="eyebrow">07 · 결정</div>
+  <h2>GC 가 정하던 반환 시점을 코드가 정하게</h2>
+  <div class="arch">
+    <svg viewBox="0 0 1400 420" role="img" aria-label="memory lifecycle go vs rust">
+      <text class="zt" x="40" y="60">GO · 0.12.2</text>
+      <rect class="box" x="40" y="80" width="220" height="80"/><text class="t" x="60" y="114">요청 처리</text><text class="s" x="60" y="138">버퍼 · 힙 할당</text>
+      <path class="fl" d="M260 120 L320 120"/>
+      <rect class="box" x="320" y="80" width="220" height="80"/><text class="t" x="340" y="114">GC 마킹 · 스윕</text><text class="s" x="340" y="138">주기는 런타임이 결정</text>
+      <path class="fl" d="M540 120 L600 120"/>
+      <rect class="box" x="600" y="80" width="260" height="80"/><text class="t" x="620" y="114">scavenger 반환</text><text class="s" x="620" y="138">OS 로 언제 돌려줄지 제어 불가</text>
+      <path class="fl" d="M860 120 L920 120"/>
+      <rect x="920" y="80" width="440" height="80" fill="#000" stroke="#555" stroke-width="1.4"/><text class="t" x="940" y="114" style="fill:#888">rss 138 → 590 MiB 스파이크</text><text class="s" x="940" y="138">GOMEMLIMIT 은 GC 빈도만 바꾼다</text>
+
+      <text class="zt" x="40" y="260">RUST · 0.13.0</text>
+      <rect class="box hi" x="40" y="280" width="220" height="80"/><text class="t" x="60" y="314">요청 처리</text><text class="s" x="60" y="338">body 스트림 그대로 전달</text>
+      <path class="fl hi" d="M260 320 L320 320"/>
+      <rect class="box hi" x="320" y="280" width="220" height="80"/><text class="t" x="340" y="314">스코프 종료</text><text class="s" x="340" y="338">소유권 · drop</text>
+      <path class="fl hi" d="M540 320 L600 320"/>
+      <rect class="box hi" x="600" y="280" width="260" height="80"/><text class="t" x="620" y="314">즉시 해제</text><text class="s" x="620" y="338">GC 없음 · 결정적</text>
+      <path class="fl hi" d="M860 320 L920 320"/>
+      <rect x="920" y="280" width="440" height="80" fill="#000" stroke="#ffe66d" stroke-width="1.4"/><text class="t" x="940" y="314" style="fill:#ffe66d">rss p50 19 MiB · 최대 172</text><text class="s" x="940" y="338">limit 을 실측으로 정할 수 있다</text>
+    </svg>
+  </div>
+</section>
+
+<!-- 7. 포팅 -->
+<section class="slide">
+  <div class="eyebrow">08 · 포팅 · 이틀 · 2026-09-08 · 커밋 1개</div>
+  <h2>재작성이 아니라 1:1 포팅</h2>
+  <div class="arch" style="max-height:50vh">
+    <svg viewBox="0 0 1400 380" role="img" aria-label="porting mapping">
+      <rect class="box" x="40" y="40" width="380" height="300"/>
+      <text class="zt" x="60" y="66">GO · internal/</text>
+      <text class="t" x="60" y="100">25 패키지 · cmd 2</text>
+      <text class="m" x="60" y="130">config meta storage repo auth</text>
+      <text class="m" x="60" y="150">audit cluster coverage license</text>
+      <text class="m" x="60" y="170">mcp memlimit metrics notify</text>
+      <text class="m" x="60" y="190">objstore openapi replication</text>
+      <text class="m" x="60" y="210">server vuln webui api …</text>
+      <text class="s" x="60" y="250">275 파일 · 62.8k LOC</text>
+      <text class="s" x="60" y="272">테스트 전량</text>
+
+      <path class="fl hi" d="M420 190 L520 190"/>
+      <rect x="520" y="110" width="360" height="160" fill="#000" stroke="#fff" stroke-width="1.4"/>
+      <text class="zt" x="540" y="136">PORTING.md · 동등성 계약</text>
+      <text class="t" x="540" y="168">라우트 · 상태 코드 · JSON 필드</text>
+      <text class="t" x="540" y="192">SQL 스키마 · 메트릭 이름 · 라벨</text>
+      <text class="t" x="540" y="216">로그 · env · CLI · 잡 주기</text>
+      <text class="s" x="540" y="248">1 패키지 = 1 모듈 · 이름 · 타입 변환 규칙</text>
+      <path class="fl hi" d="M880 190 L980 190"/>
+
+      <rect class="box hi" x="980" y="40" width="380" height="300"/>
+      <text class="zt" x="1000" y="66">RUST · src/</text>
+      <text class="t" x="1000" y="100">25 모듈 · bin 2</text>
+      <text class="m" x="1000" y="130">config meta storage repo auth</text>
+      <text class="m" x="1000" y="150">audit cluster coverage license</text>
+      <text class="m" x="1000" y="170">mcp memlimit metrics notify</text>
+      <text class="m" x="1000" y="190">objstore openapi replication</text>
+      <text class="m" x="1000" y="210">server vuln webui api …</text>
+      <text class="s" x="1000" y="250">276 파일 · 92.3k LOC</text>
+      <text class="s" x="1000" y="272">테스트 714건 · clippy -D warnings 클린</text>
+    </svg>
+  </div>
+  <div class="grid g4" style="margin-top:6px">
+    <div class="card kpi"><div class="num">25</div><div class="lbl">모듈 1:1</div></div>
+    <div class="card kpi"><div class="num">715</div><div class="lbl">파일 · +98.8k / −63.9k</div></div>
+    <div class="card kpi"><div class="num">714</div><div class="lbl">테스트</div></div>
+    <div class="card kpi"><div class="num">1.98.1</div><div class="lbl">Rust · edition 2024</div></div>
+  </div>
+</section>
+
+<!-- 8. 스택 -->
+<section class="slide">
+  <div class="eyebrow">09 · 런타임 스택</div>
+  <h2>표준 라이브러리 자리에 들어간 것</h2>
+  <div class="arch">
+    <svg viewBox="0 0 1400 440" role="img" aria-label="runtime stack">
+      <g>
+        <rect class="box hi" x="40" y="40" width="1320" height="70"/>
+        <text class="zt" x="60" y="66">HTTP</text>
+        <text class="s" x="60" y="94">Go net/http · goroutine</text>
+        <text class="t" x="400" y="80">tokio 1.53 · hyper 1 · axum 0.8</text>
+        <text class="s" x="900" y="80">HTTP/1 · HTTP/2 · graceful shutdown</text>
+      </g>
+      <g>
+        <rect class="box" x="40" y="120" width="650" height="70"/>
+        <text class="zt" x="60" y="146">CLIENT</text>
+        <text class="s" x="60" y="174">Go net/http</text>
+        <text class="t" x="300" y="160">reqwest 0.13 · rustls (ring)</text>
+        <rect class="box" x="710" y="120" width="650" height="70"/>
+        <text class="zt" x="730" y="146">AUTH</text>
+        <text class="s" x="730" y="174">go-oidc · bcrypt</text>
+        <text class="t" x="970" y="160">openidconnect 4 · bcrypt · hmac</text>
+      </g>
+      <g>
+        <rect class="box" x="40" y="200" width="650" height="70"/>
+        <text class="zt" x="60" y="226">METADATA</text>
+        <text class="s" x="60" y="254">modernc sqlite</text>
+        <text class="t" x="300" y="240">rusqlite 0.40 · bundled</text>
+        <rect class="box" x="710" y="200" width="650" height="70"/>
+        <text class="zt" x="730" y="226">BLOB</text>
+        <text class="s" x="730" y="254">aws-sdk-go-v2</text>
+        <text class="t" x="970" y="240">aws-sdk-s3 1.145 · sigv4</text>
+      </g>
+      <g>
+        <rect class="box" x="40" y="280" width="420" height="70"/>
+        <text class="zt" x="60" y="306">KUBERNETES</text>
+        <text class="s" x="60" y="334">client-go</text>
+        <text class="t" x="240" y="320">kube 4.2 · Lease</text>
+        <rect class="box" x="480" y="280" width="420" height="70"/>
+        <text class="zt" x="500" y="306">MCP</text>
+        <text class="s" x="500" y="334">mcp-go</text>
+        <text class="t" x="680" y="320">rmcp 3.2</text>
+        <rect class="box" x="920" y="280" width="440" height="70"/>
+        <text class="zt" x="940" y="306">OBSERVABILITY</text>
+        <text class="s" x="940" y="334">client_golang · pprof</text>
+        <text class="t" x="1150" y="320">prometheus 0.14 · tracing</text>
+      </g>
+      <rect x="40" y="370" width="1320" height="50" fill="#000" stroke="#ffe66d" stroke-width="1.4"/>
+      <text class="zt" x="60" y="392">BINARY</text>
+      <text class="t" x="60" y="410" style="fill:#ffe66d">Rust 1.98.1 · musl 정적 링크 · scratch · CA 번들만 동봉 · 셸 · libc 없음</text>
+      <text class="s" x="1340" y="410" text-anchor="end">왼쪽 회색 = Go · 흰색 = Rust</text>
+    </svg>
+  </div>
+</section>
+
+<!-- 9. 빌드 -->
+<section class="slide">
+  <div class="eyebrow">10 · 빌드 · 배포</div>
+  <h2>QEMU 없이 두 아키텍처, scratch 위에 바이너리 하나</h2>
+  <div class="arch" style="max-height:44vh">
+    <svg viewBox="0 0 1400 300" role="img" aria-label="build pipeline">
+      <rect class="box" x="20" y="90" width="240" height="120"/>
+      <text class="zt" x="40" y="116">WEB</text>
+      <text class="t" x="40" y="150">node 24 · pnpm</text>
+      <text class="s" x="40" y="174">React UI · dist 임베드</text>
+      <path class="fl" d="M260 150 L320 150"/>
+      <rect class="box hi" x="320" y="60" width="420" height="180"/>
+      <text class="zt" x="340" y="86">BUILDER · $BUILDPLATFORM</text>
+      <text class="t" x="340" y="120">cargo-zigbuild · zig 0.15</text>
+      <text class="m" x="340" y="150">x86_64-unknown-linux-musl</text>
+      <text class="m" x="340" y="170">aarch64-unknown-linux-musl</text>
+      <text class="s" x="340" y="204">교차 컴파일 · QEMU 없음 · SQLite · ring 네이티브</text>
+      <path class="fl hi" d="M740 150 L800 150"/>
+      <rect x="800" y="90" width="280" height="120" fill="#000" stroke="#fff" stroke-width="1.4"/>
+      <text class="zt" x="820" y="116">RUNTIME · scratch</text>
+      <text class="t" x="820" y="150">/app/forklift</text>
+      <text class="s" x="820" y="174">ca-certificates.crt · USER 65532</text>
+      <path class="fl" d="M1080 150 L1140 150"/>
+      <rect class="box" x="1140" y="90" width="240" height="120"/>
+      <text class="zt" x="1160" y="116">REGISTRY</text>
+      <text class="t" x="1160" y="150">forklift:0.13.0</text>
+      <text class="t" x="1160" y="174">forklift-mcp:0.3.0</text>
+      <text class="s" x="1160" y="196">amd64 + arm64 인덱스</text>
+    </svg>
+  </div>
+  <div class="arch" style="max-height:22vh;justify-content:flex-start">
+<svg viewBox="0 0 700 200" role="img">
+<text class="t" x="144" y="45.0" text-anchor="end">forklift</text>
+<text class="s" x="144" y="62.0" text-anchor="end">amd64 압축</text>
+<rect x="160" y="23" width="520" height="18" fill="#111"/>
+<rect x="160" y="23" width="494.0" height="18" fill="#555"/>
+<text class="m" x="644.0" y="36.0" text-anchor="end" style="fill:#000;font-size:13px">Go 19.0 MiB</text>
+<rect x="160" y="47" width="520" height="18" fill="#111"/>
+<rect x="160" y="47" width="421.2" height="18" fill="#ffe66d"/>
+<text class="m" x="571.2" y="60.0" text-anchor="end" style="fill:#000;font-size:13px">Rust 16.2 MiB</text>
+<text class="t" x="144" y="117.0" text-anchor="end">forklift-mcp</text>
+<text class="s" x="144" y="134.0" text-anchor="end">amd64 압축</text>
+<rect x="160" y="95" width="520" height="18" fill="#111"/>
+<rect x="160" y="95" width="119.6" height="18" fill="#555"/>
+<text class="m" x="289.6" y="108.0" text-anchor="start" style="fill:#ededed;font-size:13px">Go 4.6 MiB</text>
+<rect x="160" y="119" width="520" height="18" fill="#111"/>
+<rect x="160" y="119" width="80.6" height="18" fill="#ffe66d"/>
+<text class="m" x="250.6" y="132.0" text-anchor="start" style="fill:#ededed;font-size:13px">Rust 3.1 MiB</text>
+</svg>
+  </div>
+</section>
+
+<!-- 10. 전환 -->
+<section class="slide">
+  <div class="eyebrow">11 · 전환 · 2026-09 KST</div>
+  <h2>데이터 마이그레이션 없이 이미지 태그로</h2>
+  <div class="arch" style="max-height:48vh">
+    <svg viewBox="0 0 1400 260" role="img" aria-label="cutover timeline">
+      <line class="axis" x1="80" y1="170" x2="1340" y2="170"/>
+      <circle cx="140" cy="170" r="6" fill="#ededed"/>
+      <text class="m" x="140" y="200" text-anchor="middle">09-03</text>
+      <text class="t" x="140" y="120" text-anchor="middle">1차 완화</text>
+      <text class="s" x="140" y="140" text-anchor="middle">Go · I/O 완화</text>
+      <circle cx="560" cy="170" r="6" fill="#ededed"/>
+      <text class="m" x="560" y="200" text-anchor="middle">09-08</text>
+      <text class="t" x="560" y="120" text-anchor="middle">Rust 커밋 · 0.13.0</text>
+      <text class="s" x="560" y="140" text-anchor="middle">chart 0.12.0 · 레지스트리 미러</text>
+      <circle cx="900" cy="170" r="8" fill="#ffe66d"/>
+      <text class="m" x="900" y="200" text-anchor="middle">09-09 01:32</text>
+      <text class="t" x="900" y="120" text-anchor="middle" style="fill:#ffe66d">프로덕션 전환</text>
+      <text class="s" x="900" y="140" text-anchor="middle">rollout · Lease 이전 · 무중단</text>
+      <circle cx="1240" cy="170" r="6" fill="#ededed"/>
+      <text class="m" x="1240" y="200" text-anchor="middle">09-09</text>
+      <text class="t" x="1240" y="120" text-anchor="middle">리소스 right-sizing</text>
+      <text class="s" x="1240" y="140" text-anchor="middle">250m · 512Mi · limit 1638Mi</text>
+    </svg>
+  </div>
+  <p class="foot">호환 유지: HTTP 라우트 · SQLite 마이그레이션 · 세션 쿠키 · 액세스 토큰 · 저장소 포맷. 롤백은 태그 되돌리기.</p>
+</section>
+
+<!-- 11. rss -->
+<section class="slide">
+  <div class="eyebrow">12 · 결과 · container_memory_rss · 리더 파드</div>
+  <h2>138 → 55 MiB. 업무 시간대 피크도 583 → 130</h2>
+  <div class="arch" style="max-height:60vh">
+<svg viewBox="0 0 1400 470" role="img" aria-label="rss before and after">
+<text class="tick" x="110" y="424.0" text-anchor="end">0</text><line x1="120" y1="420.0" x2="1320" y2="420.0" stroke="#1c1c1c"/>
+<text class="tick" x="110" y="340.9" text-anchor="end">150</text><line x1="120" y1="336.9" x2="1320" y2="336.9" stroke="#1c1c1c"/>
+<text class="tick" x="110" y="257.8" text-anchor="end">300</text><line x1="120" y1="253.8" x2="1320" y2="253.8" stroke="#1c1c1c"/>
+<text class="tick" x="110" y="174.7" text-anchor="end">450</text><line x1="120" y1="170.7" x2="1320" y2="170.7" stroke="#1c1c1c"/>
+<text class="tick" x="110" y="91.6" text-anchor="end">600</text><line x1="120" y1="87.6" x2="1320" y2="87.6" stroke="#1c1c1c"/>
+<line class="axis" x1="120" y1="420" x2="1320" y2="420"/>
+<text class="tick" x="193.6" y="442" text-anchor="middle">09-04</text>
+<text class="tick" x="370.7" y="442" text-anchor="middle">09-05</text>
+<text class="tick" x="547.8" y="442" text-anchor="middle">09-06</text>
+<text class="tick" x="724.9" y="442" text-anchor="middle">09-07</text>
+<text class="tick" x="902.0" y="442" text-anchor="middle">09-08</text>
+<text class="tick" x="1079.1" y="442" text-anchor="middle">09-09</text>
+<text class="tick" x="1256.2" y="442" text-anchor="middle">09-10</text>
+<text class="s" transform="translate(50,240.0) rotate(-90)" text-anchor="middle">rss (MiB)</text>
+
+<polyline points="119.8,392.8 121.0,261.1 122.2,331.2 123.4,331.6 124.7,331.0 125.9,351.0 127.1,331.4 128.4,314.7 129.6,329.3 130.8,345.8 132.1,324.2 133.3,342.3 134.5,225.1 135.7,178.1 137.0,349.1 138.2,301.2 139.4,343.8 140.7,282.7 141.9,324.6 143.1,344.7 144.4,319.3 145.6,321.0 146.8,318.7 148.0,322.1 149.3,335.2 150.5,229.5 151.7,333.8 153.0,351.1 154.2,285.4 155.4,350.0 156.7,350.6 157.9,189.1 159.1,341.0 160.3,341.1 161.6,341.3 162.8,342.0 164.0,336.5 165.3,342.8 166.5,345.5 167.7,345.1 169.0,344.9 170.2,345.9 171.4,322.7 172.6,344.9 173.9,346.7 175.1,346.3 176.3,345.9 177.6,346.1 178.8,346.0 180.0,346.9 181.3,347.3 182.5,346.8 183.7,347.1 184.9,347.4 186.2,348.2 187.4,348.2 188.6,348.8 189.9,348.5 191.1,348.3 192.3,348.3 193.6,348.6 194.8,349.1 196.0,348.6 197.2,348.6 198.5,319.1 199.7,345.4 200.9,231.6 202.2,199.4 203.4,345.7 204.6,327.0 205.9,346.4 207.1,346.2 208.3,342.9 209.5,346.7 210.8,323.0 212.0,347.1 213.2,325.5 214.5,324.2 215.7,325.2 216.9,347.6 218.1,348.0 219.4,348.0 220.6,349.1 221.8,348.5 223.1,348.5 224.3,348.4 225.5,349.0 226.8,348.6 228.0,349.0 229.2,348.5 230.4,348.4 231.7,348.6 232.9,348.5 234.1,348.6 235.4,348.5 236.6,348.5 237.8,348.5 239.1,348.5 240.3,349.1 241.5,348.7 242.7,349.0 244.0,349.6 245.2,349.1 246.4,349.1 247.7,349.4 248.9,349.5 250.1,349.6 251.4,349.3 252.6,340.8 253.8,346.5 255.0,346.5 256.3,349.1 257.5,346.8 258.7,344.7 260.0,344.7 261.2,233.0 262.4,275.0 263.7,341.8 264.9,323.0 266.1,343.3 267.3,316.1 268.6,316.7 269.8,315.9 271.0,343.2 272.3,344.9 273.5,322.1 274.7,340.8 276.0,305.3 277.2,287.7 278.4,310.7 279.6,334.7 280.9,337.4 282.1,336.9 283.3,336.9 284.6,336.8 285.8,338.3 287.0,338.3 288.3,338.7 289.5,339.0 290.7,267.3 291.9,300.8 293.2,316.6 294.4,323.9 295.6,343.0 296.9,223.6 298.1,317.6 299.3,310.4 300.6,238.1 301.8,219.7 303.0,335.8 304.2,328.8 305.5,273.6 306.7,305.7 307.9,312.3 309.2,312.2 310.4,315.1 311.6,340.5 312.9,339.7 314.1,341.6 315.3,305.9 316.5,331.2 317.8,338.0 319.0,337.5 320.2,338.8 321.5,130.6 322.7,342.6 323.9,124.8 325.2,299.7 326.4,306.3 327.6,320.2 328.8,330.1 330.1,339.5 331.3,339.3 332.5,339.8 333.8,339.3 335.0,340.9 336.2,341.4 337.5,341.1 338.7,341.1 339.9,317.6 341.1,337.4 342.4,342.8 343.6,343.5 344.8,342.3 346.1,342.3 347.3,344.0 348.5,344.1 349.8,344.1 351.0,344.5 352.2,344.1 353.4,344.1 354.7,344.3 355.9,344.4 357.1,344.3 358.4,345.0 359.6,344.8 360.8,345.7 362.1,344.8 363.3,344.4 364.5,344.4 365.7,344.7 367.0,344.3 368.2,344.0 369.4,343.8 370.7,343.6 371.9,343.6 373.1,343.9 374.4,344.3 375.6,344.7 376.8,344.6 378.0,344.7 379.3,340.5 380.5,341.1 381.7,340.6 383.0,340.6 384.2,340.6 385.4,181.6 386.7,342.7 387.9,341.8 389.1,343.4 390.3,343.0 391.6,343.1 392.8,342.2 394.0,343.1 395.3,343.1 396.5,343.1 397.7,343.5 399.0,343.5 400.2,343.5 401.4,343.5 402.6,343.5 403.9,343.5 405.1,344.0 406.3,344.7 407.6,344.0 408.8,344.0 410.0,344.0 411.3,344.2 412.5,344.2 413.7,344.2 414.9,344.0 416.2,344.0 417.4,344.5 418.6,344.5 419.9,344.4 421.1,344.4 422.3,344.6 423.6,344.6 424.8,344.6 426.0,344.6 427.2,344.6 428.5,344.6 429.7,334.8 430.9,341.1 432.2,341.0 433.4,341.9 434.6,341.8 435.8,341.6 437.1,341.4 438.3,341.5 439.5,342.3 440.8,342.2 442.0,342.2 443.2,341.8 444.5,341.8 445.7,341.7 446.9,341.3 448.1,341.3 449.4,342.2 450.6,342.2 451.8,342.1 453.1,343.8 454.3,341.7 455.5,342.0 456.8,342.3 458.0,342.1 459.2,342.1 460.4,341.7 461.7,341.7 462.9,341.7 464.1,341.9 465.4,341.9 466.6,342.4 467.8,342.1 469.1,341.9 470.3,341.3 471.5,341.3 472.7,341.3 474.0,323.5 475.2,342.4 476.4,342.3 477.7,342.3 478.9,342.3 480.1,339.7 481.4,316.8 482.6,342.1 483.8,342.1 485.0,344.0 486.3,343.7 487.5,343.3 488.7,312.4 490.0,314.7 491.2,330.9 492.4,167.1 493.7,316.6 494.9,338.8 496.1,339.5 497.3,339.2 498.6,339.2 499.8,339.2 501.0,340.4 502.3,340.6 503.5,340.4 504.7,340.8 506.0,340.4 507.2,340.4 508.4,340.1 509.6,340.6 510.9,340.3 512.1,340.5 513.3,341.2 514.6,340.2 515.8,340.6 517.0,340.4 518.3,338.5 519.5,342.1 520.7,342.4 521.9,342.3 523.2,343.5 524.4,343.3 525.6,343.1 526.9,343.1 528.1,343.0 529.3,343.0 530.6,343.8 531.8,343.7 533.0,343.7 534.2,343.9 535.5,343.9 536.7,343.8 537.9,343.8 539.2,343.5 540.4,343.3 541.6,343.3 542.9,343.3 544.1,343.7 545.3,343.7 546.5,344.3 547.8,344.3 549.0,344.3 550.2,344.3 551.5,344.0 552.7,344.0 553.9,344.0 555.2,344.0 556.4,343.7 557.6,343.7 558.8,343.7 560.1,343.7 561.3,344.2 562.5,340.0 563.8,343.9 565.0,346.0 566.2,345.4 567.5,345.8 568.7,345.4 569.9,345.2 571.1,345.4 572.4,345.5 573.6,345.4 574.8,345.4 576.1,345.0 577.3,345.3 578.5,345.3 579.8,345.6 581.0,345.3 582.2,345.5 583.4,345.9 584.7,345.1 585.9,345.1 587.1,345.2 588.4,344.8 589.6,345.2 590.8,345.6 592.1,345.9 593.3,345.5 594.5,345.5 595.7,345.3 597.0,345.3 598.2,345.3 599.4,345.3 600.7,345.3 601.9,345.3 603.1,241.6 604.4,296.5 605.6,197.1 606.8,373.0 608.0,373.6 609.3,375.6 610.5,375.0 611.7,232.1 613.0,343.7 614.2,343.2 615.4,343.3 616.7,343.3 617.9,343.3 619.1,343.3 620.3,343.5 621.6,343.3 622.8,343.3 624.0,343.9 625.3,343.6 626.5,343.9 627.7,344.0 629.0,344.0 630.2,343.8 631.4,343.2 632.6,343.2 633.9,343.3 635.1,344.3 636.3,344.2 637.6,343.5 638.8,343.9 640.0,343.9 641.3,343.8 642.5,343.8 643.7,344.2 644.9,344.2 646.2,344.1 647.4,344.1 648.6,344.1 649.9,344.1 651.1,333.2 652.3,342.0 653.6,342.5 654.8,343.5 656.0,343.1 657.2,343.1 658.5,330.6 659.7,318.5 660.9,331.7 662.2,324.2 663.4,339.7 664.6,339.8 665.8,340.2 667.1,341.9 668.3,341.8 669.5,340.7 670.8,340.6 672.0,275.9 673.2,267.9 674.5,195.4 675.7,300.0 676.9,342.2 678.1,343.2 679.4,343.7 680.6,344.0 681.8,344.0 683.1,343.5 684.3,344.0 685.5,344.1 686.8,344.1 688.0,344.8 689.2,344.6 690.4,345.4 691.7,345.2 692.9,344.9 694.1,344.9 695.4,340.3 696.6,341.2 697.8,341.9 699.1,342.8 700.3,344.3 701.5,344.0 702.7,344.0 704.0,344.0 705.2,343.3 706.4,343.3 707.7,343.4 708.9,343.8 710.1,343.8 711.4,343.8 712.6,343.8 713.8,343.7 715.0,343.7 716.3,343.5 717.5,246.6 718.7,298.7 720.0,338.4 721.2,348.0 722.4,348.8 723.7,348.7 724.9,348.4 726.1,348.4 727.3,349.1 728.6,349.5 729.8,349.4 731.0,349.4 732.3,349.2 733.5,349.7 734.7,349.8 736.0,349.1 737.2,349.0 738.4,349.4 739.6,344.6 740.9,349.1 742.1,349.4 743.3,348.6 744.6,349.1 745.8,349.3 747.0,349.0 748.3,348.8 749.5,348.8 750.7,349.1 751.9,349.0 753.2,349.2 754.4,348.0 755.6,348.6 756.9,348.4 758.1,349.1 759.3,349.1 760.6,349.6 761.8,349.2 763.0,348.9 764.2,348.9 765.5,348.9 766.7,348.9 767.9,348.9 769.2,349.2 770.4,349.6 771.6,349.4 772.9,349.3 774.1,349.3 775.3,349.2 776.5,349.2 777.8,349.3 779.0,349.3 780.2,347.7 781.5,345.5 782.7,345.3 783.9,342.3 785.2,348.9 786.4,349.7 787.6,350.3 788.8,350.2 790.1,346.1 791.3,326.2 792.5,348.1 793.8,349.4 795.0,347.1 796.2,348.9 797.5,329.1 798.7,251.1 799.9,162.7 801.1,192.5 802.4,258.3 803.6,269.0 804.8,305.3 806.1,323.9 807.3,291.6 808.5,343.8 809.8,345.3 811.0,326.6 812.2,245.7 813.4,336.6 814.7,315.5 815.9,312.3 817.1,303.3 818.4,347.8 819.6,351.5 820.8,314.8 822.1,344.6 823.3,345.4 824.5,107.9 825.7,96.9 827.0,262.5 828.2,293.7 829.4,337.8 830.7,313.5 831.9,318.2 833.1,317.2 834.4,324.1 835.6,298.4 836.8,311.2 838.0,259.3 839.3,291.3 840.5,301.4 841.7,315.1 843.0,335.6 844.2,349.8 845.4,350.5 846.7,349.7 847.9,352.4 849.1,351.5 850.3,336.1 851.6,331.3 852.8,333.1 854.0,332.5 855.3,218.3 856.5,283.2 857.7,336.3 859.0,329.4 860.2,350.1 861.4,348.1 862.6,208.1 863.9,304.5 865.1,268.3 866.3,325.6 867.6,342.9 868.8,289.2 870.0,248.9 871.3,340.7 872.5,338.0 873.7,130.6 874.9,267.1 876.2,208.0 877.4,319.7 878.6,321.2 879.9,321.0 881.1,320.7 882.3,331.1 883.5,345.7 884.8,344.8 886.0,345.6 887.2,322.2 888.5,343.9 889.7,343.8 890.9,318.6 892.2,322.9 893.4,325.2 894.6,345.0 895.8,342.9 897.1,342.5 898.3,342.0 899.5,342.6 900.8,343.6 902.0,343.6 903.2,343.5 904.5,343.5 905.7,343.9 906.9,344.6 908.1,343.9 909.4,343.9 910.6,343.9 911.8,344.5 913.1,344.4 914.3,344.1 915.5,344.1 916.8,339.8 918.0,343.4 919.2,343.4 920.4,344.5 921.7,344.1 922.9,344.1 924.1,343.9 925.4,343.9 926.6,343.8 927.8,343.6 929.1,343.6 930.3,343.5 931.5,343.4 932.7,343.6 934.0,343.6 935.2,344.2 936.4,344.1 937.7,344.1 938.9,344.1 940.1,344.1 941.4,344.2 942.6,344.2 943.8,344.2 945.0,344.7 946.3,344.3 947.5,344.5 948.7,344.5 950.0,344.2 951.2,344.2 952.4,344.2 953.7,344.2 954.9,344.2 956.1,344.4 957.3,344.4 958.6,344.2 959.8,344.2 961.0,339.4 962.3,346.0 963.5,344.9 964.7,344.6 966.0,343.3 967.2,342.5 968.4,342.7 969.6,297.2 970.9,309.1 972.1,338.1 973.3,337.7 974.6,289.7 975.8,274.2 977.0,321.3 978.3,337.3 979.5,336.3 980.7,305.8 981.9,311.7 983.2,176.4 984.4,336.5 985.6,332.4 986.9,337.1 988.1,331.4 989.3,323.1 990.6,331.9 991.8,323.0 993.0,331.5 994.2,332.3 995.5,324.8 996.7,323.8 997.9,234.8 999.2,323.4 1000.4,217.6 1001.6,313.4 1002.9,300.8 1004.1,271.4 1005.3,261.7 1006.5,328.4 1007.8,219.8 1009.0,241.4 1010.2,248.6 1011.5,282.0 1012.7,255.0 1013.9,249.6 1015.2,322.3 1016.4,241.2 1017.6,337.2 1018.8,336.6 1020.1,231.9 1021.3,303.7 1022.5,311.1 1023.8,305.3 1025.0,307.5 1026.2,313.5 1027.5,319.2 1028.7,115.9 1029.9,204.3 1031.1,336.0 1032.4,128.7 1033.6,263.9 1034.8,214.8 1036.1,282.6 1037.3,356.5 1038.5,264.0 1039.8,309.0 1041.0,303.4 1042.2,118.9 1043.4,300.1 1044.7,307.3 1045.9,336.0 1047.1,337.5 1048.4,337.0 1049.6,332.7 1050.8,315.2 1052.1,316.1 1053.3,334.3 1054.5,339.3 1055.7,338.1 1057.0,338.3 1058.2,338.7 1059.4,337.9 1060.7,338.6 1061.9,338.4 1063.1,338.2 1064.4,338.4 1065.6,338.0 1066.8,329.7 1068.0,311.5 1069.3,338.2 1070.5,337.8 1071.7,338.0 1073.0,337.8 1074.2,337.8 1075.4,338.8 1076.7,338.8 1077.9,338.5 1079.1,339.1 1080.3,338.6 1081.6,338.2 1082.8,339.0 1084.0,338.9 1085.3,314.7 1086.5,313.1 1087.7,332.9 1089.0,312.4 1090.2,336.9" fill="none" stroke="#666" stroke-width="1.4"/>
+<polyline points="1091.4,410.7 1092.6,409.4 1093.9,409.4 1095.1,409.5 1096.3,409.5 1097.6,409.5 1098.8,409.5 1100.0,409.6 1101.3,409.6 1102.5,409.6 1103.7,409.6 1104.9,409.2 1106.2,409.3 1107.4,409.3 1108.6,409.3 1109.9,409.3 1111.1,409.3 1112.3,409.2 1113.5,409.3 1114.8,409.3 1116.0,409.3 1117.2,409.3 1118.5,409.3 1119.7,409.2 1120.9,409.2 1122.2,409.2 1123.4,409.3 1124.6,409.3 1125.8,409.3 1127.1,409.2 1128.3,409.2 1129.5,409.2 1130.8,409.2 1132.0,409.2 1133.2,409.2 1134.5,409.2 1135.7,409.6 1136.9,409.6 1138.1,409.6 1139.4,409.6 1140.6,409.6 1141.8,362.1 1143.1,373.5 1144.3,372.7 1145.5,359.4 1146.8,372.8 1148.0,370.4 1149.2,372.5 1150.4,372.4 1151.7,372.4 1152.9,371.2 1154.1,380.6 1155.4,378.4 1156.6,380.8 1157.8,379.7 1159.1,368.2 1160.3,366.8 1161.5,366.9 1162.7,371.1 1164.0,371.2 1165.2,376.1 1166.4,376.1 1167.7,376.1 1168.9,376.1 1170.1,376.3 1171.4,376.4 1172.6,376.4 1173.8,376.3 1175.0,376.3 1176.3,371.5 1177.5,376.2 1178.7,374.9 1180.0,370.7 1181.2,371.8 1182.4,372.2 1183.7,374.8 1184.9,364.7 1186.1,364.4 1187.3,371.0 1188.6,371.1 1189.8,371.1 1191.0,371.1 1192.3,365.3 1193.5,373.5 1194.7,376.0 1196.0,376.0 1197.2,375.5 1198.4,368.5 1199.6,364.7 1200.9,367.9 1202.1,348.3 1203.3,366.3 1204.6,355.1 1205.8,367.2 1207.0,358.0 1208.3,387.1 1209.5,387.3 1210.7,384.8 1211.9,384.9 1213.2,389.8 1214.4,389.6 1215.6,389.7 1216.9,389.7 1218.1,389.7 1219.3,389.7 1220.6,389.7 1221.8,388.9 1223.0,388.9 1224.2,388.9 1225.5,389.0 1226.7,388.9 1227.9,388.9 1229.2,388.9 1230.4,388.9 1231.6,391.9 1232.9,391.7 1234.1,391.7 1235.3,390.5 1236.5,391.6 1237.8,392.0 1239.0,391.9 1240.2,391.5 1241.5,391.6 1242.7,391.6 1243.9,393.0 1245.2,390.6 1246.4,390.7 1247.6,390.7 1248.8,390.7 1250.1,390.7 1251.3,390.7 1252.5,391.7 1253.8,391.7 1255.0,391.7 1256.2,391.7 1257.5,391.7 1258.7,391.6 1259.9,391.7 1261.1,391.7 1262.4,391.6 1263.6,391.6 1264.8,391.6 1266.1,391.6 1267.3,391.6 1268.5,387.8 1269.8,385.3 1271.0,385.3 1272.2,385.3 1273.4,385.3 1274.7,389.3 1275.9,389.3 1277.1,389.3 1278.4,389.3 1279.6,389.3 1280.8,389.3 1282.1,389.3 1283.3,389.3 1284.5,389.3 1285.7,389.3 1287.0,389.3 1288.2,389.3 1289.4,389.3 1290.7,389.3 1291.9,389.3 1293.1,389.3 1294.4,389.3 1295.6,389.4 1296.8,389.7 1298.0,389.7 1299.3,389.7 1300.5,389.7 1301.7,389.7 1303.0,389.7 1304.2,389.7 1305.4,389.7 1306.7,389.7 1307.9,389.7 1309.1,389.7 1310.3,389.7 1311.6,389.7 1312.8,389.7 1314.0,389.7 1315.3,389.7 1316.5,389.7 1317.7,389.6 1319.0,389.7" fill="none" stroke="#ffe66d" stroke-width="2"/>
+<line x1="1090.4" y1="50" x2="1090.4" y2="420" stroke="#fff" stroke-width="1.5" stroke-dasharray="4 4"/>
+<text class="t" x="1082.4" y="46" text-anchor="end">09-09 01:32 KST 전환</text>
+<line x1="1154.4" y1="70" x2="1154.4" y2="420" stroke="#888" stroke-width="1" stroke-dasharray="2 4"/>
+<text class="s" x="1160.4" y="84" text-anchor="start">10:12 right-sizing</text>
+<line x1="130" y1="30" x2="160" y2="30" stroke="#666" stroke-width="1.4"/><text class="s" x="168" y="34">0.12.2 Go 리더</text><line x1="290" y1="30" x2="320" y2="30" stroke="#ffe66d" stroke-width="2"/><text class="s" x="328" y="34">0.13.0 Rust 리더</text>
+<text class="s" x="1320" y="464" text-anchor="end">Mimir 2분 해상도 · 10분 max 버킷 · 2026-09-10 08:40 KST 조회</text>
+</svg>
+  </div>
+  <p class="foot">Go 5.5일 p50 138 · p95 313 · 최대 583 MiB → Rust 31시간 p50 55 · p95 97 · 최대 130 MiB. 같은 새벽 유휴 구간만 보면 137 → 55 MiB, 같은 업무 시간대(09-17시) p50 은 197 → 86 MiB.</p>
+</section>
+
+<!-- 12. wss -->
+<section class="slide">
+  <div class="eyebrow">13 · 결과 · container_memory_working_set_bytes · 리더 파드</div>
+  <h2>working set 은 page cache 의 그림자</h2>
+  <div class="arch" style="max-height:60vh">
+<svg viewBox="0 0 1400 470" role="img" aria-label="working set before and after">
+<text class="tick" x="110" y="424.0" text-anchor="end">0</text><line x1="120" y1="420.0" x2="1320" y2="420.0" stroke="#1c1c1c"/>
+<text class="tick" x="110" y="342.2" text-anchor="end">500</text><line x1="120" y1="338.2" x2="1320" y2="338.2" stroke="#1c1c1c"/>
+<text class="tick" x="110" y="260.4" text-anchor="end">1,000</text><line x1="120" y1="256.4" x2="1320" y2="256.4" stroke="#1c1c1c"/>
+<text class="tick" x="110" y="178.7" text-anchor="end">1,500</text><line x1="120" y1="174.7" x2="1320" y2="174.7" stroke="#1c1c1c"/>
+<text class="tick" x="110" y="96.9" text-anchor="end">2,000</text><line x1="120" y1="92.9" x2="1320" y2="92.9" stroke="#1c1c1c"/>
+<line class="axis" x1="120" y1="420" x2="1320" y2="420"/>
+<text class="tick" x="193.6" y="442" text-anchor="middle">09-04</text>
+<text class="tick" x="370.7" y="442" text-anchor="middle">09-05</text>
+<text class="tick" x="547.8" y="442" text-anchor="middle">09-06</text>
+<text class="tick" x="724.9" y="442" text-anchor="middle">09-07</text>
+<text class="tick" x="902.0" y="442" text-anchor="middle">09-08</text>
+<text class="tick" x="1079.1" y="442" text-anchor="middle">09-09</text>
+<text class="tick" x="1256.2" y="442" text-anchor="middle">09-10</text>
+<text class="s" transform="translate(50,240.0) rotate(-90)" text-anchor="middle">working set (MiB)</text>
+<line x1="120" y1="76.5" x2="1320" y2="76.5" stroke="#888" stroke-dasharray="4 4"/><text class="s" x="1316" y="70.5" text-anchor="end">limit 2100Mi (전환 전)</text><line x1="120" y1="152.1" x2="1320" y2="152.1" stroke="#ffe66d" stroke-dasharray="4 4" opacity="0.7"/><text class="s" x="1316" y="146.1" text-anchor="end">limit 1638Mi (후)</text>
+<polyline points="119.8,255.5 121.0,99.6 122.2,282.8 123.4,261.2 124.7,125.3 125.9,207.0 127.1,161.0 128.4,157.8 129.6,276.6 130.8,282.1 132.1,290.4 133.3,290.8 134.5,174.6 135.7,122.0 137.0,279.3 138.2,176.2 139.4,169.9 140.7,276.4 141.9,168.3 143.1,289.2 144.4,115.8 145.6,279.2 146.8,109.4 148.0,230.2 149.3,224.9 150.5,159.6 151.7,168.2 153.0,289.9 154.2,270.4 155.4,343.4 156.7,274.4 157.9,133.2 159.1,307.9 160.3,308.0 161.6,308.0 162.8,308.2 164.0,106.2 165.3,280.0 166.5,335.1 167.7,345.9 169.0,345.7 170.2,346.2 171.4,106.9 172.6,288.2 173.9,297.4 175.1,297.4 176.3,297.2 177.6,297.2 178.8,297.2 180.0,297.5 181.3,297.6 182.5,314.7 183.7,314.7 184.9,298.4 186.2,298.3 187.4,298.3 188.6,298.5 189.9,298.3 191.1,298.3 192.3,298.3 193.6,298.3 194.8,304.1 196.0,303.9 197.2,303.9 198.5,208.2 199.7,352.5 200.9,153.3 202.2,150.1 203.4,242.4 204.6,241.0 205.9,320.0 207.1,343.7 208.3,244.0 209.5,327.5 210.8,164.6 212.0,346.5 213.2,281.9 214.5,165.7 215.7,341.0 216.9,362.3 218.1,362.5 219.4,362.3 220.6,362.7 221.8,362.6 223.1,362.7 224.3,363.0 225.5,363.2 226.8,363.1 228.0,363.2 229.2,363.1 230.4,363.0 231.7,363.0 232.9,363.1 234.1,363.1 235.4,363.1 236.6,363.0 237.8,363.0 239.1,363.2 240.3,363.4 241.5,363.3 242.7,363.3 244.0,363.5 245.2,363.4 246.4,363.3 247.7,363.4 248.9,363.4 250.1,363.5 251.4,363.4 252.6,326.9 253.8,326.7 255.0,312.6 256.3,253.2 257.5,306.7 258.7,306.7 260.0,356.8 261.2,322.2 262.4,291.1 263.7,142.0 264.9,309.6 266.1,344.5 267.3,212.8 268.6,209.6 269.8,112.2 271.0,296.6 272.3,297.1 273.5,125.6 274.7,306.7 276.0,253.2 277.2,159.3 278.4,258.4 279.6,302.9 280.9,224.0 282.1,342.8 283.3,347.1 284.6,347.1 285.8,347.5 287.0,347.5 288.3,347.7 289.5,347.8 290.7,138.1 291.9,160.3 293.2,164.0 294.4,315.9 295.6,321.5 296.9,132.1 298.1,300.8 299.3,313.6 300.6,211.5 301.8,147.0 303.0,203.4 304.2,139.7 305.5,302.8 306.7,152.1 307.9,198.2 309.2,183.2 310.4,137.5 311.6,324.8 312.9,324.6 314.1,315.0 315.3,302.3 316.5,309.7 317.8,280.5 319.0,280.3 320.2,280.6 321.5,280.9 322.7,364.2 323.9,298.7 325.2,311.6 326.4,311.7 327.6,170.5 328.8,188.6 330.1,371.7 331.3,371.6 332.5,371.8 333.8,371.6 335.0,213.9 336.2,288.1 337.5,288.0 338.7,287.9 339.9,221.1 341.1,140.5 342.4,323.8 343.6,323.9 344.8,323.6 346.1,323.6 347.3,324.0 348.5,324.0 349.8,324.1 351.0,324.2 352.2,324.1 353.4,324.1 354.7,324.2 355.9,324.2 357.1,329.3 358.4,329.4 359.6,329.5 360.8,329.7 362.1,329.5 363.3,329.4 364.5,329.3 365.7,329.5 367.0,329.3 368.2,329.3 369.4,329.1 370.7,329.1 371.9,331.7 373.1,331.7 374.4,331.9 375.6,332.0 376.8,332.0 378.0,332.0 379.3,176.7 380.5,359.0 381.7,358.8 383.0,358.8 384.2,358.8 385.4,171.2 386.7,353.6 387.9,353.4 389.1,353.8 390.3,273.9 391.6,326.7 392.8,326.4 394.0,326.8 395.3,326.7 396.5,326.8 397.7,326.9 399.0,326.9 400.2,326.8 401.4,328.9 402.6,329.0 403.9,328.9 405.1,329.1 406.3,329.3 407.6,329.1 408.8,329.0 410.0,329.1 411.3,329.2 412.5,329.2 413.7,329.2 414.9,329.2 416.2,332.0 417.4,332.2 418.6,332.2 419.9,332.0 421.1,332.2 422.3,332.2 423.6,332.2 424.8,332.2 426.0,332.2 427.2,332.2 428.5,332.2 429.7,320.6 430.9,342.3 432.2,342.3 433.4,342.5 434.6,342.5 435.8,342.4 437.1,342.4 438.3,134.6 439.5,317.5 440.8,317.3 442.0,317.4 443.2,317.3 444.5,317.3 445.7,327.8 446.9,285.4 448.1,347.7 449.4,348.0 450.6,348.0 451.8,304.5 453.1,304.3 454.3,168.1 455.5,351.0 456.8,351.1 458.0,351.1 459.2,351.1 460.4,352.1 461.7,352.1 462.9,352.1 464.1,352.1 465.4,352.1 466.6,352.2 467.8,143.4 469.1,326.3 470.3,326.2 471.5,326.2 472.7,326.2 474.0,316.2 475.2,258.8 476.4,300.5 477.7,300.5 478.9,118.0 480.1,300.9 481.4,264.2 482.6,339.2 483.8,339.2 485.0,339.7 486.3,339.7 487.5,339.5 488.7,225.1 490.0,169.3 491.2,352.9 492.4,216.6 493.7,315.3 494.9,315.9 496.1,316.0 497.3,315.9 498.6,138.9 499.8,323.6 501.0,324.1 502.3,137.1 503.5,310.9 504.7,312.1 506.0,312.0 507.2,312.0 508.4,311.9 509.6,312.0 510.9,312.0 512.1,312.0 513.3,312.2 514.6,311.9 515.8,312.1 517.0,311.9 518.3,127.1 519.5,310.8 520.7,310.9 521.9,310.9 523.2,311.2 524.4,311.2 525.6,311.1 526.9,311.0 528.1,311.0 529.3,311.1 530.6,311.3 531.8,311.3 533.0,311.3 534.2,311.6 535.5,311.7 536.7,311.5 537.9,311.5 539.2,311.5 540.4,311.5 541.6,311.4 542.9,311.4 544.1,311.6 545.3,311.6 546.5,311.8 547.8,311.8 549.0,311.6 550.2,311.8 551.5,311.6 552.7,311.7 553.9,311.7 555.2,311.6 556.4,311.6 557.6,311.6 558.8,311.6 560.1,311.5 561.3,311.7 562.5,129.8 563.8,314.4 565.0,315.0 566.2,314.8 567.5,314.9 568.7,314.8 569.9,314.8 571.1,314.8 572.4,314.8 573.6,314.8 574.8,314.7 576.1,314.7 577.3,314.8 578.5,315.4 579.8,315.4 581.0,315.4 582.2,315.5 583.4,315.6 584.7,315.2 585.9,315.3 587.1,315.3 588.4,315.3 589.6,315.3 590.8,315.5 592.1,315.6 593.3,315.5 594.5,315.5 595.7,315.4 597.0,315.4 598.2,315.4 599.4,315.4 600.7,315.4 601.9,315.4 603.1,283.7 604.4,300.0 605.6,270.9 606.8,117.6 608.0,302.7 609.3,303.2 610.5,303.0 611.7,260.7 613.0,293.7 614.2,363.3 615.4,363.3 616.7,363.3 617.9,363.3 619.1,363.3 620.3,363.4 621.6,363.4 622.8,363.4 624.0,363.5 625.3,363.3 626.5,363.5 627.7,363.6 629.0,363.5 630.2,363.5 631.4,363.4 632.6,363.3 633.9,312.0 635.1,311.9 636.3,312.0 637.6,312.4 638.8,312.4 640.0,312.4 641.3,312.4 642.5,312.4 643.7,312.6 644.9,312.5 646.2,312.5 647.4,312.5 648.6,312.5 649.9,312.5 651.1,249.2 652.3,299.7 653.6,299.7 654.8,300.3 656.0,301.7 657.2,301.8 658.5,297.5 659.7,315.9 660.9,312.8 662.2,291.8 663.4,347.4 664.6,347.4 665.8,347.4 667.1,348.0 668.3,348.0 669.5,314.0 670.8,313.9 672.0,156.4 673.2,296.2 674.5,248.5 675.7,317.7 676.9,338.6 678.1,338.9 679.4,339.0 680.6,339.2 681.8,339.7 683.1,339.6 684.3,339.8 685.5,339.8 686.8,339.8 688.0,340.0 689.2,339.9 690.4,340.2 691.7,340.0 692.9,340.0 694.1,340.0 695.4,312.4 696.6,312.3 697.8,312.5 699.1,312.8 700.3,313.2 701.5,313.1 702.7,313.0 704.0,313.0 705.2,312.9 706.4,312.8 707.7,312.9 708.9,313.0 710.1,313.0 711.4,313.5 712.6,313.5 713.8,313.5 715.0,313.4 716.3,313.4 717.5,283.7 718.7,299.2 720.0,314.5 721.2,317.3 722.4,317.6 723.7,317.4 724.9,317.5 726.1,320.4 727.3,320.7 728.6,320.9 729.8,320.8 731.0,320.7 732.3,320.8 733.5,320.9 734.7,320.9 736.0,320.7 737.2,320.6 738.4,320.8 739.6,313.3 740.9,313.4 742.1,313.5 743.3,313.3 744.6,313.4 745.8,313.5 747.0,313.4 748.3,313.3 749.5,313.3 750.7,313.4 751.9,313.4 753.2,313.4 754.4,313.4 755.6,314.7 756.9,314.7 758.1,314.8 759.3,314.8 760.6,315.0 761.8,314.8 763.0,314.8 764.2,314.8 765.5,314.9 766.7,314.7 767.9,314.9 769.2,314.8 770.4,315.1 771.6,315.0 772.9,314.9 774.1,315.0 775.3,314.9 776.5,314.9 777.8,315.0 779.0,315.0 780.2,314.5 781.5,173.4 782.7,357.1 783.9,250.4 785.2,327.8 786.4,328.0 787.6,328.2 788.8,328.2 790.1,180.2 791.3,125.4 792.5,315.0 793.8,298.9 795.0,146.0 796.2,242.7 797.5,309.9 798.7,151.5 799.9,251.6 801.1,318.8 802.4,192.4 803.6,308.7 804.8,346.1 806.1,159.3 807.3,250.5 808.5,322.6 809.8,323.1 811.0,231.1 812.2,332.1 813.4,355.6 814.7,295.1 815.9,333.1 817.1,329.7 818.4,146.6 819.6,335.4 820.8,246.0 822.1,261.3 823.3,302.7 824.5,214.5 825.7,273.0 827.0,277.4 828.2,289.9 829.4,241.9 830.7,159.0 831.9,148.0 833.1,330.2 834.4,322.5 835.6,143.9 836.8,298.0 838.0,217.4 839.3,174.1 840.5,147.4 841.7,253.0 843.0,297.6 844.2,302.3 845.4,349.0 846.7,348.7 847.9,344.0 849.1,342.5 850.3,309.5 851.6,163.8 852.8,245.0 854.0,144.2 855.3,137.5 856.5,294.2 857.7,287.0 859.0,252.7 860.2,311.6 861.4,176.3 862.6,294.5 863.9,309.2 865.1,330.4 866.3,368.9 867.6,368.7 868.8,233.7 870.0,303.7 871.3,369.3 872.5,166.6 873.7,131.8 874.9,311.8 876.2,256.3 877.4,358.4 878.6,358.8 879.9,358.7 881.1,358.6 882.3,362.2 883.5,362.5 884.8,362.4 886.0,362.7 887.2,198.2 888.5,336.0 889.7,336.1 890.9,141.9 892.2,277.2 893.4,142.5 894.6,337.9 895.8,170.3 897.1,364.9 898.3,364.9 899.5,365.1 900.8,351.2 902.0,351.2 903.2,353.7 904.5,353.7 905.7,353.8 906.9,354.0 908.1,353.8 909.4,353.8 910.6,353.8 911.8,353.9 913.1,354.0 914.3,353.8 915.5,353.8 916.8,299.4 918.0,356.3 919.2,356.3 920.4,356.4 921.7,356.5 922.9,356.5 924.1,356.4 925.4,356.3 926.6,356.3 927.8,356.3 929.1,356.3 930.3,356.3 931.5,356.3 932.7,356.5 934.0,356.5 935.2,356.7 936.4,356.7 937.7,356.7 938.9,356.6 940.1,356.6 941.4,356.6 942.6,356.7 943.8,356.7 945.0,356.8 946.3,356.8 947.5,357.0 948.7,357.1 950.0,357.0 951.2,357.0 952.4,357.0 953.7,356.9 954.9,356.9 956.1,357.0 957.3,357.0 958.6,357.0 959.8,356.9 961.0,287.6 962.3,367.9 963.5,367.5 964.7,367.4 966.0,147.6 967.2,342.2 968.4,342.3 969.6,300.0 970.9,153.0 972.1,262.0 973.3,252.6 974.6,283.3 975.8,168.4 977.0,320.2 978.3,365.7 979.5,262.0 980.7,348.8 981.9,303.0 983.2,332.9 984.4,303.4 985.6,303.2 986.9,233.9 988.1,308.5 989.3,284.7 990.6,315.8 991.8,314.7 993.0,318.0 994.2,319.6 995.5,303.8 996.7,319.8 997.9,160.6 999.2,297.4 1000.4,297.2 1001.6,312.5 1002.9,329.7 1004.1,220.8 1005.3,327.4 1006.5,325.9 1007.8,202.6 1009.0,317.8 1010.2,298.6 1011.5,320.9 1012.7,310.4 1013.9,343.6 1015.2,334.9 1016.4,244.0 1017.6,158.6 1018.8,365.2 1020.1,339.2 1021.3,342.1 1022.5,322.0 1023.8,335.2 1025.0,334.5 1026.2,207.3 1027.5,350.8 1028.7,270.0 1029.9,259.9 1031.1,333.7 1032.4,303.7 1033.6,221.4 1034.8,321.4 1036.1,321.5 1037.3,372.3 1038.5,344.6 1039.8,338.8 1041.0,323.8 1042.2,269.3 1043.4,323.9 1044.7,343.0 1045.9,365.8 1047.1,366.3 1048.4,366.1 1049.6,332.3 1050.8,356.5 1052.1,356.8 1053.3,344.0 1054.5,366.6 1055.7,366.2 1057.0,366.3 1058.2,366.4 1059.4,366.1 1060.7,366.2 1061.9,366.2 1063.1,366.2 1064.4,366.2 1065.6,366.2 1066.8,362.9 1068.0,357.2 1069.3,368.2 1070.5,368.0 1071.7,368.1 1073.0,368.1 1074.2,368.0 1075.4,368.4 1076.7,368.3 1077.9,368.2 1079.1,368.4 1080.3,368.3 1081.6,368.2 1082.8,368.4 1084.0,368.3 1085.3,359.4 1086.5,358.8 1087.7,379.7 1089.0,368.5 1090.2,372.0" fill="none" stroke="#666" stroke-width="1.4"/>
+<polyline points="1091.4,375.4 1092.6,367.6 1093.9,348.0 1095.1,348.1 1096.3,348.0 1097.6,348.0 1098.8,348.1 1100.0,348.1 1101.3,348.0 1102.5,348.0 1103.7,348.0 1104.9,348.0 1106.2,348.0 1107.4,347.9 1108.6,348.0 1109.9,355.7 1111.1,355.6 1112.3,355.6 1113.5,355.6 1114.8,355.6 1116.0,355.6 1117.2,355.6 1118.5,355.6 1119.7,355.5 1120.9,355.6 1122.2,355.6 1123.4,355.6 1124.6,359.9 1125.8,359.9 1127.1,359.7 1128.3,359.7 1129.5,359.8 1130.8,359.8 1132.0,359.8 1133.2,359.8 1134.5,346.7 1135.7,358.5 1136.9,358.4 1138.1,358.4 1139.4,363.0 1140.6,336.8 1141.8,331.9 1143.1,315.0 1144.3,338.3 1145.5,350.3 1146.8,354.1 1148.0,339.6 1149.2,319.8 1150.4,331.7 1151.7,334.8 1152.9,333.9 1154.1,391.8 1155.4,390.2 1156.6,392.6 1157.8,390.6 1159.1,386.3 1160.3,386.3 1161.5,386.3 1162.7,386.9 1164.0,386.3 1165.2,388.1 1166.4,388.1 1167.7,388.1 1168.9,388.1 1170.1,388.2 1171.4,388.2 1172.6,388.1 1173.8,388.2 1175.0,388.3 1176.3,384.1 1177.5,387.8 1178.7,386.0 1180.0,385.0 1181.2,385.0 1182.4,384.4 1183.7,385.0 1184.9,381.3 1186.1,380.7 1187.3,383.5 1188.6,385.3 1189.8,387.2 1191.0,387.2 1192.3,383.4 1193.5,384.2 1194.7,385.5 1196.0,387.9 1197.2,385.6 1198.4,382.0 1199.6,380.9 1200.9,380.0 1202.1,373.2 1203.3,379.4 1204.6,373.9 1205.8,378.9 1207.0,378.9 1208.3,391.4 1209.5,390.7 1210.7,391.1 1211.9,391.1 1213.2,388.2 1214.4,394.6 1215.6,394.6 1216.9,394.6 1218.1,394.6 1219.3,394.6 1220.6,394.6 1221.8,394.3 1223.0,394.4 1224.2,394.4 1225.5,394.4 1226.7,394.4 1227.9,394.4 1229.2,394.4 1230.4,394.4 1231.6,374.1 1232.9,394.6 1234.1,394.6 1235.3,376.7 1236.5,397.2 1237.8,370.6 1239.0,390.7 1240.2,389.6 1241.5,395.6 1242.7,395.6 1243.9,371.6 1245.2,393.7 1246.4,393.7 1247.6,393.7 1248.8,393.7 1250.1,393.7 1251.3,389.9 1252.5,392.1 1253.8,392.1 1255.0,392.1 1256.2,392.1 1257.5,392.1 1258.7,392.1 1259.9,392.1 1261.1,392.1 1262.4,392.1 1263.6,392.1 1264.8,392.1 1266.1,392.1 1267.3,391.9 1268.5,390.3 1269.8,391.7 1271.0,391.7 1272.2,391.7 1273.4,389.8 1274.7,393.8 1275.9,393.8 1277.1,393.8 1278.4,393.8 1279.6,393.8 1280.8,393.8 1282.1,393.8 1283.3,393.8 1284.5,393.8 1285.7,393.8 1287.0,393.8 1288.2,393.7 1289.4,393.8 1290.7,393.8 1291.9,393.7 1293.1,393.8 1294.4,393.7 1295.6,389.6 1296.8,393.7 1298.0,393.6 1299.3,393.7 1300.5,393.7 1301.7,393.7 1303.0,393.7 1304.2,393.7 1305.4,393.7 1306.7,393.7 1307.9,393.7 1309.1,393.7 1310.3,393.7 1311.6,393.7 1312.8,393.7 1314.0,393.7 1315.3,393.7 1316.5,393.7 1317.7,393.7 1319.0,375.7" fill="none" stroke="#ffe66d" stroke-width="2"/>
+<line x1="1090.4" y1="50" x2="1090.4" y2="420" stroke="#fff" stroke-width="1.5" stroke-dasharray="4 4"/>
+<text class="t" x="1082.4" y="46" text-anchor="end">09-09 01:32 KST 전환</text>
+<line x1="1154.4" y1="70" x2="1154.4" y2="420" stroke="#888" stroke-width="1" stroke-dasharray="2 4"/>
+<text class="s" x="1160.4" y="126" text-anchor="start">10:12 right-sizing</text>
+<line x1="130" y1="30" x2="160" y2="30" stroke="#666" stroke-width="1.4"/><text class="s" x="168" y="34">0.12.2 Go 리더</text><line x1="290" y1="30" x2="320" y2="30" stroke="#ffe66d" stroke-width="2"/><text class="s" x="328" y="34">0.13.0 Rust 리더</text>
+<text class="s" x="1320" y="464" text-anchor="end">Mimir 2분 해상도 · 10분 max 버킷 · 2026-09-10 08:40 KST 조회</text>
+</svg>
+  </div>
+  <p class="foot">working set = rss + active page cache. Go p50 640 · p95 1,638 · 최대 1,959 MiB → Rust p50 194 · p95 448 · 최대 642 MiB. 같은 새벽 유휴 구간 389 → 161 MiB. limit 에 붙던 구간이 사라졌다.</p>
+</section>
+
+<!-- 13. before/after -->
+<section class="slide">
+  <div class="eyebrow">14 · 결과 · 전환 전 5.5일 vs 후 31시간 · Mimir</div>
+  <h2>앞뒤 비교</h2>
+  <div class="arch" style="max-height:62vh">
+<svg viewBox="0 0 1400 470" role="img">
+<text class="t" x="314" y="67.0" text-anchor="end">forklift rss</text>
+<text class="s" x="314" y="84.0" text-anchor="end">container_memory_rss p50</text>
+<rect x="330" y="43" width="970" height="20" fill="#111"/><rect x="330" y="43" width="224.4" height="20" fill="#555"/>
+<text class="m" x="564.4" y="57.0" text-anchor="start" style="fill:#ededed;font-size:13px">Go 138 MiB</text>
+<rect x="330" y="69" width="970" height="20" fill="#111"/><rect x="330" y="69" width="88.4" height="20" fill="#ffe66d"/>
+<text class="m" x="428.4" y="83.0" text-anchor="start" style="fill:#ededed;font-size:13px">Rust 55 MiB · −61%</text>
+<text class="t" x="314" y="141.0" text-anchor="end">forklift process RSS</text>
+<text class="s" x="314" y="158.0" text-anchor="end">process_resident_memory_bytes p50</text>
+<rect x="330" y="117" width="970" height="20" fill="#111"/><rect x="330" y="117" width="254.6" height="20" fill="#555"/>
+<text class="m" x="594.6" y="131.0" text-anchor="start" style="fill:#ededed;font-size:13px">Go 158 MiB</text>
+<rect x="330" y="143" width="970" height="20" fill="#111"/><rect x="330" y="143" width="120.4" height="20" fill="#ffe66d"/>
+<text class="m" x="460.4" y="157.0" text-anchor="start" style="fill:#ededed;font-size:13px">Rust 74 MiB · −53%</text>
+<text class="t" x="314" y="215.0" text-anchor="end">forklift rss 최대</text>
+<text class="s" x="314" y="232.0" text-anchor="end">5.5일 vs 31시간</text>
+<rect x="330" y="191" width="970" height="20" fill="#111"/><rect x="330" y="191" width="943.0" height="20" fill="#555"/>
+<text class="m" x="1263.0" y="205.0" text-anchor="end" style="fill:#000;font-size:13px">Go 583 MiB</text>
+<rect x="330" y="217" width="970" height="20" fill="#111"/><rect x="330" y="217" width="209.4" height="20" fill="#ffe66d"/>
+<text class="m" x="549.4" y="231.0" text-anchor="start" style="fill:#ededed;font-size:13px">Rust 130 MiB · −78% · 업무 시간대 피크 포함</text>
+<text class="t" x="314" y="289.0" text-anchor="end">forklift-mcp working set</text>
+<text class="s" x="314" y="306.0" text-anchor="end">p50</text>
+<rect x="330" y="265" width="970" height="20" fill="#111"/><rect x="330" y="265" width="16.1" height="20" fill="#555"/>
+<text class="m" x="356.1" y="279.0" text-anchor="start" style="fill:#ededed;font-size:13px">Go 9.9 MiB</text>
+<rect x="330" y="291" width="970" height="20" fill="#111"/><rect x="330" y="291" width="2.9" height="20" fill="#ffe66d"/>
+<text class="m" x="342.9" y="305.0" text-anchor="start" style="fill:#ededed;font-size:13px">Rust 1.8 MiB · −82%</text>
+<text class="t" x="314" y="363.0" text-anchor="end">forklift-mcp process RSS</text>
+<text class="s" x="314" y="380.0" text-anchor="end">p50</text>
+<rect x="330" y="339" width="970" height="20" fill="#111"/><rect x="330" y="339" width="30.5" height="20" fill="#555"/>
+<text class="m" x="370.5" y="353.0" text-anchor="start" style="fill:#ededed;font-size:13px">Go 19 MiB</text>
+<rect x="330" y="365" width="970" height="20" fill="#111"/><rect x="330" y="365" width="10.6" height="20" fill="#ffe66d"/>
+<text class="m" x="350.6" y="379.0" text-anchor="start" style="fill:#ededed;font-size:13px">Rust 6.6 MiB · −65%</text>
+</svg>
+  </div>
+</section>
+
+<!-- 14. right-sizing -->
+<section class="slide">
+  <div class="eyebrow">15 · right-sizing</div>
+  <h2>실측 위에 request 와 limit 을 다시 놓았다</h2>
+  <div class="arch" style="max-height:56vh">
+<svg viewBox="0 0 1400 400" role="img">
+<text class="t" x="314" y="80.0" text-anchor="end">CPU request</text>
+<rect x="330" y="43" width="970" height="20" fill="#111"/><rect x="330" y="43" width="220.5" height="20" fill="#555"/>
+<text class="m" x="560.5" y="57.0" text-anchor="start" style="fill:#ededed;font-size:13px">전 1000m</text>
+<rect x="330" y="69" width="970" height="20" fill="#111"/><rect x="330" y="69" width="55.1" height="20" fill="#ffe66d"/>
+<text class="m" x="395.1" y="83.0" text-anchor="start" style="fill:#ededed;font-size:13px">후 250m</text>
+<rect x="330" y="95" width="970" height="20" fill="#111"/><rect x="330" y="95" width="910.5" height="20" fill="#ededed"/>
+<text class="m" x="1230.5" y="109.0" text-anchor="end" style="fill:#000;font-size:13px">실측 순간 최대 4.13 core · p95 0.22 · Go 최대 0.66 · CPU limit 없음</text>
+<text class="t" x="314" y="192.0" text-anchor="end">메모리 request</text>
+<rect x="330" y="155" width="970" height="20" fill="#111"/><rect x="330" y="155" width="396.8" height="20" fill="#555"/>
+<text class="m" x="736.8" y="169.0" text-anchor="start" style="fill:#ededed;font-size:13px">전 900Mi</text>
+<rect x="330" y="181" width="970" height="20" fill="#111"/><rect x="330" y="181" width="225.7" height="20" fill="#ffe66d"/>
+<text class="m" x="565.7" y="195.0" text-anchor="start" style="fill:#ededed;font-size:13px">후 512Mi</text>
+<rect x="330" y="207" width="970" height="20" fill="#111"/><rect x="330" y="207" width="197.6" height="20" fill="#ededed"/>
+<text class="m" x="537.6" y="221.0" text-anchor="start" style="fill:#ededed;font-size:13px">실측 working set p95 448 MiB · rss 최대 130 MiB</text>
+<text class="t" x="314" y="304.0" text-anchor="end">메모리 limit</text>
+<rect x="330" y="267" width="970" height="20" fill="#111"/><rect x="330" y="267" width="925.9" height="20" fill="#555"/>
+<text class="m" x="1245.9" y="281.0" text-anchor="end" style="fill:#000;font-size:13px">전 2100Mi</text>
+<rect x="330" y="293" width="970" height="20" fill="#111"/><rect x="330" y="293" width="722.2" height="20" fill="#ffe66d"/>
+<text class="m" x="1062.2" y="307.0" text-anchor="start" style="fill:#ededed;font-size:13px">후 1638Mi (1.6Gi)</text>
+<rect x="330" y="319" width="970" height="20" fill="#111"/><rect x="330" y="319" width="921.5" height="20" fill="#ededed"/>
+<text class="m" x="1251.5" y="333.0" text-anchor="end" style="fill:#000;font-size:13px">실측 Go 14일 working set 최대 2,090 MiB · SQLite 1.3 GiB</text>
+</svg>
+  </div>
+  <p class="foot">회색 전 · 노랑 후 · 흰색 실측. CPU 행은 0~4400m 축, 메모리 행은 0~2200Mi 축. limit 은 page cache 상한만 남는다. CPU 는 limit 이 없어 순간 4.13 core 까지 올라간다. 1Gi 까지 내리면 SQLite hot page 가 반복 회수되어 I/O 가 는다.</p>
+</section>
+
+<!-- 15. 결론 -->
+<section class="slide">
+  <div class="eyebrow">16 · 결론 · 전후 배율</div>
+  <h2>동일 워크로드에서 리더 파드 메모리를 60~78% 줄였다</h2>
+  <div class="arch" style="max-height:66vh">
+<svg viewBox="0 0 1400 320" role="img" aria-label="before after ratio">
+<line x1="446.7" y1="52" x2="446.7" y2="300" stroke="#1c1c1c"/>
+<text class="tick" x="446.7" y="44" text-anchor="middle">0.2배</text>
+<line x1="611.3" y1="52" x2="611.3" y2="300" stroke="#1c1c1c"/>
+<text class="tick" x="611.3" y="44" text-anchor="middle">0.3배</text>
+<line x1="818.7" y1="52" x2="818.7" y2="300" stroke="#1c1c1c"/>
+<text class="tick" x="818.7" y="44" text-anchor="middle">0.5배</text>
+<line x1="955.2" y1="52" x2="955.2" y2="300" stroke="#1c1c1c"/>
+<text class="tick" x="955.2" y="44" text-anchor="middle">0.7배</text>
+<line x1="1100.0" y1="52" x2="1100.0" y2="300" stroke="#ededed" stroke-width="1.5"/>
+<text class="s" x="1100.0" y="44" text-anchor="middle" style="fill:#ededed">Go 0.12.2 = 1배</text>
+<text class="m" x="300" y="78.0" text-anchor="end" style="fill:#ededed;font-size:14px">forklift-mcp working set</text>
+<text class="s" x="300" y="93.0" text-anchor="end">p50</text>
+<line x1="1100.0" y1="76.0" x2="404.0" y2="76.0" stroke="#ffe66d" stroke-width="3" />
+<circle cx="404.0" cy="76.0" r="5" fill="#ffe66d"/>
+<text class="m" x="390.0" y="80.0" text-anchor="end" style="fill:#ffe66d;font-size:13px">0.18배</text>
+<text class="s" x="1116.0" y="80.0" text-anchor="start">9.9 → 1.8 MiB</text>
+<text class="m" x="300" y="112.0" text-anchor="end" style="fill:#ededed;font-size:14px">forklift rss 최대</text>
+<text class="s" x="300" y="127.0" text-anchor="end">5.5일 vs 31시간</text>
+<line x1="1100.0" y1="110.0" x2="485.4" y2="110.0" stroke="#ffe66d" stroke-width="3" />
+<circle cx="485.4" cy="110.0" r="5" fill="#ffe66d"/>
+<text class="m" x="471.4" y="114.0" text-anchor="end" style="fill:#ffe66d;font-size:13px">0.22배</text>
+<text class="s" x="1116.0" y="114.0" text-anchor="start">583 → 130 MiB</text>
+<text class="m" x="300" y="146.0" text-anchor="end" style="fill:#ededed;font-size:14px">forklift working set</text>
+<text class="s" x="300" y="161.0" text-anchor="end">p50</text>
+<line x1="1100.0" y1="144.0" x2="611.3" y2="144.0" stroke="#ffe66d" stroke-width="3" />
+<circle cx="611.3" cy="144.0" r="5" fill="#ffe66d"/>
+<text class="m" x="597.3" y="148.0" text-anchor="end" style="fill:#ffe66d;font-size:13px">0.30배</text>
+<text class="s" x="1116.0" y="148.0" text-anchor="start">640 → 194 MiB</text>
+<text class="m" x="300" y="180.0" text-anchor="end" style="fill:#ededed;font-size:14px">forklift-mcp process RSS</text>
+<text class="s" x="300" y="195.0" text-anchor="end">p50</text>
+<line x1="1100.0" y1="178.0" x2="673.9" y2="178.0" stroke="#ffe66d" stroke-width="3" />
+<circle cx="673.9" cy="178.0" r="5" fill="#ffe66d"/>
+<text class="m" x="659.9" y="182.0" text-anchor="end" style="fill:#ffe66d;font-size:13px">0.35배</text>
+<text class="s" x="1116.0" y="182.0" text-anchor="start">19 → 6.6 MiB</text>
+<text class="m" x="300" y="214.0" text-anchor="end" style="fill:#ededed;font-size:14px">forklift rss</text>
+<text class="s" x="300" y="229.0" text-anchor="end">p50</text>
+<line x1="1100.0" y1="212.0" x2="717.8" y2="212.0" stroke="#ffe66d" stroke-width="3" />
+<circle cx="717.8" cy="212.0" r="5" fill="#ffe66d"/>
+<text class="m" x="703.8" y="216.0" text-anchor="end" style="fill:#ffe66d;font-size:13px">0.39배</text>
+<text class="s" x="1116.0" y="216.0" text-anchor="start">138 → 55 MiB</text>
+<text class="m" x="300" y="248.0" text-anchor="end" style="fill:#ededed;font-size:14px">forklift process RSS</text>
+<text class="s" x="300" y="263.0" text-anchor="end">p50</text>
+<line x1="1100.0" y1="246.0" x2="793.5" y2="246.0" stroke="#ffe66d" stroke-width="3" />
+<circle cx="793.5" cy="246.0" r="5" fill="#ffe66d"/>
+<text class="m" x="779.5" y="250.0" text-anchor="end" style="fill:#ffe66d;font-size:13px">0.47배</text>
+<text class="s" x="1116.0" y="250.0" text-anchor="start">158 → 74 MiB</text>
+<text class="m" x="300" y="282.0" text-anchor="end" style="fill:#ededed;font-size:14px">maven 경로 평균</text>
+<text class="s" x="300" y="297.0" text-anchor="end">forklift_http_request_duration_seconds</text>
+<line x1="1100.0" y1="280.0" x2="849.9" y2="280.0" stroke="#ffe66d" stroke-width="3" />
+<circle cx="849.9" cy="280.0" r="5" fill="#ffe66d"/>
+<text class="m" x="835.9" y="284.0" text-anchor="end" style="fill:#ffe66d;font-size:13px">0.54배</text>
+<text class="s" x="1116.0" y="284.0" text-anchor="start">12.7 → 6.9 ms</text>
+<line x1="130" y1="24" x2="160" y2="24" stroke="#ffe66d" stroke-width="3"/><text class="s" x="168" y="28">Rust 값 ÷ Go 값 · 1배 미만 = 개선</text>
+<text class="s" x="1380" y="28" text-anchor="end">가로축 로그</text>
+</svg>
+  </div>
+  <p class="foot">비교 구간 Go 0.12.2 5.5일(09-03 14:02 ~ 09-09 01:32) vs Rust 0.13.0 31시간(09-09 01:42 ~ 09-10 08:40). 리더 파드 · Mimir 2분 해상도 · 10분 max 버킷. 요청량은 동일 수준(7,442 → 6,639 req/h), 업스트림 응답은 오히려 개선(37.8 → 29.6 ms).</p>
+</section>
+
+<!-- 16. 참고 -->
+<section class="slide">
+  <div class="eyebrow">17 · 참고 자료</div>
+  <h2>이 덱이 참조한 자료</h2>
+  <div class="refs">
+    <div>
+      <h3>코드 · 문서</h3>
+      <ul>
+        <li><a href="https://github.com/younsl/forklift" target="_blank" rel="noopener">github.com/younsl/forklift</a></li>
+        <li>CHANGELOG 0.13.0 · PORTING.md · Dockerfile · docs/metrics.md</li>
+        <li>Helm chart · <code>oci://ghcr.io/younsl/charts/forklift</code></li>
+      </ul>
+    </div>
+    <div>
+      <h3>지표</h3>
+      <ul>
+        <li>Prometheus 장기 저장소(Mimir) · cadvisor · <code>process_*</code> · <code>forklift_*</code> · 2026-09-10 08:40 KST 조회</li>
+        <li>goldilocks VPA · crane manifest</li>
+        <li>차트는 2분 해상도 데이터를 10분 max 버킷으로 그린 인라인 SVG</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+</div>
+
+<div class="chrome">
+  <span>forklift · Go to Rust</span>
+  <span class="pager"><span id="cur">01</span> / <span id="total">00</span></span>
+  <span class="hint"><span class="kbd">←</span> <span class="kbd">→</span> 이동</span>
+</div>
+
+<script>
+  const slides = document.querySelectorAll('.slide');
+  const cur = document.getElementById('cur');
+  const total = document.getElementById('total');
+  total.textContent = String(slides.length).padStart(2, '0');
+  let i = 0;
+  function go(n) {
+    i = Math.max(0, Math.min(slides.length - 1, n));
+    slides.forEach((s, idx) => s.classList.toggle('active', idx === i));
+    cur.textContent = String(i + 1).padStart(2, '0');
+    location.hash = '#' + (i + 1);
+  }
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowRight' || e.key === ' ' || e.key === 'PageDown') { e.preventDefault(); go(i + 1); }
+    else if (e.key === 'ArrowLeft' || e.key === 'PageUp') { e.preventDefault(); go(i - 1); }
+    else if (e.key === 'Home') { go(0); }
+    else if (e.key === 'End') { go(slides.length - 1); }
+  });
+  document.addEventListener('click', (e) => {
+    if (e.target.closest('a, .kbd')) return;
+    go(i + 1);
+  });
+  const initial = parseInt((location.hash || '#1').slice(1), 10);
+  if (!Number.isNaN(initial)) go(initial - 1);
+</script>
+</body>
+</html>

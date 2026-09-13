@@ -1,0 +1,76 @@
+# A tiny in-cluster git server, so the Application can have a real git source
+# that contains the Rollout. That is what puts the Rollout into the Argo CD
+# resource tree: the tree shows managed resources rendered from the source,
+# and a kubectl-applied Rollout is invisible to it no matter what labels it
+# carries. Commits are made through the Gitea API, so no git client or
+# credentials ever leave the cluster.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: git
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gitea
+  namespace: git
+  labels:
+    app: gitea
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: gitea
+  template:
+    metadata:
+      labels:
+        app: gitea
+    spec:
+      containers:
+        - name: gitea
+          image: docker.io/gitea/gitea:1.24
+          env:
+            # Skips the interactive install wizard. sqlite plus an emptyDir is
+            # plenty for a throwaway demo repo.
+            - name: GITEA__security__INSTALL_LOCK
+              value: "true"
+            - name: GITEA__database__DB_TYPE
+              value: sqlite3
+            - name: GITEA__server__HTTP_PORT
+              value: "3000"
+            - name: GITEA__server__ROOT_URL
+              value: http://gitea.git.svc:3000/
+            - name: GITEA__service__DISABLE_REGISTRATION
+              value: "true"
+          ports:
+            - containerPort: 3000
+              name: http
+          readinessProbe:
+            httpGet:
+              path: /api/healthz
+              port: http
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+          volumeMounts:
+            - name: data
+              mountPath: /data
+      volumes:
+        - name: data
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gitea
+  namespace: git
+  labels:
+    app: gitea
+spec:
+  selector:
+    app: gitea
+  ports:
+    - name: http
+      port: 3000
+      targetPort: http

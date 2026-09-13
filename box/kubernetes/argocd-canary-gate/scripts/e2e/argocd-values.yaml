@@ -1,0 +1,76 @@
+# Argo CD for local manual testing. Pinned to the chart whose appVersion is
+# v3.4.5, the same server version the sibling promotion gate was verified
+# against.
+#
+# Trimmed to what a canary test needs. Dex, notifications, and the
+# ApplicationSet controller are all off because none of them touch the sync
+# path and a laptop-sized cluster has better uses for the memory.
+
+global:
+  domain: localhost
+
+configs:
+  params:
+    # Plain HTTP so a port-forward is enough to log in. Never do this anywhere
+    # that is not a throwaway cluster.
+    server.insecure: true
+    controller.status.processors: "4"
+    controller.operation.processors: "2"
+    reposerver.parallelism.limit: "2"
+    # The chart already wires this cmd-params key into the server's env through
+    # a valueFrom, so setting it here is the merge-safe way to enable proxy
+    # extensions. A plain server.env entry of the same name collides with that
+    # valueFrom on upgrade.
+    server.enable.proxy.extension: true
+
+  cm:
+    # Registers the gate as a proxy extension backend. The name is the path
+    # segment, so this makes argocd-server proxy /extensions/canary-gate/*
+    # to the gate service.
+    extension.config: |
+      extensions:
+        - name: canary-gate
+          backend:
+            services:
+              - url: http://argocd-canary-gate.argocd.svc.cluster.local:8080
+
+  rbac:
+    # Proxy extensions are gated by Argo CD's own RBAC. Without this the panel
+    # renders an error instead of a verdict.
+    policy.csv: |
+      p, role:readonly, extensions, invoke, canary-gate, allow
+      p, role:admin, extensions, invoke, canary-gate, allow
+
+server:
+  replicas: 1
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+
+controller:
+  replicas: 1
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+
+repoServer:
+  replicas: 1
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+
+redis:
+  resources:
+    requests:
+      cpu: 25m
+      memory: 64Mi
+
+dex:
+  enabled: false
+notifications:
+  enabled: false
+applicationSet:
+  enabled: false

@@ -1,0 +1,3730 @@
+openapi: 3.1.0
+info:
+  title: forklift API
+  version: "0.1.0"
+  description: >
+    Management API for forklift, a Kubernetes-native artifact repository.
+    Package-format endpoints (Maven, npm, Cargo, Go, PyPI, raw) are mounted under
+    /maven, /npm, /cargo, /go, /pypi and /raw and follow each ecosystem's native
+    protocol (raw serves plain GET/PUT by path). The OCI distribution API
+    (container images, Helm charts) is mounted at /v2 with the repository name
+    as the first path segment. This specification is served at
+    /openapi.yaml with a Scalar reference UI at /api-docs.
+servers:
+  - url: /
+tags:
+  - name: system
+  - name: session
+  - name: repositories
+  - name: tokens
+  - name: users
+  - name: roles
+  - name: approvals
+  - name: group-mappings
+  - name: ha
+  - name: notification
+  - name: search
+  - name: coverage
+paths:
+  /healthz:
+    get:
+      tags: [system]
+      summary: Liveness probe (no auth)
+      responses:
+        "200": { description: Process is alive }
+  /readyz:
+    get:
+      tags: [system]
+      summary: Readiness probe (no auth); in HA mode only the elected leader is ready
+      responses:
+        "200": { description: Ready to serve traffic }
+        "503": { description: Not the leader, or database unavailable }
+  /api/v1/login:
+    post:
+      tags: [session]
+      summary: Log in with a local username and password (sets a session cookie)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LoginInput" }
+      responses:
+        "200":
+          description: Logged in
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SessionIdentity" }
+        "401": { description: Invalid credentials }
+        "403": { description: Account locked after too many failed attempts }
+        "404": { description: Local authentication is disabled }
+  /api/v1/logout:
+    post:
+      tags: [session]
+      summary: Clear the session cookie
+      responses:
+        "204": { description: Logged out }
+  /api/v1/me:
+    get:
+      tags: [session]
+      summary: Describe the current principal
+      responses:
+        "200":
+          description: Principal info (authenticated=false with no other fields when anonymous)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Me" }
+  /api/v1/impersonate/stop:
+    post:
+      tags: [session]
+      summary: End an impersonated session and return to your own account
+      responses:
+        "200":
+          description: Restored session
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SessionIdentity" }
+        "400": { description: Not impersonating }
+        "401": { description: The original account is disabled or no longer exists; the cookie is cleared }
+  /api/v1/version:
+    get:
+      tags: [session]
+      summary: Build-time version and commit metadata
+      responses:
+        "200":
+          description: Version info
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Version"
+  /api/v1/stats/landing:
+    get:
+      tags: [session]
+      summary: Public instance-wide counts for the login page welcome line
+      responses:
+        "200":
+          description: Coarse totals; no names or per-repository detail.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LandingStats"
+  /api/v1/announcement:
+    get:
+      tags: [session]
+      summary: Read the site-wide announcement banner
+      description: >
+        Readable by any signed-in user. Never set and cleared are the same
+        response - an empty body - so the banner has one absent state to render
+        rather than two.
+      security: [{ basicAuth: [] }, { bearerAuth: [] }]
+      responses:
+        "200":
+          description: The current announcement, or an empty body if there is none
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Announcement" }
+    put:
+      tags: [session]
+      summary: Replace the site-wide announcement (admin)
+      description: >
+        The body is stored as Markdown source verbatim; rendering and
+        sanitisation are the UI's job. An empty body clears the announcement.
+      security: [{ basicAuth: [] }, { bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AnnouncementInput" }
+      responses:
+        "200":
+          description: The stored announcement
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Announcement" }
+        "400":
+          description: Body exceeds 1000 characters or 16KiB
+  /api/v1/search:
+    get:
+      tags: [search]
+      summary: Global search across repositories, artifacts, artifact labels, approvals, users and roles
+      description: >
+        Powers the sidebar search. Every section is narrowed to what the caller
+        may see; repositories, artifacts and artifact labels filter per-repo by
+        the read action,
+        approvals require approve or audit rights, users and roles require
+        admin or audit rights. Sections without access are null, permitted
+        sections with no match are empty arrays.
+      security: [{ basicAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema: { type: string }
+        - name: limit
+          in: query
+          description: Max results per section (1-20, default 5).
+          schema: { type: integer }
+      responses:
+        "200":
+          description: Grouped, permission-filtered results
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SearchResult" }
+        "400": { description: Missing q }
+  /api/v1/repositories:
+    get:
+      tags: [repositories]
+      summary: List repositories
+      security: [{ basicAuth: [] }, { bearerAuth: [] }]
+      responses:
+        "200":
+          description: Repositories
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/RepositoryListItem" }
+    post:
+      tags: [repositories]
+      summary: Create a repository
+      security: [{ basicAuth: [] }, { bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RepositoryCreate" }
+      responses:
+        "201":
+          description: The created repository
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Repository" }
+        "400": { description: Validation error }
+        "409": { description: Name already exists }
+  /api/v1/repositories/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+    get:
+      tags: [repositories]
+      summary: Get a repository
+      security: [{ basicAuth: [] }, { bearerAuth: [] }]
+      responses:
+        "200":
+          description: >
+            Repository. This returns the list item shape: the handler fills
+            can_write and pending_approval_count, and the remaining aggregates
+            serialise as 0 rather than being omitted.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RepositoryListItem" }
+        "403": { description: Read permission required }
+        "404": { description: Not found }
+    put:
+      tags: [repositories]
+      summary: Update a repository's upstream URL and config (admin)
+      description: >
+        PUT replaces the whole resource, so a proxy must always resend its
+        upstream_url; omitting it returns 400 instead of silently clearing it.
+        Administrators only, because the body carries the upstream URL and its
+        credentials. The security-policy subset of the config has its own route,
+        PUT /api/v1/repositories/{id}/security, reachable with the security
+        action.
+      security: [{ basicAuth: [] }, { bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RepositoryInput" }
+      responses:
+        "200":
+          description: The updated repository
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Repository" }
+        "400": { description: Invalid config, empty upstream_url on a proxy, invalid group members, approval on a group, or pypi legacy zip outside hosted PyPI }
+        "404": { description: Not found }
+    delete:
+      tags: [repositories]
+      summary: Delete a repository
+      security: [{ basicAuth: [] }, { bearerAuth: [] }]
+      responses:
+        "204": { description: Deleted }
+        "403": { description: Seeded repository (managed by the chart) cannot be deleted }
+        "404": { description: Not found }
+  /api/v1/repositories/{id}/security:
+    put:
+      tags: [repositories]
+      summary: Update a repository's security policy (admin or security action)
+      description: >
+        Replaces the security-policy sections of a repository's config: age
+        policy, approval policy, vulnerability policy, license policy, IP ACL
+        and notification receivers. Every other section (cache, retention,
+        group members, upload compatibility) and the upstream URL with its
+        credentials are carried over from the stored config and cannot be set
+        through this route, so the security action never becomes repository
+        management. Like PUT /api/v1/repositories/{id} this replaces rather
+        than merges the sections it owns; omitted sections reset to their zero
+        value. Authorized for administrators and for principals holding the
+        security action on this repository; personal access tokens never
+        qualify, since the security action cannot be carried by a token scope.
+      security: [{ basicAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RepositorySecurityInput" }
+      responses:
+        "200":
+          description: Updated repository
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Repository" }
+        "400": { description: Invalid policy, or approval enabled on a group repository }
+        "403": { description: Security permission required for this repository }
+        "404": { description: Not found }
+  /api/v1/repositories/{id}/audit-logs:
+    get:
+      tags: [repositories]
+      summary: List a repository's audit log (admin), newest first
+      security: [{ basicAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+        - name: event
+          in: query
+          schema:
+            type: string
+            enum: [view, download, upload, delete, ttl.expire, vuln.block, license.block,
+                   upload.metadata, upload.reject, upload.cancel,
+                   repo.create, repo.update, repo.delete,
+                   approval.request, approval.approve, approval.reject,
+                   deny.create, deny.delete, deny.block]
+        - { name: limit, in: query, schema: { type: integer, default: 100, maximum: 500 } }
+        - { name: offset, in: query, schema: { type: integer, default: 0 } }
+      responses:
+        "200":
+          description: Audit log entries
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuditLogList" }
+        "404": { description: Not found }
+  /api/v1/repository-names:
+    get:
+      tags: [repositories]
+      summary: List repository names (any authenticated user) for token-scope autocomplete
+      security: [{ basicAuth: [] }, { bearerAuth: [] }]
+      responses:
+        "200":
+          description: Slim repository list (name, format, type)
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/RepositoryName" }
+  /api/v1/repositories/check-upstream:
+    post:
+      tags: [repositories]
+      summary: Probe an upstream URL for reachability before creating a proxy (admin)
+      security: [{ basicAuth: [] }, { bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpstreamCheckInput" }
+      responses:
+        "200":
+          description: Connectivity result (any HTTP response counts as reachable; a malformed URL returns 200 with reachable=false)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UpstreamHealth" }
+        "400": { description: url is empty, invalid inline auth, or a repository_id probe URL that does not match the stored upstream scheme and host }
+  /api/v1/repositories/{id}/oci-tags:
+    get:
+      tags: [repositories]
+      summary: Tagged images in an OCI repository (Harbor-style view)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: Every tag with its manifest digest, kind, platforms, content size and push time. Empty for non-OCI formats.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [tags]
+                properties:
+                  tags:
+                    type: array
+                    items: { $ref: "#/components/schemas/OCITagInfo" }
+        "403": { description: No read permission on the repository }
+        "404": { description: Repository not found }
+  /api/v1/repositories/{id}/oci-detail:
+    get:
+      tags: [repositories]
+      summary: Harbor-style drill-down for one OCI artifact (overview and additions)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+        - { name: name, in: query, required: true, schema: { type: string }, description: OCI image name (may contain slashes). }
+        - { name: ref, in: query, required: true, schema: { type: string }, description: Tag or sha256 digest. }
+      responses:
+        "200":
+          description: Overview fields, raw manifest/config JSON, and per-kind additions.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OCIArtifactDetail"
+        "400": { description: Missing name or ref }
+        "403": { description: No read permission on the repository }
+        "404": { description: Repository, tag or manifest not found }
+  /api/v1/repositories/{id}/artifacts:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+    get:
+      tags: [repositories]
+      summary: List a repository's artifacts (any user who can read the repository)
+      description: >
+        Returns one page of artifacts, most recently accessed first. Each artifact
+        includes downloads_30d and last_accessed_by; see the Artifact schema for
+        their recording and retention semantics. q searches path, version, content
+        type, cached_by, last_accessed_by, cached/accessed timestamps, and labels
+        as a case-insensitive substring, or a regular expression when regex=true.
+        Download counts, size, vulnerability results, and licenses are not searched.
+        There is no server-side sort parameter; column sorting in the console
+        applies only to the loaded page.
+      security: [{ basicAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - { name: q, in: query, schema: { type: string }, description: Search path, version, content type, cached_by, last_accessed_by, cached/accessed timestamps, and labels. }
+        - { name: regex, in: query, schema: { type: boolean, default: false }, description: Treat q as a case-insensitive regular expression. }
+        - { name: limit, in: query, schema: { type: integer, default: 50, maximum: 500 } }
+        - { name: offset, in: query, schema: { type: integer, default: 0 } }
+        - { name: prefix, in: query, schema: { type: string }, description: Legacy path-prefix filter; when set, q/regex/limit/offset are ignored. }
+      responses:
+        "200":
+          description: One page of artifacts with aggregate count, total size, and the filtered match count
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ArtifactList" }
+        "400": { description: Invalid regex }
+        "403": { description: Read permission required }
+        "404": { description: Not found }
+    delete:
+      tags: [repositories]
+      summary: Delete one artifact, or purge all unmanaged artifacts in the repository (admin)
+      description: >
+        With a path query parameter, deletes one unmanaged artifact. Without it,
+        purges unmanaged repositories; managed publications require lifecycle endpoints.
+      security: [{ basicAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - { name: path, in: query, schema: { type: string }, description: Artifact path to delete. Omit to purge all artifacts. }
+        - name: force
+          in: query
+          schema: { type: boolean }
+          description: >
+            Repair escape hatch for an artifact whose blob bytes are missing from the
+            blob store. Such an artifact can neither be served nor removed through the
+            publication lifecycle (which must read the derived metadata first), so this
+            deletes it despite the managed-artifact guard. It is refused unless the
+            bytes are confirmed absent, and refused with 503 when the blob store cannot
+            answer. Requires a path. When the artifact was the last asset of a managed
+            publication, that publication is removed too, without a tombstone, so the
+            same version can be published again.
+      responses:
+        "200":
+          description: Purged all artifacts, or forced delete of one broken artifact
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/ArtifactPurgeResult"
+                  - $ref: "#/components/schemas/ArtifactForceDeleteResult"
+        "204": { description: Single artifact deleted }
+        "400": { description: force was requested without a path }
+        "404": { description: Not found }
+        "409": { description: Managed paths require a publication lifecycle operation, or force was used on an artifact whose bytes are present }
+        "503": { description: The blob store could not confirm the bytes are missing }
+  /api/v1/repositories/{id}/uploads:
+    post:
+      tags: [repositories]
+      summary: Atomically upload a package publication to a hosted repository
+      description: >
+        The manifest is the first multipart field and declared asset fields
+        follow in manifest order. The global feature flag defaults off. Maven,
+        npm, PyPI, Cargo and Go are supported; exactly one format-specific
+        manifest object must match the target hosted repository.
+      security: [{ basicAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema: { type: string, minLength: 16, maxLength: 128 }
+        - name: X-CSRF-Token
+          in: header
+          required: false
+          description: Required for session-cookie authentication; not required with Authorization.
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [manifest]
+              properties:
+                manifest: { $ref: "#/components/schemas/ArtifactUploadManifest" }
+              additionalProperties: { type: string, format: binary }
+            encoding:
+              manifest: { contentType: application/json }
+      responses:
+        "201":
+          description: Publication committed
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ArtifactUploadResult" }
+        "200":
+          description: Replayed committed idempotent result
+          headers:
+            Idempotency-Replayed: { schema: { type: boolean } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ArtifactUploadResult" }
+        "400": { $ref: "#/components/responses/UploadProblem" }
+        "403": { $ref: "#/components/responses/UploadProblem" }
+        "404": { $ref: "#/components/responses/UploadProblem" }
+        "409": { $ref: "#/components/responses/UploadProblem" }
+        "413": { $ref: "#/components/responses/UploadProblem" }
+        "422": { $ref: "#/components/responses/UploadProblem" }
+        "429": { $ref: "#/components/responses/UploadProblem" }
+        "503": { $ref: "#/components/responses/UploadProblem" }
+  /api/v1/repositories/{id}/uploads/{uploadID}:
+    get:
+      tags: [repositories]
+      summary: Get the caller's upload state
+      security: [{ basicAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+        - { name: uploadID, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: Receiving, conflict, committed, or failed upload state
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UploadSession" }
+        "404": { $ref: "#/components/responses/UploadProblem" }
+    delete:
+      tags: [repositories]
+      summary: Cancel a retained Maven replacement conflict
+      security: [{ basicAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+        - { name: uploadID, in: path, required: true, schema: { type: string } }
+      responses:
+        "204": { description: Conflict cancelled and staged leases released }
+        "403": { description: Delete permission or CSRF token required }
+        "404": { description: Uploads disabled or upload not found }
+        "409": { $ref: "#/components/responses/UploadProblem" }
+  /api/v1/repositories/{id}/uploads/{uploadID}/commit:
+    post:
+      tags: [repositories]
+      summary: Confirm and atomically commit a retained Maven replacement
+      security: [{ basicAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+        - { name: uploadID, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: Replacement committed
+          content: { application/json: { schema: { $ref: "#/components/schemas/ArtifactUploadResult" } } }
+        "403": { description: Write permission or CSRF token required }
+        "404": { description: Uploads disabled or upload not found }
+        "409": { $ref: "#/components/responses/UploadProblem" }
+  /api/v1/repositories/{id}/publications/{publicationID}:
+    delete:
+      tags: [repositories]
+      summary: Delete a Maven, PyPI, or npm publication and rebuild metadata atomically
+      security: [{ basicAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+        - { name: publicationID, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: Publication deleted, including derived metadata changes
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PublicationLifecycleResult" }
+        "403": { description: Delete permission or CSRF token required }
+        "409": { $ref: "#/components/responses/UploadProblem" }
+  /api/v1/repositories/{id}/publications/{publicationID}/yank:
+    post:
+      tags: [repositories]
+      summary: Yank or unyank one Cargo publication
+      security: [{ basicAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+        - { name: publicationID, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PublicationYankInput" }
+      responses:
+        "200":
+          description: Sparse-index yanked flag updated atomically
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PublicationLifecycleResult" }
+        "400": { description: Missing yanked flag or unknown fields }
+        "403": { description: Write permission or CSRF token required }
+        "409": { $ref: "#/components/responses/UploadProblem" }
+  /api/v1/repositories/{id}/disabled:
+    post:
+      tags: [repositories]
+      summary: Take a repository offline or back online (admin)
+      security: [{ basicAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RepositoryDisabledInput" }
+      responses:
+        "200":
+          description: Updated repository
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Repository" }
+        "404": { description: Not found }
+  /api/v1/repositories/{id}/dangling:
+    get:
+      tags: [repositories]
+      summary: List artifacts in this repository whose blob bytes are missing
+      description: >
+        Artifacts the server has observed to be unservable: metadata points at blob
+        bytes that are not in the blob store. Entries are re-checked against the
+        artifact row and the blob store before being returned, so a repaired or
+        republished artifact drops out. Views that display artifact paths use this
+        to mark the affected rows.
+      security: [{ basicAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: Broken artifacts, oldest failure first
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/DanglingRef" }
+        "403": { description: Forbidden }
+        "404": { description: Repository not found }
+  /api/v1/repositories/{id}/artifacts/labels:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+    get:
+      tags: [repositories]
+      summary: List one artifact's labels (any user who can read the repository)
+      description: >
+        Labels are operator tags on a single stored artifact, applied the same way
+        for every format because the identity is the repository plus the stored
+        path. can_label reports whether this caller may change them.
+      security: [{ basicAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - { name: path, in: query, required: true, schema: { type: string }, description: Artifact path. }
+      responses:
+        "200":
+          description: The artifact's labels and whether the caller may change them
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ArtifactLabelList" }
+        "400": { description: Missing path }
+        "403": { description: Read permission required }
+        "404": { description: Repository or artifact not found }
+    post:
+      tags: [repositories]
+      summary: Add a label to one artifact (repository admin, or the artifact's uploader)
+      description: >
+        Permitted for an administrator on the repository and for the principal
+        recorded as having uploaded (or published) the artifact. Every attempt,
+        allowed or refused, is written to the repository's audit log as
+        artifact.label.add. Surrounding whitespace is trimmed; the label is
+        otherwise stored as typed.
+      security: [{ basicAuth: [] }, { bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ArtifactLabelInput" }
+      responses:
+        "201":
+          description: The artifact's labels after the addition
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ArtifactLabelList" }
+        "400": { description: Missing path, or a label outside the accepted charset/length }
+        "403": { description: Not an administrator on the repository and not the uploader }
+        "404": { description: Repository or artifact not found }
+        "409": { description: The label is already present, or the artifact holds the maximum number of labels }
+    delete:
+      tags: [repositories]
+      summary: Remove a label from one artifact (repository admin, or the artifact's uploader)
+      description: >
+        Same permission as adding, and recorded the same way as
+        artifact.label.remove.
+      security: [{ basicAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - { name: path, in: query, required: true, schema: { type: string }, description: Artifact path. }
+        - { name: label, in: query, required: true, schema: { type: string }, description: Label to remove; matched after trimming, case-sensitively. }
+      responses:
+        "200":
+          description: The artifact's labels after the removal
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ArtifactLabelList" }
+        "400": { description: Missing path or label }
+        "403": { description: Not an administrator on the repository and not the uploader }
+        "404": { description: Repository, artifact, or label not found }
+  /api/v1/repositories/{id}/artifacts/labels/bulk:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+    post:
+      tags: [repositories]
+      summary: Add or remove one label across many artifacts (repository admin, or each artifact's uploader)
+      description: >
+        The single-artifact permission applied per path: a selection spanning
+        artifacts somebody else uploaded labels the ones the caller may label and
+        reports the rest in failed. Every attempt is audited exactly as a single
+        one is. The response is 200 even when some paths failed, because a
+        selection of hundreds routinely contains a few that another request has
+        already changed.
+      security: [{ basicAuth: [] }, { bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ArtifactBulkLabelInput" }
+      responses:
+        "200":
+          description: What the batch did, per path
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ArtifactBulkResult" }
+        "400": { description: Empty paths, an unknown action, or a label outside the accepted charset/length }
+        "403": { description: Read permission required }
+        "404": { description: Repository not found }
+        "413": { description: More paths than one request accepts }
+  /api/v1/repositories/{id}/artifacts/bulk-delete:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+    post:
+      tags: [repositories]
+      summary: Delete many artifacts in one request (admin)
+      description: >
+        Each path is deleted and audited as a single delete would be, and a path
+        that refuses is reported in failed rather than failing the batch. There is
+        no force: repairing an artifact whose bytes are gone needs proof that they
+        are, one blob-store round trip per path, which belongs on that artifact's
+        own row.
+      security: [{ basicAuth: [] }, { bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ArtifactBulkDeleteInput" }
+      responses:
+        "200":
+          description: What the batch did, per path
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ArtifactBulkResult" }
+        "400": { description: Empty paths }
+        "403": { description: Admin required }
+        "404": { description: Repository not found }
+        "413": { description: More paths than one request accepts }
+  /api/v1/repositories/{id}/artifacts/validate-upload:
+    post:
+      tags: [repositories]
+      summary: Preflight a browser upload to a hosted repository
+      description: Validates write permission, repository state, size, format-specific path, and path collision without storing bytes.
+      security: [{ basicAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UploadValidationInput" }
+      responses:
+        "200":
+          description: Validated upload plan
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UploadPlan" }
+        "400": { description: Invalid path, coordinate, or repository type }
+        "403": { description: Write permission required }
+        "413": { description: File exceeds the upload limit }
+        "503": { description: Upload service is unavailable }
+  /api/v1/repositories/{id}/artifacts/upload:
+    put:
+      tags: [repositories]
+      summary: Stream an artifact into a hosted repository from the UI
+      description: Repeats preflight, stores the bytes, queues security scans, and enters approval quarantine when configured. Existing paths are never overwritten.
+      security: [{ basicAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+        - { name: path, in: query, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema: { type: string, format: binary }
+      responses:
+        "201":
+          description: Stored artifact and security workflow status
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UploadResult" }
+        "409": { description: Artifact path already exists }
+        "411": { description: Content-Length is required }
+        "503": { description: Upload service is unavailable }
+  /api/v1/repositories/{id}/upstream-health:
+    get:
+      tags: [repositories]
+      summary: Probe a proxy repository's upstream health (any authenticated user)
+      security: [{ basicAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: Connectivity result (applicable=false for non-proxy repositories)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UpstreamHealth" }
+        "404": { description: Not found }
+  /api/v1/repositories/{id}/permissions:
+    get:
+      tags: [repositories]
+      summary: List role permissions granting access to this repository (admin/auditor)
+      security: [{ basicAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: Role permissions whose pattern matches this repository
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/RepoPermission" }
+        "404": { description: Not found }
+  /api/v1/repositories/{id}/tokens:
+    get:
+      tags: [repositories]
+      summary: List personal access tokens that can reach this repository (admin/auditor)
+      security: [{ basicAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: Tokens reaching this repository
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/RepoToken" }
+        "404": { description: Not found }
+  /api/v1/tokens:
+    get:
+      tags: [tokens]
+      summary: List the current user's personal access tokens
+      security: [{ basicAuth: [] }, { bearerAuth: [] }]
+      responses:
+        "200":
+          description: Tokens
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Token" }
+    post:
+      tags: [tokens]
+      summary: Create a personal access token (plaintext returned once)
+      description: A user may hold at most 3 access tokens; revoke one to free a slot.
+      security: [{ basicAuth: [] }, { bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TokenCreate" }
+      responses:
+        "201":
+          description: Created; the plaintext secret is returned only here
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/IssuedToken" }
+        "409": { description: Token limit reached (max 3 per user) }
+  /api/v1/tokens/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+    patch:
+      tags: [tokens]
+      summary: Replace a personal access token's scopes
+      description: Scopes are the only mutable part of a token; the secret, name and expiry never change.
+      security: [{ basicAuth: [] }, { bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TokenScopesInput" }
+      responses:
+        "204": { description: Updated }
+        "400": { description: Validation error }
+        "404": { description: Not found }
+    delete:
+      tags: [tokens]
+      summary: Revoke a personal access token
+      security: [{ basicAuth: [] }, { bearerAuth: [] }]
+      responses:
+        "204": { description: Revoked }
+  /api/v1/users:
+    get:
+      tags: [users]
+      summary: List users (admin)
+      security: [{ basicAuth: [] }, { bearerAuth: [] }]
+      responses:
+        "200":
+          description: Users
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/User" }
+    post:
+      tags: [users]
+      summary: Create a local user or robot account (admin)
+      security: [{ basicAuth: [] }, { bearerAuth: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UserCreate" }
+      responses:
+        "201":
+          description: The created user
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CreatedUser" }
+        "400": { description: Validation error (e.g. a robot with a password, or a user without one) }
+        "409": { description: Username already exists }
+  /api/v1/users/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+    put:
+      tags: [users]
+      summary: Update a user (admin) - reset password, toggle disabled or lockout, or unlock
+      security: [{ basicAuth: [] }, { bearerAuth: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UserInput" }
+      responses:
+        "200":
+          description: The updated user
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/User" }
+        "400": { description: Validation error (incl. disabling your own account) }
+        "404": { description: Not found }
+    delete:
+      tags: [users]
+      summary: Delete a user (admin); deleting your own account is rejected
+      security: [{ basicAuth: [] }, { bearerAuth: [] }]
+      responses:
+        "204": { description: Deleted }
+        "400": { description: Cannot delete your own account }
+  /api/v1/users/{id}/impersonate:
+    post:
+      tags: [users]
+      summary: Sign in as this user (admin, interactive session only)
+      description: >
+        Replaces the caller's session cookie with one that acts as the target
+        user, carrying only that user's permissions. The reason is recorded in
+        the server log, and repository audit events raised during the session
+        keep the target as the actor with the administrator noted alongside.
+        Refused for robot and disabled accounts, for your own account, and while
+        an impersonation is already active. Token and Basic credentials cannot
+        start one.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ImpersonationInput" }
+      responses:
+        "200":
+          description: Impersonating; a session cookie is set
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ImpersonationStart" }
+        "400": { description: Validation error (missing or short reason, self, robot or disabled target) }
+        "403": { description: Not an interactive session }
+        "404": { description: Not found }
+        "409": { description: Already impersonating }
+  /api/v1/users/{id}/roles:
+    post:
+      tags: [users]
+      summary: Assign a role to a user (admin)
+      security: [{ basicAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RoleAssignmentCreate" }
+      responses:
+        "204": { description: Assigned }
+  /api/v1/users/{id}/roles/{roleID}:
+    delete:
+      tags: [users]
+      summary: Remove a role from a user (admin)
+      security: [{ basicAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+        - { name: roleID, in: path, required: true, schema: { type: integer } }
+      responses:
+        "204": { description: Removed }
+        "409": { description: Assignment managed by declarative RBAC policy }
+  /api/v1/users/{id}/tokens:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+    get:
+      tags: [tokens]
+      summary: List a user's personal access tokens (admin or auditor)
+      security: [{ basicAuth: [] }, { bearerAuth: [] }]
+      responses:
+        "200":
+          description: Tokens
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Token" }
+        "404": { description: Not found }
+    post:
+      tags: [tokens]
+      summary: Create a personal access token for a user (admin); plaintext returned once
+      description: A user may hold at most 3 access tokens; revoke one to free a slot.
+      security: [{ basicAuth: [] }, { bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TokenCreate" }
+      responses:
+        "201":
+          description: Created; the plaintext secret is returned only here
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/IssuedToken" }
+        "404": { description: Not found }
+        "409": { description: Token limit reached (max 3 per user) }
+  /api/v1/users/{id}/tokens/{tokenID}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+      - { name: tokenID, in: path, required: true, schema: { type: integer } }
+    patch:
+      tags: [tokens]
+      summary: Replace a user's token scopes (admin)
+      security: [{ basicAuth: [] }, { bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TokenScopesInput" }
+      responses:
+        "204": { description: Updated }
+        "400": { description: Validation error }
+        "404": { description: Not found }
+    delete:
+      tags: [tokens]
+      summary: Revoke a user's personal access token (admin)
+      security: [{ basicAuth: [] }, { bearerAuth: [] }]
+      responses:
+        "204": { description: Revoked }
+  /api/v1/roles:
+    get:
+      tags: [roles]
+      summary: List roles with their permissions (admin)
+      security: [{ basicAuth: [] }, { bearerAuth: [] }]
+      responses:
+        "200":
+          description: Roles
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Role" }
+    post:
+      tags: [roles]
+      summary: Create a role (admin)
+      security: [{ basicAuth: [] }, { bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RoleCreate" }
+      responses:
+        "201":
+          description: The created role
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Role" }
+        "400": { description: Missing name or invalid action }
+        "409": { description: Role name already exists }
+  /api/v1/roles/{id}:
+    delete:
+      tags: [roles]
+      summary: Delete a role (admin)
+      security: [{ basicAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "204": { description: Deleted }
+        "409": { description: Role managed by declarative RBAC policy }
+  /api/v1/roles/{id}/permissions:
+    post:
+      tags: [roles]
+      summary: Add a permission to a role (admin)
+      security: [{ basicAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PermissionCreate" }
+      responses:
+        "201":
+          description: The created permission
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Permission" }
+        "400": { description: Missing repo_pattern or invalid action }
+        "409": { description: Role managed by declarative RBAC policy }
+  /api/v1/roles/{id}/permissions/{permID}:
+    delete:
+      tags: [roles]
+      summary: Remove a permission from a role (admin)
+      security: [{ basicAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+        - { name: permID, in: path, required: true, schema: { type: integer } }
+      responses:
+        "204": { description: Removed }
+        "409": { description: Role managed by declarative RBAC policy }
+  /api/v1/approvals:
+    get:
+      tags: [approvals]
+      summary: List package approval requests and decisions (admin or approve permission), newest first
+      security: [{ basicAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - { name: repo, in: query, schema: { type: string } }
+        - name: status
+          in: query
+          schema: { type: string, enum: [pending, approved, rejected] }
+        - { name: q, in: query, schema: { type: string }, description: Search across rendered columns (repo, package, version, requester, status, request count, last-requested time). }
+        - { name: regex, in: query, schema: { type: boolean, default: false }, description: Treat q as a case-insensitive regular expression. }
+        - { name: limit, in: query, schema: { type: integer, default: 100, maximum: 500 } }
+        - { name: offset, in: query, schema: { type: integer, default: 0 } }
+      responses:
+        "200":
+          description: Approval rows (count reflects the active filters and search)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PackageApprovalList" }
+        "400": { description: Invalid status or regex }
+    post:
+      tags: [approvals]
+      summary: Manually approve or reject a package (admin or approve permission on the repository), even before any request
+      security: [{ basicAuth: [] }, { bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PackageApprovalCreate" }
+      responses:
+        "201":
+          description: Decision recorded
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PackageApproval" }
+        "400": { description: Invalid request, or repository is not proxy or hosted }
+        "403": { description: Approve permission required }
+        "404": { description: Repository not found }
+  /api/v1/approvals/count:
+    get:
+      tags: [approvals]
+      summary: Count approval rows (admin or approve permission), for the pending badge
+      security: [{ basicAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - { name: repo, in: query, schema: { type: string } }
+        - name: status
+          in: query
+          schema: { type: string, enum: [pending, approved, rejected] }
+      responses:
+        "200":
+          description: Row count
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ApprovalCount" }
+  /api/v1/approvals/pending-repos:
+    get:
+      tags: [approvals]
+      summary: Per-repository approval-queue overview (repos with at least one pending request)
+      security: [{ basicAuth: [] }, { bearerAuth: [] }]
+      responses:
+        "200":
+          description: Repositories with a pending queue and their counts
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PendingApprovalRepoList" }
+  /api/v1/approvals/approve-all:
+    post:
+      tags: [approvals]
+      summary: Approve pending packages in one proxy or hosted repository (admin or approve permission on the repository)
+      security: [{ basicAuth: [] }, { bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/BulkApproveInput" }
+      responses:
+        "200":
+          description: Number of pending packages approved
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BulkApproveResult" }
+        "400": { description: Missing repo/comment, or repository is not proxy or hosted }
+        "403": { description: Approve permission required }
+        "404": { description: Repository not found }
+  /api/v1/approvals/{id}:
+    get:
+      tags: [approvals]
+      summary: Get a package approval by id
+      security: [{ basicAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: Package approval
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PackageApproval" }
+        "404": { description: Not found }
+  /api/v1/approvals/{id}/approve:
+    post:
+      tags: [approvals]
+      summary: Approve a package (admin or approve permission on the repository)
+      security: [{ basicAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ApprovalDecisionInput" }
+      responses:
+        "200":
+          description: Approved
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PackageApproval" }
+        "403": { description: Approve permission required }
+        "404": { description: Not found }
+  /api/v1/approvals/{id}/reject:
+    post:
+      tags: [approvals]
+      summary: Reject a package (admin or approve permission on the repository); cached content stops being served immediately
+      security: [{ basicAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ApprovalDecisionInput" }
+      responses:
+        "200":
+          description: Rejected
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PackageApproval" }
+        "403": { description: Approve permission required }
+        "404": { description: Not found }
+  /api/v1/version-denies:
+    get:
+      tags: [approvals]
+      summary: List per-version deny entries (admin or approve permission), newest first
+      security: [{ basicAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - { name: repo, in: query, schema: { type: string } }
+        - { name: limit, in: query, schema: { type: integer, default: 100, maximum: 500 } }
+        - { name: offset, in: query, schema: { type: integer, default: 0 } }
+      responses:
+        "200":
+          description: Deny entries
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/VersionDenyList" }
+    post:
+      tags: [approvals]
+      summary: Deny one exact package version in a proxy or hosted repository (admin or approve permission on the repository); overrides package-level approval and blocks cached copies immediately
+      security: [{ basicAuth: [] }, { bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/VersionDenyCreate" }
+      responses:
+        "201":
+          description: Deny recorded
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/VersionDeny" }
+        "400": { description: Invalid request, or repository is not proxy or hosted }
+        "403": { description: Approve permission required }
+        "404": { description: Repository not found }
+  /api/v1/version-denies/{id}:
+    delete:
+      tags: [approvals]
+      summary: Remove a deny entry (admin or approve permission on the repository)
+      security: [{ basicAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "204": { description: Removed }
+        "403": { description: Approve permission required }
+        "404": { description: Not found }
+  /api/v1/group-mappings:
+    get:
+      tags: [group-mappings]
+      summary: List Keycloak group-to-role mappings (admin)
+      security: [{ basicAuth: [] }, { bearerAuth: [] }]
+      responses:
+        "200":
+          description: Mappings
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/GroupMapping" }
+    post:
+      tags: [group-mappings]
+      summary: Map a Keycloak group to a role (admin)
+      security: [{ basicAuth: [] }, { bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/GroupMappingCreate" }
+      responses:
+        "201": { description: Created }
+        "400": { description: group_name and role_id required }
+  /api/v1/group-mappings/{id}:
+    delete:
+      tags: [group-mappings]
+      summary: Delete a group-to-role mapping (admin)
+      security: [{ basicAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "204": { description: Deleted }
+        "409": { description: Mapping managed by declarative RBAC policy }
+
+  /api/v1/ha:
+    get:
+      tags: [ha]
+      summary: High-availability/leadership status (admin)
+      security: [{ basicAuth: [] }, { bearerAuth: [] }]
+      responses:
+        "200":
+          description: HA status snapshot
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HAStatus" }
+  /api/v1/storage:
+    get:
+      tags: [ha]
+      summary: Object-storage overview — backend, blob footprint, MinIO cluster metrics (admin)
+      description: >
+        Reports the active storage backend and forklift's deduplicated blob
+        footprint (blob_count/blob_bytes). For a MinIO backend it also returns
+        live cluster capacity, usage, object/bucket counts and drive health from
+        the MinIO Admin API (minio); minio_error explains why those are absent.
+        For the fs backend it returns the capacity of the volume the data
+        directory lives on (fs); fs_error explains why it is absent.
+      security: [{ basicAuth: [] }, { bearerAuth: [] }]
+      responses:
+        "200":
+          description: Storage overview
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/StorageStats" }
+  /api/v1/ha/step-down:
+    post:
+      tags: [ha]
+      summary: Ask the leader to step down for a manual failover (admin)
+      description: >
+        Triggers a controlled failover: the current leader releases its Lease so
+        a standby is elected. Returns 409 when this instance is not the leader or
+        HA is disabled (single instance).
+      security: [{ basicAuth: [] }, { bearerAuth: [] }]
+      responses:
+        "200":
+          description: Stepping down
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/StatusMessage" }
+        "409": { description: Not the leader / single instance }
+
+  /api/v1/notification/receivers:
+    get:
+      tags: [notification]
+      summary: List notification receivers (admin/auditor)
+      security: [{ basicAuth: [] }, { bearerAuth: [] }]
+      responses:
+        "200":
+          description: Receivers
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Receiver" }
+    post:
+      tags: [notification]
+      summary: Create a notification receiver (admin)
+      security: [{ basicAuth: [] }, { bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ReceiverInput" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Receiver" }
+        "400": { description: Invalid name or webhook URL }
+        "409": { description: Receiver name already exists }
+  /api/v1/notification/receivers/{id}:
+    put:
+      tags: [notification]
+      summary: Update a notification receiver (admin)
+      security: [{ basicAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ReceiverInput" }
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Receiver" }
+        "400": { description: Invalid name or webhook URL }
+        "404": { description: Not found }
+        "409": { description: Receiver name already exists }
+    delete:
+      tags: [notification]
+      summary: Delete a notification receiver (admin)
+      security: [{ basicAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "204": { description: Deleted }
+        "404": { description: Not found }
+  /api/v1/notification/receivers/{id}/test:
+    post:
+      tags: [notification]
+      summary: Send a test alarm to a receiver's webhook (admin)
+      description: Delivers a test notification to the receiver's stored webhook URL and reports whether it succeeded.
+      security: [{ basicAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: Test delivered
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/StatusMessage" }
+        "400": { description: Receiver has no webhook URL }
+        "404": { description: Not found }
+        "502": { description: Test delivery failed }
+        "503": { description: Notifications are not configured }
+  /api/v1/notification/test:
+    post:
+      tags: [notification]
+      summary: Send a test alarm to an arbitrary webhook URL (admin)
+      description: Delivers a test notification to the URL in the request body, for verifying a webhook before the receiver is saved.
+      security: [{ basicAuth: [] }, { bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/WebhookTestInput" }
+      responses:
+        "200":
+          description: Test delivered
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/StatusMessage" }
+        "400": { description: Invalid webhook URL }
+        "502": { description: Test delivery failed }
+        "503": { description: Notifications are not configured }
+  /api/v1/repositories/{id}/notification/sample:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+    get:
+      tags: [notification]
+      summary: Preview a repository's sample approval alarm (admin)
+      description: Returns the sample alarm payload this repository would send and the receivers it targets, without delivering anything.
+      security: [{ basicAuth: [] }, { bearerAuth: [] }]
+      responses:
+        "200":
+          description: Sample payload and target receivers
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NotificationSamplePreview" }
+        "404": { description: Not found }
+        "503": { description: Notifications are not configured }
+    post:
+      tags: [notification]
+      summary: Send a sample approval alarm to a repository's selected receivers (admin)
+      security: [{ basicAuth: [] }, { bearerAuth: [] }]
+      responses:
+        "200":
+          description: Per-receiver delivery results
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NotificationSampleReport" }
+        "400": { description: No enabled receivers selected }
+        "404": { description: Not found }
+        "503": { description: Notifications are not configured }
+  /api/v1/coverage:
+    get:
+      tags: [coverage]
+      operationId: getCoverage
+      summary: Forklift coverage overview - summary, projects, scan state and schedule
+      description: >
+        Reports how much of the organisation's source actually builds through
+        this forklift, as measured by the last GitLab scan. Readable by any
+        authenticated principal; running a scan and changing what is measured
+        are admin-only. While a scan runs, scan_progress fills in as projects
+        finish, so the console can poll this one endpoint instead of waiting.
+      security: [{ basicAuth: [] }, { bearerAuth: [] }]
+      responses:
+        "200":
+          description: Coverage overview
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CoverageOverview" }
+        "503": { description: Coverage scanning is not configured }
+  /api/v1/coverage/groups:
+    get:
+      tags: [coverage]
+      operationId: listCoverageGroups
+      summary: Coverage broken down by GitLab group, worst first
+      security: [{ basicAuth: [] }, { bearerAuth: [] }]
+      responses:
+        "200":
+          description: Per-group coverage
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/CoverageGroup" }
+        "503": { description: Coverage scanning is not configured }
+  /api/v1/coverage/history:
+    get:
+      tags: [coverage]
+      operationId: listCoverageHistory
+      summary: Coverage trend - one reading per completed scan, oldest first
+      security: [{ basicAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - name: days
+          in: query
+          description: >
+            Window in days (1-14). Defaults to 14, which is also how long
+            readings are kept, so a wider window would return nothing extra.
+          schema: { type: integer, minimum: 1, maximum: 14 }
+      responses:
+        "200":
+          description: Coverage snapshots
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/CoverageSnapshot" }
+        "400": { description: days is out of range }
+        "503": { description: Coverage scanning is not configured }
+  /api/v1/coverage/project:
+    get:
+      tags: [coverage]
+      operationId: getCoverageProject
+      summary: One project's coverage verdict and evidence
+      description: >
+        Falls back to a GitLab lookup when the last scan produced no verdict, so
+        a project that was excluded at the time (or created since) still resolves
+        and can be toggled back into scope.
+      security: [{ basicAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - name: path
+          in: query
+          required: true
+          description: Full GitLab path with namespace, e.g. group/subgroup/project.
+          schema: { type: string }
+      responses:
+        "200":
+          description: Project detail
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CoverageProjectDetail" }
+        "400": { description: Missing or invalid project path }
+        "404": { description: Not found }
+        "503": { description: Coverage scanning is not configured }
+  /api/v1/coverage/project/last-commit:
+    get:
+      tags: [coverage]
+      operationId: getCoverageProjectLastCommit
+      summary: Tip commit of the branch a project's verdict came from
+      security: [{ basicAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - name: path
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Last commit
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CoverageLastCommit" }
+        "400": { description: Missing or invalid project path }
+        "404": { description: No commit found }
+        "503": { description: Coverage scanning is not configured }
+  /api/v1/coverage/project/pipeline:
+    get:
+      tags: [coverage]
+      operationId: getCoverageProjectPipeline
+      summary: A project's GitLab CI definitions on one ref (admin)
+      description: >
+        Returns only files matching the GitLab CI pattern, which is the whole
+        security boundary of this endpoint: it shows how a project builds without
+        exposing its source. Defaults to the branch the verdict was found on.
+      security: [{ basicAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - name: path
+          in: query
+          required: true
+          schema: { type: string }
+        - name: ref
+          in: query
+          description: Branch or tag; defaults to the branch the verdict came from.
+          schema: { type: string }
+      responses:
+        "200":
+          description: CI definitions
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CoveragePipeline" }
+        "400": { description: Missing or invalid project path }
+        "404": { description: Not found }
+        "503": { description: Coverage scanning is not configured }
+  /api/v1/coverage/project/mute:
+    put:
+      tags: [coverage]
+      operationId: updateCoverageProjectMute
+      summary: Mute a project or one of its checks (admin)
+      description: >
+        Muting every check takes the project out of coverage entirely. Muting one
+        of them - "ci" or "registry" - leaves the project in the measurement and
+        stops that half being required, so a project that only ever needed the
+        other half counts as applied. The evidence stays on the record either way,
+        so the number reacts immediately and the change is reversible without a
+        rescan. A project that was never scanned reappears in the table only after
+        the next scan.
+      security: [{ basicAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - name: path
+          in: query
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CoverageMuteInput" }
+      responses:
+        "200":
+          description: Mute changed
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CoverageMute" }
+        "400": { description: Missing project path, or neither a boolean muted nor a valid scopes list }
+        "503": { description: Coverage scanning is not configured }
+  /api/v1/coverage/settings:
+    get:
+      tags: [coverage]
+      operationId: getCoverageSettings
+      summary: Coverage scan settings (admin)
+      description: >
+        The GitLab access token is never returned: it comes from the environment
+        and is deliberately absent from this surface and from the database.
+      security: [{ basicAuth: [] }, { bearerAuth: [] }]
+      responses:
+        "200":
+          description: Settings
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CoverageSettings" }
+        "503": { description: Coverage scanning is not configured }
+    put:
+      tags: [coverage]
+      operationId: updateCoverageSettings
+      summary: Save coverage scan settings (admin)
+      description: >
+        Every field is optional; an omitted field keeps its stored value, so the
+        console can save one panel without resetting the rest.
+      security: [{ basicAuth: [] }, { bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CoverageSettingsInput" }
+      responses:
+        "200":
+          description: Saved
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CoverageSettings" }
+        "400": { description: Invalid host, cron expression, receiver name or tuning value }
+        "503": { description: Coverage scanning is not configured }
+  /api/v1/coverage/settings/check-host:
+    post:
+      tags: [coverage]
+      operationId: postCheckHostCoverageSettings
+      summary: Check a forklift host as it is typed (admin)
+      description: >
+        Reports whether the name is shaped like a forklift address and whether it
+        resolves. Only the resolver is asked; nothing is sent to the host. The
+        DNS result is advisory, since forklift resolves from inside the cluster
+        while the builds it measures resolve from wherever they run, so saving is
+        refused on the syntax and never on the lookup.
+      security: [{ basicAuth: [] }, { bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CoverageHostCheckInput" }
+      responses:
+        "200":
+          description: Check result
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CoverageHostCheck" }
+        "400": { description: Invalid body }
+        "503": { description: Coverage scanning is not configured }
+  /api/v1/coverage/gitlab-check:
+    get:
+      tags: [coverage]
+      operationId: getCoverageGitlabCheck
+      summary: Check that the configured GitLab API answers and accepts the token (admin)
+      description: >
+        Calls /api/v4/version on the configured instance. A 200 proves the URL is
+        reachable and the token is accepted; a 401 or 403 separates a rejected
+        token from an unreachable URL.
+      security: [{ basicAuth: [] }, { bearerAuth: [] }]
+      responses:
+        "200":
+          description: Connection status
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CoverageGitlabCheck" }
+        "503": { description: Coverage scanning is not configured }
+  /api/v1/coverage/scan:
+    post:
+      tags: [coverage]
+      operationId: postScanCoverage
+      summary: Start a coverage scan now (admin)
+      description: >
+        Returns as soon as the scan is accepted; a full crawl takes minutes. Poll
+        GET /api/v1/coverage and read scan_progress to follow it.
+      security: [{ basicAuth: [] }, { bearerAuth: [] }]
+      responses:
+        "200":
+          description: Scan started
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CoverageScanStarted" }
+        "409": { description: A scan is already in progress }
+        "503": { description: Coverage scanning is not configured }
+  /api/v1/coverage/notification/preview:
+    get:
+      tags: [coverage]
+      operationId: getCoverageNotificationPreview
+      summary: Preview the coverage report alarm without sending it (admin)
+      description: >
+        Before the first scan there are no numbers to show, so the preview is
+        built from a clearly marked sample and sample is true.
+      security: [{ basicAuth: [] }, { bearerAuth: [] }]
+      responses:
+        "200":
+          description: Rendered report and its target receivers
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CoverageAlarmPreview" }
+        "503": { description: Coverage scanning or notifications are not configured }
+  /api/v1/coverage/notification/send:
+    post:
+      tags: [coverage]
+      operationId: postSendCoverageNotification
+      summary: Send the coverage report to its receivers now (admin)
+      description: >
+        A manual send ignores skip_when_full_coverage, since somebody asked for it.
+      security: [{ basicAuth: [] }, { bearerAuth: [] }]
+      responses:
+        "200":
+          description: Per-receiver delivery results
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NotificationSampleReport" }
+        "400": { description: No scan result yet, or no enabled receiver selected }
+        "503": { description: Coverage scanning or notifications are not configured }
+
+components:
+  securitySchemes:
+    basicAuth:
+      type: http
+      scheme: basic
+      description: Local username/password or a personal access token as the password.
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: A personal access token (flpat_...) or an OIDC bearer token.
+  responses:
+    UploadProblem:
+      description: Structured artifact-upload problem
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/UploadProblem" }
+  schemas:
+    RoleRef:
+      type: object
+      description: A role as it appears inside a user record, without its permissions.
+      required: [id, name]
+      properties:
+        id: { type: integer }
+        name: { type: string }
+    RoleCreate:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string }
+        description: { type: string }
+        permissions:
+          type: array
+          description: Granted at creation; further permissions are added one at a time afterwards.
+          items: { $ref: "#/components/schemas/PermissionCreate" }
+    PermissionCreate:
+      type: object
+      description: One grant as it is submitted - the same shape whether it arrives with a new role or is added to an existing one.
+      required: [repo_pattern, actions]
+      properties:
+        repo_pattern: { type: string, description: Repository glob such as * or maven-*. }
+        actions:
+          type: array
+          items: { type: string, enum: [read, write, delete, approve, audit, security, admin] }
+    Permission:
+      type: object
+      description: One grant inside a role - a repository name pattern and the actions allowed on it.
+      required: [actions, id, repo_pattern]
+      properties:
+        id: { type: integer }
+        repo_pattern: { type: string }
+        actions:
+          type: array
+          items: { type: string }
+    Role:
+      type: object
+      required: [created_at, description, id, managed, name, permissions, user_count]
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        description: { type: string }
+        created_at: { type: string, format: date-time }
+        managed:
+          type: boolean
+          description: Reconciled from chart configuration, so it is read-only through this API.
+        permissions:
+          type: array
+          items: { $ref: "#/components/schemas/Permission" }
+        user_count:
+          type: integer
+          description: How many users hold this role.
+    User:
+      type: object
+      required: [created_at, disabled, email, failed_login_count, id, last_login_at, locked, lockout_enabled, protected, robot, roles, source, token_count, username]
+      properties:
+        id: { type: integer }
+        username: { type: string }
+        source: { type: string, enum: [local, oidc] }
+        email: { type: string }
+        disabled: { type: boolean }
+        robot:
+          type: boolean
+          description: A token-only service account, which cannot log in interactively.
+        created_at: { type: string, format: date-time }
+        last_login_at:
+          type: [string, "null"]
+          format: date-time
+          description: Null when the user has never logged in.
+        roles:
+          type: array
+          items: { $ref: "#/components/schemas/RoleRef" }
+        lockout_enabled: { type: boolean }
+        locked: { type: boolean }
+        failed_login_count:
+          type: integer
+          description: Consecutive failed password logins; the account locks at the hard limit of 5. Reset on success or unlock.
+        protected:
+          type: boolean
+          description: The bootstrap admin, which cannot be locked out.
+        token_count:
+          type: integer
+          description: Personal access tokens the user owns, so list views need no extra request.
+    Token:
+      type: object
+      description: A personal access token. The secret is returned only once, at creation.
+      required: [created_at, description, expires_at, id, last_used_at, name, scopes_json]
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        description: { type: string }
+        scopes_json:
+          type: string
+          description: Raw scope document as stored; an empty string means unscoped.
+        expires_at: { type: [string, "null"], format: date-time }
+        last_used_at: { type: [string, "null"], format: date-time }
+        created_at: { type: string, format: date-time }
+    GroupMapping:
+      type: object
+      description: Maps an identity-provider group to a role.
+      required: [group_name, id, managed, role_id]
+      properties:
+        id: { type: integer }
+        group_name: { type: string }
+        role_id: { type: integer }
+        managed:
+          type: boolean
+          description: Reconciled from chart configuration, so it is read-only through this API.
+    Me:
+      type: object
+      description: >
+        The calling principal. Only "authenticated" is always present: an
+        anonymous caller gets that field and nothing else, so every permission
+        flag is optional and absent means "no".
+      required: [authenticated]
+      properties:
+        authenticated: { type: boolean }
+        username: { type: string }
+        source: { type: string, description: Principal source, local or oidc. }
+        admin: { type: boolean }
+        approver: { type: boolean }
+        auditor: { type: boolean }
+        security: { type: boolean, description: May edit repository security policy (age, approval, vulnerability, license, IP ACL, notification receivers). }
+        csrf_token: { type: string, description: Value for the X-CSRF-Token header on session-cookie mutations such as uploads. }
+        impersonator:
+          type: string
+          description: >
+            Administrator acting as this user. Present only while an
+            impersonated session is active; the listed permissions are
+            the impersonated user's own.
+    OCITagInfo:
+      type: object
+      description: One tagged OCI image as the console's image view presents it.
+      required: [can_label, digest, kind, labels, media_type, name, path, platforms, pulled_at, pulled_by, pushed_at, pushed_by, size, tag]
+      properties:
+        path:
+          type: string
+          description: >
+            Stored path of the manifest, which is this artifact's identity for the
+            label endpoints (an OCI manifest is an ordinary artifact row).
+        labels:
+          type: array
+          description: Operator tags on the manifest, oldest first.
+          items: { $ref: "#/components/schemas/ArtifactLabel" }
+        can_label: { type: boolean, description: Whether the caller may change the labels. }
+        name: { type: string, description: Image name within the repository. }
+        tag: { type: string }
+        digest: { type: string }
+        media_type: { type: string }
+        kind: { type: string, enum: [chart, image, artifact, index] }
+        size: { type: integer, description: Config plus layer bytes; for an index, summed over stored children. }
+        platforms:
+          type: array
+          items: { type: string }
+        pushed_at: { type: string, format: date-time }
+        pulled_at:
+          type: [string, "null"]
+          format: date-time
+          description: Last served time; null when never pulled since the push. Minute-grained (serving refreshes it at most once per touch interval).
+        pushed_by: { type: string, description: Who stored the manifest; empty for anonymous or unknown. }
+        pulled_by: { type: string, description: Who last pulled; empty when never pulled or anonymous. }
+    OCIArtifactDetail:
+      type: object
+      description: Drill-down view of one OCI artifact.
+      required: [can_label, info, labels, manifest_json, path]
+      properties:
+        info: { $ref: "#/components/schemas/OCITagInfo" }
+        path: { type: string, description: Stored manifest path, the identity the label endpoints take. }
+        labels:
+          type: array
+          items: { $ref: "#/components/schemas/ArtifactLabel" }
+        can_label: { type: boolean }
+        manifest_json:
+          type: object
+          description: The stored manifest document verbatim.
+          additionalProperties: true
+        config_json:
+          type: object
+          description: The config blob verbatim (image config or Chart.yaml metadata). Absent for an index.
+          additionalProperties: true
+        image:
+          type: object
+          description: Image config summary. Present only for kind image.
+          properties:
+            os: { type: string }
+            architecture: { type: string }
+            created: { type: string }
+            entrypoint: { type: array, items: { type: string } }
+            cmd: { type: array, items: { type: string } }
+            env: { type: array, items: { type: string } }
+            layers: { type: integer }
+        chart:
+          type: object
+          description: Files extracted from the chart archive. Present only for kind chart.
+          properties:
+            values_yaml: { type: string }
+            readme_md: { type: string }
+        children:
+          type: array
+          description: Index children (kind index only).
+          items:
+            type: object
+            properties:
+              digest: { type: string }
+              platform: { type: string }
+              size: { type: integer }
+    LandingStats:
+      type: object
+      description: Public coarse totals shown on the login page.
+      required: [artifacts, repositories]
+      properties:
+        repositories: { type: integer }
+        artifacts: { type: integer }
+    Version:
+      type: object
+      properties:
+        version: { type: string }
+        commit: { type: string }
+        oidc_enabled:
+          type: boolean
+          description: >
+            Drives the login page: the single sign-on button is hidden when OIDC
+            is not configured, because /auth/login is then unregistered.
+    Announcement:
+      type: object
+      description: >
+        The site-wide banner. An empty body means there is nothing to show;
+        updated_by is absent until someone has set one.
+      required: [body, updated_at]
+      properties:
+        body: { type: string, description: Markdown source, rendered by the UI. }
+        updated_by: { type: string }
+        updated_at: { type: string, format: date-time }
+    AnnouncementInput:
+      type: object
+      required: [body]
+      properties:
+        body:
+          type: string
+          description: >
+            Markdown source. Capped at 1000 characters and 16KiB; an empty
+            string clears the announcement.
+    SearchResult:
+      type: object
+      description: >
+        Grouped global-search results. A null section means the caller lacks
+        access to that surface; an empty array means access but no match.
+      properties:
+        query: { type: string }
+        repositories:
+          type: [array, "null"]
+          items:
+            type: object
+            properties:
+              id: { type: integer }
+              name: { type: string }
+              format: { type: string }
+              type: { type: string }
+        artifacts:
+          type: [array, "null"]
+          items:
+            type: object
+            properties:
+              repo_id: { type: integer }
+              repo_name: { type: string }
+              path: { type: string }
+              size: { type: integer }
+        labels:
+          type: [array, "null"]
+          description: >
+            Artifact-label matches, narrowed per repository by the read action
+            like the artifact hits. A label is its own section because that is how
+            it is searched for: the matching label is what the reader needs to see.
+          items:
+            type: object
+            properties:
+              repo_id: { type: integer }
+              repo_name: { type: string }
+              path: { type: string }
+              label: { type: string }
+        approvals:
+          type: [array, "null"]
+          items:
+            type: object
+            properties:
+              id: { type: integer }
+              repo_name: { type: string }
+              package: { type: string }
+              status: { type: string, enum: [pending, approved, rejected] }
+        users:
+          type: [array, "null"]
+          items:
+            type: object
+            properties:
+              id: { type: integer }
+              username: { type: string }
+              robot: { type: boolean }
+        roles:
+          type: [array, "null"]
+          items:
+            type: object
+            properties:
+              id: { type: integer }
+              name: { type: string }
+              description: { type: string }
+        counts:
+          type: object
+          description: >
+            Exact total matches per permitted section (item lists are capped by
+            limit). Keys mirror the section names; absent for sections the
+            caller cannot see.
+          additionalProperties: { type: integer }
+    Repository:
+      type: object
+      description: A repository as the detail endpoints return it.
+      required: [capabilities, config, created_at, description, disabled, format, id, name, publish_methods, seeded, type, updated_at, upstream_url]
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        format: { type: string, enum: [maven, npm, cargo, go, pypi, raw, oci] }
+        type: { type: string, enum: [hosted, proxy, group] }
+        upstream_url: { type: string }
+        config: { $ref: "#/components/schemas/RepoConfig" }
+        description:
+          type: string
+          description: Optional operator-facing free text (max 1000 bytes).
+        disabled:
+          type: boolean
+          description: Repository is offline; package and artifact requests are refused.
+        seeded:
+          type: boolean
+          description: A predefined seed repository; protected from deletion (DELETE returns 403).
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        capabilities:
+          $ref: "#/components/schemas/RepositoryCapabilities"
+        publish_methods:
+          type: array
+          description: Supported ecosystem-native publishers; generic raw PUT is excluded.
+          items: { type: string, enum: [mvn, npm, twine, docker, helm, oras] }
+    RepositoryListItem:
+      description: >
+        A repository as the list endpoint returns it: the detail shape plus
+        aggregate counts that are computed per listing and are absent from every
+        other repository response.
+      allOf:
+        - $ref: "#/components/schemas/Repository"
+        - type: object
+          required: [artifact_count, can_write, clean_count, pending_approval_count, scanned_count, total_size]
+          properties:
+            artifact_count:
+              type: integer
+              description: Stored artifact count.
+            total_size:
+              type: integer
+              description: Total stored bytes.
+            pending_approval_count:
+              type: integer
+              description: Packages awaiting approval in this repository; 0 when approval is not configured.
+            can_write:
+              type: boolean
+              description: Whether the current principal may upload to this repository.
+            scanned_count:
+              type: integer
+              description: Stored artifacts that have a vulnerability scan.
+            clean_count:
+              type: integer
+              description: Scanned artifacts that are clean, i.e. carry no advisories.
+    RepositoryCapabilities:
+      type: object
+      required: [read, write, delete, upload]
+      properties:
+        read: { type: boolean }
+        write: { type: boolean }
+        delete: { type: boolean }
+        upload: { type: boolean }
+    RepositoryCreate:
+      type: object
+      required: [name, format, type]
+      properties:
+        name: { type: string }
+        format: { type: string, enum: [maven, npm, cargo, go, pypi, raw, oci] }
+        type: { type: string, enum: [hosted, proxy, group] }
+        upstream_url: { type: string }
+        config: { $ref: "#/components/schemas/RepoConfig" }
+        description:
+          type: string
+          description: Optional operator-facing free text (max 1000 bytes).
+    RepoConfig:
+      type: object
+      description: >
+        A repository's policy document. Every section is always present - the
+        server materialises defaults - so a client reads config.vuln.enabled
+        without first checking that vuln exists. Only upstream_auth is omitted,
+        and only when no credentials are set.
+      required:
+        [age_policy, approval, cache, group, ip_acl, license, notify,
+         policy_pipeline, retention, upload, vuln]
+      properties:
+        public:
+          type: boolean
+          description: Anonymous reads allowed on this repository even when instance-wide anonymous read is off. Writes always require authentication.
+        cache: { $ref: "#/components/schemas/CacheConfig" }
+        age_policy: { $ref: "#/components/schemas/AgePolicyConfig" }
+        approval: { $ref: "#/components/schemas/ApprovalConfig" }
+        policy_pipeline: { $ref: "#/components/schemas/PolicyPipelineConfig" }
+        group: { $ref: "#/components/schemas/GroupConfig" }
+        ip_acl: { $ref: "#/components/schemas/IPACLConfig" }
+        notify: { $ref: "#/components/schemas/NotifyConfig" }
+        retention: { $ref: "#/components/schemas/RetentionConfig" }
+        vuln: { $ref: "#/components/schemas/VulnPolicyConfig" }
+        license: { $ref: "#/components/schemas/LicensePolicyConfig" }
+        upload: { $ref: "#/components/schemas/UploadConfig" }
+        upstream_auth: { $ref: "#/components/schemas/UpstreamAuthConfig" }
+    CacheConfig:
+      type: object
+      description: Proxy caching for a repository.
+      required: [artifact_ttl, enabled, eviction, max_size_bytes, metadata_ttl, negative_ttl]
+      properties:
+        enabled: { type: boolean }
+        artifact_ttl: { type: string, examples: ["0", "1h"] }
+        metadata_ttl: { type: string, examples: ["15m"] }
+        negative_ttl: { type: string, examples: ["5m"] }
+        max_size_bytes: { type: integer, description: Caps the repository cache size; 0 means unbounded. }
+        eviction: { type: string, enum: [lru] }
+    AgePolicyConfig:
+      type: object
+      description: Supply-chain cooldown by upstream release age.
+      required: [action, enabled, max_age, min_age]
+      properties:
+        enabled: { type: boolean }
+        min_age: { type: string, examples: ["3d"] }
+        max_age: { type: string }
+        action: { type: string, enum: [block, warn] }
+    ApprovalConfig:
+      type: object
+      description: >
+        Package approval policy (proxy repositories only). Unapproved
+        packages are blocked with 403 and queued as pending requests; the
+        decision unit is the whole package, version freshness stays with
+        age_policy. Mode "audit" serves normally but logs and counts what
+        "enforce" would have blocked.
+      required: [enabled]
+      properties:
+        enabled: { type: boolean }
+        mode: { type: string, enum: [enforce, audit], default: enforce }
+        auto_approve:
+          type: array
+          description: path.Match glob patterns of package names that bypass approval.
+          items: { type: string }
+          examples: [["@company/*"]]
+        auto_approve_clean:
+          type: boolean
+          description: >
+            Auto-approve a package once the requested coordinate has a stored
+            vulnerability scan with no advisories (max severity "none"),
+            instead of queuing it. Requires a scanner; applies in enforce and
+            audit modes. Automated vulnerability and license checks still
+            run before final approval.
+    PolicyPipelineConfig:
+      type: object
+      description: >
+        Versioned automated-assessment filter order. Vulnerability, license,
+        and age can be reordered. Version deny is a fixed artifact guard;
+        human approval is the fixed final serving boundary.
+      required: [order, schema_version]
+      properties:
+        schema_version:
+          type: integer
+          enum: [2]
+          default: 2
+        order:
+          type: array
+          minItems: 3
+          maxItems: 3
+          uniqueItems: true
+          items:
+            type: string
+            enum: [vulnerability, license, age]
+          examples: [[vulnerability, license, age]]
+    GroupConfig:
+      type: object
+      description: >
+        Group repository membership (type "group" only). Members are looked
+        up in order and the first hit is served; groups are read-only.
+      properties:
+        members:
+          type: array
+          items: { type: string }
+          examples: [["maven-hosted", "maven-central"]]
+    IPACLConfig:
+      type: object
+      description: >
+        Source-IP access control. When enabled, only requests whose client
+        IP matches an allow entry (IPv4/IPv6 address or CIDR) are served;
+        others get 403. The client IP is the first X-Forwarded-For hop set
+        by the ingress, falling back to the TCP peer. An empty allow list
+        blocks everything. For a group it guards entry; member repositories
+        are not re-checked on fan-out.
+      required: [enabled]
+      properties:
+        enabled: { type: boolean }
+        allow:
+          type: array
+          items: { type: string }
+          examples: [["10.0.0.0/16", "203.0.113.5", "2001:db8::/32"]]
+    NotifyConfig:
+      type: object
+      description: >
+        Selects notification receivers (named alarm channels managed in the
+        admin console) alerted when a package in this repository enters the
+        approval queue. Lists receiver names; empty means no notification.
+      properties:
+        receivers:
+          type: array
+          items: { type: string }
+          examples: [["slack-security"]]
+    RetentionConfig:
+      type: object
+      description: Auto-deletes artifacts idle (not served) beyond idle_ttl; "0" disables.
+      properties:
+        idle_ttl: { type: string, examples: ["30d"] }
+    VulnPolicyConfig:
+      type: object
+      description: >
+        Vulnerability policy. When enabled, a requested version whose highest
+        advisory severity meets threshold is blocked, warned, or audited per
+        action. Ignore lists advisory ids accepted as false-positive.
+      required: [enabled]
+      properties:
+        enabled: { type: boolean }
+        threshold: { type: string, enum: [critical, high, medium, low], default: high }
+        action: { type: string, enum: [block, warn, audit], default: audit }
+        ignore:
+          type: array
+          items: { type: string }
+          examples: [["CVE-2024-1234", "GHSA-xxxx-yyyy-zzzz"]]
+        block_unscanned:
+          type: boolean
+          description: Block a not-yet-scanned version instead of serving it while scanning asynchronously.
+    LicensePolicyConfig:
+      type: object
+      description: >
+        License policy on resolved SPDX identifiers. Deny blocks matching
+        licenses; a non-empty allow gates anything outside it (allow-list
+        mode). Identifiers match case-insensitively.
+      required: [enabled]
+      properties:
+        enabled: { type: boolean }
+        action: { type: string, enum: [block, warn, audit], default: audit }
+        deny:
+          type: array
+          items: { type: string }
+          examples: [["GPL-3.0-only"]]
+        allow:
+          type: array
+          items: { type: string }
+        block_unresolved:
+          type: boolean
+          description: Gate a version whose license is not resolved yet instead of serving it while resolving asynchronously.
+    UploadConfig:
+      type: object
+      description: Hosted-upload compatibility switches.
+      properties:
+        pypi_allow_legacy_zip:
+          type: boolean
+          description: Accept legacy .zip sdists on hosted PyPI repositories.
+    UpstreamAuthConfig:
+      type: object
+      description: >
+        Credentials a proxy repository presents to its upstream (private
+        registries, or authenticated mirroring to avoid anonymous rate
+        limits). Proxy repositories only. Secret fields (password, token,
+        value) are masked as "********" in every response; sending the
+        mask back on update keeps the stored secret. The type field is an
+        open discriminator so flow-based schemes (e.g. the OCI registry
+        token challenge used by Harbor and Docker Hub) can be added later.
+      properties:
+        type: { type: string, enum: ["", basic, bearer, header] }
+        username: { type: string, description: basic only. }
+        password: { type: string, description: basic only; masked in responses. }
+        token: { type: string, description: bearer only; masked in responses. }
+        header: { type: string, description: header only; the header name, e.g. X-Api-Key. }
+        value: { type: string, description: header only; masked in responses. }
+    PackageApprovalList:
+      type: object
+      description: >
+        One page of the approval queue. count is every row matching the active
+        filters and search rather than just this page, so a client can page
+        without asking again.
+      required: [approvals, count]
+      properties:
+        count: { type: integer }
+        approvals:
+          type: array
+          items: { $ref: "#/components/schemas/PackageApproval" }
+    ApprovalCount:
+      type: object
+      description: Queue size on its own, for the pending badge that does not need the rows.
+      required: [count]
+      properties:
+        count: { type: integer }
+    PendingApprovalRepoList:
+      type: object
+      required: [repos]
+      properties:
+        repos:
+          type: array
+          items: { $ref: "#/components/schemas/PendingApprovalRepo" }
+    VersionDenyList:
+      type: object
+      description: >
+        One page of the per-version deny list. count is every rule matching the
+        filter, not just this page.
+      required: [count, denies]
+      properties:
+        count: { type: integer }
+        denies:
+          type: array
+          items: { $ref: "#/components/schemas/VersionDeny" }
+    PackageApproval:
+      type: object
+      required: [decided_at, decided_by, first_requested_at, id, last_requested_at, last_requested_version, note, package, repo_name, request_count, requested_by, status]
+      properties:
+        id: { type: integer }
+        repo_name: { type: string }
+        package: { type: string, description: Canonical per-format package name. }
+        status: { type: string, enum: [pending, approved, rejected] }
+        requested_by: { type: string, description: First requester, empty for anonymous. }
+        decided_by: { type: string }
+        note: { type: string }
+        request_count: { type: integer }
+        last_requested_version: { type: string, description: Last version seen in a blocked request, empty if none carried one. }
+        first_requested_at: { type: string, format: date-time }
+        last_requested_at: { type: string, format: date-time }
+        decided_at: { type: [string, "null"], format: date-time }
+        vuln_severity: { type: string, description: Max severity of the stored scan (critical|high|medium|low|none); absent when unscanned. }
+        vuln_ids:
+          type: array
+          items: { type: string }
+        vuln_scope: { type: string, enum: [version, package], description: Whether the scan covers the exact requested version or the whole package. }
+        vuln_counts:
+          type: object
+          description: Advisory count per severity.
+          additionalProperties: { type: integer }
+        vuln_advisories:
+          type: array
+          items: { $ref: "#/components/schemas/VulnAdvisory" }
+        vuln_source: { type: string, description: Advisory source, e.g. OSV. }
+        vuln_scanned_at: { type: [string, "null"], format: date-time }
+        vuln_scan_ms: { type: integer, description: Scan elapsed milliseconds. }
+        reviewers:
+          type: array
+          description: Usernames permitted to approve this repository (detail endpoint only).
+          items: { type: string }
+        upstream_url: { type: string, description: Proxy upstream base URL (detail endpoint only). }
+        upstream_package_url: { type: string, description: Resolved package URL on the upstream (detail endpoint only). }
+        notified_receivers:
+          type: array
+          description: Receivers an approval-request alarm was dispatched to.
+          items: { type: string }
+        notified_at: { type: [string, "null"], format: date-time }
+        notify_result: { type: string, enum: [delivered, failed] }
+        notify_duration_ms: { type: integer }
+        notify_detail: { type: string, description: Delivery outcome detail, e.g. HTTP 200 or a failure reason. }
+    VersionDeny:
+      type: object
+      required: [created_at, created_by, id, package, reason, repo_name, version]
+      properties:
+        id: { type: integer }
+        repo_name: { type: string }
+        package: { type: string, description: Canonical per-format package name. }
+        version: { type: string, description: Exact denied version. }
+        reason: { type: string }
+        created_by: { type: string }
+        created_at: { type: string, format: date-time }
+    AuditLogList:
+      type: object
+      description: >
+        One page of a repository's audit log, newest first. count is every entry
+        matching the filter rather than just this page, so a client can page
+        without a second request.
+      required: [count, logs]
+      properties:
+        count: { type: integer }
+        logs:
+          type: array
+          items: { $ref: "#/components/schemas/AuditLog" }
+    AuditLog:
+      type: object
+      required: [client_ip, created_at, event, id, method, path, status, user_agent, username]
+      properties:
+        id: { type: integer }
+        event:
+          type: string
+          enum: [view, download, upload, delete, ttl.expire, vuln.block, license.block,
+                 repo.create, repo.update, repo.delete,
+                 approval.request, approval.approve, approval.reject,
+                 deny.create, deny.delete, deny.block, upload.metadata,
+                 upload.reject, upload.cancel]
+        path: { type: string }
+        username: { type: string, description: Empty for anonymous access. }
+        method: { type: string }
+        status: { type: integer }
+        client_ip: { type: string }
+        user_agent: { type: string }
+        request_id: { type: string, description: Correlates rows emitted by one upload. }
+        detail_json: { type: string, description: Bounded event-specific JSON detail. }
+        created_at: { type: string, format: date-time }
+    TokenCreate:
+      type: object
+      required: [name, description, scopes, expires_in]
+      properties:
+        name: { type: string }
+        description: { type: string }
+        expires_in:
+          type: string
+          description: Token lifetime as a duration string, at most one year (8760h).
+          examples: ["720h"]
+        scopes:
+          type: array
+          minItems: 1
+          items: { $ref: "#/components/schemas/TokenScope" }
+    VulnAdvisory:
+      type: object
+      description: One advisory from the vulnerability scan of a package coordinate.
+      required: [id, severity]
+      properties:
+        id: { type: string, examples: ["GHSA-xxxx-yyyy-zzzz"] }
+        severity: { type: string, enum: [critical, high, medium, low] }
+        score: { type: string, description: CVSS base score, when the source carries one. }
+    PendingApprovalRepo:
+      type: object
+      description: >
+        One repository's approval queue: how many packages are pending and how
+        many of those are clean, i.e. would be admitted by a clean-only bulk
+        approve. Drives the bulk-approve overview.
+      required: [clean, format, id, pending, repo_name, type]
+      properties:
+        id: { type: integer }
+        repo_name: { type: string }
+        format: { type: string }
+        type: { type: string }
+        pending: { type: integer }
+        clean: { type: integer }
+    IssuedToken:
+      type: object
+      description: >
+        A freshly created token. This is the only response carrying the
+        plaintext secret; the server stores a hash and cannot show it again.
+      required: [description, expires_at, id, name, token]
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        description: { type: string }
+        token: { type: string, description: The secret, shown once. }
+        expires_at: { type: [string, "null"], format: date-time, description: Null when the token does not expire. }
+
+    TokenScope:
+      type: object
+      required: [repo_pattern, actions]
+      properties:
+        repo_pattern: { type: string, examples: ["maven-*"] }
+        actions:
+          type: array
+          minItems: 1
+          description: >
+            The data-plane actions, plus audit - the one management-plane action
+            a token may carry. audit is read-only viewing of the admin surfaces,
+            so a leaked token still cannot decide approvals, edit policy or
+            manage accounts; approve, security and admin stay session-only.
+          items: { type: string, enum: [read, write, delete, audit] }
+    HAStatus:
+      type: object
+      required: [backend, enabled, identity, is_leader, leader, mode, role]
+      properties:
+        enabled: { type: boolean, description: Leader election active (HA mode). }
+        mode: { type: string, description: "Topology: single, shared-volume, replication or object-storage." }
+        backend: { type: string, enum: [fs, s3] }
+        storage_endpoint: { type: string, description: Object-storage bucket/endpoint (s3) or data directory (fs). }
+        identity: { type: string, description: This pod's leader-election identity. }
+        leader: { type: string, description: Current Lease holder's identity. }
+        is_leader: { type: boolean }
+        role: { type: string, enum: [leader, standby] }
+        lease_name: { type: string }
+        fencing_token: { type: integer, description: Lease transition count guarding s3 metadata writes. }
+        started_at: { type: string, format: date-time, description: Process start time, for uptime display. }
+        version: { type: string, description: This pod's forklift version. }
+        runtime: { type: string, description: The Rust toolchain this pod's binary was built with. }
+    StorageStats:
+      type: object
+      description: >
+        The object-storage overview: the active backend, forklift's own
+        deduplicated blob footprint, and whichever capacity source the backend
+        offers - the volume for fs, the MinIO admin API for minio.
+      required: [backend, blob_bytes, blob_count, dangling, mode]
+      properties:
+        backend: { type: string, enum: [fs, s3] }
+        mode: { type: string, enum: [filesystem, minio, s3], description: Human-facing storage mode for the overview. }
+        endpoint: { type: string, description: Where artifacts live - the object-storage endpoint (s3) or the data directory (fs). }
+        bucket: { type: string }
+        prefix: { type: string }
+        blob_count: { type: integer }
+        blob_bytes: { type: integer }
+        minio_error: { type: string, description: Why the MinIO cluster metrics are absent. }
+        fs_error: { type: string, description: Why the filesystem capacity could not be measured. }
+        fs: { $ref: "#/components/schemas/DiskUsage" }
+        dangling:
+          type: array
+          description: >
+            Artifacts listed in the metadata whose blob bytes are absent from
+            the blob store, so every request for them fails. Each entry is
+            re-checked against its artifact row before it is reported, and
+            the list is capped at 100.
+          items: { $ref: "#/components/schemas/DanglingRef" }
+        minio: { $ref: "#/components/schemas/MinioStats" }
+    DiskUsage:
+      type: object
+      description: >
+        Capacity of the volume the data directory lives on. Present only for the
+        fs backend - a PersistentVolume is what fills up, and a bucket has no
+        capacity, so S3 has none.
+      required: [available_bytes, total_bytes, usage_ratio, used_bytes]
+      properties:
+        path: { type: string, description: The directory the numbers were measured through. }
+        total_bytes: { type: integer }
+        used_bytes: { type: integer }
+        available_bytes: { type: integer, description: Writable by this process, excluding any root reserve, so used + available can fall short of total. }
+        usage_ratio: { type: number, description: "used_bytes/total_bytes, 0 to 1." }
+    DanglingRef:
+      type: object
+      description: One artifact whose blob bytes are gone, so serving it fails.
+      required: [first_seen, hits, last_seen, path, repo_id, repository, sha256, statuses]
+      properties:
+        repository: { type: string }
+        repo_id: { type: integer }
+        path: { type: string }
+        sha256: { type: string }
+        role: { type: string }
+        first_seen: { type: string, format: date-time }
+        last_seen: { type: string, format: date-time }
+        hits: { type: integer, description: Failed requests observed for this reference. }
+        statuses:
+          type: array
+          description: >
+            Response codes these failures produced, most frequent first. A fetch
+            answers 500; a publish or a publication delete answers 503.
+          items: { $ref: "#/components/schemas/StatusCount" }
+        last_status: { type: integer, description: The code the most recent failure returned. }
+    StatusCount:
+      type: object
+      required: [code, count]
+      properties:
+        code: { type: integer }
+        count: { type: integer }
+    MinioStats:
+      type: object
+      description: Live cluster metrics from the MinIO admin API; absent for every other backend.
+      required:
+        [available_bytes, bucket_count, logical_used_bytes, object_count, offline_drives,
+         online_drives, servers, total_capacity_bytes, usage_ratio, used_bytes]
+      properties:
+        total_capacity_bytes: { type: integer }
+        used_bytes: { type: integer }
+        available_bytes: { type: integer }
+        usage_ratio: { type: number }
+        logical_used_bytes: { type: integer }
+        object_count: { type: integer }
+        bucket_count: { type: integer }
+        online_drives: { type: integer }
+        offline_drives: { type: integer }
+        servers: { type: integer }
+        version: { type: string }
+    CoverageProject:
+      type: object
+      description: >
+        One scanned GitLab project and its verdict. Applied means both halves of
+        the wiring are present - the CI pipeline builds through forklift and a
+        package-manager or image-build file pins the registry. Partial means only
+        one of the two does, which resolves through forklift on some paths and
+        around it on others. A check listed in muted_scopes is left out of that
+        judgement, so a project with one muted half is applied on the other alone.
+      required: [applied, branch, ci_wired, default_branch, evidence, exclude_reason, format, group, id, last_activity_at, muted_scopes, name, note, on_default, path, registry_pinned, skipped, topics, web_url]
+      properties:
+        id: { type: integer }
+        path: { type: string, description: Full path with namespace, e.g. group/subgroup/project. }
+        group: { type: string }
+        name: { type: string }
+        web_url: { type: string }
+        default_branch: { type: string }
+        topics:
+          type: array
+          items: { type: string }
+        applied:
+          type: string
+          enum: [yes, partial, no, error]
+        branch: { type: string, description: Branch the wiring was found on; empty when nothing was found. }
+        on_default:
+          type: [boolean, "null"]
+          description: Whether branch is the default branch. Null when no wiring was found at all.
+        format: { type: string, description: Repository formats derived from the forklift URL path, e.g. npm/maven. }
+        ci_wired: { type: boolean }
+        registry_pinned: { type: boolean }
+        muted_scopes:
+          type: array
+          description: >
+            Checks an operator has waived on this project, so they are neither
+            required for the verdict nor credited to it. Both of them is the
+            project being out of the measurement entirely.
+          items: { type: string, enum: [ci, registry] }
+        evidence:
+          type: array
+          description: Files that matched, as the trail behind the verdict.
+          items: { type: string }
+        note: { type: string, description: Scan remark such as branches_truncated:10/28, or an API error. }
+        skipped: { type: boolean, description: The project has no GitLab CI at all, so it is out of the coverage denominator. }
+        last_activity_at: { type: string, format: date-time }
+        exclude_reason:
+          type: string
+          description: >
+            Why the project is out of scope: "muted" when an operator silenced it
+            from the console, or "topic:<name>" when the repository opted itself
+            out. Empty when the project counts.
+    CoverageProjectDetail:
+      allOf:
+        - $ref: "#/components/schemas/CoverageProject"
+        - type: object
+          required: [scanned]
+          properties:
+            scanned:
+              type: boolean
+              description: >
+                False when the last scan produced no verdict for this project,
+                either because it was excluded at the time or because it was
+                created since.
+    CoverageExcludedProject:
+      type: object
+      description: A project dropped before it was scanned, so it has a reason but no verdict.
+      required: [default_branch, group, id, last_activity_at, name, path, reason, topics, web_url]
+      properties:
+        id: { type: integer }
+        path: { type: string }
+        group: { type: string }
+        name: { type: string }
+        web_url: { type: string }
+        default_branch: { type: string }
+        topics:
+          type: array
+          items: { type: string }
+        reason: { type: string, description: '"muted", or "topic:<name>".' }
+        last_activity_at: { type: string, format: date-time }
+    CoverageProgress:
+      type: object
+      description: Live state of a running scan, so the console fills in as projects finish.
+      required: [applied, done, errored, excluded, not_applied, partial, phase, skipped, started_at, total]
+      properties:
+        phase:
+          type: string
+          enum: [listing, scanning]
+          description: listing while the project list is still paging in.
+        done: { type: integer }
+        total: { type: integer, description: Zero until the listing phase completes. }
+        excluded: { type: integer }
+        started_at: { type: string, format: date-time }
+        applied: { type: integer }
+        partial: { type: integer }
+        not_applied: { type: integer }
+        errored: { type: integer }
+        skipped: { type: integer }
+    CoverageOverview:
+      type: object
+      description: Everything the coverage dashboard reads in one call.
+      required: [alarm_configured, applied, auto_scan_enabled, configured, history_retention_days, credentials_present, enabled, errored, excluded, excluded_projects, forklift_host, gitlab_url, last_scan_duration_ms, last_scan_error, last_scan_triggered_by, last_scanned_at, next_run_at, not_applied, partial, percent, projects, scan_cron, scan_progress, scanning, skipped, target, timezone]
+      properties:
+        target: { type: integer, description: The coverage denominator - in-scope projects that have GitLab CI. }
+        applied: { type: integer }
+        partial: { type: integer }
+        not_applied: { type: integer }
+        errored: { type: integer }
+        skipped: { type: integer, description: Projects without GitLab CI, out of scope. }
+        excluded: { type: integer }
+        percent: { type: integer }
+        projects:
+          type: array
+          items: { $ref: "#/components/schemas/CoverageProject" }
+        excluded_projects:
+          type: array
+          items: { $ref: "#/components/schemas/CoverageExcludedProject" }
+        last_scanned_at:
+          type: [string, "null"]
+          format: date-time
+        last_scan_duration_ms: { type: integer }
+        last_scan_triggered_by:
+          type: string
+          description: A username for a manual run, or schedule / startup for the automatic ones.
+        last_scan_error: { type: string, description: Message of the last scan that failed; cleared once one succeeds. }
+        scanning: { type: boolean }
+        scan_progress:
+          oneOf:
+            - $ref: "#/components/schemas/CoverageProgress"
+            - type: "null"
+        gitlab_url: { type: string }
+        forklift_host: { type: string, description: What a project must reference to count, saved or derived from FORKLIFT_EXTERNAL_URL. }
+        configured: { type: boolean, description: False until both a GitLab instance and a forklift host are known. }
+        enabled: { type: boolean, description: Whether coverage scanning is switched on and pointed at a GitLab instance it can reach. }
+        credentials_present: { type: boolean, description: Whether a GitLab URL and token are set, which separates "turned off" from "never set up". }
+        scan_cron: { type: string }
+        timezone: { type: string }
+        auto_scan_enabled: { type: boolean }
+        next_run_at:
+          type: [string, "null"]
+          format: date-time
+        alarm_configured: { type: boolean, description: Whether a scheduled report has anywhere to go. }
+        history_retention_days: { type: integer, description: How long a trend reading is kept, and the widest window the chart can show. }
+    CoverageGroup:
+      type: object
+      required: [applied, group, not_applied, partial, percent, target]
+      properties:
+        group: { type: string }
+        target: { type: integer }
+        applied: { type: integer }
+        partial: { type: integer }
+        not_applied: { type: integer }
+        percent: { type: integer }
+    CoverageSnapshot:
+      type: object
+      description: One historical coverage reading, written after each completed scan.
+      required: [applied, not_applied, partial, percent, scanned_at, skipped, target]
+      properties:
+        target: { type: integer }
+        applied: { type: integer }
+        partial: { type: integer }
+        not_applied: { type: integer }
+        skipped: { type: integer }
+        percent: { type: integer }
+        scanned_at: { type: string, format: date-time }
+    CoverageLastCommit:
+      type: object
+      required: [author_name, committed_at, ref, short_id, title, web_url]
+      properties:
+        ref: { type: string }
+        short_id: { type: string }
+        title: { type: string }
+        author_name: { type: string }
+        committed_at: { type: string, format: date-time }
+        web_url: { type: string }
+    CoveragePipelineFile:
+      type: object
+      required: [content, matches_forklift, path, truncated]
+      properties:
+        path: { type: string }
+        content: { type: string, description: File body, truncated at 128 KiB. }
+        truncated: { type: boolean }
+        matches_forklift: { type: boolean, description: The file references the forklift host, so the viewer can highlight it. }
+    CoveragePipeline:
+      type: object
+      required: [files, project_path, ref]
+      properties:
+        project_path: { type: string }
+        ref: { type: string }
+        files:
+          type: array
+          items: { $ref: "#/components/schemas/CoveragePipelineFile" }
+    CoverageMuteInput:
+      type: object
+      description: >
+        What to mute on the project. scopes is the whole state rather than a
+        delta, so a check it leaves out is unmuted; muted is the all-or-nothing
+        shorthand and scopes wins when both are sent.
+      properties:
+        muted: { type: boolean, description: Mute every check, or bring every one back. }
+        scopes:
+          type: array
+          description: Checks to mute. An empty list unmutes the project.
+          items: { type: string, enum: [ci, registry] }
+    CoverageMute:
+      type: object
+      required: [muted, project_path, scopes]
+      properties:
+        project_path: { type: string }
+        muted: { type: boolean, description: True when every check is muted, which is the whole project being out. }
+        scopes:
+          type: array
+          items: { type: string, enum: [ci, registry] }
+    CoverageSettings:
+      type: object
+      description: >
+        Scan settings as stored. The GitLab access token is deliberately absent -
+        it comes from the environment so it never reaches the database or a
+        response. There is no request-rate setting: the crawl discovers a safe
+        concurrency at run time from how the instance responds.
+      required: [auto_scan_enabled, exclude_topics, forklift_host, forklift_host_default, gitlab_configured, gitlab_url, max_branches, next_run_at, receiver, report_enabled, scan_cron, since_days, skip_when_full_coverage, timezone, updated_at, updated_by, use_search]
+      properties:
+        forklift_host:
+          type: string
+          description: >
+            The external domain a project's configuration must reference to count
+            as wired. Defaults to the host of FORKLIFT_EXTERNAL_URL, so a normal
+            deployment leaves it empty; saving an empty value hands it back to
+            that default.
+        exclude_topics:
+          type: array
+          description: >
+            GitLab topics that opt a repository out from the repository side.
+            What is in scope at all is decided by the access token, so there is
+            no group or path list.
+          items: { type: string }
+        scan_cron: { type: string }
+        timezone: { type: string }
+        auto_scan_enabled: { type: boolean }
+        report_enabled:
+          type: boolean
+          description: >
+            Whether the scheduled report is sent. Kept apart from the receiver so
+            turning it off does not discard where it goes.
+        receiver:
+          type: string
+          description: The notification receiver the scheduled report is sent to. Empty turns the report off.
+        skip_when_full_coverage: { type: boolean, description: Drop the scheduled report when every target project is applied. }
+        max_branches: { type: integer, description: Cap on non-default branches searched per project. }
+        since_days: { type: integer, description: Ignore branches whose last commit is older than this. }
+        use_search: { type: boolean, description: Try GitLab blob search first - one call per project, on a much lower rate limit. }
+        updated_by: { type: string }
+        updated_at: { type: string }
+        gitlab_url:
+          type: string
+          description: >
+            The GitLab base the scan reads from, from
+            FORKLIFT_COVERAGE_GITLAB_URL. Read-only: the URL and the token are
+            one deployment decision, so both come from the environment.
+        gitlab_configured: { type: boolean, description: Coverage scanning is switched on and has a GitLab URL and token. }
+        forklift_host_default: { type: string, description: What an empty forklift_host falls back to, from FORKLIFT_EXTERNAL_URL. }
+        next_run_at: { type: string, description: When the saved schedule fires next; empty when automatic scanning is off. }
+    CoverageSettingsInput:
+      type: object
+      description: Every field is optional; an omitted field keeps its stored value.
+      properties:
+        forklift_host: { type: string }
+        exclude_topics:
+          type: array
+          items: { type: string }
+        scan_cron: { type: string }
+        timezone: { type: string }
+        auto_scan_enabled: { type: boolean }
+        report_enabled: { type: boolean }
+        receiver: { type: string }
+        skip_when_full_coverage: { type: boolean }
+        max_branches: { type: integer, minimum: 0, maximum: 200 }
+        since_days: { type: integer, minimum: 1, maximum: 3650 }
+        use_search: { type: boolean }
+    CoverageHostCheckInput:
+      type: object
+      required: [forklift_host]
+      properties:
+        forklift_host: { type: string, description: A bare external domain, optionally with a port. }
+    CoverageHostCheck:
+      type: object
+      required: [addresses, host, latency_ms, resolve_error, resolved, syntax_error]
+      properties:
+        host: { type: string, description: The value after a scheme and trailing slashes are stripped. }
+        syntax_error: { type: string, description: Empty when the name could be a forklift address. }
+        resolved: { type: boolean, description: DNS returned at least one address. Advisory only. }
+        addresses:
+          type: array
+          description: Resolved addresses, capped for display.
+          items: { type: string }
+        resolve_error: { type: string, description: The resolver's own words on a failed lookup. }
+        latency_ms: { type: integer }
+    CoverageGitlabCheck:
+      type: object
+      required: [configured, error, latency_ms, reachable, status, url, version]
+      properties:
+        configured: { type: boolean, description: False when no URL or token is set, in which case nothing was attempted. }
+        url: { type: string }
+        reachable: { type: boolean, description: The API answered and accepted the token. }
+        status: { type: integer, description: HTTP status returned, zero when the API never answered. }
+        version: { type: string, description: The GitLab version, when the API reported one. }
+        error: { type: string }
+        latency_ms: { type: integer }
+    CoverageScanStarted:
+      type: object
+      required: [started]
+      properties:
+        started: { type: boolean }
+    CoverageAlarmPayload:
+      type: object
+      description: >
+        The webhook body forklift posts for a coverage report. text is the
+        human-readable summary Slack and Mattermost render as-is; the structured
+        counts let any other consumer route on the raw numbers.
+      required: [applied, errored, event, not_applied, partial, percent, skipped, target, text, timestamp]
+      properties:
+        text: { type: string }
+        event: { type: string, description: coverage.report, or test for a sample. }
+        target: { type: integer }
+        applied: { type: integer }
+        partial: { type: integer }
+        not_applied: { type: integer }
+        errored: { type: integer }
+        skipped: { type: integer }
+        percent: { type: integer }
+        projects:
+          type: array
+          description: Paths still to migrate, capped the same as the text.
+          items: { type: string }
+        timestamp: { type: string, format: date-time }
+    CoverageAlarmPreview:
+      type: object
+      required: [payload, receivers, sample]
+      properties:
+        payload: { $ref: "#/components/schemas/CoverageAlarmPayload" }
+        sample: { type: boolean, description: True when no scan has completed yet, so the numbers are made up. }
+        receivers:
+          type: array
+          items: { $ref: "#/components/schemas/NotificationSampleReceiver" }
+    NotificationSamplePreview:
+      type: object
+      description: >
+        The alarm a repository would send together with the receivers it would
+        reach, so an operator can check both before anything is delivered.
+      required: [payload, receivers]
+      properties:
+        payload: { $ref: "#/components/schemas/ApprovalAlarmPayload" }
+        receivers:
+          type: array
+          items: { $ref: "#/components/schemas/NotificationSampleReceiver" }
+    NotificationSampleReceiver:
+      type: object
+      description: >
+        A receiver named by the repository's policy, with whether it still
+        exists and is enabled - a name can outlive the receiver it referred to.
+      required: [enabled, exists, name]
+      properties:
+        name: { type: string }
+        exists: { type: boolean }
+        enabled: { type: boolean }
+    NotificationSampleReport:
+      type: object
+      required: [results]
+      properties:
+        results:
+          type: array
+          items: { $ref: "#/components/schemas/NotificationSampleResult" }
+    NotificationSampleResult:
+      type: object
+      description: One receiver's delivery outcome; error is set only on a failure.
+      required: [name, ok]
+      properties:
+        name: { type: string }
+        ok: { type: boolean }
+        error: { type: string }
+    ApprovalAlarmPayload:
+      type: object
+      description: >
+        The webhook body forklift posts when packages enter the approval queue.
+        A single quarantined package fills package/version/requested_by; a
+        grouped alarm (several within the batch window) fills count, packages
+        and requesters instead.
+      required: [event, package, repository, text, timestamp]
+      properties:
+        text: { type: string, description: Human-readable summary, for chat webhooks that render only this. }
+        event: { type: string }
+        repository: { type: string }
+        package: { type: string }
+        version: { type: string }
+        requested_by: { type: string }
+        timestamp: { type: string, format: date-time }
+        count: { type: integer, description: Grouped alarms only. }
+        packages:
+          type: array
+          description: 'Grouped alarms only; entries read "repo/pkg@version".'
+          items: { type: string }
+        requesters:
+          type: array
+          description: Grouped alarms only; the distinct usernames behind the batch.
+          items: { type: string }
+        clean_count:
+          type: integer
+          description: Grouped alarms only; packages whose scan found no advisories.
+        dirty_count:
+          type: integer
+          description: Grouped alarms only; the rest - vulnerable or not yet scanned.
+        max_severity: { type: string, description: Highest severity across the dirty packages; absent when none are vulnerable. }
+        max_score: { type: string, description: CVSS score of max_severity. }
+        top_cve: { type: string }
+        top_package: { type: string }
+    Receiver:
+      type: object
+      required: [created_at, created_by, description, enabled, id, name, repositories, updated_at, webhook_configured]
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        description: { type: string }
+        webhook_configured: { type: boolean, description: Whether a webhook URL is set. The URL itself is write-only and never returned. }
+        enabled: { type: boolean }
+        created_by: { type: string }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        repositories:
+          type: [array, "null"]
+          description: >
+            Repositories whose notify config selects this receiver by name. A
+            receiver with a non-empty list cannot be deleted.
+          items: { type: string }
+    ReceiverInput:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string, description: "Unique channel name (letters, digits, '-', '_')." }
+        description: { type: string }
+        webhook_url: { type: string, description: Absolute http(s) URL (Slack/Mattermost incoming webhook). Required on create; blank on update keeps the stored URL. }
+        enabled: { type: boolean, default: true }
+    RepositoryName:
+      type: object
+      description: Slim repository shape returned by /repository-names for token-scope autocomplete.
+      required: [format, name, type]
+      properties:
+        name: { type: string }
+        format: { type: string }
+        type: { type: string, enum: [hosted, proxy, group] }
+    Artifact:
+      type: object
+      required: [can_label, cached_at, cached_by, content_type, downloads_30d, labels, last_accessed_at, last_accessed_by, path, published_at, size, version]
+      properties:
+        path: { type: string }
+        version: { type: string }
+        size: { type: integer, format: int64 }
+        content_type: { type: string }
+        published_at: { type: [string, "null"], format: date-time }
+        cached_at: { type: string, format: date-time }
+        last_accessed_at: { type: string, format: date-time }
+        cached_by: { type: string, description: Principal who first cached or uploaded this artifact, empty for anonymous. }
+        downloads_30d:
+          type: integer
+          format: int64
+          minimum: 0
+          examples: [42, 0]
+          description: >
+            Number of recorded GET responses with status 200 or 206 for this
+            repository name and artifact path, from the listing request's current
+            time minus 30 days through that time (inclusive). Counts requests,
+            including repeated downloads and partial responses, not unique users
+            or completed file transfers. HEAD requests, redirects, 304 responses,
+            and failures are excluded. Group requests are recorded against the
+            group and are not attributed to member repositories.
+            Computed from retained audit logs, so recording delays, disabled or
+            dropped recording, and pruned history can reduce the count. Zero means
+            no matching retained records, not proof the artifact has never been
+            downloaded. The field is always present.
+        last_accessed_by:
+          type: string
+          examples: [alice, ""]
+          description: >
+            Last authenticated username recorded by the artifact access touch.
+            Anonymous requests preserve an existing username; an empty string
+            means no authenticated user has been recorded since this field was
+            introduced. Updates follow the access touch interval (minute-grained),
+            so this is not an exact per-request identity and need not identify the
+            request represented by last_accessed_at. The field is always present.
+        publication_id: { type: string }
+        artifact_role: { type: string, enum: [primary, metadata, checksum, index] }
+        labels:
+          type: array
+          description: Operator tags on this artifact, oldest first.
+          items: { $ref: "#/components/schemas/ArtifactLabel" }
+        can_label:
+          type: boolean
+          description: >
+            Whether the caller may add or remove this artifact's labels: an
+            administrator on the repository, or the principal who uploaded it.
+        max_severity: { type: string, description: Highest vulnerability severity from the stored scan, if any. }
+        vuln_ids: { type: array, items: { type: string } }
+        vuln_counts: { type: object, additionalProperties: { type: integer }, description: Vulnerability count per severity. }
+        vuln_advisories:
+          type: array
+          items: { $ref: "#/components/schemas/VulnAdvisory" }
+        vuln_source: { type: string }
+        vuln_scanned_at: { type: [string, "null"], format: date-time }
+        licenses: { type: array, items: { type: string }, description: Resolved SPDX license ids. }
+        license_source: { type: string }
+        license_resolved_at: { type: [string, "null"], format: date-time }
+        blob_missing:
+          type: boolean
+          description: >
+            The artifact's bytes are absent from the blob store, so requests for it
+            fail. Set from references observed missing while serving or publishing.
+        blob_missing_since: { type: [string, "null"], format: date-time, description: When the missing bytes were first observed. }
+        blob_missing_last_seen:
+          type: [string, "null"]
+          format: date-time
+          description: When the blob was last observed missing.
+        blob_missing_last_status:
+          type: integer
+          description: HTTP status of the last fetch that found the blob missing.
+        blob_missing_statuses:
+          type: array
+          description: Response codes the failures produced, most frequent first.
+          items:
+            type: object
+            properties:
+              code: { type: integer }
+              count: { type: integer }
+    ArtifactList:
+      type: object
+      description: >
+        One page of a repository's artifacts, plus the publications that group
+        them. Every field is always present: the handler builds the response
+        from a fixed set of keys, so an empty repository reports zeroes and
+        empty arrays rather than omitting them.
+      required: [artifacts, count, filtered, publications, total_size]
+      properties:
+        count: { type: integer, description: Total artifacts in the repository, ignoring the search. }
+        total_size: { type: integer, format: int64 }
+        filtered: { type: integer, description: Artifacts matching the active search across all pages. }
+        artifacts:
+          type: array
+          items: { $ref: "#/components/schemas/Artifact" }
+        publications:
+          type: array
+          items: { $ref: "#/components/schemas/ArtifactPublication" }
+    ArtifactLabel:
+      type: object
+      description: One operator tag on one artifact, with who applied it and when.
+      required: [created_at, created_by, label]
+      properties:
+        label: { type: string, description: "Stored form: a key, or a key:value pair." }
+        created_by: { type: string, description: Who applied it; empty for a label applied without an authenticated principal. }
+        created_at: { type: string, format: date-time }
+    ArtifactLabelList:
+      type: object
+      description: One artifact's labels, with the caller's permission to change them.
+      required: [can_label, labels, path]
+      properties:
+        path: { type: string }
+        labels:
+          type: array
+          items: { $ref: "#/components/schemas/ArtifactLabel" }
+        can_label: { type: boolean }
+    ArtifactBulkLabelInput:
+      type: object
+      description: One label, and the artifacts to put it on or take it off.
+      required: [action, label, paths]
+      properties:
+        paths:
+          type: array
+          description: Artifact paths. Duplicates and blanks are dropped before the batch runs.
+          maxItems: 200
+          items: { type: string }
+        label:
+          type: string
+          maxLength: 64
+          pattern: "^[A-Za-z0-9_-]+(:[A-Za-z0-9_-]+)?$"
+        action:
+          type: string
+          enum: [add, remove]
+    ArtifactBulkDeleteInput:
+      type: object
+      required: [paths]
+      properties:
+        paths:
+          type: array
+          description: Artifact paths. Duplicates and blanks are dropped before the batch runs.
+          maxItems: 200
+          items: { type: string }
+    ArtifactBulkResult:
+      type: object
+      description: >
+        What a bulk action did. Reported per path rather than as one verdict, so a
+        partly refused selection still tells the caller what changed.
+      required: [failed, requested, succeeded]
+      properties:
+        requested: { type: integer, description: Paths in the request after blanks and duplicates were dropped. }
+        succeeded: { type: integer }
+        failed:
+          type: array
+          items: { $ref: "#/components/schemas/ArtifactBulkFailure" }
+    ArtifactBulkFailure:
+      type: object
+      required: [error, path]
+      properties:
+        path: { type: string }
+        error: { type: string }
+    ArtifactLabelInput:
+      type: object
+      description: >
+        The artifact to label and the label to apply. The path travels in the body
+        because an artifact path contains slashes.
+      required: [label, path]
+      properties:
+        path: { type: string }
+        label:
+          type: string
+          maxLength: 64
+          pattern: "^[A-Za-z0-9_-]+(:[A-Za-z0-9_-]+)?$"
+          description: >
+            A bare key, or a key:value pair. Each side is ASCII letters, digits,
+            '-' and '_'. Surrounding whitespace is trimmed; casing is preserved.
+    ArtifactPublication:
+      type: object
+      required: [actions, asset_count, coordinate, created_at, created_by, format, id, package, total_size, updated_at, version, yanked]
+      properties:
+        id: { type: string }
+        format: { type: string, enum: [maven, npm, cargo, go, pypi] }
+        coordinate: { type: string }
+        package: { type: string }
+        version: { type: string }
+        asset_count: { type: integer }
+        total_size: { type: integer, format: int64 }
+        broken_assets:
+          type: integer
+          description: Assets of this publication whose blob is no longer present in storage.
+        actions:
+          type: array
+          items: { type: string, enum: [replace, extend, delete, yank, unyank] }
+        yanked: { type: boolean }
+        created_by: { type: string }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    ArtifactUploadManifest:
+      type: object
+      required: [schema_version, format, overwrite, assets]
+      properties:
+        schema_version: { type: integer, enum: [1] }
+        format: { type: string, enum: [maven, npm, cargo, go, pypi] }
+        overwrite: { type: boolean, default: false }
+        assets:
+          type: array
+          minItems: 1
+          maxItems: 64
+          items:
+            type: object
+            required: [part]
+            properties:
+              part: { type: string }
+              extension: { type: string }
+              classifier: { type: string }
+              role: { type: string }
+        maven:
+          $ref: "#/components/schemas/MavenUploadManifest"
+        npm:
+          $ref: "#/components/schemas/NPMUploadManifest"
+        pypi:
+          $ref: "#/components/schemas/PyPIUploadManifest"
+        cargo:
+          $ref: "#/components/schemas/CargoUploadManifest"
+        go:
+          $ref: "#/components/schemas/GoUploadManifest"
+    MavenUploadManifest:
+      type: object
+      required: [group_id, artifact_id, version, generate_pom, packaging]
+      additionalProperties: false
+      properties:
+        group_id: { type: string }
+        artifact_id: { type: string }
+        version: { type: string }
+        generate_pom: { type: boolean }
+        packaging: { type: string }
+    NPMUploadManifest:
+      type: object
+      additionalProperties: false
+      properties:
+        dist_tag: { type: string, default: latest }
+    PyPIUploadManifest:
+      type: object
+      additionalProperties: false
+    CargoUploadManifest:
+      type: object
+      additionalProperties: false
+      properties:
+        yanked: { type: boolean, default: false }
+    GoUploadManifest:
+      type: object
+      required: [module, version]
+      additionalProperties: false
+      properties:
+        module: { type: string, examples: [example.com/team/module] }
+        version: { type: string, examples: [v1.2.3] }
+        time:
+          type: string
+          format: date-time
+          description: Reserved for a future privileged import workflow; ordinary uploads omit it.
+    UploadedArtifact:
+      type: object
+      required: [path, role, size, sha256]
+      properties:
+        path: { type: string }
+        role: { type: string, enum: [primary, metadata, checksum, index] }
+        size: { type: integer, format: int64 }
+        sha256: { type: string }
+    ArtifactUploadResult:
+      type: object
+      required: [upload_id, repository, format, coordinate, created, replaced, derived, scan_status, durability, warnings]
+      properties:
+        upload_id: { type: string }
+        repository: { type: string }
+        format: { type: string, enum: [maven, npm, cargo, go, pypi] }
+        coordinate: { type: string }
+        created: { type: array, items: { $ref: "#/components/schemas/UploadedArtifact" } }
+        replaced: { type: array, items: { $ref: "#/components/schemas/UploadedArtifact" } }
+        derived: { type: array, items: { $ref: "#/components/schemas/UploadedArtifact" } }
+        scan_status: { type: string, enum: [queued, deferred, disabled] }
+        durability: { type: string, enum: [local, async] }
+        warnings: { type: array, items: { type: object } }
+    UploadProblem:
+      type: object
+      required: [type, title, status, code, detail]
+      properties:
+        type: { type: string, format: uri }
+        title: { type: string }
+        status: { type: integer }
+        code: { type: string }
+        detail: { type: string }
+        upload_id: { type: string }
+        field_errors:
+          type: object
+          additionalProperties: { type: array, items: { type: string } }
+        conflicts: { type: array, items: { type: string } }
+        conflict_action: { type: string, enum: [replace, reject] }
+        retryable: { type: boolean }
+    UploadPlan:
+      type: object
+      required: [path, package, version, content_type, size, approval_required, exists]
+      properties:
+        path: { type: string }
+        package: { type: string }
+        version: { type: string }
+        content_type: { type: string }
+        size: { type: integer, format: int64 }
+        approval_required: { type: boolean }
+        exists: { type: boolean }
+    UploadResult:
+      allOf:
+        - { $ref: "#/components/schemas/UploadPlan" }
+        - type: object
+          required: [approval_status]
+          properties:
+            approval_status: { type: string, enum: [not_required, pending, approved, rejected, audit] }
+    UpstreamHealth:
+      type: object
+      properties:
+        applicable: { type: boolean, description: False for non-proxy repositories (nothing to probe). }
+        reachable: { type: boolean }
+        status: { type: integer, description: HTTP status returned by the probe, when reachable. }
+        latency_ms: { type: integer, format: int64 }
+        error: { type: string }
+    RepoPermission:
+      type: object
+      description: A role permission whose repo pattern grants access to a repository.
+      required: [actions, repo_pattern, role, role_id, user_count]
+      properties:
+        role_id: { type: integer }
+        role: { type: string }
+        repo_pattern: { type: string }
+        actions: { type: array, items: { type: string } }
+        user_count: { type: integer }
+    RepoToken:
+      type: object
+      description: A personal access token that can reach a repository (scoped match or unscoped, inheriting owner roles).
+      required: [actions, expires_at, last_used_at, name, owner, repo_pattern, token_id, unscoped]
+      properties:
+        token_id: { type: integer }
+        name: { type: string }
+        owner: { type: string }
+        repo_pattern: { type: string }
+        actions: { type: array, items: { type: string } }
+        unscoped: { type: boolean }
+        expires_at: { type: [string, "null"], format: date-time }
+        last_used_at: { type: [string, "null"], format: date-time }
+    SessionIdentity:
+      type: object
+      description: >
+        Who the session now belongs to. Returned by the two operations that
+        change that - signing in, and stepping back out of an impersonated
+        session.
+      required: [source, username]
+      properties:
+        username: { type: string }
+        source: { type: string, description: Principal source, local or oidc. }
+    ImpersonationStart:
+      type: object
+      description: >
+        The impersonated session. Impersonation is time-boxed, so the caller is
+        told when it lapses rather than having to discover it.
+      required: [expires_in, impersonator, source, username]
+      properties:
+        username: { type: string, description: The impersonated user. }
+        source: { type: string }
+        impersonator: { type: string, description: The administrator behind the session. }
+        expires_in: { type: string, description: 'Lifetime as a duration string, e.g. "30m0s".' }
+    CreatedUser:
+      type: object
+      description: >
+        The slim acknowledgement of a created user - enough to address the new
+        row. The full record is a separate GET.
+      required: [id, username]
+      properties:
+        id: { type: integer }
+        username: { type: string }
+    StatusMessage:
+      type: object
+      description: >
+        Acknowledgement from an operation whose outcome is the fact that it ran.
+        The value is prose for the operator, not a code to branch on.
+      required: [status]
+      properties:
+        status: { type: string }
+    UploadSession:
+      type: object
+      description: >
+        A resumable upload's progress. Exactly one of result and problem is
+        present once the session reaches a terminal state - the committed
+        artifacts, or the conflict that stopped it - and neither while it is
+        still receiving.
+      required: [expires_at, state, upload_id]
+      properties:
+        upload_id: { type: string }
+        state: { type: string }
+        expires_at: { type: string, format: date-time }
+        result: { $ref: "#/components/schemas/ArtifactUploadResult" }
+        problem: { $ref: "#/components/schemas/UploadProblem" }
+    PublicationLifecycleResult:
+      type: object
+      description: >
+        What a publication delete or yank changed: the publication itself, plus
+        the derived files (indexes, metadata) rewritten or removed alongside it.
+      required: [coordinate, deleted, derived_deleted, derived_updated, publication_id]
+      properties:
+        publication_id: { type: string }
+        coordinate: { type: string, description: Canonical package coordinate the publication resolved to. }
+        deleted: { type: [array, "null"], items: { type: string } }
+        derived_updated: { type: [array, "null"], items: { $ref: "#/components/schemas/UploadedArtifact" } }
+        derived_deleted: { type: [array, "null"], items: { type: string } }
+        yanked: { type: boolean, description: Present on a yank, absent on a delete. }
+    ArtifactPurgeResult:
+      type: object
+      description: >
+        How many artifacts a purge removed. A purge takes out an unknown number
+        of rows, so the count is the only way the caller learns what happened.
+      required: [deleted]
+      properties:
+        deleted: { type: integer }
+    ArtifactForceDeleteResult:
+      type: object
+      description: >
+        The other shape this route answers with. A forced delete names the one
+        path it removed, the digest that was missing, and whether the
+        publication went with it. Note that deleted is a path here and a count
+        in ArtifactPurgeResult - the same key, two types, which is why the
+        response is one or the other rather than the two merged.
+      required: [deleted, publication_coordinate, publication_deleted, sha256]
+      properties:
+        deleted: { type: string, description: Path of the deleted artifact. }
+        sha256: { type: string, description: Digest of the blob that was missing. }
+        publication_deleted: { type: boolean }
+        publication_coordinate: { type: string }
+    BulkApproveResult:
+      type: object
+      description: >
+        How many packages the bulk approve admitted. With clean_only set that is
+        fewer than the queue held, so the count is what tells the caller how
+        much is left.
+      required: [approved]
+      properties:
+        approved: { type: integer }
+    LoginInput:
+      type: object
+      properties:
+        username: { type: string }
+        password: { type: string }
+    RepositoryInput:
+      type: object
+      properties:
+        upstream_url: { type: string, description: Required for proxy repositories. }
+        config: { $ref: "#/components/schemas/RepoConfig" }
+        description:
+          type: string
+          description: Optional operator-facing free text (max 1000 bytes).
+    RepositorySecurityInput:
+      type: object
+      properties:
+        config:
+          allOf: [{ $ref: "#/components/schemas/RepoConfig" }]
+          description: >
+            Only age_policy, approval, vuln, license, ip_acl, notify and
+            public are read. Any other RepoConfig field present in the body is
+            ignored rather than rejected, so a client may resend a full
+            config document it fetched from GET /api/v1/repositories/{id}.
+    UpstreamCheckInput:
+      type: object
+      required: [url]
+      properties:
+        url: { type: string, description: Absolute http(s) URL to probe. }
+        repository_id:
+          type: integer
+          description: >
+            Probe with an existing repository's stored upstream
+            credentials (responses only ever carry masked secrets, so
+            clients cannot resend them). The url must match the
+            repository's upstream scheme and host; stored credentials
+            are never presented to any other destination.
+        auth:
+          type: object
+          description: Inline credentials for a pre-create connectivity check; same shape as RepoConfig.upstream_auth.
+    PublicationYankInput:
+      type: object
+      required: [yanked]
+      properties: { yanked: { type: boolean } }
+    RepositoryDisabledInput:
+      type: object
+      required: [disabled]
+      properties:
+        disabled: { type: boolean }
+    UploadValidationInput:
+      type: object
+      required: [path, size]
+      properties:
+        path: { type: string }
+        size: { type: integer, format: int64 }
+        content_type: { type: string }
+    TokenScopesInput:
+      type: object
+      required: [scopes]
+      properties:
+        scopes:
+          type: array
+          items: { $ref: "#/components/schemas/TokenScope" }
+    UserCreate:
+      type: object
+      required: [username]
+      properties:
+        username: { type: string }
+        password:
+          type: string
+          description: Required for a normal user; must be omitted for a robot account.
+        email: { type: string }
+        role_ids: { type: array, items: { type: integer } }
+        robot:
+          type: boolean
+          description: >
+            Create a token-only Robot Account: no password, interactive
+            login (password and OIDC session) is refused, but the account
+            can own personal access tokens for automation.
+    UserInput:
+      type: object
+      properties:
+        password: { type: string, description: New password (local users only). }
+        disabled: { type: boolean }
+        lockout_enabled: { type: boolean, description: Enable or disable account lockout after repeated failed logins. }
+        unlock: { type: boolean, description: Clear an active lockout immediately. }
+    ImpersonationInput:
+      type: object
+      required: [reason]
+      properties:
+        reason:
+          type: string
+          minLength: 10
+          maxLength: 500
+          description: Why the impersonation is needed; recorded in the server log.
+    RoleAssignmentCreate:
+      type: object
+      properties:
+        role_id: { type: integer }
+    PackageApprovalCreate:
+      type: object
+      required: [repo, package, status]
+      properties:
+        repo: { type: string }
+        package: { type: string, description: Canonical per-format package name. }
+        status: { type: string, enum: [approved, rejected] }
+        note: { type: string }
+    BulkApproveInput:
+      type: object
+      required: [repo, note]
+      properties:
+        repo: { type: string }
+        note:
+          type: string
+          description: Approval comment; required for a bulk approve (records who vouched for the whole queue).
+        clean_only:
+          type: boolean
+          description: When true, approve only packages whose scan is Clean (no known advisories); vulnerable and unscanned packages stay pending.
+    ApprovalDecisionInput:
+      type: object
+      properties:
+        note: { type: string }
+    VersionDenyCreate:
+      type: object
+      required: [repo, package, version]
+      properties:
+        repo: { type: string }
+        package: { type: string, description: Canonical per-format package name. }
+        version: { type: string, description: Exact version as it appears in request paths (go modules keep the "v" prefix). }
+        reason: { type: string }
+    GroupMappingCreate:
+      type: object
+      required: [group_name, role_id]
+      properties:
+        group_name: { type: string }
+        role_id: { type: integer }
+    WebhookTestInput:
+      type: object
+      required: [webhook_url]
+      properties:
+        webhook_url: { type: string }
+        name: { type: string }

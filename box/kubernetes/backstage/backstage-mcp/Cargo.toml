@@ -1,0 +1,73 @@
+[package]
+name = "backstage-mcp"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.98.1"
+authors = ["younsl <cysl@kakao.com>"]
+license = "Apache-2.0"
+description = "Read-only MCP server exposing the Backstage catalog, search, TechDocs and in-house plugins to AI agents"
+readme = "README.md"
+repository = "https://github.com/younsl/addons"
+homepage = "https://github.com/younsl/addons/tree/main/box/kubernetes/backstage/backstage-mcp"
+
+[[bin]]
+name = "backstage-mcp"
+path = "src/main.rs"
+
+[dependencies]
+# Async runtime
+tokio = { version = "1.41", features = ["macros", "rt-multi-thread", "signal", "net", "time", "sync", "io-std"] }
+tokio-util = { version = "0.7", features = ["rt"] }
+
+# MCP protocol (Streamable HTTP and stdio transports)
+rmcp = { version = "3.1", default-features = false, features = ["server", "macros", "transport-streamable-http-server", "transport-io"] }
+schemars = "1.0"
+
+# HTTP server (MCP endpoint, health)
+axum = { version = "0.8", features = ["tokio", "http1", "json"], default-features = false }
+tower-http = { version = "0.6", features = ["trace"] }
+
+# HTTP client (Backstage backend REST API)
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Config / CLI
+clap = { version = "4.5", features = ["derive"] }
+
+# Error handling
+anyhow = "1.0"
+thiserror = "2.0"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+
+# Misc
+subtle = "2.6"
+regex = "1.11"
+
+[dev-dependencies]
+wiremock = "0.6"
+tower = { version = "0.5", features = ["util"] }
+http-body-util = "0.1"
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+nursery = { level = "warn", priority = -1 }
+# Doc comments on the argument structs double as the JSON schema descriptions
+# shown to the model, where backticks and angle-bracketed URLs are noise.
+doc_markdown = "allow"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"

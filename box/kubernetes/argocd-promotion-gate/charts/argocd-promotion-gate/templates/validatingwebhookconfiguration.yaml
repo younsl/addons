@@ -1,0 +1,43 @@
+{{- include "argocd-promotion-gate.certs" . -}}
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  name: {{ include "argocd-promotion-gate.fullname" . }}
+  {{- if .Values.webhook.certManager.enabled }}
+  annotations:
+    cert-manager.io/inject-ca-from: {{ printf "%s/%s" .Release.Namespace (include "argocd-promotion-gate.fullname" .) }}
+  {{- end }}
+  labels:
+    {{- include "argocd-promotion-gate.labels" . | nindent 4 }}
+webhooks:
+  - name: {{ printf "%s.younsl.github.io" (include "argocd-promotion-gate.name" .) }}
+    admissionReviewVersions:
+      - v1
+    sideEffects: NoneOnDryRun
+    failurePolicy: {{ .Values.webhook.failurePolicy }}
+    timeoutSeconds: {{ .Values.webhook.timeoutSeconds }}
+    clientConfig:
+      service:
+        name: {{ include "argocd-promotion-gate.fullname" . }}
+        namespace: {{ .Release.Namespace }}
+        path: /validate
+        port: {{ .Values.service.webhookPort }}
+      {{- if not .Values.webhook.certManager.enabled }}
+      caBundle: {{ .Values.generatedCerts.ca }}
+      {{- end }}
+    rules:
+      - apiGroups:
+          - argoproj.io
+        apiVersions:
+          - v1alpha1
+        operations:
+          - CREATE
+          - UPDATE
+        resources:
+          - applications
+        scope: Namespaced
+    namespaceSelector:
+      matchLabels:
+        kubernetes.io/metadata.name: {{ .Values.promotionGate.argocd.namespace }}
+    matchConditions:
+      {{- include "argocd-promotion-gate.matchConditions" . | nindent 6 }}

@@ -1,0 +1,8 @@
+# Rust / build artifacts
+/target/
+**/*.rs.bk
+external-ebs-autoresizer-linux-*
+lcov.info
+
+# The repo-root .gitignore ignores any path named "config"; src/config is
+# re-included there, so nothing extra is needed for src/config/.

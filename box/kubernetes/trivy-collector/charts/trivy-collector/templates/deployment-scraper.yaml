@@ -1,0 +1,126 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "trivy-collector.scraperName" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "trivy-collector.scraperSelectorLabels" . | nindent 4 }}
+    helm.sh/chart: {{ include "trivy-collector.chart" . }}
+    {{- if .Chart.AppVersion }}
+    app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
+    {{- end }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+spec:
+  replicas: 1
+  strategy:
+    {{- toYaml .Values.scraper.strategy | nindent 4 }}
+  revisionHistoryLimit: {{ .Values.revisionHistoryLimit }}
+  selector:
+    matchLabels:
+      {{- include "trivy-collector.scraperSelectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "trivy-collector.scraperSelectorLabels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "trivy-collector.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: scraper
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          image: "{{ .Values.image.registry }}/{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args:
+            - --mode=scraper
+          env:
+            - name: MODE
+              value: "scraper"
+            {{- include "trivy-collector.commonEnv" . | nindent 12 }}
+            - name: STORAGE_PATH
+              value: {{ .Values.scraper.storage.mountPath | quote }}
+            - name: INTERNAL_PORT
+              value: {{ .Values.internal.port | quote }}
+            - name: CLUSTER_NAME
+              value: {{ .Values.clusterName | quote }}
+            {{- if .Values.scraper.namespaces }}
+            - name: NAMESPACES
+              value: {{ join "," .Values.scraper.namespaces | quote }}
+            {{- end }}
+            - name: WATCH_LOCAL
+              value: {{ .Values.scraper.watchLocal | quote }}
+            - name: COLLECT_VULN
+              value: {{ .Values.scraper.collect.vulnerabilityReports | quote }}
+            - name: COLLECT_SBOM
+              value: {{ .Values.scraper.collect.sbomReports | quote }}
+            - name: HUB_SECRET_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            {{- $externalUrl := include "trivy-collector.externalUrl" . }}
+            {{- if $externalUrl }}
+            - name: EXTERNAL_URL
+              value: {{ $externalUrl | quote }}
+            {{- end }}
+          ports:
+            - name: health
+              containerPort: {{ .Values.health.port }}
+              protocol: TCP
+            - name: internal
+              containerPort: {{ .Values.internal.port }}
+              protocol: TCP
+          livenessProbe:
+            {{- toYaml .Values.livenessProbe | nindent 12 }}
+          readinessProbe:
+            {{- toYaml .Values.scraper.readinessProbe | nindent 12 }}
+          resources:
+            {{- toYaml .Values.scraper.resources | nindent 12 }}
+          {{- with .Values.scraper.resizePolicy }}
+          resizePolicy:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          volumeMounts:
+            - name: data
+              mountPath: {{ .Values.scraper.storage.mountPath }}
+      volumes:
+        - name: data
+          emptyDir:
+            sizeLimit: {{ .Values.scraper.storage.sizeLimit }}
+            {{- with .Values.scraper.storage.medium }}
+            medium: {{ . }}
+            {{- end }}
+      {{- with .Values.scraper.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.scraper.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.scraper.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.scraper.topologySpreadConstraints }}
+      topologySpreadConstraints:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.dnsPolicy }}
+      dnsPolicy: {{ . }}
+      {{- end }}
+      {{- with .Values.dnsConfig }}
+      dnsConfig:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

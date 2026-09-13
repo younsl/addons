@@ -1,0 +1,52 @@
+{{- $apiVersion := include "argocd-canary-gate.apiVersions.monitoring" . }}
+{{- if and (.Capabilities.APIVersions.Has $apiVersion) .Values.serviceMonitor.enabled }}
+apiVersion: {{ $apiVersion }}
+kind: ServiceMonitor
+metadata:
+  name: {{ include "argocd-canary-gate.fullname" . }}
+  namespace: {{ default .Release.Namespace .Values.serviceMonitor.namespace | quote }}
+  labels:
+    {{- include "argocd-canary-gate.labels" . | nindent 4 }}
+    {{- with .Values.serviceMonitor.selector }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+    {{- with .Values.serviceMonitor.additionalLabels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- with .Values.serviceMonitor.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  endpoints:
+    - port: admin
+      path: /metrics
+      {{- with .Values.serviceMonitor.interval }}
+      interval: {{ . }}
+      {{- end }}
+      {{- with .Values.serviceMonitor.scrapeTimeout }}
+      scrapeTimeout: {{ . }}
+      {{- end }}
+      honorLabels: {{ .Values.serviceMonitor.honorLabels }}
+      {{- with .Values.serviceMonitor.scheme }}
+      scheme: {{ . }}
+      {{- end }}
+      {{- with .Values.serviceMonitor.tlsConfig }}
+      tlsConfig:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.serviceMonitor.relabelings }}
+      relabelings:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.serviceMonitor.metricRelabelings }}
+      metricRelabelings:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+  namespaceSelector:
+    matchNames:
+      - {{ .Release.Namespace }}
+  selector:
+    matchLabels:
+      {{- include "argocd-canary-gate.selectorLabels" . | nindent 6 }}
+{{- end }}

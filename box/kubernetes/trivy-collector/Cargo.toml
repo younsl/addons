@@ -1,0 +1,97 @@
+[package]
+name = "trivy-collector"
+version = "1.8.0"
+edition = "2024"
+rust-version = "1.98.1"
+authors = ["younsl <cysl@kakao.com>"]
+description = "Multi-cluster Trivy report collector and viewer"
+license = "Apache-2.0"
+repository = "https://github.com/younsl/addons"
+
+[dependencies]
+# Async runtime
+tokio = { version = "1.53", features = ["rt-multi-thread", "macros", "signal", "sync", "time", "net"] }
+
+# Kubernetes (collector mode)
+# Default features off to drop kube's `ring`: reqwest 0.13's `rustls` feature
+# hardwires aws-lc-rs, and rustls panics at the first handshake when both
+# providers are compiled in. aws-lc-rs is the single provider for both clients.
+kube = { version = "4.2", default-features = false, features = ["runtime", "derive", "client", "rustls-tls", "aws-lc-rs"] }
+k8s-openapi = { version = "0.28", features = ["v1_32"] }
+
+# HTTP client (collector mode)
+reqwest = { version = "0.13", features = ["json", "query", "form", "rustls"], default-features = false }
+
+# Web framework (server mode)
+axum = { version = "0.8.9", features = ["tokio"] }
+tower = "0.5.3"
+tower-http = { version = "0.7", features = ["cors", "fs"] }
+
+# MCP server (server mode, Streamable HTTP transport)
+rmcp = { version = "3.1.4", features = ["server", "macros", "schemars", "transport-streamable-http-server"] }
+tokio-util = "0.7.19"
+
+# OpenAPI documentation. The reference UI is Scalar, whose standalone bundle
+# ships as an embedded static asset, so no renderer crate is needed here.
+utoipa = { version = "5.5.0", features = ["axum_extras", "chrono"] }
+
+# Database (server mode)
+sqlx = { version = "0.9", features = ["runtime-tokio", "sqlite"] }
+
+# Serialization
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
+
+# CLI
+clap = { version = "4.6", features = ["derive", "env"] }
+
+# Trait objects with async methods (ReportStore)
+async-trait = "0.1.92"
+
+# Error handling
+anyhow = "1.0.104"
+thiserror = "2.0.20"
+
+# Metrics
+prometheus-client = "0.25.0"
+
+# Logging
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", features = ["env-filter", "json"] }
+
+# HTTP server utilities
+hyper = { version = "1.11", features = ["server", "http1"] }
+hyper-util = { version = "0.1.20", features = ["tokio"] }
+http-body-util = "0.1.5"
+
+# Authentication (OIDC)
+axum-extra = { version = "0.12.6", features = ["cookie", "cookie-private"] }
+cookie = "0.18.2"
+jsonwebtoken = "11"
+sha2 = "0.11"
+base64 = "0.23"
+rand = "0.10"
+
+# Hex encoding
+hex = "0.4"
+
+# URL encoding
+urlencoding = "2.1.3"
+
+# Utilities
+futures = "0.3.34"
+chrono = { version = "0.4.45", features = ["serde"] }
+rust-embed = "8.12"
+mime_guess = "2.0.5"
+schemars = "1.2.2"
+hostname = "0.4.2"
+
+[build-dependencies]
+vergen-gix = { version = "10", features = ["build", "cargo", "rustc"] }
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 16
+strip = true
+panic = "abort"

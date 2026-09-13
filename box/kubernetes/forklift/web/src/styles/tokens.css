@@ -1,0 +1,206 @@
+/* forklift UI design tokens.
+ *
+ * These are the v2 values, ported from the Theme collection of the
+ * forklift-redesign Figma file (key 3Tbmvu4lQmNPeoVs2zhttY, modes "Dark v2" and
+ * "Light v2"), with dark mode's neutral ramp re-anchored on black afterwards
+ * (see below). They are not hand-picked: each one is a step on a
+ * contrast-anchored neutral/hue ramp in the manner of Adobe Spectrum, where the
+ * step number IS a promise about contrast against that theme's canvas, and the
+ * same step means the same promise in both themes. That is what lets one
+ * semantic name serve dark and light without a second mapping.
+ *
+ * Dark mode keeps forklift's black canvas. What v1 got wrong there was not the
+ * black but the stack above it: #050506 with a #070708 sidebar measured 1.012,
+ * so the two read as one colour and only the border separated them. The ramp is
+ * re-anchored rather than lightened, on a neutral hue instead of v2's warm one,
+ * and the step ratios against the canvas are the ones the ramp asks for
+ * (1.04 / 1.11 / 1.22 / 1.49 for neutral 100-400). Every ink lands higher than
+ * it did on the warm canvas: the lowest text pair on the busiest text-bearing
+ * surface is 5.40:1 against the 4.77:1 that canvas produced.
+ *
+ * Audited against the pairs that actually occur in web/src rather than against
+ * the ramp: v1 failed AA on 16 text pairs (4 dark, 12 light); v2 fails on none.
+ * Severity separation went from 28.1 to 84.2 in dark and 31.3 to 44.0 in light.
+ * Two limits survive and are documented at the bottom of this block.
+ */
+:root,
+.dark {
+  --fx-canvas: #0a0a0b;            /* neutral/0 */
+  --fx-canvas-elevated: #17171a;   /* neutral/200 */
+  --fx-sidebar-bg: #101012;        /* neutral/100 */
+  --fx-surface-1: #17171a;
+  --fx-surface-2: #202024;         /* neutral/300 */
+  --fx-surface-3: #2f2f35;         /* neutral/400 */
+  --fx-surface-panel: #101012;
+  --fx-surface-panel-raised: #17171a;
+  --fx-surface-hover: #202024;
+  --fx-surface-selected: #2f2f35;
+  --fx-input: #17171a;
+  --fx-input-border: #45454c;      /* neutral/500 */
+  --fx-control: #17171a;
+  --fx-control-hover: #202024;
+  --fx-border: #2f2f35;
+  --fx-border-subtle: #202024;
+  --fx-border-strong: #5e5e66;     /* neutral/600 */
+  /* Text sits on panels, not on bare canvas, so these are anchored at the 900
+     step (8.1:1 against canvas) rather than the 700 step that nominally marks
+     the 4.5:1 line. Anchoring at 700 measured 4.3 on a panel. */
+  --fx-text: #e2ded7;              /* neutral/1100 */
+  --fx-text-muted: #c4c0ba;        /* neutral/1000 */
+  --fx-text-subtle: #a9a59f;       /* neutral/900 */
+  /* The accent carries three separate jobs, and one value cannot do all three
+     in light mode. Yellow is inherently light, so a yellow that reads as yellow
+     can never be 4.5:1 against a pale grey surface -- solving for that is what
+     turned the light accent into #584600 olive and cost the brand its colour.
+     Splitting the role gives the yellow back:
+
+       --fx-accent            the FILL. Yellow in both themes. Buttons, badges,
+                              switch tracks, progress bars, checked boxes.
+       --fx-accent-foreground the ink that sits ON that fill.
+       --fx-accent-ink        the accent used as ink ON a surface -- text,
+                              borders, focus rings. This is the only job that
+                              hands the yellow over, and only in light mode.
+
+     Verified across every fill, surface and 10/20% tint combination. */
+  --fx-accent: #c7a100;            /* accent/900 */
+  --fx-accent-hover: #d8bf73;      /* accent/1000 */
+  --fx-accent-pressed: #b08e01;    /* accent/800 */
+  --fx-accent-foreground: #0a0a0b; /* on the fill, 8.03:1 */
+  /* Dark surfaces are dark enough that the fill colour also works as ink:
+     5.40:1 on the busiest surface. So dark mode needs no split in practice. */
+  --fx-accent-ink: #c7a100;
+  --fx-success: #00c055;           /* green/900 */
+  --fx-warning: #bca600;           /* yellow/900 */
+  --fx-danger: #ff7e83;            /* red/900 */
+  --fx-danger-hover: #ffaaaa;      /* red/1000 */
+  /* Dark ink, not white: white on the danger fill is 2.31:1, and the
+     impersonation banner in app-shell.tsx paints text directly on it. */
+  --fx-danger-foreground: #0a0a0b;
+  /* The third rung of the policy severity ladder, below block and warn. It was
+     written as a literal #60a5fa in -detail.tsx and so rendered the same in both
+     themes, where it measured 1.82:1 on a light panel. */
+  --fx-info: #54aafe;              /* blue/900 */
+  --fx-severity-critical: #ff7e83;
+  --fx-severity-high: #ff842f;     /* orange/900 */
+  --fx-severity-medium: #bca600;
+  --fx-severity-low: #c4c0ba;
+  /* GitLab CI viewer tokens. The pipeline is rendered line by line so matched
+     lines can carry their own background, which rules out a prebuilt highlighter
+     theme. v1 borrowed One Dark here and Atom One Light in .light, two palettes
+     tuned for editors on their own backgrounds. These are drawn from the same
+     ramp as everything else and verified against --fx-surface-panel-raised,
+     which is the surface gitlab-ci-view.tsx actually renders the log on. */
+  --fx-code-job: #c7a100;
+  --fx-code-keyword: #54aafe;
+  --fx-code-key: #c090f5;          /* violet/900 */
+  --fx-code-string: #ff842f;
+  --fx-code-variable: #00c055;
+  --fx-code-literal: #d3b3f8;      /* violet/1000 */
+  --fx-code-number: #00de63;       /* green/1000 */
+  --fx-code-comment: #a9a59f;
+  --fx-code-punct: #c4c0ba;
+  --fx-code-hit: color-mix(in oklch, var(--fx-success) 18%, transparent);
+  --fx-radius-sm: 6px;
+  --fx-radius-md: 8px;
+  --fx-radius-lg: 10px;
+  --fx-radius-xl: 14px;
+  --fx-radius-2xl: 20px;
+  --fx-sidebar-width: 236px;
+  --fx-content-max: 1120px;
+  --fx-main-gutter-x: clamp(10px, 1.8vw, 24px);
+  --fx-main-gutter-y: clamp(10px, 1.8vw, 24px);
+  --fx-page-x: clamp(28px, 6vw, 64px);
+  --fx-page-x-wide: clamp(20px, 3vw, 40px);
+  --fx-page-y: clamp(40px, 7vw, 72px);
+  /* Tighter and less blurred than v1's 24px/80px: on a canvas this dark a wide
+     soft shadow reads as haze rather than as height. */
+  --fx-overlay-shadow: 0 20px 64px rgba(0, 0, 0, 0.45);
+  --fx-panel-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  /* Drawn from the ink tone, not the fill, for the same 3:1 reason as
+     --color-ring. */
+  --fx-focus-shadow: 0 0 0 3px color-mix(in oklch, var(--fx-accent-ink) 40%, transparent);
+  --fx-login-glow: rgba(120, 96, 0, 0.05);
+  --fx-login-wave: rgba(222, 219, 212, 0.031);
+  --fx-body-gradient-start: #0a0a0b;
+  /* Known limits, unchanged from v1 and not regressions:
+     1. --fx-input-border against --fx-input is 1.88:1, below the 3:1 that
+        WCAG 1.4.11 asks of a control whose boundary is its only indicator.
+        Raising it to the 600 step would make every input outline as loud as a
+        focus ring, so it is left for a decision about input styling as a whole.
+     2. Severity separation in light mode is 44.0 against dark's 84.2, because
+        light orange and light yellow converge. Severity must not rely on colour
+        alone there; the badge needs an icon. */
+  color-scheme: dark;
+}
+
+/* Light is the same ramp read from the other end, not a separately tuned palette.
+ * Every role below sits on the same step number as its dark counterpart, which
+ * is why the semantic names above need no light-specific remapping.
+ *
+ * The surfaces are darker than v1's near-white stack. v1 started at #fbfaf6 and
+ * had almost nowhere to go — panel against panel-raised measured 1.026, so a
+ * raised row inside a panel was invisible. Starting lower buys the room back.
+ */
+.light {
+  --fx-canvas: #e9e7e3;
+  --fx-canvas-elevated: #dedbd4;
+  --fx-sidebar-bg: #e5e1db;
+  --fx-surface-1: #dedbd4;
+  --fx-surface-2: #d3d0c9;
+  --fx-surface-3: #bebbb5;
+  --fx-surface-panel: #e5e1db;
+  --fx-surface-panel-raised: #dedbd4;
+  --fx-surface-hover: #d3d0c9;
+  --fx-surface-selected: #bebbb5;
+  --fx-input: #dedbd4;
+  --fx-input-border: #a4a19a;
+  --fx-control: #dedbd4;
+  --fx-control-hover: #d3d0c9;
+  --fx-border: #bebbb5;
+  --fx-border-subtle: #d3d0c9;
+  --fx-border-strong: #88847e;
+  --fx-text: #201d19;
+  --fx-text-muted: #37352f;
+  --fx-text-subtle: #4b4842;
+  /* Forklift yellow, at the most chroma the gamut allows at this lightness. It
+     is 1.08-1.44:1 against the surfaces, so a yellow fill does not outline
+     itself here the way it does on a dark canvas -- controls that need a visible
+     boundary take a --fx-accent-ink hairline, which is 4.79:1 or better on every
+     surface. The dark ink on this fill is 9.53:1. */
+  --fx-accent: #e9be00;
+  --fx-accent-hover: #d8b000;      /* darkens on hover, 8.16:1 with the ink */
+  --fx-accent-pressed: #c7a100;    /* 6.87:1 with the ink */
+  --fx-accent-foreground: #241c00;
+  /* The dark end of the same gold. 7.42:1 on canvas, 4.79:1 on the busiest
+     surface, and 4.77:1 through a 10% yellow tint. */
+  --fx-accent-ink: #584600;
+  --fx-success: #005521;
+  --fx-warning: #534900;
+  --fx-danger: #920c25;
+  --fx-danger-hover: #6e0619;
+  --fx-danger-foreground: #e9e7e3;
+  --fx-info: #204b73;
+  --fx-severity-critical: #920c25;
+  --fx-severity-high: #793302;
+  --fx-severity-medium: #534900;
+  --fx-severity-low: #37352f;
+  /* Same ramp as the dark code tokens, read from the dark end. Verified against
+     --fx-surface-panel-raised, the surface gitlab-ci-view.tsx renders on. */
+  --fx-code-job: #584600;
+  --fx-code-keyword: #204b73;
+  --fx-code-key: #553e6e;
+  --fx-code-string: #793302;
+  --fx-code-variable: #005521;
+  --fx-code-literal: #3f2d52;
+  --fx-code-number: #003d16;
+  --fx-code-comment: #4b4842;
+  --fx-code-punct: #37352f;
+  --fx-code-hit: color-mix(in oklch, var(--fx-success) 14%, transparent);
+  --fx-overlay-shadow: 0 20px 64px rgba(29, 29, 27, 0.16);
+  --fx-panel-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.7);
+  --fx-focus-shadow: 0 0 0 3px color-mix(in oklch, var(--fx-accent-ink) 40%, transparent);
+  --fx-login-glow: rgba(160, 129, 0, 0.04);
+  --fx-login-wave: rgba(35, 33, 28, 0.035);
+  --fx-body-gradient-start: #e9e7e3;
+  color-scheme: light;
+}

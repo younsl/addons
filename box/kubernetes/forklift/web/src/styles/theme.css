@@ -1,0 +1,67 @@
+/* The bridge from forklift's --fx-* tokens to the namespaces Tailwind and
+ * shadcn generate utilities from. Nothing here holds a literal value: every
+ * line points at a token defined in tokens.css, which is what lets a class
+ * like `bg-card` or `text-sm` follow the design system without being touched.
+ *
+ * @theme merges with Tailwind's own defaults rather than replacing them, so a
+ * key omitted here keeps Tailwind's value -- that is how --text-*--line-height
+ * survives while only --text-* is overridden.
+ */
+
+@theme inline {
+  --color-background: var(--fx-canvas);
+  --color-foreground: var(--fx-text);
+  --color-card: var(--fx-surface-1);
+  --color-card-foreground: var(--fx-text);
+  --color-popover: var(--fx-surface-2);
+  --color-popover-foreground: var(--fx-text);
+  /* `primary` stays the FILL, matching what shadcn means by it, so a component
+     copied in from shadcn still gets a yellow button from `bg-primary`. The
+     accent-as-ink role is a separate key rather than a reinterpretation of this
+     one, precisely so that convention keeps holding. */
+  --color-primary: var(--fx-accent);
+  --color-primary-foreground: var(--fx-accent-foreground);
+  /* The accent used ON a surface: `text-accent-ink`, `border-accent-ink`,
+     `ring-accent-ink`. Distinct from shadcn's `accent`, which is the hover
+     surface, and from `primary-foreground`, which is the ink on the fill. */
+  --color-accent-ink: var(--fx-accent-ink);
+  --color-secondary: var(--fx-surface-2);
+  --color-secondary-foreground: var(--fx-text);
+  --color-muted: var(--fx-surface-2);
+  --color-muted-foreground: var(--fx-text-muted);
+  --color-accent: var(--fx-surface-hover);
+  --color-accent-foreground: var(--fx-text);
+  --color-destructive: var(--fx-danger);
+  --color-destructive-foreground: var(--fx-danger-foreground);
+  --color-border: var(--fx-border);
+  --color-input: var(--fx-input-border);
+  /* Rings are non-text UI at 3:1; the yellow fill cannot reach it on a pale
+     surface, so the ring is drawn in the ink tone. */
+  --color-ring: var(--fx-accent-ink);
+  --color-sidebar: var(--fx-surface-1);
+  --color-sidebar-foreground: var(--fx-text);
+  --color-sidebar-primary: var(--fx-accent);
+  --color-sidebar-primary-foreground: var(--fx-accent-foreground);
+  --color-sidebar-accent: var(--fx-surface-2);
+  --color-sidebar-accent-foreground: var(--fx-text);
+  --color-sidebar-border: var(--fx-border);
+  --color-sidebar-ring: var(--fx-accent-ink);
+  --radius-sm: var(--fx-radius-sm);
+  --radius-md: var(--fx-radius-md);
+  --radius-lg: var(--fx-radius-lg);
+  --radius-xl: var(--fx-radius-xl);
+  --radius-2xl: var(--fx-radius-2xl);
+  /* Registering the type scale here is what lets `text-sm` and friends follow a
+     token instead of Tailwind's built-in rem values. Around 480 call sites use
+     these utilities, and none of them have to change. The paired
+     --text-*--line-height defaults in tailwindcss/theme.css survive, because a
+     @theme block merges rather than replaces, and they are unitless ratios so
+     they hold whatever size the token resolves to. */
+  --text-xs: var(--fx-text-xs);
+  --text-sm: var(--fx-text-sm);
+  --text-base: var(--fx-text-base);
+  --text-lg: var(--fx-text-lg);
+  --text-xl: var(--fx-text-xl);
+  --text-2xl: var(--fx-text-2xl);
+  --text-3xl: var(--fx-text-3xl);
+}

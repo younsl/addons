@@ -1,0 +1,69 @@
+/* An older vocabulary for the same colours: --panel is --fx-surface-1, --text
+ * is --fx-text, and so on. Around 75 call sites still use these names, which
+ * means the codebase has two ways to say one colour. Kept as a pure alias
+ * layer so it cannot drift from tokens.css, and left for a later sweep that
+ * rewrites those call sites onto --fx-*.
+ *
+ * The type scale and font stacks live here rather than in tokens.css because
+ * they do not vary by theme.
+ */
+:root {
+  --bg: var(--fx-canvas);
+  --panel: var(--fx-surface-1);
+  --panel-2: var(--fx-surface-2);
+  --panel-3: var(--fx-surface-3);
+  --border: var(--fx-border);
+  --border-strong: var(--fx-border-strong);
+  --text: var(--fx-text);
+  --muted: var(--fx-text-muted);
+  --subtle: var(--fx-text-subtle);
+  /* Every remaining consumer of this alias uses the accent as ink rather than
+     as a fill: a link hover colour, the animated policy-node hairline, a 2px
+     severity bar, a graph edge, a sort arrow. All of those are text or
+     non-text UI that needs 4.5:1 or 3:1, which the yellow fill cannot reach
+     on a pale surface. Fills go through bg-primary instead. */
+  --accent: var(--fx-accent-ink);
+  --accent-hover: var(--fx-accent-hover);
+  --accent-pressed: var(--fx-accent-pressed);
+  --success: var(--fx-success);
+  --warning: var(--fx-warning);
+  --danger: var(--fx-danger);
+  --danger-hover: var(--fx-danger-hover);
+  --input-bg: var(--fx-input);
+  --radius: var(--fx-radius-lg);
+  /* Type scale. Identical to Tailwind's own values for now, so registering it in
+     @theme changes nothing on screen — the point is to have somewhere to change
+     it. The console also uses 9-13px sizes through arbitrary values in 17 files;
+     those bypass this scale and are not promoted to steps yet. */
+  --fx-text-xs: 0.75rem;
+  --fx-text-sm: 0.875rem;
+  --fx-text-base: 1rem;
+  --fx-text-lg: 1.125rem;
+  --fx-text-xl: 1.25rem;
+  --fx-text-2xl: 1.5rem;
+  --fx-text-3xl: 1.875rem;
+  --font-sans:
+    "Noto Sans KR",
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    "Apple SD Gothic Neo",
+    "Noto Sans JP",
+    "Noto Sans SC",
+    "Noto Sans CJK KR",
+    "Noto Sans CJK JP",
+    "Noto Sans CJK SC",
+    "Malgun Gothic",
+    "Microsoft YaHei",
+    "Meiryo",
+    sans-serif;
+  --font-mono:
+    "SFMono-Regular",
+    "SF Mono",
+    Consolas,
+    "Liberation Mono",
+    "Noto Sans Mono CJK KR",
+    monospace;
+}

@@ -1,0 +1,32 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "ahen.fullname" . }}-filter
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "ahen.labels" . | nindent 4 }}
+data:
+  {{- with .Values.filter.allowCategories }}
+  ALLOW_CATEGORIES: {{ join "," . | quote }}
+  {{- end }}
+  {{- with .Values.filter.denyCategories }}
+  DENY_CATEGORIES: {{ join "," . | quote }}
+  {{- end }}
+  {{- with .Values.filter.allowServices }}
+  ALLOW_SERVICES: {{ join "," . | quote }}
+  {{- end }}
+  {{- with .Values.filter.denyServices }}
+  DENY_SERVICES: {{ join "," . | quote }}
+  {{- end }}
+  {{- with .Values.filter.allowRegions }}
+  ALLOW_REGIONS: {{ join "," . | quote }}
+  {{- end }}
+  {{- with .Values.filter.denyRegions }}
+  DENY_REGIONS: {{ join "," . | quote }}
+  {{- end }}
+  {{- with .Values.filter.allowEventCodes }}
+  ALLOW_EVENT_CODES: {{ join "," . | quote }}
+  {{- end }}
+  {{- with .Values.filter.denyEventCodes }}
+  DENY_EVENT_CODES: {{ join "," . | quote }}
+  {{- end }}

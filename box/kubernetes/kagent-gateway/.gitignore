@@ -1,0 +1,13 @@
+# Rust / build artifacts
+/target/
+**/*.rs.bk
+
+# Cross-compiled binaries staged for docker build
+kagent-gateway-linux-*
+
+# Helm
+charts/**/charts/
+charts/**/*.tgz
+
+# OS
+.DS_Store

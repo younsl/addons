@@ -1,0 +1,43 @@
+# Build artifacts
+/bin/
+/forklift
+# Staged into the image build context by `make docker-context`
+/forklift-linux-*
+/forklift-mcp-linux-*
+/target/
+cover.out
+*.test
+*.profraw
+
+# Local data dir
+/.data*/
+
+# Throwaway data dir for browser tests, plus the signed-in cookies
+# global setup leaves for them
+/.e2e-data/
+web/test/e2e/.auth/
+
+# Local config files
+/config/
+!config
+
+# Node / Vite
+web/node_modules/
+web/.vite/
+web/playwright-report/
+web/storybook-static/
+web/test-results/
+site/node_modules/
+site/.vite/
+site/dist/
+/.pnpm-store/
+
+# Embedded UI build output: keep the committed placeholder index.html so the
+# binary always builds, but ignore compiled assets produced by `make web-build`.
+src/webui/dist/assets/
+src/webui/dist/*.js
+src/webui/dist/*.css
+
+# Packaged Helm charts
+*.tgz
+src/webui/dist/*.gz

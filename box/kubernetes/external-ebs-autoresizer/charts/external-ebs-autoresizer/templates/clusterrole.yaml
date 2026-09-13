@@ -1,0 +1,44 @@
+{{- if .Values.rbac.create -}}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "external-ebs-autoresizer.fullname" . }}
+  labels:
+    {{- include "external-ebs-autoresizer.labels" . | nindent 4 }}
+rules:
+  {{- if .Values.config.throughputRecommendation.enabled }}
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs:
+      - get
+      - list
+      - patch
+  {{- end }}
+  # The unused volume scan is always on. It reads Pods and StatefulSets to decide
+  # which claims have a consumer, and annotates only the claims and volumes it
+  # finds unused. There is no delete verb anywhere: identifying an unused volume
+  # is its whole job.
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs:
+      - list
+  - apiGroups: ["apps"]
+    resources: ["statefulsets"]
+    verbs:
+      - list
+  - apiGroups: [""]
+    resources: ["persistentvolumeclaims", "persistentvolumes"]
+    verbs:
+      - get
+      - list
+      - patch
+  # Events about Nodes, claims, and volumes land in the object's own namespace or
+  # in "default", never in the release namespace, so they need the cluster-scoped
+  # grant rather than the Role's.
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs:
+      - create
+      - patch
+      - update
+{{- end }}

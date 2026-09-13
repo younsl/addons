@@ -1,0 +1,18 @@
+apiVersion: v2
+name: backstage-mcp
+description: Read-only MCP server exposing the Backstage catalog, search, TechDocs and in-house plugins to AI agents such as kagent
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords:
+  - backstage
+  - mcp
+  - kagent
+  - developer-portal
+home: https://github.com/younsl/addons
+sources:
+  - https://github.com/younsl/addons/tree/main/box/kubernetes/backstage/backstage-mcp
+maintainers:
+  - name: younsl
+    email: cysl@kakao.com
+    url: https://github.com/younsl

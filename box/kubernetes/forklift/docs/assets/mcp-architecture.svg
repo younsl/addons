@@ -1,0 +1,93 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 380" font-family="-apple-system, Segoe UI, Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L8,3 L0,6 Z" fill="#111111"/>
+    </marker>
+    <marker id="arrowgray" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L8,3 L0,6 Z" fill="#888888"/>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="1000" height="380" fill="#ffffff"/>
+
+  <!-- cluster boundary -->
+  <rect x="300" y="30" width="680" height="320" rx="10" fill="#ffffff" stroke="#111111" stroke-width="1.5" stroke-dasharray="6 4"/>
+  <text x="316" y="52" font-size="14" font-weight="700" fill="#111111">Kubernetes cluster</text>
+
+  <!-- forklift namespace -->
+  <rect x="336" y="68" width="618" height="172" rx="8" fill="#ffffff" stroke="#888888" stroke-width="1.2" stroke-dasharray="4 3"/>
+  <text x="350" y="86" font-size="11" font-weight="700" fill="#555555">namespace: forklift</text>
+
+  <!-- MCP clients -->
+  <g>
+    <rect x="24" y="115" width="150" height="90" rx="6" fill="#111111" stroke="#111111"/>
+    <text x="99" y="139" text-anchor="middle" font-size="12" font-weight="700" fill="#ffffff">MCP clients</text>
+    <g font-size="9.5" fill="#cccccc" text-anchor="middle">
+      <text x="99" y="159">kagent Agent</text>
+      <text x="99" y="175">Claude Code</text>
+      <text x="99" y="191">mcp-inspector</text>
+    </g>
+  </g>
+
+  <!-- forklift-mcp pod -->
+  <g>
+    <rect x="360" y="100" width="200" height="120" rx="6" fill="#111111" stroke="#111111" stroke-width="2.5"/>
+    <text x="460" y="124" text-anchor="middle" font-size="12" font-weight="700" fill="#ffffff">Pod: forklift-mcp</text>
+    <g font-size="11" fill="#dddddd">
+      <text x="376" y="148">37 MCP tools</text>
+      <text x="376" y="170">stateless proxy</text>
+      <text x="376" y="192">token passthrough</text>
+      <text x="376" y="206" font-size="9.5" fill="#999999">no stored credentials</text>
+    </g>
+  </g>
+
+  <!-- forklift Service -->
+  <g>
+    <rect x="610" y="134" width="84" height="52" rx="6" fill="#ffffff" stroke="#111111" stroke-width="1.5"/>
+    <text x="652" y="164" text-anchor="middle" font-size="12" font-weight="700" fill="#111111">Service</text>
+  </g>
+
+  <!-- forklift leader pod -->
+  <g>
+    <rect x="738" y="100" width="200" height="120" rx="6" fill="#111111" stroke="#111111" stroke-width="2.5"/>
+    <text x="838" y="124" text-anchor="middle" font-size="12" font-weight="700" fill="#ffffff">Pod: forklift (leader)</text>
+    <g font-size="11" fill="#dddddd">
+      <text x="754" y="152">management API</text>
+      <text x="754" y="174">RBAC decides</text>
+      <text x="754" y="196">audit log</text>
+    </g>
+  </g>
+
+  <!-- Prometheus -->
+  <g>
+    <rect x="360" y="280" width="200" height="54" rx="6" fill="#f6f6f6" stroke="#999999" stroke-width="1.2" stroke-dasharray="4 3"/>
+    <text x="460" y="304" text-anchor="middle" font-size="11" font-weight="700" fill="#333333">Prometheus</text>
+    <text x="460" y="320" text-anchor="middle" font-size="9.5" fill="#777777">tool calls, latency, upstream</text>
+  </g>
+
+  <!-- edges -->
+  <g stroke="#111111" stroke-width="1.5" fill="none">
+    <path d="M174,160 H360" marker-end="url(#arrow)"/>
+    <path d="M560,160 H610" marker-end="url(#arrow)"/>
+    <path d="M694,160 H738" marker-end="url(#arrow)"/>
+  </g>
+  <g stroke="#888888" stroke-width="1.2" fill="none">
+    <path d="M460,280 V226" marker-end="url(#arrowgray)"/>
+  </g>
+
+  <!-- label backgrounds -->
+  <g stroke="none" fill="#ffffff">
+    <rect x="178" y="128" width="94" height="26" rx="2"/>
+    <rect x="466" y="254" width="106" height="13" rx="2"/>
+  </g>
+
+  <!-- edge labels -->
+  <g font-size="9.5" fill="#333333">
+    <text x="182" y="138">streamable HTTP</text>
+    <text x="182" y="150">/mcp + Bearer</text>
+    <text x="652" y="126" text-anchor="middle">/api/v1/*</text>
+  </g>
+  <g font-size="9.5" fill="#777777">
+    <text x="470" y="264">scrape :8081 /metrics</text>
+  </g>
+</svg>

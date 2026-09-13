@@ -1,0 +1,231 @@
+name: CI Forklift
+
+run-name: "🧪 CI forklift on ${{ github.ref_name }}"
+
+# Proves a forklift change before it lands; the release workflow re-runs these checks.
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'box/kubernetes/forklift/**'
+      - '.github/workflows/ci-forklift.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'box/kubernetes/forklift/**'
+      - '.github/workflows/ci-forklift.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: ci-forklift-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  RUST_VERSION: "1.98.1"
+  # The external OCI distribution-spec conformance suite requires Go.
+  GO_VERSION: "1.27.1"
+  NODE_VERSION: "24"
+  PNPM_VERSION: "11.8.0"
+  COVERAGE_MIN: "70"
+  # Matches the chart release workflow
+  HELM_VERSION: "v3.19.0"
+
+defaults:
+  run:
+    working-directory: box/kubernetes/forklift
+
+jobs:
+  # The console is built first: the binary embeds src/webui/dist.
+  rust:
+    name: Rust
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: ${{ env.PNPM_VERSION }}
+          run_install: false
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+          cache-dependency-path: box/kubernetes/forklift/web/pnpm-lock.yaml
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+          components: rustfmt, clippy, llvm-tools-preview
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: box/kubernetes/forklift
+
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
+
+      - name: Build web UI
+        run: |
+          pnpm --dir web install --frozen-lockfile
+          pnpm --dir web run build
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      - name: Clippy
+        run: cargo clippy --all-targets --locked -- -D warnings
+
+      - name: Test with coverage
+        run: |
+          cargo llvm-cov --all-targets --locked --summary-only --json --output-path cover.json
+          total=$(python3 -c 'import json; print(json.load(open("cover.json"))["data"][0]["totals"]["lines"]["percent"])')
+          echo "total coverage: ${total}% (min ${COVERAGE_MIN}%)"
+          awk "BEGIN { exit !(${total} >= ${COVERAGE_MIN}) }" || { echo "::error::coverage below ${COVERAGE_MIN}%"; exit 1; }
+
+  # The build runs tsc and route-tree generation, so type errors fail here.
+  web:
+    name: Web
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: ${{ env.PNPM_VERSION }}
+          run_install: false
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+          cache-dependency-path: box/kubernetes/forklift/web/pnpm-lock.yaml
+
+      - name: Install
+        run: pnpm --dir web install --frozen-lockfile
+
+      - name: Audit web dependencies (including development)
+        run: pnpm --dir web audit
+
+      - name: Build (type check included)
+        run: pnpm --dir web run build
+
+      - name: Unit tests
+        run: pnpm --dir web run test
+
+  # Render the configurations that differ structurally, not just the default.
+  chart:
+    name: Chart
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Helm
+        uses: azure/setup-helm@v5
+        with:
+          version: ${{ env.HELM_VERSION }}
+
+      # The bundled minio dependency is gitignored, so a fresh checkout must fetch it
+      - name: Build chart dependencies
+        run: helm dependency update charts/forklift
+
+      - name: Lint
+        run: helm lint charts/forklift
+
+      - name: Render
+        run: |
+          set -euo pipefail
+          helm template rel charts/forklift > /dev/null
+          helm template rel charts/forklift --set mcp.enabled=true > /dev/null
+          helm template rel charts/forklift --set ingress.enabled=true > /dev/null
+
+  # The official distribution-spec conformance suite against a live binary.
+  oci-conformance:
+    name: OCI conformance
+    runs-on: ubuntu-24.04
+    env:
+      OCI_SPEC_VERSION: v1.1.1
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: ${{ env.PNPM_VERSION }}
+          run_install: false
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+          cache-dependency-path: box/kubernetes/forklift/web/pnpm-lock.yaml
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: box/kubernetes/forklift
+
+      - name: Build web UI
+        run: |
+          pnpm --dir web install --frozen-lockfile
+          pnpm --dir web run build
+
+      - name: Build and start forklift
+        run: |
+          cargo build --release --locked --bin forklift
+          FORKLIFT_DATA_DIR="$RUNNER_TEMP/data" FORKLIFT_BOOTSTRAP_ADMIN_PASSWORD=conftest ./target/release/forklift &
+          for _ in $(seq 1 30); do curl -fsu admin:conftest http://localhost:8080/v2/ && break; sleep 1; done
+          curl -fsu admin:conftest http://localhost:8080/v2/
+
+      - name: Checkout distribution-spec
+        uses: actions/checkout@v6
+        with:
+          repository: opencontainers/distribution-spec
+          ref: ${{ env.OCI_SPEC_VERSION }}
+          path: distribution-spec
+
+      - name: Setup Go (conformance suite runtime)
+        uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: distribution-spec/conformance/go.sum
+
+      - name: Run conformance suite
+        working-directory: distribution-spec/conformance
+        env:
+          OCI_ROOT_URL: http://localhost:8080
+          OCI_NAMESPACE: oci-hosted/conformance/testrepo
+          OCI_CROSSMOUNT_NAMESPACE: oci-hosted/conformance/other
+          OCI_USERNAME: admin
+          OCI_PASSWORD: conftest
+          OCI_TEST_PULL: "1"
+          OCI_TEST_PUSH: "1"
+          OCI_TEST_CONTENT_DISCOVERY: "1"
+          OCI_TEST_CONTENT_MANAGEMENT: "1"
+        run: go test .
+
+      - name: Upload report
+        if: failure()
+        uses: actions/upload-artifact@v6
+        with:
+          name: oci-conformance-report
+          path: distribution-spec/conformance/report.html

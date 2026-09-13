@@ -1,0 +1,167 @@
+image:
+  # -- (string) Container image registry host
+  registry: ghcr.io
+  # -- (string) Container image repository path without registry prefix
+  repository: younsl/backstage-mcp
+  # -- (string) Image tag; defaults to the chart appVersion when empty
+  tag: ""
+  # -- (string) Image pull policy
+  pullPolicy: IfNotPresent
+
+# -- (list) Image pull secrets for private registries
+imagePullSecrets: []
+# -- (string) Override the chart name
+nameOverride: ""
+# -- (string) Override the fully qualified release name
+fullnameOverride: ""
+
+# -- (int) Number of replicas. The server is stateless (every MCP request is served on its own), so replicas can be raised freely.
+replicaCount: 1
+
+# -- (int) Number of old ReplicaSets to retain for rollback
+revisionHistoryLimit: 3
+
+# -- (object) Deployment update strategy
+strategy:
+  type: RollingUpdate
+  rollingUpdate:
+    # -- (string|int) Max Pods created above desired count during an update
+    maxSurge: 25%
+    # -- (string|int) Max Pods unavailable during an update
+    maxUnavailable: 25%
+
+backstage:
+  # -- (string) Backstage backend base URL the tools read from, typically the in-cluster Service of the official Backstage chart
+  url: "http://backstage.backstage.svc:7007"
+  # -- (string) Name of an existing Secret holding the Backstage external-access token. Leave empty to create one from `backstage.token`.
+  existingSecret: ""
+  # -- (string) Key inside the Secret holding the Backstage token
+  existingSecretKey: "BACKSTAGE_TOKEN"
+  # -- (string) Static token declared under `backend.auth.externalAccess` in the Backstage app-config. Only used when `backstage.existingSecret` is empty; prefer an externally managed Secret.
+  token: ""
+  # -- (int) Timeout in seconds for one request to Backstage
+  requestTimeoutSeconds: 30
+
+mcp:
+  # -- (string) Path the MCP endpoint is served on
+  path: "/mcp"
+  # -- (int) Upper bound on the characters of one tool result; longer payloads are cut with a note asking the model to narrow the query
+  maxResultChars: 100000
+  # -- (string) Name of an existing Secret holding the bearer token MCP clients must present. Leave empty to create one from `mcp.bearerToken`, or leave both empty to serve the endpoint without authentication.
+  existingSecret: ""
+  # -- (string) Key inside the Secret holding the raw bearer token
+  existingSecretKey: "MCP_BEARER_TOKEN"
+  # -- (string) Key inside the Secret holding the full `Authorization` header value (`Bearer <token>`), which is what a kagent RemoteMCPServer reads through `headersFrom`. The chart-managed Secret always carries it.
+  existingSecretAuthorizationKey: "AUTHORIZATION"
+  # -- (string) Bearer token MCP clients must present. Only used when `mcp.existingSecret` is empty.
+  bearerToken: ""
+
+kagent:
+  remoteMCPServer:
+    # -- (bool) Create a kagent RemoteMCPServer pointing at this Service so Agents can reference the tools by name. The resource is created in the release namespace, and kagent resolves `headersFrom` Secrets in the Agent's namespace, so install the chart where the Agents live or copy the bearer Secret there.
+    enabled: false
+    # -- (string) API version of the RemoteMCPServer resource
+    apiVersion: kagent.dev/v1alpha3
+    # -- (string) Name of the RemoteMCPServer; empty uses the release fullname
+    name: ""
+    # -- (string) Description shown by kagent
+    description: "Read-only Backstage catalog, search, TechDocs and plugin data"
+    # -- (string) Per-request timeout kagent applies to tool calls
+    timeout: "30s"
+    # -- (string) How long kagent keeps an idle streaming response open
+    sseReadTimeout: "5m"
+    # -- (object) `spec.allowedNamespaces` to let Agents in other namespaces reference the server, passed through as written
+    allowedNamespaces: {}
+
+log:
+  # -- (string) Log level: debug, info, warn, error
+  level: "info"
+  # -- (string) Log format: json or text
+  format: "json"
+
+# -- (list) Extra environment variables for the container
+extraEnv: []
+
+# -- (list) Extra `envFrom` sources for the container
+extraEnvFrom: []
+
+ports:
+  # -- (int) Port the MCP endpoint and probes listen on
+  http: 8080
+
+serviceAccount:
+  # -- (bool) Create a ServiceAccount
+  create: true
+  # -- (string) ServiceAccount name; empty uses the release fullname
+  name: ""
+  # -- (object) Annotations for the ServiceAccount
+  annotations: {}
+  # -- (bool) Mount the ServiceAccount token into the pod. The server never calls the Kubernetes API, so it is off.
+  automountServiceAccountToken: false
+  # -- (list) Image pull secrets attached to the ServiceAccount
+  imagePullSecrets: []
+
+service:
+  # -- (bool) Create a Service in front of the pods
+  enabled: true
+  # -- (string) Service type
+  type: ClusterIP
+  # -- (string) `spec.trafficDistribution`, for example PreferClose; empty omits the field
+  trafficDistribution: ""
+
+# -- (object) Pod resource requests and limits
+resources:
+  requests:
+    cpu: 25m
+    memory: 32Mi
+  limits:
+    memory: 64Mi
+
+# -- (list) Container resize policy for in-place vertical scaling (requires Kubernetes 1.27+); empty omits the field
+resizePolicy:
+  - resourceName: cpu
+    restartPolicy: NotRequired
+  - resourceName: memory
+    restartPolicy: RestartContainer
+
+# -- (int) Grace period for shutdown; in-flight tool calls are given five seconds to finish
+terminationGracePeriodSeconds: 30
+
+# -- (object) Extra annotations for the pod
+podAnnotations: {}
+# -- (object) Extra labels for the pod
+podLabels: {}
+
+# -- (object) Pod-level security context
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  runAsGroup: 65532
+  fsGroup: 65532
+  seccompProfile:
+    type: RuntimeDefault
+
+# -- (object) Container-level security context
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+
+# -- (object) Node selector for pod scheduling
+nodeSelector: {}
+# -- (list) Tolerations for pod scheduling
+tolerations: []
+# -- (object) Affinity rules for pod scheduling
+affinity: {}
+# -- (list) Topology spread constraints for pod scheduling. `labelSelector` is filled in with the chart's selector labels when a constraint omits it, so spreading replicas across zones needs only the topologyKey.
+topologySpreadConstraints: []
+
+# -- (string) Pod DNS policy, e.g. ClusterFirst or None; empty omits the field
+dnsPolicy: ""
+# -- (object) Pod DNS config (used with dnsPolicy None); empty omits the field
+dnsConfig: {}
+
+# -- (list) Additional Kubernetes manifests rendered verbatim
+extraObjects: []

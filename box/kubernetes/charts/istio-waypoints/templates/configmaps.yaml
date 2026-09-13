@@ -1,0 +1,47 @@
+{{- /*
+Istio reads this ConfigMap through Gateway.spec.infrastructure.parametersRef and applies each key
+as a strategic merge patch to the resource it generates for the waypoint
+(deployment, service, serviceAccount, horizontalPodAutoscaler, podDisruptionBudget, ...).
+*/ -}}
+{{- range $key, $waypoint := .Values.waypoints }}
+{{- $cfg := include "istio-waypoints.resolve" (dict "key" $key "waypoint" $waypoint "root" $) | fromYaml }}
+{{- if and $cfg.enabled (include "istio-waypoints.hasParameters" $cfg) }}
+{{- $p := $cfg.parameters }}
+{{- if $p.deployment }}
+{{- $podSpec := dig "spec" "template" "spec" dict $p.deployment }}
+{{- /* Inject the waypoint pod selector into topologySpreadConstraints that do not define one. */}}
+{{- range ($podSpec.topologySpreadConstraints | default list) }}
+{{- if not (hasKey . "labelSelector") }}
+{{- $_ := set . "labelSelector" (dict "matchLabels" (dict "gateway.networking.k8s.io/gateway-name" $cfg.name)) }}
+{{- end }}
+{{- end }}
+{{- /* Render .container as the istio-proxy container unless the patch declares containers itself. */}}
+{{- $proxy := include "istio-waypoints.proxyContainer" $cfg | fromYaml }}
+{{- if and $proxy (not (hasKey $podSpec "containers")) }}
+{{- $_ := set $podSpec "containers" (list $proxy) }}
+{{- $tpl := $p.deployment.spec.template }}
+{{- $_ := set $tpl "spec" $podSpec }}
+{{- end }}
+{{- end }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "istio-waypoints.parametersName" $cfg }}
+  namespace: {{ $cfg.namespace }}
+  labels:
+    {{- include "istio-waypoints.waypointLabels" (dict "root" $ "cfg" $cfg) | nindent 4 }}
+  {{- $annotations := include "istio-waypoints.waypointAnnotations" (dict "root" $ "cfg" $cfg) | trim }}
+  {{- if $annotations }}
+  annotations:
+    {{- $annotations | nindent 4 }}
+  {{- end }}
+data:
+  {{- range $kind, $patch := $p }}
+  {{- if $patch }}
+  {{ $kind }}: |
+    {{- toYaml $patch | nindent 4 }}
+  {{- end }}
+  {{- end }}
+{{- end }}
+{{- end }}

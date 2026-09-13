@@ -1,0 +1,18 @@
+{{- if and .Values.server.podDisruptionBudget.enabled (gt (int .Values.server.replicaCount) 1) }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "trivy-collector.serverName" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "trivy-collector.serverSelectorLabels" . | nindent 4 }}
+spec:
+  {{- if .Values.server.podDisruptionBudget.minAvailable }}
+  minAvailable: {{ .Values.server.podDisruptionBudget.minAvailable }}
+  {{- else }}
+  maxUnavailable: {{ .Values.server.podDisruptionBudget.maxUnavailable | default 1 }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "trivy-collector.serverSelectorLabels" . | nindent 6 }}
+{{- end }}

@@ -1,0 +1,773 @@
+/* Summary */
+.appset-summary-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--bui-space-2);
+  margin-top: var(--bui-space-2);
+}
+
+/*
+ * Number stacked over its label, so a row of cards reads as a row of figures
+ * that can be scanned down the numbers alone. min-width keeps a one-digit card
+ * the same size as a five-digit one, so the row does not reflow as counts load.
+ */
+.appset-summary-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-width: 104px;
+  padding: var(--bui-space-2) var(--bui-space-4);
+  border-radius: var(--bui-radius-3);
+  background-color: var(--bui-bg-neutral-2);
+  border: 1px solid var(--bui-border-1);
+  gap: 2px;
+  text-align: center;
+}
+
+.appset-summary-value {
+  font-weight: var(--bui-font-weight-bold);
+  font-size: 1.25rem;
+  line-height: 1.2;
+}
+
+/* Icon rides on the label baseline row, not above it */
+.appset-summary-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/*
+ * Out of the column, so the info affordance does not become a third row and
+ * push the label off-centre against the cards that carry no button.
+ */
+.appset-muted-info-btn {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 20px;
+  height: 20px;
+  min-width: 20px;
+  min-height: 20px;
+  opacity: 0.5;
+}
+
+.appset-cron-badge {
+  padding: 2px var(--bui-space-2);
+  border-radius: var(--bui-radius-2);
+  border: 1px solid var(--bui-border-1);
+  font-family: var(--bui-font-monospace);
+}
+
+/* Section box */
+.appset-section-box {
+  background-color: var(--bui-color-bg-elevated, #1a1a1a);
+  border-radius: 8px;
+}
+
+/* Count badge */
+.appset-count-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  height: 24px;
+  padding: 0 8px;
+  border-radius: 12px;
+  font-size: 14px;
+  font-weight: 700;
+  background-color: rgba(128, 128, 128, 0.25);
+  color: rgba(255, 255, 255, 0.7);
+}
+
+/* Filter bar */
+.appset-filter-bar {
+  display: flex;
+  gap: var(--bui-space-3);
+  align-items: flex-end;
+}
+
+.appset-filter-bar .bui-SearchField {
+  min-width: 280px;
+}
+
+.appset-filter-bar .bui-Select {
+  min-width: 150px;
+}
+
+/*
+ * Subgrid: align card fields across columns. The spans must equal the number
+ * of children, so adding a card field means bumping all three counts and
+ * rendering that field unconditionally (a placeholder when it has no value).
+ * A conditional field would leave cards with different row counts, which both
+ * breaks the alignment and overflows the card.
+ */
+.appset-grid-item {
+  grid-row: span 6;
+  display: grid;
+  grid-template-rows: subgrid;
+}
+
+/* Card */
+.appset-card,
+.appset-card-warning {
+  grid-row: span 6;
+  display: grid;
+  grid-template-rows: subgrid;
+  border: 1px solid var(--bui-border-1);
+  /* Anchors the deprecation marker to the card's own top right corner */
+  position: relative;
+}
+
+/*
+ * A chart this ApplicationSet deploys declares `deprecated: true`. Grey and
+ * faded: the warning border and the sync colours on the same card mean "act on
+ * this", while a retiring chart is a standing fact.
+ */
+.appset-card-tombstone {
+  position: absolute !important;
+  top: var(--bui-space-2);
+  right: var(--bui-space-2);
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  /* 28px square: comfortably clickable, and the icon is the card's only marker */
+  width: 28px;
+  height: 28px;
+  min-width: 28px;
+  min-height: 28px;
+  padding: 0 !important;
+  color: var(--bui-fg-secondary) !important;
+  opacity: 0.7;
+}
+
+.appset-card-tombstone:hover {
+  opacity: 1;
+}
+
+/* Keeps a long name from running under the marker */
+.appset-card-deprecated .appset-card-name {
+  padding-right: var(--bui-space-8);
+}
+
+/*
+ * Same treatment the Platforms page gives a retiring platform: dashed and
+ * greyed at rest, near full on hover so the card stays readable once a reader
+ * is on it. Deliberately not coloured, so it does not compete with the warning
+ * border a non-HEAD card carries.
+ */
+.appset-card-deprecated {
+  border-style: dashed;
+  border-color: rgba(128, 128, 128, 0.45);
+  opacity: 0.78;
+  filter: grayscale(0.85);
+  transition: opacity 0.2s ease, filter 0.2s ease;
+}
+
+.appset-card-deprecated:hover {
+  opacity: 1;
+  filter: grayscale(0.4);
+}
+
+/* A non-HEAD card keeps its warning edge, which says something else entirely */
+.appset-card-warning.appset-card-deprecated {
+  border-left-style: solid;
+  border-left-color: var(--bui-border-warning);
+}
+
+/* CardBody inner spacing between field rows: 5 field rows + 1 footer row */
+.appset-card-body {
+  grid-row: span 5;
+  display: grid;
+  grid-template-rows: subgrid;
+  row-gap: var(--bui-space-3);
+}
+
+.appset-card-warning {
+  border-left: 4px solid var(--bui-border-warning);
+}
+
+.appset-card-muted {
+  opacity: 0.7;
+}
+
+.appset-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.appset-card-name {
+  font-weight: var(--bui-font-weight-bold);
+  word-break: break-word;
+}
+
+.appset-app-count-badge {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex-shrink: 0;
+  margin-left: var(--bui-space-2);
+}
+
+.appset-app-count-trigger {
+  min-width: auto;
+  min-height: 32px;
+  padding: 0 14px;
+  border-radius: 16px;
+  background-color: var(--bui-bg-neutral-2);
+  font-weight: var(--bui-font-weight-bold);
+  font-size: var(--bui-font-size-3);
+  white-space: nowrap;
+}
+
+.appset-app-count-label {
+  font-size: var(--bui-font-size-1);
+  text-transform: uppercase;
+  margin-top: 2px;
+}
+
+.appset-field-label {
+  display: block;
+  font-size: var(--bui-font-size-2);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: var(--bui-space-1);
+}
+
+/* Chart and app version share one field row to keep the card compact */
+.appset-version-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--bui-space-2);
+  align-items: start;
+}
+
+/*
+ * Version value with its icon button alongside. The card column is narrow, so
+ * the buttons are sized to the glyph with no padding of their own and sit
+ * directly against the value.
+ */
+.appset-version-value-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.appset-detail-btn,
+.appset-warn-btn {
+  width: 16px;
+  height: 16px;
+  min-width: 16px;
+  min-height: 16px;
+  padding: 0 !important;
+  flex-shrink: 0;
+}
+
+.appset-detail-btn {
+  opacity: 0.6;
+}
+
+/* Applications of one ApplicationSet running different app versions */
+.appset-warn-btn {
+  color: #f59e0b !important;
+}
+
+/* A newer chart version exists upstream, found by the scan */
+.appset-upgrade-btn {
+  width: 16px;
+  height: 16px;
+  min-width: 16px;
+  min-height: 16px;
+  padding: 0 !important;
+  flex-shrink: 0;
+  color: #f59e0b !important;
+}
+
+/*
+ * A Chart.yaml with long dependency repository URLs needs room, so the detail
+ * dialog is far wider than the form dialogs BUI sizes by default, capped so it
+ * still leaves a margin on a narrow window.
+ */
+.appset-detail-dialog {
+  width: min(900px, 92vw) !important;
+  max-width: min(900px, 92vw) !important;
+}
+
+/*
+ * Version summary at the top of the detail dialog. Aligned columns rather than
+ * badges: with several charts the versions have to line up to be comparable at
+ * a glance, which pills actively prevent.
+ */
+/* Names never wrap, so a very long one scrolls rather than widening the dialog */
+.appset-chart-summary-scroll {
+  overflow-x: auto;
+  margin-bottom: var(--bui-space-4);
+}
+
+.appset-chart-summary {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.appset-chart-summary th {
+  padding: 0 var(--bui-space-3) var(--bui-space-1) 0;
+  border-bottom: 1px solid var(--bui-border-1);
+  text-align: left;
+  font-size: var(--bui-font-size-1);
+  font-weight: var(--bui-font-weight-bold);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--bui-color-text-secondary);
+  white-space: nowrap;
+}
+
+.appset-chart-summary td {
+  padding: var(--bui-space-2) var(--bui-space-3) var(--bui-space-2) 0;
+  font-size: var(--bui-font-size-3);
+  vertical-align: baseline;
+}
+
+/*
+ * A chart name is a single token and must stay on one line: wrapping it splits
+ * one name into what reads as two rows. The table scrolls sideways instead.
+ */
+.appset-chart-summary-name {
+  white-space: nowrap;
+  font-weight: var(--bui-font-weight-bold);
+}
+
+/*
+ * Chart.yaml declares `deprecated: true`. Grey and faded rather than coloured:
+ * the sync and upgrade accents in the same views mean "act on this", and a
+ * retiring chart is a standing fact, not an alert.
+ */
+.appset-deprecated-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: var(--bui-space-2);
+  padding: 0 6px;
+  height: 18px;
+  border-radius: 4px;
+  background: rgba(128, 128, 128, 0.12);
+  color: var(--bui-fg-secondary);
+  font-size: var(--bui-font-size-2);
+  font-weight: var(--bui-font-weight-regular);
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+/* The whole row recedes, so a scan down the chart column finds it by weight */
+.appset-chart-summary-deprecated {
+  opacity: 0.78;
+}
+
+/* Says once, in words, what the greyed rows and the marked YAML line mean */
+.appset-deprecated-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--bui-space-2);
+  margin-bottom: var(--bui-space-3);
+  padding: var(--bui-space-2) var(--bui-space-3);
+  border: 1px dashed rgba(128, 128, 128, 0.45);
+  border-radius: var(--bui-radius-2);
+  background: rgba(128, 128, 128, 0.12);
+  color: var(--bui-fg-secondary);
+  font-size: var(--bui-font-size-2);
+  line-height: 1.5;
+}
+
+.appset-deprecated-notice svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+/* Digits align across rows so a version difference is visible by shape */
+.appset-chart-summary-version {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* Last column takes the slack, keeping the version columns tight together */
+.appset-chart-summary th:last-child,
+.appset-chart-summary td:last-child {
+  width: 100%;
+  padding-right: 0;
+}
+
+.appset-chart-summary-status {
+  white-space: nowrap;
+}
+
+/* When the repository was last read, so a cached answer is not read as fresh */
+.appset-chart-summary-checked {
+  margin-top: 1px;
+  font-size: var(--bui-font-size-2);
+  color: var(--bui-color-text-secondary);
+}
+
+/*
+ * The one row that asks for action gets the only accent in the table, so the
+ * accent keeps meaning something. Every other state reads from its wording.
+ */
+.appset-chart-summary-status-upgrade {
+  color: #f59e0b;
+}
+
+.appset-chart-summary-status-checking,
+.appset-chart-summary-status-unknown {
+  color: var(--bui-color-text-secondary);
+}
+
+.appset-chart-summary-muted {
+  color: var(--bui-color-text-secondary);
+}
+
+.appset-origin-location,
+.appset-origin-apps {
+  font-size: var(--bui-font-size-2);
+  color: var(--bui-color-text-secondary);
+}
+
+.appset-origin-location {
+  font-family: monospace;
+  margin-bottom: 2px;
+}
+
+.appset-origin-apps {
+  margin-top: 2px;
+}
+
+/* Revision row with inline edit button */
+.appset-revision-row {
+  display: flex;
+  align-items: center;
+  gap: var(--bui-space-1);
+}
+
+/*
+ * Tip commit of the branch selected in the target revision dialog. One row with
+ * a full-height divider: the message and its author hold the left, the SHA and
+ * its copy button the right. `stretch` is what carries the divider across both
+ * lines instead of stopping at the height of the SHA.
+ */
+.appset-commit-box {
+  display: flex;
+  align-items: stretch;
+  border-radius: var(--bui-radius-2);
+  border: 1px solid var(--bui-border-1);
+  background-color: var(--bui-bg-neutral-2);
+  overflow: hidden;
+}
+
+.appset-commit-main {
+  flex: 1;
+  min-width: 0;
+  padding: var(--bui-space-2) var(--bui-space-3);
+}
+
+.appset-commit-title {
+  overflow-wrap: anywhere;
+}
+
+.appset-commit-ref {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+  padding: var(--bui-space-2) var(--bui-space-3);
+  border-left: 1px solid var(--bui-border-1);
+}
+
+/*
+ * The SHA is rendered with the same Text variant as the commit message, so only
+ * the link's own colour and underline need neutralising here. Setting a size
+ * would put it back out of step with the message.
+ */
+.appset-commit-sha {
+  color: inherit;
+  text-decoration: none;
+}
+
+.appset-commit-sha:hover {
+  text-decoration: underline;
+}
+
+.appset-commit-copy-btn {
+  width: 18px;
+  height: 18px;
+  min-width: 18px;
+  min-height: 18px;
+  padding: 0 !important;
+  opacity: 0.6;
+}
+
+.appset-commit-ref:hover .appset-commit-copy-btn,
+.appset-commit-copy-btn:focus-visible {
+  opacity: 1;
+}
+
+.appset-commit-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--bui-space-2);
+  margin-top: 4px;
+  font-size: var(--bui-font-size-2);
+  color: var(--bui-color-text-secondary);
+}
+
+.appset-edit-revision-btn {
+  width: 24px;
+  height: 24px;
+  min-width: 24px;
+  min-height: 24px;
+  flex-shrink: 0;
+}
+
+/* Card footer — Card already has gap between CardBody/CardFooter, so only add the border-top */
+.appset-card-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-top: 1px solid var(--bui-border-1);
+  padding-top: var(--bui-space-3);
+}
+
+/* App circle badges */
+.appset-app-badge {
+  width: 28px;
+  height: 28px;
+  min-width: 28px;
+  min-height: 28px;
+  border-radius: var(--bui-radius-full) !important;
+  font-weight: var(--bui-font-weight-bold);
+  font-size: var(--bui-font-size-2);
+}
+
+.appset-app-synced {
+  background-color: rgba(34, 197, 94, 0.15) !important;
+  color: #22c55e !important;
+  border: 1.5px solid rgba(34, 197, 94, 0.5) !important;
+}
+
+.appset-app-outofsync {
+  background-color: rgba(245, 158, 11, 0.15) !important;
+  color: #f59e0b !important;
+  border: 1.5px solid rgba(245, 158, 11, 0.5) !important;
+}
+
+.appset-app-unknown {
+  background-color: rgba(156, 163, 175, 0.15) !important;
+  color: #9ca3af !important;
+  border: 1.5px solid rgba(156, 163, 175, 0.5) !important;
+}
+
+/* Apps tooltip */
+.appset-apps-tooltip {
+  max-width: 320px;
+  word-break: break-word;
+}
+
+.appset-app-tooltip-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: var(--bui-font-size-3);
+  line-height: 1.5;
+  text-align: left;
+}
+
+.appset-app-tooltip-title {
+  font-weight: 700;
+}
+
+.appset-app-tooltip-images {
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px solid var(--bui-color-border-default, #444);
+  font-size: var(--bui-font-size-2);
+  color: var(--bui-color-text-secondary);
+}
+
+/* Where a value was read from, set back from the value itself */
+.appset-app-tooltip-source {
+  display: block;
+  margin: 1px 0 2px;
+  font-family: var(--bui-font-family, inherit);
+  font-size: var(--bui-font-size-2);
+  color: var(--bui-color-text-secondary);
+  opacity: 0.9;
+}
+
+/* Integration badge — uses BUI Button as TooltipTrigger child */
+.appset-integration-badge {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  padding: 2px 10px !important;
+  border-radius: 12px !important;
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  line-height: 20px !important;
+  white-space: nowrap !important;
+  min-height: unset !important;
+  min-width: unset !important;
+  cursor: default !important;
+}
+
+.appset-integration-badge::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.appset-integration-connected {
+  background-color: rgba(34, 197, 94, 0.12) !important;
+  color: #22c55e !important;
+  border: 1px solid rgba(34, 197, 94, 0.3) !important;
+}
+
+.appset-integration-connected::before {
+  background-color: #22c55e;
+}
+
+.appset-integration-disconnected {
+  background-color: rgba(156, 163, 175, 0.12) !important;
+  color: #9ca3af !important;
+  border: 1px solid rgba(156, 163, 175, 0.3) !important;
+}
+
+.appset-integration-disconnected::before {
+  background-color: #9ca3af;
+}
+
+/* Clickable summary cards */
+.appset-summary-clickable {
+  cursor: pointer;
+  transition: border-color 0.15s, background-color 0.15s;
+  user-select: none;
+}
+
+.appset-summary-clickable:hover {
+  border-color: var(--bui-border-2);
+  background-color: var(--bui-bg-neutral-3);
+}
+
+.appset-summary-active {
+  border-color: var(--bui-color-border-primary, #3b82f6);
+  background-color: rgba(59, 130, 246, 0.08);
+}
+
+/*
+ * Application detail: short labels and one image per line, so the dialog is
+ * sized to that content rather than to the chart file the other one shows.
+ */
+.appset-app-dialog {
+  width: min(520px, 92vw) !important;
+  max-width: min(520px, 92vw) !important;
+}
+
+.appset-app-detail {
+  border-collapse: collapse;
+}
+
+.appset-app-detail th {
+  padding: 2px var(--bui-space-4) 2px 0;
+  text-align: left;
+  vertical-align: baseline;
+  white-space: nowrap;
+  font-size: var(--bui-font-size-2);
+  font-weight: var(--bui-font-weight-bold);
+  color: var(--bui-color-text-secondary);
+}
+
+.appset-app-detail td {
+  padding: 2px 0;
+  vertical-align: baseline;
+  font-size: var(--bui-font-size-3);
+}
+
+.appset-app-detail-mono {
+  font-family: var(--bui-font-monospace, monospace);
+}
+
+/* Sits on the text line rather than below its baseline */
+.appset-inline-icon {
+  vertical-align: -2px;
+  margin-right: 3px;
+}
+
+/* Plain lines of text, no panel: the images are read, not operated on as a set */
+.appset-image-list {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Button sits against the value, not out at the edge of the row */
+.appset-image-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.appset-image-name {
+  font-size: var(--bui-font-size-3);
+  overflow-wrap: anywhere;
+}
+
+.appset-image-copy-btn {
+  width: 18px;
+  height: 18px;
+  min-width: 18px;
+  min-height: 18px;
+  padding: 0 !important;
+  flex-shrink: 0;
+  opacity: 0.6;
+}
+
+.appset-image-row:hover .appset-image-copy-btn,
+.appset-image-copy-btn:focus-visible {
+  opacity: 1;
+}
+
+/* Charts whose upstream could not be read; the reasons are on hover */
+.appset-unreadable {
+  cursor: help;
+}
+
+/* Empty state */
+.appset-empty-state {
+  text-align: center;
+  padding: var(--bui-space-8);
+}
+
+/*
+ * Waiting for the backend's first fetch. The placeholders are the card grid's
+ * own layout, so nothing shifts when the data lands. Pulsing the whole block is
+ * the only signal that this is a wait rather than a result.
+ */
+.appset-pending {
+  animation: appset-pending-blink 1.6s ease-in-out infinite;
+}
+
+@keyframes appset-pending-blink {
+  0%,
+  100% {
+    opacity: 0.45;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .appset-pending {
+    animation-duration: 4s;
+  }
+}

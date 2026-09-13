@@ -1,0 +1,21 @@
+{{- if and .Values.mcp.enabled .Values.mcp.serviceMonitor.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "forklift.fullname" . }}-mcp
+  labels:
+    {{- include "forklift.mcp.labels" . | nindent 4 }}
+    {{- with .Values.mcp.serviceMonitor.additionalLabels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "forklift.mcp.selectorLabels" . | nindent 6 }}
+  endpoints:
+    - port: metrics
+      interval: {{ .Values.mcp.serviceMonitor.interval }}
+      {{- with .Values.mcp.serviceMonitor.scrapeTimeout }}
+      scrapeTimeout: {{ . }}
+      {{- end }}
+{{- end }}

@@ -1,0 +1,75 @@
+{{- if .Values.webhook.certManager.enabled }}
+{{- $fullName := include "argocd-promotion-gate.fullname" . -}}
+{{- $duration := printf "%dh" (mul (int .Values.webhook.certValidityDays) 24) -}}
+{{- if not .Values.webhook.certManager.issuerRef }}
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: {{ printf "%s-selfsigned" $fullName }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "argocd-promotion-gate.labels" . | nindent 4 }}
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ printf "%s-ca" $fullName }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "argocd-promotion-gate.labels" . | nindent 4 }}
+spec:
+  isCA: true
+  commonName: {{ printf "%s-ca" $fullName }}
+  secretName: {{ printf "%s-ca" $fullName }}
+  duration: {{ $duration }}
+  privateKey:
+    algorithm: RSA
+    size: 2048
+    rotationPolicy: Always
+  issuerRef:
+    kind: Issuer
+    group: cert-manager.io
+    name: {{ printf "%s-selfsigned" $fullName }}
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: {{ printf "%s-ca" $fullName }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "argocd-promotion-gate.labels" . | nindent 4 }}
+spec:
+  ca:
+    secretName: {{ printf "%s-ca" $fullName }}
+---
+{{- end }}
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ $fullName }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "argocd-promotion-gate.labels" . | nindent 4 }}
+spec:
+  secretName: {{ printf "%s-tls" $fullName }}
+  duration: {{ $duration }}
+  privateKey:
+    algorithm: RSA
+    size: 2048
+    rotationPolicy: Always
+  dnsNames:
+    - {{ $fullName }}
+    - {{ printf "%s.%s" $fullName .Release.Namespace }}
+    - {{ printf "%s.%s.svc" $fullName .Release.Namespace }}
+    - {{ printf "%s.%s.svc.cluster.local" $fullName .Release.Namespace }}
+  issuerRef:
+    {{- if .Values.webhook.certManager.issuerRef }}
+    {{- toYaml .Values.webhook.certManager.issuerRef | nindent 4 }}
+    {{- else }}
+    kind: Issuer
+    group: cert-manager.io
+    name: {{ printf "%s-ca" $fullName }}
+    {{- end }}
+{{- end }}

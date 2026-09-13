@@ -1,0 +1,89 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 820 548" width="820" height="548" role="img" aria-label="One unused volume scan pass: four cluster-wide list calls feed a pure classifier, whose verdict splits into annotations written from the first pass and a report held back by the grace period">
+  <!-- Styling is inline rather than in a <style> block: markdown renderers that
+       sanitize embedded SVG strip <style>, which would leave this diagram as
+       unreadable default-black text on a black background. -->
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#6e6e6e"/>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="820" height="548" fill="#0a0a0a"/>
+  <g font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">
+    <text x="24" y="28" font-size="14" fill="#f0f0f0">unused-volume-identification - one scan pass</text>
+    <text x="24" y="46" font-size="10.5" fill="#6e6e6e">four lists - one pure classifier - two outputs on different clocks - nothing deleted</text>
+
+    <!-- row 1: the whole cluster is read in four paginated lists -->
+    <rect x="24" y="76" width="184" height="52" rx="3" fill="#0f0f0f" stroke="#4a4a4a" stroke-width="1"/>
+    <text x="38" y="98" font-size="10.5" fill="#d4d4d4">PersistentVolumeClaims</text>
+    <text x="38" y="115" font-size="10" fill="#8a8a8a">phase, capacity, class</text>
+
+    <rect x="220" y="76" width="184" height="52" rx="3" fill="#0f0f0f" stroke="#4a4a4a" stroke-width="1"/>
+    <text x="234" y="98" font-size="10.5" fill="#d4d4d4">PersistentVolumes</text>
+    <text x="234" y="115" font-size="10" fill="#8a8a8a">phase, claimRef, EBS id</text>
+
+    <rect x="416" y="76" width="184" height="52" rx="3" fill="#0f0f0f" stroke="#4a4a4a" stroke-width="1"/>
+    <text x="430" y="98" font-size="10.5" fill="#d4d4d4">Pods</text>
+    <text x="430" y="115" font-size="10" fill="#8a8a8a">claim refs, live pods only</text>
+
+    <rect x="612" y="76" width="184" height="52" rx="3" fill="#0f0f0f" stroke="#4a4a4a" stroke-width="1"/>
+    <text x="626" y="98" font-size="10.5" fill="#d4d4d4">StatefulSets</text>
+    <text x="626" y="115" font-size="10" fill="#8a8a8a">replicas, ordinal range</text>
+
+    <!-- the four lists merge onto one bus: pass cost is flat in cluster size -->
+    <line x1="116" y1="128" x2="116" y2="146" stroke="#6e6e6e" stroke-width="1"/>
+    <line x1="312" y1="128" x2="312" y2="146" stroke="#6e6e6e" stroke-width="1"/>
+    <line x1="508" y1="128" x2="508" y2="146" stroke="#6e6e6e" stroke-width="1"/>
+    <line x1="704" y1="128" x2="704" y2="146" stroke="#6e6e6e" stroke-width="1"/>
+    <line x1="116" y1="146" x2="704" y2="146" stroke="#6e6e6e" stroke-width="1"/>
+    <line x1="410" y1="146" x2="410" y2="170" stroke="#6e6e6e" stroke-width="1" marker-end="url(#arrow)"/>
+
+    <!-- row 2: everything after the lists is a pure function over the snapshot -->
+    <rect x="250" y="170" width="320" height="62" rx="3" fill="#0f0f0f" stroke="#4a4a4a" stroke-width="1"/>
+    <text x="264" y="191" font-size="11.5" fill="#d4d4d4">classify()</text>
+    <text x="264" y="208" font-size="10" fill="#8a8a8a">claims first, then volumes</text>
+    <text x="264" y="224" font-size="10" fill="#8a8a8a">pure function over the snapshot</text>
+
+    <!-- row 3: one verdict per object -->
+    <line x1="410" y1="232" x2="410" y2="246" stroke="#6e6e6e" stroke-width="1"/>
+    <line x1="280" y1="246" x2="540" y2="246" stroke="#6e6e6e" stroke-width="1"/>
+    <line x1="280" y1="246" x2="280" y2="258" stroke="#6e6e6e" stroke-width="1" marker-end="url(#arrow)"/>
+    <line x1="540" y1="246" x2="540" y2="258" stroke="#6e6e6e" stroke-width="1" marker-end="url(#arrow)"/>
+
+    <rect x="180" y="258" width="200" height="48" rx="3" fill="#0f0f0f" stroke="#4a4a4a" stroke-width="1"/>
+    <text x="194" y="280" font-size="11.5" fill="#d4d4d4">in use</text>
+    <text x="194" y="296" font-size="10" fill="#8a8a8a">mounted, or a live STS slot</text>
+
+    <rect x="440" y="258" width="200" height="48" rx="3" fill="#0f0f0f" stroke="#4a4a4a" stroke-width="1"/>
+    <text x="454" y="280" font-size="11.5" fill="#d4d4d4">unused</text>
+    <text x="454" y="296" font-size="10" fill="#8a8a8a">one of eight reasons</text>
+
+    <!-- an in-use object is only touched to erase a mark an earlier pass left -->
+    <line x1="280" y1="306" x2="280" y2="340" stroke="#6e6e6e" stroke-width="1" marker-end="url(#arrow)"/>
+    <rect x="180" y="340" width="200" height="44" rx="3" fill="#0f0f0f" stroke="#4a4a4a" stroke-width="1"/>
+    <text x="194" y="367" font-size="10.5" fill="#d4d4d4">clear our keys, else no-op</text>
+
+    <!-- the grace period gates the report, never the annotation -->
+    <line x1="540" y1="306" x2="540" y2="340" stroke="#6e6e6e" stroke-width="1" marker-end="url(#arrow)"/>
+    <rect x="418" y="340" width="244" height="44" rx="3" fill="#0f0f0f" stroke="#4a4a4a" stroke-width="1"/>
+    <text x="432" y="367" font-size="10.5" fill="#d4d4d4">unused &gt;= minUnusedAge?</text>
+
+    <line x1="540" y1="384" x2="540" y2="404" stroke="#6e6e6e" stroke-width="1"/>
+    <line x1="470" y1="404" x2="688" y2="404" stroke="#6e6e6e" stroke-width="1"/>
+    <text x="476" y="400" font-size="10" fill="#6e6e6e">no</text>
+    <text x="656" y="400" font-size="10" fill="#6e6e6e">yes</text>
+    <line x1="470" y1="404" x2="470" y2="428" stroke="#6e6e6e" stroke-width="1" marker-end="url(#arrow)"/>
+    <line x1="688" y1="404" x2="688" y2="428" stroke="#6e6e6e" stroke-width="1" marker-end="url(#arrow)"/>
+
+    <rect x="380" y="428" width="180" height="48" rx="3" fill="#0f0f0f" stroke="#4a4a4a" stroke-width="1"/>
+    <text x="394" y="450" font-size="11.5" fill="#d4d4d4">annotate only</text>
+    <text x="394" y="466" font-size="10" fill="#8a8a8a">clock starts here</text>
+
+    <rect x="580" y="428" width="216" height="48" rx="3" fill="#0f0f0f" stroke="#4a4a4a" stroke-width="1"/>
+    <text x="594" y="450" font-size="11.5" fill="#d4d4d4">annotate + metrics + log</text>
+    <text x="594" y="466" font-size="10" fill="#8a8a8a">this is the report</text>
+
+    <text x="24" y="510" font-size="10" fill="#6e6e6e">ClusterRole grants list and patch only. No delete verb on any resource, and no AWS call:</text>
+    <text x="24" y="526" font-size="10" fill="#6e6e6e">the EBS volume id comes from the PersistentVolume's own spec.csi.volumeHandle.</text>
+  </g>
+</svg>

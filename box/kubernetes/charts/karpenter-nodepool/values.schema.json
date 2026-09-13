@@ -1,0 +1,327 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "title": "karpenter-nodepool values",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "global": {
+      "type": "object"
+    },
+    "nameOverride": {
+      "type": ["string", "null"]
+    },
+    "fullnameOverride": {
+      "type": ["string", "null"]
+    },
+    "globalLabels": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "globalAnnotations": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "nodePool": {
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$"
+      },
+      "additionalProperties": {
+        "$ref": "#/definitions/nodePool"
+      }
+    },
+    "ec2NodeClass": {
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$"
+      },
+      "additionalProperties": {
+        "$ref": "#/definitions/ec2NodeClass"
+      }
+    },
+    "extraObjects": {
+      "type": "array",
+      "items": {
+        "type": ["object", "string"]
+      }
+    }
+  },
+  "definitions": {
+    "stringMap": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "duration": {
+      "type": "string",
+      "pattern": "^(Never|([0-9]+(s|m|h))+)$"
+    },
+    "nodePool": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "labels": {
+          "$ref": "#/definitions/stringMap"
+        },
+        "annotations": {
+          "$ref": "#/definitions/stringMap"
+        },
+        "nodeClassRef": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "group": {
+              "type": "string"
+            },
+            "kind": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            }
+          }
+        },
+        "taints": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/taint"
+          }
+        },
+        "startupTaints": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/taint"
+          }
+        },
+        "terminationGracePeriod": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/duration"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "requirements": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["key", "operator"],
+            "properties": {
+              "key": {
+                "type": "string"
+              },
+              "operator": {
+                "type": "string",
+                "enum": ["In", "NotIn", "Exists", "DoesNotExist", "Gt", "Lt"]
+              },
+              "values": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "minValues": {
+                "type": "integer",
+                "minimum": 1
+              }
+            }
+          }
+        },
+        "expireAfter": {
+          "$ref": "#/definitions/duration"
+        },
+        "disruption": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "consolidationPolicy": {
+              "type": "string",
+              "enum": ["WhenEmpty", "WhenUnderutilized", "WhenEmptyOrUnderutilized"]
+            },
+            "consolidateAfter": {
+              "$ref": "#/definitions/duration"
+            },
+            "budgets": {
+              "type": "array",
+              "items": {
+                "type": "object"
+              }
+            }
+          }
+        },
+        "limits": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "cpu": {
+              "type": ["integer", "string"]
+            },
+            "memory": {
+              "type": "string"
+            }
+          }
+        },
+        "weight": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "overprovisioning": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["enabled"],
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "nodes": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "resources": {
+              "type": "object"
+            },
+            "topologySpreadConstraints": {
+              "type": "array",
+              "items": {
+                "type": "object"
+              }
+            },
+            "tolerations": {
+              "type": "array",
+              "items": {
+                "type": "object"
+              }
+            },
+            "podLabels": {
+              "$ref": "#/definitions/stringMap"
+            },
+            "podAnnotations": {
+              "$ref": "#/definitions/stringMap"
+            }
+          }
+        }
+      }
+    },
+    "ec2NodeClass": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "amiFamily": {
+          "type": "string",
+          "enum": ["AL2", "AL2023", "Bottlerocket", "Custom", "Windows2019", "Windows2022"]
+        },
+        "subnetSelectorTerms": {
+          "$ref": "#/definitions/selectorTerms"
+        },
+        "securityGroupSelectorTerms": {
+          "$ref": "#/definitions/selectorTerms"
+        },
+        "amiSelectorTerms": {
+          "$ref": "#/definitions/selectorTerms"
+        },
+        "capacityReservationSelectorTerms": {
+          "$ref": "#/definitions/selectorTerms"
+        },
+        "role": {
+          "type": "string"
+        },
+        "instanceProfile": {
+          "type": "string"
+        },
+        "userData": {
+          "type": "string"
+        },
+        "tags": {
+          "$ref": "#/definitions/stringMap"
+        },
+        "metadataOptions": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "httpEndpoint": {
+              "type": "string",
+              "enum": ["enabled", "disabled"]
+            },
+            "httpProtocolIPv6": {
+              "type": "string",
+              "enum": ["enabled", "disabled"]
+            },
+            "httpPutResponseHopLimit": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 64
+            },
+            "httpTokens": {
+              "type": "string",
+              "enum": ["required", "optional"]
+            }
+          }
+        },
+        "blockDeviceMappings": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "instanceStorePolicy": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": ["RAID0"]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "detailedMonitoring": {
+          "type": "boolean"
+        },
+        "associatePublicIPAddress": {
+          "type": "boolean"
+        },
+        "kubelet": {
+          "type": "object"
+        }
+      }
+    },
+    "selectorTerms": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "taint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["key", "effect"],
+      "properties": {
+        "key": {
+          "type": "string"
+        },
+        "value": {
+          "type": "string"
+        },
+        "effect": {
+          "type": "string",
+          "enum": ["NoSchedule", "PreferNoSchedule", "NoExecute"]
+        }
+      }
+    }
+  }
+}
