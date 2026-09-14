@@ -9,7 +9,7 @@ import { createRouter } from './service/router';
 import { pluginIdFromPath } from './service/scopes';
 import { TokenStore } from './service/TokenStore';
 
-const DEFAULT_AUDIT_RETENTION_DAYS = 90;
+const DEFAULT_AUDIT_RETENTION_DAYS = 365;
 
 /**
  * Personal access tokens for external systems. Admins mint scoped, expiring

@@ -88,7 +88,7 @@ Table `pat_audit_events`:
 | `details` | JSON `{ before, after }` of the changed fields on `token.updated`, null otherwise |
 | `created_at` | ISO time, indexed |
 
-Events older than `pat.audit.retentionDays` are purged daily at 03:30 UTC.
+Events older than `pat.audit.retentionDays` (default 365) are purged daily at 03:30 UTC.
 
 ## API
 
@@ -119,7 +119,7 @@ permission:
 pat:
   maxExpiryDays: 365
   audit:
-    retentionDays: 90
+    retentionDays: 365
   scopablePlugins:
     - id: catalog
       label: Catalog

@@ -311,7 +311,7 @@ pat:
   maxExpiryDays: 365
   audit:
     # -- (int) Days to keep api call and token lifecycle events.
-    retentionDays: 90
+    retentionDays: 365
   # -- (list) Plugins a token may be scoped to. The pat plugin itself is
   # never scopable. A token can only reach /api/<id> for ids listed here.
   scopablePlugins:
