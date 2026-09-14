@@ -61,4 +61,5 @@ Most custom plugins ship as `<name>` (frontend) plus `<name>-backend` (backend).
 | OpenSearch | `opensearch-account` | Self-service OpenSearch Security internal user create/list/delete/modify with admin approval, RBAC, and audit trail |
 | Capacity | `opensearch-scaling` | Self-service reserved scaling of OpenSearch Service domains (instance type, node count, EBS) at a scheduled time with in-progress pre-validation |
 | Slack MR Bot | `slack-mr-bot-backend` | Slack slash command that posts a merge request review request with the title pre-filled |
+| Access Tokens | `pat` | Admin-issued personal access tokens for external systems, scoped per plugin with read or write access, one-year maximum lifetime, and an audit log of every call |
 | Build Info | - | Settings page showing build metadata, installed plugins, BUI migration progress |

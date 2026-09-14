@@ -1,0 +1,63 @@
+.pat-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+}
+
+.pat-stat-card {
+  padding: 12px 16px;
+  border: 1px solid var(--bui-border, rgba(255, 255, 255, 0.12));
+  border-radius: var(--bui-radius-3, 8px);
+  background: var(--bui-bg-surface-1, transparent);
+}
+
+.pat-token-secret {
+  font-family: var(--bui-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 13px;
+  word-break: break-all;
+  padding: 10px 12px;
+  border-radius: var(--bui-radius-2, 6px);
+  border: 1px dashed var(--bui-border, rgba(255, 255, 255, 0.2));
+  background: var(--bui-bg-surface-2, rgba(255, 255, 255, 0.04));
+  user-select: all;
+}
+
+.pat-mono {
+  font-family: var(--bui-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 12px;
+}
+
+.pat-scope-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 140px;
+  gap: 6px 12px;
+  align-items: center;
+}
+
+.pat-scope-grid-header {
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--bui-border, rgba(255, 255, 255, 0.12));
+}
+
+.pat-expiry-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  align-items: end;
+}
+
+.pat-table-wrapper [class*='TagGroup'],
+.pat-table-wrapper [class*='TagList'] {
+  gap: 3px !important;
+  row-gap: 3px !important;
+  column-gap: 3px !important;
+}
+
+/* BUI Text renders inline spans, so stack the label, value and hint explicitly. */
+.pat-stat-card > * {
+  display: block;
+}
+
+.pat-section-heading > * {
+  display: block;
+}

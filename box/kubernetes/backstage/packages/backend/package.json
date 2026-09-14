@@ -44,6 +44,7 @@
     "@internal/plugin-opensearch-account-backend": "workspace:*",
     "@internal/plugin-opensearch-scaling-backend": "workspace:*",
     "@internal/plugin-opensearch-viewer-backend": "workspace:*",
+    "@internal/plugin-pat-backend": "workspace:*",
     "@internal/plugin-platforms-backend": "workspace:*",
     "@internal/plugin-s3-log-extract-backend": "workspace:*",
     "@internal/plugin-slack-mr-bot-backend": "workspace:*",

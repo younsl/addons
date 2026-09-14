@@ -79,6 +79,12 @@
       "path": "plugins/opensearch-viewer-backend"
     },
     {
+      "path": "plugins/pat"
+    },
+    {
+      "path": "plugins/pat-backend"
+    },
+    {
       "path": "plugins/platforms-backend"
     },
     {

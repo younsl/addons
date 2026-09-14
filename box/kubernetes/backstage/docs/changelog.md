@@ -10,6 +10,18 @@ Headings are image tags, not Backstage versions. A rebuild at the same Backstage
 
 Tags released before this file existed (`1.51.0-1` through `1.53.0-3`) are not recorded here.
 
+## 1.54.7-1
+
+Released 2026-09-14. Built on Backstage [v1.54.7](https://github.com/backstage/backstage/releases/tag/v1.54.7) as the base version, up from `1.54.6`.
+
+- Base version bumped through `backstage-cli versions:bump`. The 1.54.7 release manifest differs from 1.54.6 in a single package, `@backstage/plugin-auth-node` `0.7.4` to `0.7.5`, which this repository only uses transitively, so no `package.json` range moved and the lockfile was refreshed to resolve that one package at `0.7.5`.
+- New `pat` plugin (frontend and backend) issues personal access tokens so other systems can call this instance's plugin APIs without a browser session or a static `backend.auth.externalAccess` secret. Tokens are `bs_` followed by 43 random alphanumeric characters, stored as a SHA-256 hash and shown once at creation. Only users in `permission.admins` can issue, edit, revoke or delete them; service principals and anonymous callers are refused even with `backend.auth.dangerouslyDisableDefaultAuthPolicy` on.
+- Each token carries fine-grained scopes, one plugin id with `read` (GET, HEAD, OPTIONS) or `write` (every method) access, chosen from `pat.scopablePlugins`. Lifetime is one to `pat.maxExpiryDays` days, capped at 365 regardless of configuration, and cannot be extended after creation. Names are limited to letters, digits, hyphen and underscore.
+- A gateway middleware installed on the root HTTP router ahead of `applyDefaults()` validates any bearer token with the `bs_` prefix before the plugin routers run, rejects unknown, expired or revoked tokens with 401 and out-of-scope calls with 403, and forwards allowed calls with a plugin-to-plugin token so the target plugin sees the `plugin:pat` service principal plus `x-backstage-pat-id` and `x-backstage-pat-name` headers. Ordinary user and service tokens pass through untouched. Repeated invalid tokens from one client address are throttled to 30 per minute.
+- Every call and every lifecycle change (`token.created`, `token.updated`, `token.revoked`, `token.deleted`, `api.request`, `api.denied`) is written to `pat_audit_events` with method, path, status code, latency, client address and user agent; updates keep a before/after diff. Events are purged after `pat.audit.retentionDays` (default 90).
+- The sidebar gains an admin-only **Administration** section with one **Access Tokens** entry whose badge counts denied calls in the last 24 hours. The page has Tokens and Audit Log tabs, a create dialog that enables its button only when name, description, lifetime (typed in days or picked from the calendar) and at least one scope are all present, and a detail page per token for editing name, description and permissions, revoking and deleting, each confirmed by retyping the token name. In-house plugins already accept a service principal on GET only, so a `write` scope takes effect on plugins that accept writes from services, such as the catalog.
+- Backend plugin routers now route every async handler through an error wrapper. Express 4 does not pass a rejected promise to the error middleware, so a failed request would otherwise hang instead of returning its status code.
+
 ## 1.54.6-4
 
 Released 2026-09-11. Built on Backstage [v1.54.6](https://github.com/backstage/backstage/releases/tag/v1.54.6) as the base version, the same base as `1.54.6-1`, so this tag differs only by the changes below.

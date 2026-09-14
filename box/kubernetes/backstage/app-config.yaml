@@ -13,6 +13,7 @@ app:
     opensearchAccount: true
     opensearchViewer: true
     opensearchScaling: true
+    pat: true
   platforms:
     - name: Grafana
       category: Observability
@@ -302,6 +303,50 @@ permission:
     # - user:development/guest
     - user:default/admin1
     - user:default/admin2
+
+# Personal access tokens for external systems. Only permission.admins can
+# issue them; each token is scoped per plugin (read or write) and expires.
+pat:
+  # -- (int) Longest lifetime an admin may pick, in days. Hard-capped at 365.
+  maxExpiryDays: 365
+  audit:
+    # -- (int) Days to keep api call and token lifecycle events.
+    retentionDays: 90
+  # -- (list) Plugins a token may be scoped to. The pat plugin itself is
+  # never scopable. A token can only reach /api/<id> for ids listed here.
+  scopablePlugins:
+    - id: catalog
+      label: Catalog
+      description: Entities, locations and refresh
+    - id: search
+      label: Search
+    - id: techdocs
+      label: TechDocs
+    - id: scaffolder
+      label: Scaffolder
+      description: Templates and task runs
+    - id: platforms
+      label: Platforms
+    - id: openapi-registry
+      label: API Registry
+    - id: catalog-health
+      label: Catalog Health
+    - id: argocd-appset
+      label: ArgoCD AppSets
+    - id: gitlab-token-audit
+      label: GitLab Token Audit
+    - id: opencost
+      label: OpenCost
+    - id: iam-user-audit
+      label: IAM User Audit
+    - id: s3-log-extract
+      label: S3 Log Extract
+    - id: opensearch-account
+      label: OpenSearch Account
+    - id: opensearch-viewer
+      label: OpenSearch Viewer
+    - id: opensearch-scaling
+      label: OpenSearch Scaling
 
 opencost:
   timezone: Asia/Seoul

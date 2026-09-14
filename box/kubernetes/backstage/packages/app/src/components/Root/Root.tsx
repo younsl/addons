@@ -15,6 +15,8 @@ import AttachMoneyIcon from '@material-ui/icons/AttachMoney';
 import FindInPageIcon from '@material-ui/icons/FindInPage';
 import VpnKeyIcon from '@material-ui/icons/VpnKey';
 import TrendingUpIcon from '@material-ui/icons/TrendingUp';
+import VerifiedUserIcon from '@material-ui/icons/VerifiedUser';
+import FingerprintIcon from '@material-ui/icons/Fingerprint';
 import { Text } from '@backstage/ui';
 import { siArgo, siGitlab, siKubernetes } from 'simple-icons';
 import { createIcon } from '@dweber019/backstage-plugin-simple-icons';
@@ -286,6 +288,64 @@ const GitlabTokenAuditSidebarItem = () => {
   );
 };
 
+/**
+ * Admin-only section. Visibility follows the backend's admin check rather
+ * than a frontend list so the sidebar and the page agree on who is an admin.
+ * The badge is the count of denied token calls in the last 24h; the audit
+ * log itself is a tab inside the Access Tokens page.
+ */
+const PatSidebarSection = () => {
+  const discoveryApi = useApi(discoveryApiRef);
+  const fetchApi = useApi(fetchApiRef);
+  const [visible, setVisible] = useState(false);
+  const [deniedCount, setDeniedCount] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    const fetchData = async () => {
+      try {
+        const baseUrl = await discoveryApi.getBaseUrl('pat');
+        const adminRes = await fetchApi.fetch(`${baseUrl}/admin-status`);
+        if (!adminRes.ok) return;
+        const adminData = await adminRes.json();
+        if (!adminData?.isAdmin) {
+          if (!cancelled) setVisible(false);
+          return;
+        }
+        if (!cancelled) setVisible(true);
+        const summaryRes = await fetchApi.fetch(`${baseUrl}/audit/summary`);
+        if (!summaryRes.ok) return;
+        const summary = await summaryRes.json();
+        if (!cancelled) setDeniedCount(summary.denied ?? 0);
+      } catch {
+        /* ignore */
+      }
+    };
+    fetchData();
+    const interval = setInterval(fetchData, 60_000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [discoveryApi, fetchApi]);
+
+  if (!visible) return null;
+
+  return (
+    <FoldableSection title="Administration" icon={<VerifiedUserIcon />} defaultOpen={false}>
+      <SidebarItem icon={FingerprintIcon} to="pat" text="Access Tokens">
+        <span
+          className={
+            deniedCount > 0 ? 'sidebar-badge' : 'sidebar-badge sidebar-badge-zero'
+          }
+        >
+          {deniedCount}
+        </span>
+      </SidebarItem>
+    </FoldableSection>
+  );
+};
+
 const PlatformsSidebarItem = () => {
   const configApi = useApi(configApiRef);
   const platformsCount = (configApi.getOptionalConfigArray('app.platforms') ?? []).length;
@@ -313,6 +373,7 @@ export const Root = ({ children }: PropsWithChildren<{}>) => {
   const gitlabTokenAuditEnabled = config.getOptionalBoolean('app.plugins.gitlabTokenAudit') ?? true;
   const opensearchAccountEnabled = config.getOptionalBoolean('app.plugins.opensearchAccount') ?? true;
   const opensearchScalingEnabled = config.getOptionalBoolean('app.plugins.opensearchScaling') ?? true;
+  const patEnabled = config.getOptionalBoolean('app.plugins.pat') ?? true;
 
   return (
   <SidebarPage>
@@ -351,6 +412,8 @@ export const Root = ({ children }: PropsWithChildren<{}>) => {
         )}
         {s3LogExtractEnabled && <S3LogExtractSidebarItem />}
       </FoldableSection>
+
+      {patEnabled && <PatSidebarSection />}
 
       <SidebarDivider />
       <SidebarScrollWrapper>
