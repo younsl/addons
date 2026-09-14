@@ -279,7 +279,7 @@ export const TokensView = () => {
           <Alert
             status="warning"
             title="No scopable plugins configured"
-            description="Set pat.scopablePlugins in app-config so tokens can be granted permissions."
+            description="pat.scopablePlugins is an empty list in app-config. Remove the key to expose every plugin, or list the plugins tokens may reach."
           />
         )}
 

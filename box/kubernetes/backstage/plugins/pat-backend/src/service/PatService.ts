@@ -1,6 +1,7 @@
 import { LoggerService } from '@backstage/backend-plugin-api';
 import { Config } from '@backstage/config';
 import { AuditStore } from './AuditStore';
+import { DEFAULT_SCOPABLE_PLUGINS } from './defaults';
 import { checkScope, normalizeScopes, pluginIdFromPath, SELF_PLUGIN_ID } from './scopes';
 import {
   addDays,
@@ -54,8 +55,9 @@ export function readSettings(config: Config): PatSettings {
     Math.max(1, Math.floor(configured ?? HARD_MAX_EXPIRY_DAYS)),
   );
 
+  // Absent key: every known plugin. Explicit list (even empty): exactly that list.
   const raw = config.getOptional('pat.scopablePlugins');
-  const scopablePlugins: ScopablePlugin[] = [];
+  const scopablePlugins: ScopablePlugin[] = raw === undefined ? [...DEFAULT_SCOPABLE_PLUGINS] : [];
   if (Array.isArray(raw)) {
     for (const item of raw) {
       if (typeof item === 'string') {

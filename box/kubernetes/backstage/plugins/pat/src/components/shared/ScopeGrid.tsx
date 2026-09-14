@@ -86,7 +86,7 @@ export const ScopeGrid = ({ plugins, access, onChange, isDisabled }: Props) => (
       ))}
       {plugins.length === 0 && (
         <Text variant="body-small" color="secondary">
-          No scopable plugins configured. Set pat.scopablePlugins in app-config.
+          pat.scopablePlugins is an empty list in app-config. Remove the key to expose every plugin, or list the plugins tokens may reach.
         </Text>
       )}
     </div>

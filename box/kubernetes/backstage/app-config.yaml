@@ -312,41 +312,16 @@ pat:
   audit:
     # -- (int) Days to keep api call and token lifecycle events.
     retentionDays: 365
-  # -- (list) Plugins a token may be scoped to. The pat plugin itself is
-  # never scopable. A token can only reach /api/<id> for ids listed here.
-  scopablePlugins:
-    - id: catalog
-      label: Catalog
-      description: Entities, locations and refresh
-    - id: search
-      label: Search
-    - id: techdocs
-      label: TechDocs
-    - id: scaffolder
-      label: Scaffolder
-      description: Templates and task runs
-    - id: platforms
-      label: Platforms
-    - id: openapi-registry
-      label: API Registry
-    - id: catalog-health
-      label: Catalog Health
-    - id: argocd-appset
-      label: ArgoCD AppSets
-    - id: gitlab-token-audit
-      label: GitLab Token Audit
-    - id: opencost
-      label: OpenCost
-    - id: iam-user-audit
-      label: IAM User Audit
-    - id: s3-log-extract
-      label: S3 Log Extract
-    - id: opensearch-account
-      label: OpenSearch Account
-    - id: opensearch-viewer
-      label: OpenSearch Viewer
-    - id: opensearch-scaling
-      label: OpenSearch Scaling
+  # -- (list) Plugins a token may be scoped to. When the key is absent every
+  # backend plugin with an API is offered (see plugins/pat-backend/src/service/defaults.ts).
+  # Set it to restrict the list. An explicit empty list disables scoping entirely.
+  # The pat plugin itself is never scopable. A token can only reach /api/<id>
+  # for ids on the list.
+  # scopablePlugins:
+  #   - id: catalog
+  #     label: Catalog
+  #     description: Entities, locations and refresh
+  #   - search
 
 opencost:
   timezone: Asia/Seoul

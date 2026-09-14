@@ -44,7 +44,7 @@ A scope is one plugin id plus an access level.
 | `read` | GET, HEAD, OPTIONS |
 | `write` | Every method |
 
-Only plugins listed under `pat.scopablePlugins` can be granted. The `pat` plugin is never scopable, so a token cannot list, create or revoke tokens. Duplicate plugins in a request collapse to the highest access.
+Only plugins on the scopable list can be granted. When `pat.scopablePlugins` is absent the list is every backend plugin with an API, defined in `plugins/pat-backend/src/service/defaults.ts`. Setting the key replaces that list, and an explicit empty list disables scoping. The `pat` plugin is never scopable, so a token cannot list, create or revoke tokens. Duplicate plugins in a request collapse to the highest access.
 
 ## Lifetime
 
@@ -127,4 +127,4 @@ pat:
     - search
 ```
 
-Entries may be a plain plugin id or an object with `id`, `label` and `description`.
+`scopablePlugins` is optional. Omit it to offer every backend plugin. Entries may be a plain plugin id or an object with `id`, `label` and `description`.

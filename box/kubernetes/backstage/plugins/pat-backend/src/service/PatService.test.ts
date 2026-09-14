@@ -1,6 +1,7 @@
 import knex, { Knex } from 'knex';
 import { ConfigReader } from '@backstage/config';
 import { AuditStore } from './AuditStore';
+import { DEFAULT_SCOPABLE_PLUGINS } from './defaults';
 import { PatService, readSettings } from './PatService';
 import { TokenStore } from './TokenStore';
 
@@ -74,8 +75,14 @@ describe('PatService', () => {
       expect(readSettings(new ConfigReader({}))).toEqual({
         maxExpiryDays: 365,
         auditRetentionDays: 365,
-        scopablePlugins: [],
+        scopablePlugins: DEFAULT_SCOPABLE_PLUGINS,
       });
+      expect(DEFAULT_SCOPABLE_PLUGINS.map(p => p.id)).not.toContain('pat');
+    });
+
+    it('exposes nothing when scopablePlugins is an explicit empty list', () => {
+      const config = new ConfigReader({ pat: { scopablePlugins: [] } });
+      expect(readSettings(config).scopablePlugins).toEqual([]);
     });
   });
 
