@@ -15,7 +15,7 @@ const logger = {
 const service = {
   getToken: jest.fn(),
   updateToken: jest.fn(),
-  getSettings: jest.fn().mockReturnValue({ maxExpiryDays: 365, scopablePlugins: [] }),
+  getSettings: jest.fn().mockReturnValue({ maxExpiryDays: 365, auditRetentionDays: 365, scopablePlugins: [] }),
   listTokens: jest.fn().mockResolvedValue([]),
   createToken: jest.fn(),
   revokeToken: jest.fn(),

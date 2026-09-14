@@ -26,6 +26,7 @@ import {
 
 const NAME_MAX = 100;
 const DESCRIPTION_MAX = 500;
+export const DEFAULT_AUDIT_RETENTION_DAYS = 365;
 /** Token names are identifiers: they appear in logs, headers and URLs, so only a safe subset is allowed. */
 export const NAME_PATTERN = /^[A-Za-z0-9_-]+$/;
 
@@ -69,8 +70,15 @@ export function readSettings(config: Config): PatSettings {
       }
     }
   }
+  const retention = config.getOptionalNumber('pat.audit.retentionDays');
+  const auditRetentionDays = Math.max(
+    1,
+    Math.floor(retention ?? DEFAULT_AUDIT_RETENTION_DAYS),
+  );
+
   return {
     maxExpiryDays,
+    auditRetentionDays,
     scopablePlugins: scopablePlugins.filter(p => p.id !== SELF_PLUGIN_ID),
   };
 }

@@ -101,5 +101,6 @@ export interface ScopablePlugin {
 
 export interface PatSettings {
   maxExpiryDays: number;
+  auditRetentionDays: number;
   scopablePlugins: ScopablePlugin[];
 }

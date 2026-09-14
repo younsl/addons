@@ -118,5 +118,7 @@ export interface ScopablePlugin {
 
 export interface PatSettings {
   maxExpiryDays: number;
+  /** Days audit events are kept before the daily purge removes them. */
+  auditRetentionDays: number;
   scopablePlugins: ScopablePlugin[];
 }

@@ -9,8 +9,6 @@ import { createRouter } from './service/router';
 import { pluginIdFromPath } from './service/scopes';
 import { TokenStore } from './service/TokenStore';
 
-const DEFAULT_AUDIT_RETENTION_DAYS = 365;
-
 /**
  * Personal access tokens for external systems. Admins mint scoped, expiring
  * tokens in the UI; the root-level gateway middleware exchanges a presented
@@ -44,7 +42,7 @@ export const patPlugin = createBackendPlugin({
         const service = new PatService({ tokens, audit, logger, settings });
 
         logger.info(
-          `[pat] maxExpiryDays=${settings.maxExpiryDays} scopablePlugins=[${settings.scopablePlugins
+          `[pat] maxExpiryDays=${settings.maxExpiryDays} auditRetentionDays=${settings.auditRetentionDays} scopablePlugins=[${settings.scopablePlugins
             .map(p => p.id)
             .join(',')}]`,
         );
@@ -78,8 +76,7 @@ export const patPlugin = createBackendPlugin({
         httpRouter.use(router as any);
         httpRouter.addAuthPolicy({ path: '/health', allow: 'unauthenticated' });
 
-        const retentionDays =
-          config.getOptionalNumber('pat.audit.retentionDays') ?? DEFAULT_AUDIT_RETENTION_DAYS;
+        const retentionDays = settings.auditRetentionDays;
         await scheduler.scheduleTask({
           id: 'pat-audit-purge',
           frequency: { cron: '30 3 * * *' },

@@ -56,7 +56,7 @@ The **Access Tokens** entry under **Administration** in the sidebar is visible o
 
 - **Tokens** (`/pat`) lists tokens with state, scopes, expiry, last use and call count. The create dialog requires a name (letters, digits, hyphen and underscore only), a description, a lifetime typed in days or picked from the calendar, and at least one scope before the button enables. The secret is shown once after creation.
 - **Token detail** (`/pat/tokens/:id`), opened by clicking a row, edits the name, description and permissions of an active token in place and shows its last 20 audit events. Lifetime cannot be changed. Revoked and expired tokens are read-only. Revoke and Delete live here as well.
-- **Audit Log** (`/pat/audit`) lists events newest first with filters by event type, outcome and free text, pagination, and an optional 15-second auto refresh.
+- **Audit Log** (`/pat/audit`) lists events newest first with filters by event type, outcome and free text, pagination, and an optional 15-second auto refresh. The configured retention period is shown above the table.
 
 Revoking and deleting both ask the admin to retype the token name. Deleting an active token stops it authenticating immediately, the same as revoking, and removes it from the list. Audit rows keep the token id and name so history survives deletion, and the `token.deleted` event records the state the token was in.
 
@@ -97,7 +97,7 @@ All routes except `/health` require an admin user token.
 | Method | Path | Purpose |
 |---|---|---|
 | GET | `/api/pat/admin-status` | `{ isAdmin }` for the current user |
-| GET | `/api/pat/settings` | Max lifetime and scopable plugins |
+| GET | `/api/pat/settings` | Max lifetime, audit retention days and scopable plugins |
 | GET | `/api/pat/tokens` | List tokens, never the secret |
 | POST | `/api/pat/tokens` | Create, returns `{ token, record }` once |
 | GET | `/api/pat/tokens/:id` | One token |

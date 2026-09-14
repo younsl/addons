@@ -79,6 +79,7 @@ export const AuditView = () => {
   }, [autoRefresh, retry]);
 
   const { value: tokens } = useAsyncRetry(() => api.listTokens(), [api]);
+  const { value: settings } = useAsyncRetry(() => api.getSettings(), [api]);
   const tokenNames = useMemo(() => {
     const map = new Map<string, string>();
     for (const t of tokens ?? []) map.set(t.id, t.name);
@@ -232,6 +233,15 @@ export const AuditView = () => {
             isSelected={autoRefresh}
             onChange={setAutoRefresh}
           />
+        </Flex>
+
+        <Flex gap="2" align="center" justify="between" style={{ flexWrap: 'wrap' }}>
+          <Text variant="body-x-small" color="secondary">
+            {total > 0 ? `${total} events` : 'No events'}
+            {settings
+              ? ` · Retention ${settings.auditRetentionDays} days. Older events are purged daily, so export anything you need to keep beyond that.`
+              : ''}
+          </Text>
         </Flex>
 
         <Box className="pat-table-wrapper">

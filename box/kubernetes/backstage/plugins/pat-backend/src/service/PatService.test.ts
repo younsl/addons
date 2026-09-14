@@ -14,6 +14,7 @@ const logger = {
 
 const settings = {
   maxExpiryDays: 365,
+  auditRetentionDays: 365,
   scopablePlugins: [
     { id: 'catalog', label: 'Catalog', description: null },
     { id: 'opencost', label: 'OpenCost', description: null },
@@ -55,11 +56,13 @@ describe('PatService', () => {
       const config = new ConfigReader({
         pat: {
           maxExpiryDays: 9999,
+          audit: { retentionDays: 30 },
           scopablePlugins: ['catalog', { id: 'pat' }, { id: 'search', label: 'Search', description: 'x' }],
         },
       });
       expect(readSettings(config)).toEqual({
         maxExpiryDays: 365,
+        auditRetentionDays: 30,
         scopablePlugins: [
           { id: 'catalog', label: 'catalog', description: null },
           { id: 'search', label: 'Search', description: 'x' },
@@ -68,7 +71,11 @@ describe('PatService', () => {
     });
 
     it('defaults when unset', () => {
-      expect(readSettings(new ConfigReader({}))).toEqual({ maxExpiryDays: 365, scopablePlugins: [] });
+      expect(readSettings(new ConfigReader({}))).toEqual({
+        maxExpiryDays: 365,
+        auditRetentionDays: 365,
+        scopablePlugins: [],
+      });
     });
   });
 
