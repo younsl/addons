@@ -62,6 +62,32 @@
   display: block;
 }
 
+.pat-readonly-field > * {
+  display: block;
+}
+
+.pat-readonly-field > :first-child {
+  display: flex;
+  margin-bottom: 4px;
+}
+
+.pat-readonly-field svg {
+  color: var(--bui-fg-secondary, rgba(255, 255, 255, 0.55));
+}
+
+.pat-readonly-value {
+  padding: 6px 12px;
+  border-radius: var(--bui-radius-2, 6px);
+  border: 1px dashed var(--bui-border, rgba(255, 255, 255, 0.2));
+  background: var(--bui-bg-surface-2, rgba(255, 255, 255, 0.04));
+  color: var(--bui-fg-secondary, rgba(255, 255, 255, 0.7));
+  font-size: 14px;
+  word-break: break-all;
+  user-select: all;
+  cursor: not-allowed;
+  margin-bottom: 4px;
+}
+
 .pat-expiry-row {
   display: grid;
   grid-template-columns: 1fr 1fr;

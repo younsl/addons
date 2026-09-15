@@ -13,7 +13,6 @@ import {
   TagGroup,
   Text,
   TextAreaField,
-  TextField,
 } from '@backstage/ui';
 import type { ColumnConfig, TextColorStatus, TextColors } from '@backstage/ui';
 import { useApi } from '@backstage/core-plugin-api';
@@ -28,6 +27,7 @@ import {
   DESCRIPTION_MAX,
   formatDateTime,
   formatRelative,
+  ReadOnlyField,
   sameScopes,
   ScopeGrid,
   scopesToAccessMap,
@@ -319,17 +319,16 @@ export const TokenDetailPage = () => {
         )}
 
         <Flex direction="column" gap="4" style={{ maxWidth: 720 }}>
-          <TextField
+          <ReadOnlyField
             label="Name"
-            isReadOnly
             value={token.name}
-            description="Fixed at creation and cannot be changed."
+            hint="Fixed at creation and cannot be changed."
           />
-          <TextField
+          <ReadOnlyField
             label="ID"
-            isReadOnly
             value={token.id}
-            description="Use this to filter the audit log or address the token in the API."
+            mono
+            hint="Use this to filter the audit log or address the token in the API."
           />
           <TextAreaField
             label="Description"
