@@ -20,7 +20,6 @@ import { useApi } from '@backstage/core-plugin-api';
 import { useAsyncRetry } from 'react-use';
 import { patApiRef } from '../../api';
 import { PatToken, TokenState } from '../../api/types';
-import { CreateTokenDialog } from '../CreateTokenDialog';
 import { daysUntil, formatDate, formatDateTime, formatRelative } from '../shared';
 
 interface TokenRow extends PatToken {
@@ -66,7 +65,6 @@ export const TokensView = () => {
 
   const [search, setSearch] = useState('');
   const [stateFilter, setStateFilter] = useState<'all' | TokenState>('all');
-  const [creating, setCreating] = useState(false);
   const [sort, setSort] = useState<SortDescriptor>({ column: 'created', direction: 'descending' });
 
   const refresh = () => {
@@ -263,11 +261,7 @@ export const TokensView = () => {
               Refresh
             </Button>
           </Flex>
-          <Button
-            variant="primary"
-            onPress={() => setCreating(true)}
-            isDisabled={!settings}
-          >
+          <Button variant="primary" onPress={() => navigate('/pat/tokens/new')} isDisabled={!settings}>
             Create token
           </Button>
         </Flex>
@@ -304,14 +298,6 @@ export const TokensView = () => {
           />
         </Box>
       </Flex>
-
-      {creating && settings && (
-        <CreateTokenDialog
-          settings={settings}
-          onClose={() => setCreating(false)}
-          onCreated={refresh}
-        />
-      )}
     </Container>
   );
 };

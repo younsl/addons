@@ -9,6 +9,7 @@ import { patApiRef } from '../../api';
 import { TokensView } from '../TokensView';
 import { AuditView } from '../AuditView';
 import { TokenDetailPage } from '../TokenDetailPage';
+import { CreateTokenPage } from '../CreateTokenPage';
 import './PatPage.css';
 
 const Header = () => (
@@ -65,6 +66,7 @@ export const PatPage = () => {
       <Header />
       <Routes>
         <Route path="/" element={<TokensView />} />
+        <Route path="/tokens/new" element={<CreateTokenPage />} />
         <Route path="/tokens/:id" element={<TokenDetailPage />} />
         <Route path="/audit" element={<AuditView />} />
       </Routes>
