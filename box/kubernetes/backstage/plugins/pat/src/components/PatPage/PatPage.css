@@ -76,16 +76,24 @@
 }
 
 .pat-readonly-value {
-  padding: 6px 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 2px 2px 12px;
   border-radius: var(--bui-radius-2, 6px);
   border: 1px dashed var(--bui-border, rgba(255, 255, 255, 0.2));
   background: var(--bui-bg-surface-2, rgba(255, 255, 255, 0.04));
   color: var(--bui-fg-secondary, rgba(255, 255, 255, 0.7));
   font-size: 14px;
+  margin-bottom: 4px;
+}
+
+.pat-readonly-value > span {
+  flex: 1;
+  min-width: 0;
   word-break: break-all;
   user-select: all;
   cursor: not-allowed;
-  margin-bottom: 4px;
 }
 
 .pat-expiry-row {
