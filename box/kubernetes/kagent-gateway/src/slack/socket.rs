@@ -18,7 +18,8 @@ use async_trait::async_trait;
 use futures_util::{SinkExt, StreamExt};
 use serde::Deserialize;
 use tokio::net::TcpStream;
-use tokio::time::{sleep, timeout};
+use tokio::time::{Instant, sleep, timeout};
+use tokio_tungstenite::tungstenite::Bytes;
 use tokio_tungstenite::tungstenite::Message as WsMessage;
 use tokio_tungstenite::tungstenite::protocol::WebSocketConfig;
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
@@ -39,6 +40,15 @@ const MAX_BACKOFF: Duration = Duration::from_secs(30);
 /// Bounds one envelope. Slack event payloads are small; anything larger is a
 /// protocol surprise rather than a mention.
 const READ_LIMIT: usize = 1 << 20;
+/// How long the read waits before probing an idle connection with a ping.
+/// Slack sends its own traffic well inside this, so a silent interval is
+/// already unusual.
+const PING_INTERVAL: Duration = Duration::from_secs(30);
+/// How long the connection may stay silent before it is treated as dead. A
+/// socket dropped upstream without a FIN never wakes the read and never
+/// errors, so without this the loop parks forever and the reconnect in
+/// [`Client::run`] is never reached.
+const IDLE_TIMEOUT: Duration = Duration::from_secs(90);
 
 /// One Slack event carried by an envelope, flattened to the fields the
 /// mention path routes on. `raw` keeps the original payload for debug
@@ -75,6 +85,8 @@ pub struct Client {
     app_token: String,
     metrics: Arc<Metrics>,
     backoff: Duration,
+    ping_interval: Duration,
+    idle_timeout: Duration,
 }
 
 type Socket = WebSocketStream<MaybeTlsStream<TcpStream>>;
@@ -144,6 +156,8 @@ impl Client {
             app_token: app_token.to_string(),
             metrics,
             backoff: Duration::from_secs(1),
+            ping_interval: PING_INTERVAL,
+            idle_timeout: IDLE_TIMEOUT,
         }
     }
 
@@ -151,6 +165,14 @@ impl Client {
     #[cfg(test)]
     pub const fn with_backoff(mut self, backoff: Duration) -> Self {
         self.backoff = backoff;
+        self
+    }
+
+    /// Overrides the silence thresholds, which tests shorten.
+    #[cfg(test)]
+    pub const fn with_idle(mut self, ping_interval: Duration, idle_timeout: Duration) -> Self {
+        self.ping_interval = ping_interval;
+        self.idle_timeout = idle_timeout;
         self
     }
 
@@ -217,8 +239,58 @@ impl Client {
     }
 
     async fn envelope_loop(&self, mut ws: Socket, handler: &dyn Handler) -> Result<Duration> {
+        self.metrics.mark_socket_frame();
+        let mut last_frame = Instant::now();
+        // Set while the connection is silent, so the three moments that matter
+        // are logged once each per stretch rather than once per ping: the
+        // silence starting, it ending, and it outliving the ceiling. The pings
+        // themselves stay silent; on an idle connection they are every-interval
+        // noise that says nothing.
+        let mut silent = false;
         loop {
-            let raw = match ws.next().await {
+            let Ok(frame) = timeout(self.ping_interval, ws.next()).await else {
+                // Nothing arrived for a whole interval. Ping to force the
+                // question, and give up once the silence has run past the idle
+                // ceiling: returning an error is what hands the connection back
+                // to the reconnect loop.
+                let idle = last_frame.elapsed();
+                if idle >= self.idle_timeout {
+                    self.metrics.observe_socket_connection("idle_timeout");
+                    warn!(
+                        idle_secs = idle.as_secs(),
+                        "socket mode connection stayed silent past the idle ceiling and is being dropped"
+                    );
+                    bail!("no frames for {idle:?}");
+                }
+                if !silent {
+                    silent = true;
+                    info!(
+                        idle_secs = idle.as_secs(),
+                        ceiling_secs = self.idle_timeout.as_secs(),
+                        "socket mode connection went quiet and is being probed with pings"
+                    );
+                }
+                timeout(ACK_TIMEOUT, ws.send(WsMessage::Ping(Bytes::default())))
+                    .await
+                    .map_err(|_| anyhow!("ping write timed out"))?
+                    .context("send ping")?;
+                continue;
+            };
+
+            // Any frame proves the connection is alive, a pong answering the
+            // ping above included, so the stamp moves before the kind is
+            // examined.
+            if silent {
+                silent = false;
+                info!(
+                    silent_secs = last_frame.elapsed().as_secs(),
+                    "socket mode connection answered again"
+                );
+            }
+            last_frame = Instant::now();
+            self.metrics.mark_socket_frame();
+
+            let raw = match frame {
                 Some(Ok(WsMessage::Text(text))) => text.to_string(),
                 Some(Ok(WsMessage::Binary(bytes))) => String::from_utf8_lossy(&bytes).into_owned(),
                 Some(Ok(WsMessage::Close(frame))) => bail!("connection closed by slack: {frame:?}"),
@@ -555,6 +627,44 @@ mod tests {
         let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
         while metrics.socket_connections.get_or_create(&ok).get() < 3 {
             assert!(tokio::time::Instant::now() < deadline, "no reconnects");
+            sleep(Duration::from_millis(10)).await;
+        }
+        shutdown.cancel();
+        timeout(Duration::from_secs(5), run).await.unwrap().unwrap();
+    }
+
+    #[tokio::test]
+    async fn reconnects_when_the_connection_goes_silent() {
+        // A server that accepts the connection and then answers nothing, not
+        // even the ping: the shape a socket dropped upstream without a FIN
+        // leaves behind. Without the idle ceiling the read parks here forever.
+        let url = ws_server(|mut ws| async move {
+            ws.send(WsMessage::text(json!({"type": "hello"}).to_string()))
+                .await
+                .unwrap();
+            std::future::pending::<()>().await;
+            drop(ws);
+        })
+        .await;
+        let slack = slack(&url).await;
+        let metrics = Arc::new(Metrics::new());
+        let client = Client::new(&slack.uri(), "xapp-test", metrics.clone())
+            .with_backoff(Duration::from_millis(5))
+            .with_idle(Duration::from_millis(20), Duration::from_millis(60));
+        let shutdown = CancellationToken::new();
+        let run = tokio::spawn({
+            let shutdown = shutdown.clone();
+            async move { client.run(Arc::new(Recorder::default()), shutdown).await }
+        });
+        let idle = crate::observability::metrics::ResultLabels {
+            result: "idle_timeout".into(),
+        };
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+        while metrics.socket_connections.get_or_create(&idle).get() < 2 {
+            assert!(
+                tokio::time::Instant::now() < deadline,
+                "silent connection never gave up"
+            );
             sleep(Duration::from_millis(10)).await;
         }
         shutdown.cancel();

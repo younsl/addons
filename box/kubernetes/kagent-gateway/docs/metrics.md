@@ -55,7 +55,8 @@ runs and these series stay at zero.
 | Metric | Type | Description |
 |--------|------|-------------|
 | `kagent_gateway_socket_connected` | Gauge | 1 while a Socket Mode connection is established. Readiness is tied to the HTTP listener instead, because a dropped WebSocket must not restart a pod whose alert path is healthy, so this gauge is the only signal that mentions are going unanswered. |
-| `kagent_gateway_socket_connections_total{result}` | Counter | Connection attempts. `result` is `ok`, `error`, or `disconnect_requested` when Slack asked for a reconnect, which it does roughly hourly as a matter of course. |
+| `kagent_gateway_socket_last_frame_timestamp_seconds` | Gauge | Unix time of the last frame read off the connection. A socket dropped upstream without a FIN leaves `socket_connected` at 1, so staleness here is what separates a live connection from a wedged one. |
+| `kagent_gateway_socket_connections_total{result}` | Counter | Connection attempts. `result` is `ok`, `error`, `disconnect_requested` when Slack asked for a reconnect, which it does roughly hourly as a matter of course, or `idle_timeout` when a silent connection was given up on. |
 | `kagent_gateway_chat_events_total{result}` | Counter | Mention events, by outcome. `result` is `accepted` or the drop reason: `bot`, `subtype`, `dm`, `channel_denied`, `user_denied`, `not_in_thread`, `duplicate`, or `empty`. |
 | `kagent_gateway_chat_turns_total{agent,result}` | Counter | Agent turns answering a mention, by the agent that handled it. `result` is `ok`, `error`, or `queue_timeout`. |
 | `kagent_gateway_chat_turn_duration_seconds` | Histogram | Wall-clock duration of one turn, from the accepted event to the posted answer. |
@@ -246,3 +247,12 @@ min_over_time(kagent_gateway_socket_connected[10m]) == 0
 
 Window it over minutes rather than alerting on the instantaneous value: Slack
 recycles the connection roughly hourly, and the reconnect briefly reads zero.
+
+That gauge only catches a connection the gateway knows is down. A socket
+dropped upstream without a FIN never wakes the read, so the gateway gives up on
+one that has gone silent for 90 seconds and reconnects; the frame stamp is what
+shows the silence itself:
+
+```promql
+time() - kagent_gateway_socket_last_frame_timestamp_seconds > 300
+```

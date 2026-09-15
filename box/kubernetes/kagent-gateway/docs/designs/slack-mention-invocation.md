@@ -116,6 +116,13 @@ listener rather than replacing it. The lifecycle is:
    exponential backoff and jitter. A failed `apps.connections.open` is retried,
    not fatal: the alert path must keep working when the WebSocket cannot be
    established.
+6. A socket dropped upstream without a FIN signals none of the above: the read
+   never wakes and never errors, so the loop would park on it forever while
+   `socket_connected` still reads 1. The read is therefore bounded. An interval
+   without a frame starts a ping probe, and 90 seconds without one ends the
+   session so step 5 reconnects. Each silent stretch logs three times at most,
+   for its start, its end, and the give-up; the pings themselves log nothing,
+   since on an idle connection they repeat every interval and say nothing.
 
 ### New package
 

@@ -6,7 +6,7 @@
 //! series, where it costs one series per alert rule forever.
 
 use std::sync::Mutex;
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use prometheus_client::encoding::EncodeLabelSet;
 use prometheus_client::encoding::text::encode;
@@ -102,6 +102,7 @@ pub struct Metrics {
     pub agent_task_polls: Histogram,
 
     pub socket_connected: Gauge,
+    pub socket_last_frame: Gauge,
     pub socket_connections: Family<ResultLabels, Counter>,
     pub chat_events: Family<ResultLabels, Counter>,
     pub chat_turns: Family<AgentResultLabels, Counter>,
@@ -166,6 +167,7 @@ impl Metrics {
             agent_task_duration: Family::new_with_constructor(task_histogram),
             agent_task_polls: histogram(&[1.0, 2.0, 4.0, 8.0, 16.0, 32.0, 64.0]),
             socket_connected: Gauge::default(),
+            socket_last_frame: Gauge::default(),
             socket_connections: Family::default(),
             chat_events: Family::default(),
             chat_turns: Family::default(),
@@ -286,6 +288,11 @@ impl Metrics {
             "socket_connected",
             "1 while a Socket Mode connection is established. Readiness stays tied to the HTTP listener, so this gauge is what tells a dropped mention path from a healthy pod",
             m.socket_connected.clone(),
+        );
+        registry.register(
+            "socket_last_frame_timestamp_seconds",
+            "Unix time of the last frame read off the Socket Mode connection. socket_connected stays 1 on a half-open socket, where no frame ever arrives and no error is raised, so staleness here is what distinguishes a live connection from a wedged one",
+            m.socket_last_frame.clone(),
         );
         registry.register(
             "socket_connections",
@@ -416,6 +423,18 @@ impl Metrics {
     /// Publishes whether a Socket Mode connection is up.
     pub fn set_socket_connected(&self, up: bool) {
         self.socket_connected.set(i64::from(up));
+    }
+
+    /// Stamps the arrival of a Socket Mode frame. Slack sends its own traffic
+    /// on an otherwise idle connection, so a stamp that stops advancing while
+    /// `socket_connected` is 1 means the socket is wedged.
+    pub fn mark_socket_frame(&self) {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        self.socket_last_frame
+            .set(i64::try_from(now).unwrap_or(i64::MAX));
     }
 
     /// Counts a webhook by outcome.
