@@ -54,11 +54,11 @@ Only plugins on the scopable list can be granted. When `pat.scopablePlugins` is 
 
 The **Access Tokens** entry under **Administration** in the sidebar is visible only to users listed in `permission.admins`. Its badge counts denied token calls in the last 24 hours. The page has two tabs. The backend enforces the same list on every route. Service principals and anonymous callers are rejected even when `backend.auth.dangerouslyDisableDefaultAuthPolicy` is on, which differs from the older in-house plugins that fall back to guest in that mode.
 
-- **Tokens** (`/pat`) lists tokens with state, scopes, expiry, last use and call count. The create dialog requires a name (letters, digits, hyphen and underscore only), a description, a lifetime typed in days or picked from the calendar, and at least one scope before the button enables. The secret is shown once after creation.
-- **Token detail** (`/pat/tokens/:id`), opened by clicking a row, edits the name, description and permissions of an active token in place and shows its last 20 audit events. Lifetime cannot be changed. Revoked and expired tokens are read-only. Revoke and Delete live here as well.
+- **Tokens** (`/pat`) lists tokens with state, scopes, expiry, last use and call count. The create dialog requires a name (letters, digits, hyphen and underscore only), a description, a lifetime typed in days or picked from the calendar, and at least one scope before the button enables. The permission grid has a per-plugin picker plus a picker in its header that sets every plugin to No access, Read or Read & write at once. The secret is shown once after creation.
+- **Token detail** (`/pat/tokens/:id`), opened by clicking a row, edits the description and permissions of an active token in place and shows its last 20 audit events. Name and lifetime are fixed at creation and cannot be changed, and the backend rejects a `name` field on update. Revoked and expired tokens are read-only. Revoke and Delete live here as well.
 - **Audit Log** (`/pat/audit`) lists events newest first with filters by event type, outcome and free text, pagination, and an optional 15-second auto refresh. The configured retention period is shown above the table.
 
-Revoking and deleting both ask the admin to retype the token name. Deleting an active token stops it authenticating immediately, the same as revoking, and removes it from the list. Audit rows keep the token id and name so history survives deletion, and the `token.deleted` event records the state the token was in.
+Revoking and deleting both ask the admin to retype the token name. The button stays disabled until the input matches the name exactly, case-sensitive. Deleting an active token stops it authenticating immediately, the same as revoking, and removes it from the list. Audit rows keep the token id and name so history survives deletion, and the `token.deleted` event records the state the token was in.
 
 ## Schema
 
@@ -101,7 +101,7 @@ All routes except `/health` require an admin user token.
 | GET | `/api/pat/tokens` | List tokens, never the secret |
 | POST | `/api/pat/tokens` | Create, returns `{ token, record }` once |
 | GET | `/api/pat/tokens/:id` | One token |
-| PATCH | `/api/pat/tokens/:id` | Edit `name`, `description`, `scopes` of an active token |
+| PATCH | `/api/pat/tokens/:id` | Edit `description`, `scopes` of an active token. A `name` field is rejected with 400 |
 | POST | `/api/pat/tokens/:id/revoke` | Revoke |
 | DELETE | `/api/pat/tokens/:id` | Delete a token in any state |
 | GET | `/api/pat/audit` | `limit`, `offset`, `tokenId`, `eventType`, `outcome`, `search` |

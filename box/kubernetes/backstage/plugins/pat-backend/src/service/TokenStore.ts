@@ -142,10 +142,9 @@ export class TokenStore {
 
   async update(
     id: string,
-    patch: { name?: string; description?: string; scopes?: TokenScope[] },
+    patch: { description?: string; scopes?: TokenScope[] },
   ): Promise<PatToken | undefined> {
     const values: Partial<TokenRow> = {};
-    if (patch.name !== undefined) values.name = patch.name;
     if (patch.description !== undefined) values.description = patch.description;
     if (patch.scopes !== undefined) values.scopes = encodeScopes(patch.scopes);
     if (Object.keys(values).length > 0) {

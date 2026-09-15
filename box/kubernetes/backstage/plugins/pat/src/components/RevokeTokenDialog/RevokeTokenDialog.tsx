@@ -22,20 +22,18 @@ interface Props {
   onDone: () => void;
 }
 
-/**
- * In-app confirmation for destructive token actions. The admin must retype
- * the token name so a stray click cannot cut off an integration.
- */
 export const RevokeTokenDialog = ({ token, mode, onClose, onDone }: Props) => {
   const api = useApi(patApiRef);
   const [confirmation, setConfirmation] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const matches = confirmation.trim() === token.name;
+  const matches = confirmation === token.name;
+  const mismatch = confirmation.length > 0 && !matches;
   const verb = mode === 'revoke' ? 'Revoke' : 'Delete';
 
   const handleSubmit = async () => {
+    if (!matches || submitting) return;
     setSubmitting(true);
     setError(null);
     try {
@@ -90,13 +88,17 @@ export const RevokeTokenDialog = ({ token, mode, onClose, onDone }: Props) => {
               />
             )}
             <Text variant="body-small" color="secondary">
-              Type the token name to confirm.
+              Type <span className="pat-mono">{token.name}</span> exactly to confirm. The match is
+              case-sensitive.
             </Text>
             <TextField
               aria-label="Confirm token name"
-              placeholder={token.name}
               value={confirmation}
               onChange={setConfirmation}
+              autoComplete="off"
+              spellCheck="false"
+              isInvalid={mismatch}
+              description={mismatch ? 'Name does not match.' : undefined}
             />
             {error && <Alert status="danger" title={error} />}
           </Flex>

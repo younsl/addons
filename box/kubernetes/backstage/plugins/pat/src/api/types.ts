@@ -32,7 +32,6 @@ export interface CreateTokenInput {
 }
 
 export interface UpdateTokenInput {
-  name?: string;
   description?: string;
   scopes?: TokenScope[];
 }

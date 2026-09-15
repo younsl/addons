@@ -194,9 +194,9 @@ export class PatService {
   }
 
   /**
-   * Edits name, description or scopes of an active token. Lifetime is fixed
-   * at creation. The audit event stores the before and after values so a
-   * scope widening is traceable.
+   * Edits description or scopes of an active token. Name and lifetime are
+   * fixed at creation. The audit event stores the before and after values so
+   * a scope widening is traceable.
    */
   async updateToken(id: string, input: unknown, updatedBy: string): Promise<PatToken> {
     const existing = await this.getToken(id);
@@ -204,8 +204,10 @@ export class PatService {
       throw new ConflictError(`cannot edit a ${existing.state} token`);
     }
     const body = (input ?? {}) as Record<string, unknown>;
+    if (body.name !== undefined) {
+      throw new ValidationError('name cannot be changed after creation');
+    }
     const patch: UpdateTokenInput = {};
-    if (body.name !== undefined) patch.name = this.validateName(body.name);
     if (body.description !== undefined) patch.description = this.validateDescription(body.description);
     if (body.scopes !== undefined) patch.scopes = this.validateScopes(body.scopes);
     if (Object.keys(patch).length === 0) {
@@ -217,10 +219,6 @@ export class PatService {
 
     const before: Record<string, unknown> = {};
     const after: Record<string, unknown> = {};
-    if (patch.name !== undefined && patch.name !== existing.name) {
-      before.name = existing.name;
-      after.name = updated.name;
-    }
     if (patch.description !== undefined && patch.description !== existing.description) {
       before.description = existing.description;
       after.description = updated.description;

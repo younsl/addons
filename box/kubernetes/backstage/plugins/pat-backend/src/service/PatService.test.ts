@@ -236,16 +236,25 @@ describe('PatService', () => {
       });
     });
 
-    it('rejects an invalid name on update', async () => {
+    it('refuses to rename a token, even to its current name', async () => {
       const { record } = await service.createToken(validInput, 'user:default/admin');
-      await expect(
-        service.updateToken(record.id, { name: 'bad name' }, 'user:default/admin'),
-      ).rejects.toMatchObject({ statusCode: 400 });
+      for (const name of ['renamed', validInput.name]) {
+        await expect(
+          service.updateToken(record.id, { name }, 'user:default/admin'),
+        ).rejects.toMatchObject({ statusCode: 400, message: expect.stringContaining('name') });
+      }
+      expect((await service.getToken(record.id)).name).toBe(validInput.name);
+      const events = await audit.query({ limit: 10, offset: 0 });
+      expect(events.items.map(e => e.eventType)).toEqual(['token.created']);
     });
 
     it('does not write an audit event when nothing changed', async () => {
       const { record } = await service.createToken(validInput, 'user:default/admin');
-      await service.updateToken(record.id, { name: validInput.name }, 'user:default/admin');
+      await service.updateToken(
+        record.id,
+        { description: validInput.description },
+        'user:default/admin',
+      );
       const events = await audit.query({ limit: 10, offset: 0 });
       expect(events.items.map(e => e.eventType)).toEqual(['token.created']);
     });
@@ -263,11 +272,11 @@ describe('PatService', () => {
       ).rejects.toMatchObject({ statusCode: 400 });
       await service.revokeToken(record.id, 'user:default/admin');
       await expect(
-        service.updateToken(record.id, { name: 'x' }, 'user:default/admin'),
+        service.updateToken(record.id, { description: 'x' }, 'user:default/admin'),
       ).rejects.toMatchObject({ statusCode: 409 });
-      await expect(service.updateToken('missing', { name: 'x' }, 'user:default/admin')).rejects.toMatchObject({
-        statusCode: 404,
-      });
+      await expect(
+        service.updateToken('missing', { description: 'x' }, 'user:default/admin'),
+      ).rejects.toMatchObject({ statusCode: 404 });
     });
 
     it('returns a single token and 404s on unknown ids', async () => {

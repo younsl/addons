@@ -28,10 +28,7 @@ import {
   DESCRIPTION_MAX,
   formatDateTime,
   formatRelative,
-  NAME_MAX,
-  nameError,
   sameScopes,
-  sanitizeName,
   ScopeGrid,
   scopesToAccessMap,
 } from '../shared';
@@ -58,8 +55,8 @@ const Field = ({ label, children }: { label: string; children: React.ReactNode }
 );
 
 /**
- * Token detail with in-place editing of name, description and scopes. The
- * lifetime is fixed at creation and cannot be extended here. Revoke and
+ * Token detail with in-place editing of description and scopes. The name and
+ * lifetime are fixed at creation and cannot be changed here. Revoke and
  * delete reuse the confirmation dialog from the list page.
  */
 export const TokenDetailPage = () => {
@@ -74,7 +71,6 @@ export const TokenDetailPage = () => {
     [api, id],
   );
 
-  const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [access, setAccess] = useState<AccessMap>({});
   const [saving, setSaving] = useState(false);
@@ -84,7 +80,6 @@ export const TokenDetailPage = () => {
 
   useEffect(() => {
     if (!token) return;
-    setName(token.name);
     setDescription(token.description ?? '');
     setAccess(scopesToAccessMap(token.scopes));
   }, [token]);
@@ -98,10 +93,7 @@ export const TokenDetailPage = () => {
   const plugins = settings?.scopablePlugins ?? [];
   const scopes = useMemo(() => accessMapToScopes(access, plugins), [access, plugins]);
 
-  const trimmedName = name.trim();
   const trimmedDescription = description.trim();
-  const nameProblem = nameError(trimmedName);
-  const nameValid = nameProblem === null;
   const descriptionValid =
     trimmedDescription.length > 0 && trimmedDescription.length <= DESCRIPTION_MAX;
   const scopesValid = scopes.length > 0;
@@ -109,10 +101,8 @@ export const TokenDetailPage = () => {
 
   const dirty =
     !!token &&
-    (trimmedName !== token.name ||
-      trimmedDescription !== (token.description ?? '') ||
-      !sameScopes(scopes, token.scopes));
-  const canSave = editable && dirty && nameValid && descriptionValid && scopesValid && !saving;
+    (trimmedDescription !== (token.description ?? '') || !sameScopes(scopes, token.scopes));
+  const canSave = editable && dirty && descriptionValid && scopesValid && !saving;
 
   const refreshAll = () => {
     retry();
@@ -125,7 +115,6 @@ export const TokenDetailPage = () => {
     setSaveError(null);
     try {
       const patch: Parameters<typeof api.updateToken>[1] = {};
-      if (trimmedName !== token.name) patch.name = trimmedName;
       if (trimmedDescription !== (token.description ?? '')) patch.description = trimmedDescription;
       if (!sameScopes(scopes, token.scopes)) patch.scopes = scopes;
       await api.updateToken(token.id, patch);
@@ -140,7 +129,6 @@ export const TokenDetailPage = () => {
 
   const handleReset = () => {
     if (!token) return;
-    setName(token.name);
     setDescription(token.description ?? '');
     setAccess(scopesToAccessMap(token.scopes));
     setSaveError(null);
@@ -326,26 +314,17 @@ export const TokenDetailPage = () => {
           <Alert
             status="info"
             title={`This token is ${token.state}`}
-            description="Name, description and permissions are read-only once a token can no longer authenticate. Issue a new token to change access."
+            description="Description and permissions are read-only once a token can no longer authenticate. Issue a new token to change access."
           />
         )}
 
         <Flex direction="column" gap="4" style={{ maxWidth: 720 }}>
           <TextField
             label="Name"
-            isRequired
-            isDisabled={!editable}
-            value={name}
-            onChange={value => setName(sanitizeName(value))}
-            maxLength={NAME_MAX}
-            description={`Letters, digits, - and _ only. ${trimmedName.length}/${NAME_MAX}`}
-            isInvalid={!nameValid}
+            isReadOnly
+            value={token.name}
+            description="Fixed at creation and cannot be changed."
           />
-          {nameProblem && (
-            <Text variant="body-x-small" color="danger">
-              {nameProblem}
-            </Text>
-          )}
           <TextAreaField
             label="Description"
             isRequired
