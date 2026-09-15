@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import {
   Alert,
   Button,
+  ButtonIcon,
   Container,
   DatePicker,
   Flex,
@@ -13,6 +14,7 @@ import {
   TextField,
 } from '@backstage/ui';
 import { getLocalTimeZone, today } from '@internationalized/date';
+import { RiCheckLine, RiFileCopyLine } from '@remixicon/react';
 import { useApi } from '@backstage/core-plugin-api';
 import { useAsync } from 'react-use';
 import { patApiRef } from '../../api';
@@ -134,17 +136,19 @@ const CreateTokenForm = ({ settings }: { settings: PatSettings }) => {
           title="Copy the token now"
           description="This is the only time the secret is shown. Backstage stores a hash, so a lost token must be revoked and reissued."
         />
-        <div className="pat-token-secret" data-testid="pat-secret">
-          {created.token}
+        <div className="pat-token-secret">
+          <span data-testid="pat-secret">{created.token}</span>
+          <ButtonIcon
+            aria-label={copied ? 'Copied' : 'Copy token'}
+            variant="tertiary"
+            size="small"
+            onPress={handleCopy}
+            icon={copied ? <RiCheckLine /> : <RiFileCopyLine />}
+          />
         </div>
-        <Flex gap="2" align="center">
-          <Button variant="primary" onPress={handleCopy}>
-            {copied ? 'Copied' : 'Copy to clipboard'}
-          </Button>
-          <Text variant="body-x-small" color="secondary">
-            Expires {new Date(created.record.expiresAt).toLocaleDateString()}
-          </Text>
-        </Flex>
+        <Text variant="body-x-small" color="secondary">
+          Expires {new Date(created.record.expiresAt).toLocaleDateString()}
+        </Text>
         <Text variant="body-small" color="secondary">
           Send it as <code>Authorization: Bearer &lt;token&gt;</code> to any
           <code> /api/&lt;plugin&gt;</code> endpoint covered by the granted scopes.
