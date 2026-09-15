@@ -27,16 +27,31 @@
   font-size: 12px;
 }
 
-.pat-scope-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 140px;
-  gap: 6px 12px;
-  align-items: center;
+.pat-scope-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--bui-border, rgba(255, 255, 255, 0.12));
 }
 
-.pat-scope-grid-header {
-  padding-bottom: 4px;
-  border-bottom: 1px solid var(--bui-border, rgba(255, 255, 255, 0.12));
+.pat-scope-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 150px;
+  gap: 12px;
+  align-items: center;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--bui-border, rgba(255, 255, 255, 0.08));
+}
+
+.pat-scope-row-text {
+  min-width: 0;
+}
+
+.pat-scope-row-text > * {
+  display: block;
 }
 
 .pat-expiry-row {

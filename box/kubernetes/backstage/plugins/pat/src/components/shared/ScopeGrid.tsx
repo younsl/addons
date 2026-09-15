@@ -1,5 +1,4 @@
-import React from 'react';
-import { Flex, Select, Text } from '@backstage/ui';
+import { Flex, Select, Text, ToggleButton, ToggleButtonGroup } from '@backstage/ui';
 import { ScopablePlugin, ScopeAccess, TokenScope } from '../../api/types';
 
 export type AccessChoice = ScopeAccess | 'none';
@@ -30,7 +29,7 @@ export function sameScopes(a: readonly TokenScope[], b: readonly TokenScope[]): 
 }
 
 const ACCESS_OPTIONS = [
-  { value: 'none', label: 'No access' },
+  { value: 'none', label: 'None' },
   { value: 'read', label: 'Read' },
   { value: 'write', label: 'Read & write' },
 ];
@@ -64,45 +63,50 @@ interface Props {
 export const ScopeGrid = ({ plugins, access, onChange, isDisabled }: Props) => {
   const uniform = uniformAccess(access, plugins);
   return (
-    <div>
-      <div className="pat-section-heading">
-        <Text variant="body-small" weight="bold">
-          Permissions
-        </Text>
-        <Text variant="body-x-small" color="secondary">
-          Grant access per plugin, or use the picker in the Access column to set every plugin at
-          once. Read covers GET requests only, write covers every method. At least one plugin is
-          required.
-        </Text>
-      </div>
-      <div className="pat-scope-grid" style={{ marginTop: 8 }}>
-        <div className="pat-scope-grid-header">
-          <Text variant="body-x-small" weight="bold" color="secondary">
-            Plugin
+    <div className="pat-scope">
+      <div className="pat-scope-toolbar">
+        <div className="pat-section-heading">
+          <Text variant="body-small" weight="bold">
+            Permissions
+          </Text>
+          <Text variant="body-x-small" color="secondary">
+            Read covers GET only, write covers every method. At least one plugin is required.
           </Text>
         </div>
-        <div className="pat-scope-grid-header">
-          <Select
+        <Flex align="center" gap="2">
+          <Text variant="body-x-small" color="secondary">
+            Set all
+          </Text>
+          <ToggleButtonGroup
             aria-label="Access for all plugins"
-            size="small"
+            selectionMode="single"
             isDisabled={isDisabled || plugins.length === 0}
-            placeholder="Set all…"
-            selectedKey={uniform}
-            onSelectionChange={key => key && onChange(applyToAll(plugins, key as AccessChoice))}
-            options={ACCESS_OPTIONS}
-          />
-        </div>
+            selectedKeys={uniform ? [uniform] : []}
+            onSelectionChange={keys => {
+              const [key] = Array.from(keys);
+              if (key) onChange(applyToAll(plugins, key as AccessChoice));
+            }}
+          >
+            {ACCESS_OPTIONS.map(o => (
+              <ToggleButton key={o.value} id={o.value} size="small">
+                {o.label}
+              </ToggleButton>
+            ))}
+          </ToggleButtonGroup>
+        </Flex>
+      </div>
+      <div className="pat-scope-list">
         {plugins.map(plugin => (
-          <React.Fragment key={plugin.id}>
-            <Flex direction="column" gap="0.5">
+          <div className="pat-scope-row" key={plugin.id}>
+            <div className="pat-scope-row-text">
               <Text variant="body-small" weight="bold">
                 {plugin.label}
               </Text>
-              <Text variant="body-x-small" color="secondary" className="pat-mono">
-                /api/{plugin.id}
+              <Text variant="body-x-small" color="secondary" truncate>
+                <span className="pat-mono">/api/{plugin.id}</span>
                 {plugin.description ? ` · ${plugin.description}` : ''}
               </Text>
-            </Flex>
+            </div>
             <Select
               aria-label={`Access for ${plugin.label}`}
               size="small"
@@ -111,11 +115,12 @@ export const ScopeGrid = ({ plugins, access, onChange, isDisabled }: Props) => {
               onSelectionChange={key => onChange({ ...access, [plugin.id]: key as AccessChoice })}
               options={ACCESS_OPTIONS}
             />
-          </React.Fragment>
+          </div>
         ))}
         {plugins.length === 0 && (
           <Text variant="body-small" color="secondary">
-            pat.scopablePlugins is an empty list in app-config. Remove the key to expose every plugin, or list the plugins tokens may reach.
+            pat.scopablePlugins is an empty list in app-config. Remove the key to expose every
+            plugin, or list the plugins tokens may reach.
           </Text>
         )}
       </div>
