@@ -13,6 +13,7 @@ pub mod openapi_registry;
 pub mod opencost;
 pub mod opensearch;
 pub mod opensearch_scaling;
+pub mod pat;
 pub mod platforms;
 pub mod s3_log_extract;
 pub mod search;

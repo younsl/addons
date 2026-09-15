@@ -19,7 +19,7 @@ Serving is stateless: every MCP request is answered on its own, so replicas scal
 
 ## Tools
 
-62 tools, all annotated `readOnlyHint: true`. Names are prefixed by the Backstage page they read from.
+67 tools, all annotated `readOnlyHint: true`. Names are prefixed by the Backstage page they read from.
 
 | Page | Tools |
 | --- | --- |
@@ -36,8 +36,9 @@ Serving is stateless: every MCP request is answered on its own, so replicas scal
 | OpenSearch | `opensearch_account_get_config`, `opensearch_account_list_accounts`, `opensearch_account_list_roles`, `opensearch_account_list_requests`, `opensearch_account_get_request`, `opensearch_viewer_get_config`, `opensearch_viewer_list_snapshots`, `opensearch_viewer_get_snapshot` |
 | Capacity | `opensearch_scaling_get_config`, `opensearch_scaling_list_domains`, `opensearch_scaling_get_domain`, `opensearch_scaling_list_requests` |
 | S3 Log Extract | `s3_log_extract_get_config`, `s3_log_extract_list_apps`, `s3_log_extract_precheck`, `s3_log_extract_list_requests`, `s3_log_extract_get_request` |
+| Access Tokens | `pat_get_settings`, `pat_list_tokens`, `pat_get_token`, `pat_list_audit_events`, `pat_get_audit_summary` |
 
-List tools take `offset` and `limit` and report `total` and `truncated`, so an agent pages instead of raising the limit. A result longer than `MAX_RESULT_CHARS` is cut with a note asking the model to narrow the query. Secrets never leave the server: the GitLab token audit webhook URL is reduced to a configured flag, and the S3 archive and its password are not reachable at all.
+List tools take `offset` and `limit` and report `total` and `truncated`, so an agent pages instead of raising the limit. A result longer than `MAX_RESULT_CHARS` is cut with a note asking the model to narrow the query. Secrets never leave the server: the GitLab token audit webhook URL is reduced to a configured flag, the S3 archive and its password are not reachable at all, and a personal access token is only ever reported by its short non-secret prefix, because Backstage stores a hash and shows the secret once at creation.
 
 `backstage-mcp --list-tools` prints the registered names, and `tools/list` on the endpoint returns the JSON schemas the descriptions above are generated from.
 
@@ -70,9 +71,12 @@ backend:
           - plugin: opensearch-viewer
           - plugin: opensearch-scaling
           - plugin: s3-log-extract
+          - plugin: pat
 ```
 
 **Plugins that accept a service principal on reads.** The in-house plugins used to accept only signed-in users (`allow: ['user']`), so an external token got 401 from every list endpoint. Since `1.54.6-1` their auth helpers also accept a service principal on GET requests, with admin visibility so list endpoints return every row, and reject it on any other method, so the token can never approve, mute, reserve or download anything even if it were pointed at those routes.
+
+The `pat` plugin shipped in `1.54.7-1` without that helper and refused every service principal. It gained it after that tag, so the `pat_*` tools need a Backstage image built from `plugins/pat-backend` at or after that change. Against `1.54.7-1` they answer 403. Dropping `- plugin: pat` from `accessRestrictions` keeps the plugin unreachable for deployments that would rather not put token metadata in an agent's context. A personal access token can never reach the tools' own plugin the other way round either: `pat` is refused as a scope target, so one token cannot enumerate or audit another.
 
 ## Configuration
 

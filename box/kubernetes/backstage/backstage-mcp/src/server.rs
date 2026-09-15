@@ -57,7 +57,8 @@ impl BackstageMcp {
                 + Self::iam_user_audit_router()
                 + Self::opensearch_router()
                 + Self::opensearch_scaling_router()
-                + Self::s3_log_extract_router(),
+                + Self::s3_log_extract_router()
+                + Self::pat_router(),
         }
     }
 
