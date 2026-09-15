@@ -104,6 +104,7 @@ backend:
     #       - plugin: opensearch-viewer
     #       - plugin: opensearch-scaling
     #       - plugin: s3-log-extract
+    #       - plugin: pat
   reading:
     allow:
       - host: localhost:7007

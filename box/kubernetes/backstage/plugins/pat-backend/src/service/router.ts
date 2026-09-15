@@ -58,14 +58,34 @@ export async function createRouter(options: RouterOptions): Promise<Router> {
 
   /**
    * Only a signed-in user listed in `permission.admins` may manage tokens.
-   * Service principals (static external tokens, other plugins, and PATs
-   * themselves) are never admins here, and there is no unauthenticated
-   * fallback: an anonymous request is rejected even when the default auth
-   * policy is disabled.
+   *
+   * An external service principal (backstage-mcp) reads with admin visibility
+   * on GET and is treated as unauthenticated on every other method, so it can
+   * never issue, change, revoke or delete a token. Which external tokens get
+   * that far is decided before this router runs: `backend.auth.externalAccess`
+   * rejects a token whose `accessRestrictions` do not list `pat`, so that
+   * config block is the allowlist and there is no second one here.
+   *
+   * A plugin-to-plugin principal is refused outright. No backend plugin has a
+   * reason to read the token inventory or the audit log, and unlike an
+   * external token it carries no access restrictions, so accepting it would
+   * let any plugin in this backend read credential metadata. That also covers
+   * the `plugin:pat` principal the gateway mints, though a personal access
+   * token cannot reach this plugin in the first place: `pat` is refused as a
+   * scope target in `scopes.ts`, so the gateway rejects the call before the
+   * router sees it.
+   *
+   * There is no unauthenticated fallback: an anonymous request is rejected
+   * even when the default auth policy is disabled.
    */
   async function resolveAdmin(req: express.Request): Promise<string | undefined> {
     try {
-      const credentials = await httpAuth.credentials(req as any, { allow: ['user'] });
+      const credentials = await httpAuth.credentials(req as any, { allow: ['user', 'service'] });
+      if (credentials.principal.type === 'service') {
+        const { subject } = credentials.principal;
+        if (req.method !== 'GET' || subject.startsWith('plugin:')) return undefined;
+        return subject;
+      }
       const ref = credentials.principal.userEntityRef;
       return admins.includes(ref) ? ref : undefined;
     } catch {

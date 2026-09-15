@@ -137,6 +137,7 @@ backstage:
               - plugin: opensearch-viewer
               - plugin: opensearch-scaling
               - plugin: s3-log-extract
+              - plugin: pat
       auditor:
         severityLogLevelMappings:
           low: debug

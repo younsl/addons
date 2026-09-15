@@ -52,7 +52,7 @@ Only plugins on the scopable list can be granted. When `pat.scopablePlugins` is 
 
 ## Administration
 
-The **Access Tokens** entry under **Administration** in the sidebar is visible only to users listed in `permission.admins`. Its badge counts denied token calls in the last 24 hours. The page has two tabs. The backend enforces the same list on every route. Service principals and anonymous callers are rejected even when `backend.auth.dangerouslyDisableDefaultAuthPolicy` is on, which differs from the older in-house plugins that fall back to guest in that mode.
+The **Access Tokens** entry under **Administration** in the sidebar is visible only to users listed in `permission.admins`. Its badge counts denied token calls in the last 24 hours. The page has two tabs. The backend enforces the same list on every route that changes anything. Anonymous callers are rejected even when `backend.auth.dangerouslyDisableDefaultAuthPolicy` is on, which differs from the older in-house plugins that fall back to guest in that mode.
 
 - **Tokens** (`/pat`) lists tokens with state, scopes, expiry, last use and call count.
 - **Create token** (`/pat/tokens/new`), opened by the Create token button or by its link directly, requires a name (letters, digits, hyphen and underscore only), a description, a lifetime typed in days or picked from the calendar, and at least one scope before the button enables. The permission list has a per-plugin picker plus a Set all toggle above it that sets every plugin to None, Read or Read & write at once. The secret is shown once on the same page after creation, with links to the new token's detail page and back to the list.
@@ -91,9 +91,19 @@ Table `pat_audit_events`:
 
 Events older than `pat.audit.retentionDays` (default 365) are purged daily at 03:30 UTC.
 
+## Reading the plugin from a service
+
+A static `backend.auth.externalAccess` token may read every GET route with admin visibility. On any other method it is treated as unauthenticated, so it can never issue, update, revoke or delete a token. This is what lets [backstage-mcp](../../../backstage-mcp/README.md) expose the token inventory, the issuing policy and the audit log to an agent, through its `pat_*` tools.
+
+A plugin-to-plugin principal is refused outright, on reads as well. No backend plugin needs the token inventory, and unlike an external token it carries no access restrictions, so accepting it would let any plugin in this backend read credential metadata.
+
+A personal access token is not a service principal here and never reaches this plugin: `pat` is refused as a scope target in `scopes.ts`, so the gateway answers `plugin_forbidden` before the router runs and one token cannot enumerate or audit another.
+
+`accessRestrictions` is the allowlist, and the plugin does not keep a second one. Reaching this plugin with an external token requires `- plugin: pat` in that token's block, and `backend.auth.externalAccess` rejects a token without it before the router runs. Leaving it out keeps the plugin unreadable, which is the right choice for a deployment that does not want token metadata in an agent's context.
+
 ## API
 
-All routes except `/health` require an admin user token.
+All routes except `/health` require an admin user token, or a service principal on GET.
 
 | Method | Path | Purpose |
 |---|---|---|

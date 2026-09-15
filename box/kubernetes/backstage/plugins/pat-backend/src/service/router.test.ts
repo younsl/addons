@@ -28,8 +28,8 @@ const httpAuth = { credentials: jest.fn() };
 
 const asUser = (ref: string) =>
   httpAuth.credentials.mockResolvedValue({ principal: { type: 'user', userEntityRef: ref } });
-const asService = () =>
-  httpAuth.credentials.mockRejectedValue(new Error('service principals not allowed'));
+const asService = (subject = 'backstage-mcp') =>
+  httpAuth.credentials.mockResolvedValue({ principal: { type: 'service', subject } });
 const asAnonymous = () => httpAuth.credentials.mockRejectedValue(new Error('missing credentials'));
 
 async function makeApp() {
@@ -67,9 +67,9 @@ describe('pat router', () => {
     expect((await request(app).get('/admin-status')).body).toEqual({ isAdmin: false });
   });
 
-  it('denies non-admins, anonymous callers and service principals on every admin route', async () => {
+  it('denies non-admins and anonymous callers on every admin route', async () => {
     const app = await makeApp();
-    for (const setup of [() => asUser('user:default/bob'), asAnonymous, asService]) {
+    for (const setup of [() => asUser('user:default/bob'), asAnonymous]) {
       setup();
       expect((await request(app).get('/tokens')).status).toBe(403);
       expect((await request(app).post('/tokens').send({})).status).toBe(403);
@@ -82,6 +82,39 @@ describe('pat router', () => {
       expect((await request(app).get('/settings')).status).toBe(403);
     }
     expect(service.createToken).not.toHaveBeenCalled();
+  });
+
+  it('refuses a plugin-to-plugin principal outright', async () => {
+    const app = await makeApp();
+    asService('plugin:catalog');
+    expect((await request(app).get('/tokens')).status).toBe(403);
+    expect((await request(app).get('/audit')).status).toBe(403);
+    expect((await request(app).get('/settings')).status).toBe(403);
+    // The gateway mints this one for forwarded PAT calls. `scopes.ts` already
+    // refuses `pat` as a scope target, so it must never read here either.
+    asService('plugin:pat');
+    expect((await request(app).get('/tokens')).status).toBe(403);
+    expect((await request(app).get('/audit')).status).toBe(403);
+  });
+
+  it('lets an external service principal read but never write', async () => {
+    const app = await makeApp();
+    asService();
+    service.getToken.mockResolvedValue({ id: 'abc' });
+    expect((await request(app).get('/tokens')).status).toBe(200);
+    expect((await request(app).get('/tokens/abc')).status).toBe(200);
+    expect((await request(app).get('/audit')).status).toBe(200);
+    expect((await request(app).get('/audit/summary')).status).toBe(200);
+    expect((await request(app).get('/settings')).status).toBe(200);
+
+    expect((await request(app).post('/tokens').send({})).status).toBe(403);
+    expect((await request(app).patch('/tokens/abc').send({})).status).toBe(403);
+    expect((await request(app).post('/tokens/abc/revoke')).status).toBe(403);
+    expect((await request(app).delete('/tokens/abc')).status).toBe(403);
+    expect(service.createToken).not.toHaveBeenCalled();
+    expect(service.updateToken).not.toHaveBeenCalled();
+    expect(service.revokeToken).not.toHaveBeenCalled();
+    expect(service.deleteToken).not.toHaveBeenCalled();
   });
 
   it('lets admins create tokens and passes the actor', async () => {
