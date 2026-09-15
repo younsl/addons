@@ -255,7 +255,7 @@ export const TokenDetailPage = () => {
               </Text>
             </Flex>
             <Text variant="body-x-small" color="secondary" className="pat-mono">
-              {token.tokenPrefix}… · {token.id}
+              {token.tokenPrefix}…
             </Text>
           </Flex>
           <Flex gap="2">
@@ -324,6 +324,12 @@ export const TokenDetailPage = () => {
             isReadOnly
             value={token.name}
             description="Fixed at creation and cannot be changed."
+          />
+          <TextField
+            label="ID"
+            isReadOnly
+            value={token.id}
+            description="Use this to filter the audit log or address the token in the API."
           />
           <TextAreaField
             label="Description"
