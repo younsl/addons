@@ -1,5 +1,9 @@
 # addons
 
+![Abstract blue seascape painting](https://images.unsplash.com/photo-1528804431125-842f17de657b?q=80&w=1480&auto=format&fit=crop)
+
+Cover image from [Unsplash](https://unsplash.com/), free to use under the [Unsplash License](https://unsplash.com/license).
+
 A monorepo of [Observability](https://opentelemetry.io/docs/concepts/observability-primer/) and [Kubernetes](https://github.com/kubernetes/kubernetes) operation addons. [Rust](https://github.com/rust-lang/rust) [1.98+](https://github.com/rust-lang/rust/releases/tag/1.98.0) is the primary runtime. Includes CLI [tools](./box/tools/), [kubernetes](./box/kubernetes/) addons, [kubernetes operators](https://kubernetes.io/docs/concepts/extend-kubernetes/operator/), runtime images, and [docs](./docs/).
 
 ## Background
