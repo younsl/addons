@@ -1,3 +1,0 @@
-# Image is built only from FROM/COPY --from stages; no build context is needed.
-*
-!Dockerfile
