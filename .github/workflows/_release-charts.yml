@@ -67,6 +67,22 @@ jobs:
         with:
           version: v3.19.0
 
+      - name: Resolve chart dependencies
+        env:
+          CHART_PATH: ${{ matrix.chart_path }}
+        run: |
+          if [ ! -f "${CHART_PATH}/Chart.lock" ]; then
+            echo "No Chart.lock in ${CHART_PATH}, nothing to resolve"
+            exit 0
+          fi
+
+          helm dependency update "${CHART_PATH}"
+
+          if ! git diff --exit-code -- "${CHART_PATH}/Chart.lock"; then
+            echo "::error::Chart.lock is out of date: ${CHART_PATH}/Chart.lock. Run 'helm dependency update' locally and commit the result."
+            exit 1
+          fi
+
       - name: Lint chart
         env:
           CHART_PATH: ${{ matrix.chart_path }}
