@@ -1,6 +1,6 @@
 # forklift
 
-![Version: 0.12.3](https://img.shields.io/badge/Version-0.12.3-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.13.2](https://img.shields.io/badge/AppVersion-0.13.2-informational?style=flat-square)
+![Version: 0.12.4](https://img.shields.io/badge/Version-0.12.4-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.13.3](https://img.shields.io/badge/AppVersion-0.13.3-informational?style=flat-square)
 
 Lightweight Kubernetes-native artifact repository (Maven, npm, Cargo, Go, PyPI) with proxy caching and supply-chain controls (age policy, package approval, vulnerability scanning)
 
@@ -45,7 +45,7 @@ helm install forklift oci://ghcr.io/younsl/charts/forklift -f values.yaml
 Install a specific version:
 
 ```console
-helm install forklift oci://ghcr.io/younsl/charts/forklift --version 0.12.3
+helm install forklift oci://ghcr.io/younsl/charts/forklift --version 0.12.4
 ```
 
 ### Install from local chart
@@ -53,7 +53,7 @@ helm install forklift oci://ghcr.io/younsl/charts/forklift --version 0.12.3
 Download forklift chart and install from local directory:
 
 ```console
-helm pull oci://ghcr.io/younsl/charts/forklift --untar --version 0.12.3
+helm pull oci://ghcr.io/younsl/charts/forklift --untar --version 0.12.4
 helm install forklift ./forklift
 ```
 
@@ -198,7 +198,7 @@ The following table lists the configurable parameters and their default values.
 | mcp.image.registry | string | `"ghcr.io"` | MCP image registry host. Set empty to fold the host into `repository`. |
 | mcp.image.repository | string | `"younsl/forklift-mcp"` | MCP image repository (path under the registry). |
 | mcp.image.pullPolicy | string | `"IfNotPresent"` | MCP image pull policy. |
-| mcp.image.tag | string | `"0.3.1"` | MCP image tag. Released independently of forklift, so no appVersion fallback. |
+| mcp.image.tag | string | `"0.3.2"` | MCP image tag. Released independently of forklift, so no appVersion fallback. |
 | mcp.replicaCount | int | `1` | Number of MCP replicas. Keep 1: MCP sessions live in pod memory. |
 | mcp.upstreamURL | string | `""` | forklift API base URL to proxy to. Empty targets this release's Service. |
 | mcp.token | object | `{"existingSecret":"","key":"token"}` | Optional fallback token Secret for clients that cannot send an Authorization header. |

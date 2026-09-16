@@ -4,6 +4,20 @@ Notable changes per release. Container image versions come from the
 `org.opencontainers.image.version` label in the `Dockerfile`; chart versions from
 `charts/forklift/Chart.yaml`.
 
+## 0.13.3 (2026-09-16)
+
+Chart 0.12.4. forklift-mcp 0.3.2.
+
+### Changed
+
+- Every duration histogram gained a 2s bucket, which the default set skips
+  between 1s and 2.5s: HTTP requests, the readiness probe, upstream fetches,
+  metadata rewrite wait and hold, blob store operations, and MCP tool calls.
+  All existing bucket edges are kept, so recorded quantiles and alert
+  expressions stay valid. The added edge is one extra series per existing
+  label combination, so the repository, backend, and tool label sets multiply
+  it.
+
 ## 0.13.2 (2026-09-11)
 
 Chart 0.12.3. forklift-mcp remains 0.3.1.

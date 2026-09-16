@@ -274,7 +274,7 @@ impl Engine {
                 // The upstream client times out at 60s, so the range extends past
                 // the default 10s bucket cap to keep slow-but-alive upstreams
                 // visible.
-                vec![0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0],
+                vec![0.05, 0.1, 0.25, 0.5, 1.0, 2.0, 2.5, 5.0, 10.0, 30.0, 60.0],
                 &["repo"],
             ),
             bytes: counter_vec(
@@ -294,7 +294,7 @@ impl Engine {
                 // both default to 60s), so the range has to reach it: a histogram
                 // capped at 10s reports every one of those waits identically.
                 vec![
-                    0.001, 0.005, 0.025, 0.1, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0,
+                    0.001, 0.005, 0.025, 0.1, 0.5, 1.0, 2.0, 2.5, 5.0, 10.0, 30.0, 60.0,
                 ],
                 &["repo"],
             ),
@@ -302,7 +302,7 @@ impl Engine {
                 "metadata_rewrite_duration_seconds",
                 "Time a metadata request held a rewrite slot (decode plus rewrite).",
                 vec![
-                    0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0,
+                    0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.0, 2.5, 5.0, 10.0,
                 ],
                 &["repo"],
             ),

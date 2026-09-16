@@ -42,7 +42,9 @@ impl Metrics {
                 "forklift_mcp_tool_call_duration_seconds",
                 "MCP tool call latency by tool name, including the upstream API request.",
             )
-            .buckets(prometheus::DEFAULT_BUCKETS.to_vec()),
+            .buckets(vec![
+                0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.0, 2.5, 5.0, 10.0,
+            ]),
             &["tool"],
         )
         .expect("build forklift_mcp_tool_call_duration_seconds");

@@ -39,7 +39,7 @@ pub fn instrument(
     .namespace("forklift")
     // Puts of large artifacts stream the whole body and can run far past the
     // default 10s bucket cap, so the range extends to the 60s client timeout.
-    .buckets(vec![0.005, 0.025, 0.1, 0.25, 1.0, 2.5, 10.0, 30.0, 60.0]);
+    .buckets(vec![0.005, 0.025, 0.1, 0.25, 1.0, 2.0, 2.5, 10.0, 30.0, 60.0]);
     let dur = HistogramVec::new(opts, &["backend", "op", "result"])
         .expect("blobstore histogram definition is static and valid");
     registry

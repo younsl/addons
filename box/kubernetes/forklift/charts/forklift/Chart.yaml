@@ -3,8 +3,8 @@ name: forklift
 description: Lightweight Kubernetes-native artifact repository (Maven, npm, Cargo, Go, PyPI) with proxy caching and supply-chain controls (age policy, package approval, vulnerability scanning)
 type: application
 deprecated: false
-version: 0.12.3
-appVersion: "0.13.2"
+version: 0.12.4
+appVersion: "0.13.3"
 home: https://github.com/younsl/addons/tree/main/box/kubernetes/forklift
 sources:
   - https://github.com/younsl/addons/tree/main/box/kubernetes/forklift/charts/forklift
@@ -32,4 +32,4 @@ keywords:
 annotations:
   artifacthub.io/changes: |
     - kind: changed
-      description: "Upgrade forklift to 0.13.2: artifact download counts and last accessed user columns"
+      description: "Upgrade forklift to 0.13.3 and forklift-mcp to 0.3.2: 2s bucket on every duration histogram"
