@@ -2,7 +2,9 @@
 
 A monorepo of [Observability](https://opentelemetry.io/docs/concepts/observability-primer/) and [Kubernetes](https://github.com/kubernetes/kubernetes) operation addons. [Rust](https://github.com/rust-lang/rust) [1.98+](https://github.com/rust-lang/rust/releases/tag/1.98.0) is the primary runtime. Includes CLI [tools](./box/tools/), [kubernetes](./box/kubernetes/) addons, [kubernetes operators](https://kubernetes.io/docs/concepts/extend-kubernetes/operator/), runtime images, and [docs](./docs/).
 
-## Monorepo
+## Background
+
+### Monorepo
 
 This repository follows the single-repository model Google describes in [Why Google Stores Billions of Lines of Code in a Single Repository](https://cacm.acm.org/research/why-google-stores-billions-of-lines-of-code-in-a-single-repository/) (CACM, 2016). The scale here is far smaller, but the trade-offs it identifies apply the same way. One source of truth for every tool, addon, and chart removes cross-repo version skew, because a change and the code depending on it land in the same commit. Shared conventions live in one place as well, so updating [Makefiles](https://www.gnu.org/software/make/), reusable [CI workflows](https://github.com/features/actions), release pipelines, or the [Helm](https://github.com/helm/helm) chart README template across every component is one commit instead of a coordinated sweep across many repositories.
 
