@@ -4,6 +4,29 @@ Notable changes per release. Container image versions come from the
 `org.opencontainers.image.version` label in the `Dockerfile`; chart versions from
 `charts/forklift/Chart.yaml`.
 
+## Chart 0.13.0 (2026-09-18)
+
+forklift remains 0.13.3. forklift-mcp remains 0.3.2.
+
+### Added
+
+- Startup probe on the forklift container, enabled by default with a 300s
+  budget. The S3 metadata snapshot is restored and schema migrations are
+  applied before the HTTP listener binds, so boot time grows with the snapshot
+  and with any index-building migration. Until now the liveness probe started
+  counting immediately and killed a boot that took longer than 25s; because
+  `/data` is ephemeral and the leader keeps publishing the pre-migration
+  snapshot, every restart re-ran the migration from scratch and the pod never
+  recovered on its own. 0.13.2's `0039_artifact_download_counts` index hit this
+  on a 1.7 GiB snapshot with 6.5M audit rows.
+
+### Changed
+
+- Breaking: `livenessProbe` and `readinessProbe` are now nested under `probes`,
+  keeping their names, alongside the new `probes.startupProbe`. Values files
+  that set either key at the top level must be updated; the top-level keys are
+  no longer read.
+
 ## 0.13.3 (2026-09-16)
 
 Chart 0.12.4. forklift-mcp 0.3.2.

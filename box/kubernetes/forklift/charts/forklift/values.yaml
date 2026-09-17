@@ -406,21 +406,28 @@ resizePolicy:
   - resourceName: memory
     restartPolicy: RestartContainer
 
-# -- (object) Liveness probe configuration.
-livenessProbe:
-  httpGet:
-    path: /healthz
-    port: http
-  initialDelaySeconds: 5
-  periodSeconds: 10
-
-# -- (object) Readiness probe configuration.
-readinessProbe:
-  httpGet:
-    path: /readyz
-    port: http
-  initialDelaySeconds: 3
-  periodSeconds: 5
+probes:
+  # -- (object) Startup probe configuration. Holds off liveness while the boot restores the S3 snapshot and runs migrations; empty object disables it.
+  startupProbe:
+    httpGet:
+      path: /healthz
+      port: http
+    periodSeconds: 5
+    failureThreshold: 60
+  # -- (object) Liveness probe configuration.
+  livenessProbe:
+    httpGet:
+      path: /healthz
+      port: http
+    initialDelaySeconds: 5
+    periodSeconds: 10
+  # -- (object) Readiness probe configuration.
+  readinessProbe:
+    httpGet:
+      path: /readyz
+      port: http
+    initialDelaySeconds: 3
+    periodSeconds: 5
 
 podDisruptionBudget:
   # -- (bool) Create a PodDisruptionBudget to keep replicas available during disruptions.
