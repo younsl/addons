@@ -1,6 +1,6 @@
 # forklift
 
-![Version: 0.13.0](https://img.shields.io/badge/Version-0.13.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.13.3](https://img.shields.io/badge/AppVersion-0.13.3-informational?style=flat-square)
+![Version: 0.13.1](https://img.shields.io/badge/Version-0.13.1-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.13.3](https://img.shields.io/badge/AppVersion-0.13.3-informational?style=flat-square)
 
 Lightweight Kubernetes-native artifact repository (Maven, npm, Cargo, Go, PyPI) with proxy caching and supply-chain controls (age policy, package approval, vulnerability scanning)
 
@@ -45,7 +45,7 @@ helm install forklift oci://ghcr.io/younsl/charts/forklift -f values.yaml
 Install a specific version:
 
 ```console
-helm install forklift oci://ghcr.io/younsl/charts/forklift --version 0.13.0
+helm install forklift oci://ghcr.io/younsl/charts/forklift --version 0.13.1
 ```
 
 ### Install from local chart
@@ -53,7 +53,7 @@ helm install forklift oci://ghcr.io/younsl/charts/forklift --version 0.13.0
 Download forklift chart and install from local directory:
 
 ```console
-helm pull oci://ghcr.io/younsl/charts/forklift --untar --version 0.13.0
+helm pull oci://ghcr.io/younsl/charts/forklift --untar --version 0.13.1
 helm install forklift ./forklift
 ```
 
@@ -189,9 +189,9 @@ The following table lists the configurable parameters and their default values.
 | securityContext | object | `{"allowPrivilegeEscalation":false,"capabilities":{"drop":["ALL"]},"readOnlyRootFilesystem":true}` | Container-level security context. |
 | resources | object | `{"limits":{"memory":"256Mi"},"requests":{"cpu":"50m","memory":"128Mi"}}` | Container resource requests and limits. |
 | resizePolicy | list | `[{"resourceName":"cpu","restartPolicy":"NotRequired"},{"resourceName":"memory","restartPolicy":"RestartContainer"}]` | In-place vertical scaling policy: CPU in place, restart on memory resize. |
-| probes.startupProbe | object | `{"failureThreshold":60,"httpGet":{"path":"/healthz","port":"http"},"periodSeconds":5}` | Startup probe configuration. Holds off liveness while the boot restores the S3 snapshot and runs migrations; empty object disables it. |
-| probes.livenessProbe | object | `{"httpGet":{"path":"/healthz","port":"http"},"initialDelaySeconds":5,"periodSeconds":10}` | Liveness probe configuration. |
-| probes.readinessProbe | object | `{"httpGet":{"path":"/readyz","port":"http"},"initialDelaySeconds":3,"periodSeconds":5}` | Readiness probe configuration. |
+| probes.startupProbe | object | `{"failureThreshold":60,"httpGet":{"path":"/healthz","port":"http"},"periodSeconds":5,"timeoutSeconds":1}` | Startup probe configuration. Holds off liveness while the boot restores the S3 snapshot and runs migrations; empty object disables it. |
+| probes.livenessProbe | object | `{"failureThreshold":3,"httpGet":{"path":"/healthz","port":"http"},"initialDelaySeconds":5,"periodSeconds":10,"timeoutSeconds":1}` | Liveness probe configuration. It starts only after the startup probe succeeds. |
+| probes.readinessProbe | object | `{"failureThreshold":3,"httpGet":{"path":"/readyz","port":"http"},"initialDelaySeconds":3,"periodSeconds":5,"timeoutSeconds":1}` | Readiness probe configuration. timeoutSeconds stays above the handler's own 750ms database bound. |
 | podDisruptionBudget.enabled | bool | `true` | Create a PodDisruptionBudget to keep replicas available during disruptions. |
 | podDisruptionBudget.minAvailable | int | `1` | Minimum number of available replicas. |
 | podDisruptionBudget.unhealthyPodEvictionPolicy | string | `"AlwaysAllow"` | Eviction policy for unhealthy pods: AlwaysAllow or IfHealthyBudget. |

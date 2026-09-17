@@ -413,21 +413,26 @@ probes:
       path: /healthz
       port: http
     periodSeconds: 5
+    timeoutSeconds: 1
     failureThreshold: 60
-  # -- (object) Liveness probe configuration.
+  # -- (object) Liveness probe configuration. It starts only after the startup probe succeeds.
   livenessProbe:
     httpGet:
       path: /healthz
       port: http
     initialDelaySeconds: 5
     periodSeconds: 10
-  # -- (object) Readiness probe configuration.
+    timeoutSeconds: 1
+    failureThreshold: 3
+  # -- (object) Readiness probe configuration. timeoutSeconds stays above the handler's own 750ms database bound.
   readinessProbe:
     httpGet:
       path: /readyz
       port: http
     initialDelaySeconds: 3
     periodSeconds: 5
+    timeoutSeconds: 1
+    failureThreshold: 3
 
 podDisruptionBudget:
   # -- (bool) Create a PodDisruptionBudget to keep replicas available during disruptions.

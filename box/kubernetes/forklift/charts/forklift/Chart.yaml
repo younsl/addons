@@ -3,7 +3,7 @@ name: forklift
 description: Lightweight Kubernetes-native artifact repository (Maven, npm, Cargo, Go, PyPI) with proxy caching and supply-chain controls (age policy, package approval, vulnerability scanning)
 type: application
 deprecated: false
-version: 0.13.0
+version: 0.13.1
 appVersion: "0.13.3"
 home: https://github.com/younsl/addons/tree/main/box/kubernetes/forklift
 sources:
@@ -31,7 +31,5 @@ keywords:
   - nexus
 annotations:
   artifacthub.io/changes: |
-    - kind: added
-      description: "Startup probe, so a boot that restores a large snapshot or runs a long migration is not killed by the liveness probe"
     - kind: changed
-      description: "Breaking: livenessProbe and readinessProbe nested under probes, keeping their names"
+      description: "Every probe spells out timeoutSeconds and failureThreshold instead of inheriting the Kubernetes defaults"

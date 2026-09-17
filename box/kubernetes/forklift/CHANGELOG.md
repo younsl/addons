@@ -4,6 +4,19 @@ Notable changes per release. Container image versions come from the
 `org.opencontainers.image.version` label in the `Dockerfile`; chart versions from
 `charts/forklift/Chart.yaml`.
 
+## Chart 0.13.1 (2026-09-18)
+
+forklift remains 0.13.3. forklift-mcp remains 0.3.2.
+
+### Changed
+
+- Every probe spells out `timeoutSeconds` and `failureThreshold` rather than
+  inheriting the Kubernetes defaults. The rendered pod is unchanged; the point
+  is that these are load-bearing values, not incidental ones. The readiness
+  probe's 1s timeout in particular is paired with the handler's own 750ms bound
+  on the database check, which answers "not ready" quickly instead of letting
+  the probe give up with no reason recorded.
+
 ## Chart 0.13.0 (2026-09-18)
 
 forklift remains 0.13.3. forklift-mcp remains 0.3.2.
