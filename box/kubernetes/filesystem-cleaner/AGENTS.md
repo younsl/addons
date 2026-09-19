@@ -1,6 +1,6 @@
-# CLAUDE.md
+# AGENTS.md
 
-Guidance for Claude Code working in this directory. Only non-derivable conventions and traps live here. Read the code, Makefile, and README for everything else.
+Guidance for coding agents working in this directory. Only non-derivable conventions and traps live here. Read the code, Makefile, and README for everything else.
 
 ## Overview
 
@@ -20,4 +20,4 @@ Filesystem cleaner for Kubernetes, run as an init container (`once` mode) or sid
 - Filesystem access sits behind the `DiskUsage` (`src/disk.rs`) and `FileRemover` (`src/remover.rs`) traits. Test cleanup policy through `Cleaner::with_backends` with fixed usage and a recording remover, never by relying on the real disk being above or below a threshold. Scheduling lives in `src/schedule.rs`, cycle results in `src/cleaner/report.rs`.
 - The image runs as `USER 65532:65532` on `scratch` with no CA certificates: the cleaner makes no network calls, so do not add TLS-dependent features without updating the Dockerfile.
 - In Kubernetes the cleaner must run as the same UID/GID as the container whose files it deletes (e.g. `1001` for actions-runner) and share the same volume mount path.
-- CI gates on `cargo fmt --check`, `cargo clippy -- -D warnings` (pedantic and nursery are enabled as warnings in Cargo.toml, so they fail CI), tests in debug and release, and 70% line coverage via `cargo llvm-cov`. Release triggers are documented in the repo root CLAUDE.md.
+- CI gates on `cargo fmt --check`, `cargo clippy -- -D warnings` (pedantic and nursery are enabled as warnings in Cargo.toml, so they fail CI), tests in debug and release, and 70% line coverage via `cargo llvm-cov`. Release triggers are documented in the repo root AGENTS.md.

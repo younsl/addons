@@ -1,4 +1,6 @@
-# CLAUDE.md
+# AGENTS.md
+
+Guidance for coding agents working in this directory.
 
 ## Changelog Is Mandatory On Release
 
@@ -24,3 +26,18 @@ each task                → data collection/validation/aggregation only
 - Never mix initialization logic into `registerTasks()` or scheduled task handlers
 - Scheduled tasks must not depend on execution order of other tasks
 - Reference: `OpenCostCostStore.create()`, `OpenCostCollector.create()`
+
+## Traps
+
+Two behaviors that cost time to rediscover:
+
+**`@backstage/ui` CSS breaks the page layout.** Importing `@backstage/ui/css/styles.css` overrides the
+existing layout styles and leaves whitespace on the right of the main content area. The
+`@backstage-community/plugin-announcements` plugin needs that CSS to render as anything other than
+unstyled text, so the choice is a broken layout or an unstyled Announcements page. Importing the CSS
+plus custom overrides is the only way to have both.
+
+**Guest login needs two changes, not one.** Setting
+`auth.providers.guest.dangerouslyAllowOutsideDevelopment` in `app-config.yaml` does nothing on its own.
+The `'guest'` entry in the `SignInPage` providers array in `packages/app/src/App.tsx` is hardcoded, so
+disabling guest login in production requires removing it and rebuilding the image.
