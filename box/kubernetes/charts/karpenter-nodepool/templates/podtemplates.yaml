@@ -9,7 +9,7 @@ Skipped when scalableRef is set, since the buffer then takes its shape from the
 referenced workload and the two references are mutually exclusive.
 */}}
 
-{{- range $nodePoolName, $nodePoolConfig := .Values.nodePool }}
+{{- range $nodePoolName, $nodePoolConfig := .Values.nodePools }}
 {{- $overprovisioning := $nodePoolConfig.overprovisioning }}
 {{- if and $overprovisioning $overprovisioning.enabled (not $overprovisioning.scalableRef) }}
 ---

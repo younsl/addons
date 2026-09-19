@@ -10,7 +10,7 @@ Requires Karpenter 1.14.0+ with the capacityBuffer feature gate enabled on the
 controller.
 */}}
 
-{{- range $nodePoolName, $nodePoolConfig := .Values.nodePool }}
+{{- range $nodePoolName, $nodePoolConfig := .Values.nodePools }}
 {{- $overprovisioning := $nodePoolConfig.overprovisioning }}
 {{- if and $overprovisioning $overprovisioning.enabled }}
 ---

@@ -25,7 +25,7 @@
         "type": "string"
       }
     },
-    "nodePool": {
+    "nodePools": {
       "type": "object",
       "propertyNames": {
         "pattern": "^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$"
@@ -34,7 +34,7 @@
         "$ref": "#/definitions/nodePool"
       }
     },
-    "ec2NodeClass": {
+    "ec2NodeClasses": {
       "type": "object",
       "propertyNames": {
         "pattern": "^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$"

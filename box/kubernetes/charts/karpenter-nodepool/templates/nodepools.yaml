@@ -2,7 +2,7 @@
 nodepool custom resource template (compatible with karpenter v1.5.0)
 */}}
 
-{{- range $key, $value := .Values.nodePool }}
+{{- range $key, $value := .Values.nodePools }}
 {{- if ne .enabled false }}
 ---
 apiVersion: karpenter.sh/v1

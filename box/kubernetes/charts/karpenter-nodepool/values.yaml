@@ -8,7 +8,7 @@ globalLabels: {}
 globalAnnotations: {}
 
 # -- (object) NodePool configuration for Karpenter
-nodePool:
+nodePools:
   # -- (object) Default NodePool configuration
   default:
     # -- (bool) Enable or disable this NodePool resource
@@ -161,7 +161,7 @@ nodePool:
         description: "Buffer pod shape reserving spare capacity"
 
 # -- (object) EC2NodeClass configuration for AWS Karpenter
-ec2NodeClass:
+ec2NodeClasses:
   # -- (object) Default EC2NodeClass configuration
   default:
     # -- (bool) Enable or disable this EC2NodeClass resource
