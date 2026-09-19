@@ -84,23 +84,56 @@ nodePool:
     # -- (int) Priority given to the NodePool when the scheduler considers which NodePool
     # weight: ""
 
-    # -- (object) Overprovisioning configuration for pre-scaling nodes. This helps reduce pod startup time by keeping spare capacity available.
+    # -- (object) Reserve headroom as virtual pods. Needs Karpenter 1.14.0+ and the `capacityBuffer` gate.
     overprovisioning:
-      # -- (bool) Enable overprovisioning for this nodepool
+      # -- (bool) Enable overprovisioning
       enabled: false
 
-      # -- (int) Number of nodes to keep as spare capacity
-      nodes: 1
+      # -- (string) CapacityBuffer API version
+      apiVersion: autoscaling.x-k8s.io/v1beta1
 
-      # -- (object) Resource requests for overprovisioning pods. These pods will consume resources to maintain spare capacity.
+      # -- (string) Buffer fulfillment strategy
+      provisioningStrategy: buffer.x-k8s.io/active-capacity
+
+      # -- (int) Buffer chunks to keep, one chunk is one pod
+      replicas: 1
+
+      # -- (int) Buffer as a percentage of `scalableRef` replicas
+      percentage: ~
+
+      # -- (object) Cap on total buffer resources
+      # @default -- `{}`
+      limits: {}
+        # cpu: "20"
+        # memory: 40Gi
+
+      # -- (object) Take the chunk shape from a workload instead of a PodTemplate
+      # @default -- `{}`
+      scalableRef: {}
+        # apiGroup: apps
+        # kind: Deployment
+        # name: api-service
+
+      # -- (string) Placeholder image, never pulled
+      image: registry.k8s.io/pause:3.9
+
+      # -- (object) Requests defining one chunk
       resources:
         requests:
-          # -- (string) CPU request for overprovisioning pods
+          # -- (string) CPU per chunk
           cpu: 1000m
-          # -- (string) Memory request for overprovisioning pods
+          # -- (string) Memory per chunk
           memory: 1Gi
 
-      # -- (list) Topology spread constraints for overprovisioning pods. Ensures dummy pods are spread across different nodes.
+      # -- (object) Node selector for the chunk
+      nodeSelector: {}
+        # karpenter.sh/capacity-type: on-demand
+
+      # -- (object) Affinity for the chunk
+      # @default -- pinned to `karpenter.sh/nodepool`
+      affinity: {}
+
+      # -- (list) Spread chunks across nodes
       topologySpreadConstraints:
       - maxSkew: 1
         topologyKey: kubernetes.io/hostname
@@ -109,7 +142,7 @@ nodePool:
           matchLabels:
             app.kubernetes.io/component: overprovisioning
 
-      # -- (list) Tolerations for overprovisioning pods. Default tolerates all taints to ensure pods can be scheduled on any node.
+      # -- (list) Tolerations for the chunk
       tolerations:
         - operator: Exists
         # - key: example.com/special-taint
@@ -117,15 +150,15 @@ nodePool:
         #   value: "true"
         #   effect: NoSchedule
 
-      # -- (object) Additional labels for overprovisioning pods
+      # -- (object) Extra labels for the chunk
       podLabels: {}
         # app: overprovisioning
         # nodepool: default
 
-      # -- (object) Additional annotations for overprovisioning pods
+      # -- (object) Extra annotations for the chunk
       podAnnotations:
-        # -- (string) Description annotation for overprovisioning pods
-        description: "Overprovisioning pod for maintaining spare capacity"
+        # -- (string) Description annotation
+        description: "Buffer pod shape reserving spare capacity"
 
 # -- (object) EC2NodeClass configuration for AWS Karpenter
 ec2NodeClass:

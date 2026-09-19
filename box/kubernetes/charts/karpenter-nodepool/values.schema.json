@@ -185,11 +185,50 @@
             "enabled": {
               "type": "boolean"
             },
-            "nodes": {
-              "type": "integer",
+            "apiVersion": {
+              "type": "string"
+            },
+            "provisioningStrategy": {
+              "type": "string"
+            },
+            "replicas": {
+              "type": ["integer", "null"],
               "minimum": 0
             },
+            "percentage": {
+              "type": ["integer", "null"],
+              "minimum": 0,
+              "maximum": 100
+            },
+            "limits": {
+              "type": "object"
+            },
+            "scalableRef": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "apiGroup": {
+                  "type": "string"
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": ["Deployment", "StatefulSet", "ReplicaSet"]
+                },
+                "name": {
+                  "type": "string"
+                }
+              }
+            },
+            "image": {
+              "type": "string"
+            },
             "resources": {
+              "type": "object"
+            },
+            "nodeSelector": {
+              "$ref": "#/definitions/stringMap"
+            },
+            "affinity": {
               "type": "object"
             },
             "topologySpreadConstraints": {

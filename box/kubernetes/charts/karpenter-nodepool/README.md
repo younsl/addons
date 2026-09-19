@@ -1,6 +1,6 @@
 # karpenter-nodepool
 
-![Version: 1.7.0](https://img.shields.io/badge/Version-1.7.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 1.5.0](https://img.shields.io/badge/AppVersion-1.5.0-informational?style=flat-square)
+![Version: 1.0.0](https://img.shields.io/badge/Version-1.0.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 1.5.0](https://img.shields.io/badge/AppVersion-1.5.0-informational?style=flat-square)
 
 A Helm chart for Karpenter Node pool, it will create the NodePool and the Ec2NodeClass.
 
@@ -39,7 +39,7 @@ helm install karpenter-nodepool oci://ghcr.io/younsl/charts/karpenter-nodepool -
 Install a specific version:
 
 ```console
-helm install karpenter-nodepool oci://ghcr.io/younsl/charts/karpenter-nodepool --version 1.7.0
+helm install karpenter-nodepool oci://ghcr.io/younsl/charts/karpenter-nodepool --version 1.0.0
 ```
 
 ### Install from local chart
@@ -47,7 +47,7 @@ helm install karpenter-nodepool oci://ghcr.io/younsl/charts/karpenter-nodepool -
 Download karpenter-nodepool chart and install from local directory:
 
 ```console
-helm pull oci://ghcr.io/younsl/charts/karpenter-nodepool --untar --version 1.7.0
+helm pull oci://ghcr.io/younsl/charts/karpenter-nodepool --untar --version 1.0.0
 helm install karpenter-nodepool ./karpenter-nodepool
 ```
 
@@ -76,8 +76,8 @@ The following table lists the configurable parameters and their default values.
 | nameOverride | string | `""` | Override the name of the chart |
 | globalLabels | object | `{}` | Labels to apply to all resources |
 | globalAnnotations | object | `{}` | Annotations to apply to all resources |
-| nodePool | object | `{"default":{"annotations":{},"disruption":{"consolidationPolicy":"WhenUnderutilized"},"enabled":false,"expireAfter":"720h","labels":{},"limits":{"cpu":1000,"memory":"1000Gi"},"nodeClassRef":{},"overprovisioning":{"enabled":false,"nodes":1,"podAnnotations":{"description":"Overprovisioning pod for maintaining spare capacity"},"podLabels":{},"resources":{"requests":{"cpu":"1000m","memory":"1Gi"}},"tolerations":[{"operator":"Exists"}],"topologySpreadConstraints":[{"labelSelector":{"matchLabels":{"app.kubernetes.io/component":"overprovisioning"}},"maxSkew":1,"topologyKey":"kubernetes.io/hostname","whenUnsatisfiable":"DoNotSchedule"}]},"requirements":[],"startupTaints":[],"taints":[],"terminationGracePeriod":null}}` | NodePool configuration for Karpenter |
-| nodePool.default | object | `{"annotations":{},"disruption":{"consolidationPolicy":"WhenUnderutilized"},"enabled":false,"expireAfter":"720h","labels":{},"limits":{"cpu":1000,"memory":"1000Gi"},"nodeClassRef":{},"overprovisioning":{"enabled":false,"nodes":1,"podAnnotations":{"description":"Overprovisioning pod for maintaining spare capacity"},"podLabels":{},"resources":{"requests":{"cpu":"1000m","memory":"1Gi"}},"tolerations":[{"operator":"Exists"}],"topologySpreadConstraints":[{"labelSelector":{"matchLabels":{"app.kubernetes.io/component":"overprovisioning"}},"maxSkew":1,"topologyKey":"kubernetes.io/hostname","whenUnsatisfiable":"DoNotSchedule"}]},"requirements":[],"startupTaints":[],"taints":[],"terminationGracePeriod":null}` | Default NodePool configuration |
+| nodePool | object | `{"default":{"annotations":{},"disruption":{"consolidationPolicy":"WhenUnderutilized"},"enabled":false,"expireAfter":"720h","labels":{},"limits":{"cpu":1000,"memory":"1000Gi"},"nodeClassRef":{},"overprovisioning":{"affinity":{},"apiVersion":"autoscaling.x-k8s.io/v1beta1","enabled":false,"image":"registry.k8s.io/pause:3.9","limits":{},"nodeSelector":{},"percentage":null,"podAnnotations":{"description":"Buffer pod shape reserving spare capacity"},"podLabels":{},"provisioningStrategy":"buffer.x-k8s.io/active-capacity","replicas":1,"resources":{"requests":{"cpu":"1000m","memory":"1Gi"}},"scalableRef":{},"tolerations":[{"operator":"Exists"}],"topologySpreadConstraints":[{"labelSelector":{"matchLabels":{"app.kubernetes.io/component":"overprovisioning"}},"maxSkew":1,"topologyKey":"kubernetes.io/hostname","whenUnsatisfiable":"DoNotSchedule"}]},"requirements":[],"startupTaints":[],"taints":[],"terminationGracePeriod":null}}` | NodePool configuration for Karpenter |
+| nodePool.default | object | `{"annotations":{},"disruption":{"consolidationPolicy":"WhenUnderutilized"},"enabled":false,"expireAfter":"720h","labels":{},"limits":{"cpu":1000,"memory":"1000Gi"},"nodeClassRef":{},"overprovisioning":{"affinity":{},"apiVersion":"autoscaling.x-k8s.io/v1beta1","enabled":false,"image":"registry.k8s.io/pause:3.9","limits":{},"nodeSelector":{},"percentage":null,"podAnnotations":{"description":"Buffer pod shape reserving spare capacity"},"podLabels":{},"provisioningStrategy":"buffer.x-k8s.io/active-capacity","replicas":1,"resources":{"requests":{"cpu":"1000m","memory":"1Gi"}},"scalableRef":{},"tolerations":[{"operator":"Exists"}],"topologySpreadConstraints":[{"labelSelector":{"matchLabels":{"app.kubernetes.io/component":"overprovisioning"}},"maxSkew":1,"topologyKey":"kubernetes.io/hostname","whenUnsatisfiable":"DoNotSchedule"}]},"requirements":[],"startupTaints":[],"taints":[],"terminationGracePeriod":null}` | Default NodePool configuration |
 | nodePool.default.enabled | bool | `false` | Enable or disable this NodePool resource |
 | nodePool.default.labels | object | `{}` | Labels are arbitrary key-values that are applied to all nodes |
 | nodePool.default.annotations | object | `{}` | Annotations are arbitrary key-values that are applied to all nodes |
@@ -92,17 +92,25 @@ The following table lists the configurable parameters and their default values.
 | nodePool.default.limits | object | `{"cpu":1000,"memory":"1000Gi"}` | Resource limits constrain the total size of the cluster. Limits prevent Karpenter from creating new instances once the limit is exceeded. |
 | nodePool.default.limits.cpu | int | `1000` | Maximum total CPU cores for the NodePool |
 | nodePool.default.limits.memory | string | `"1000Gi"` | Maximum total memory for the NodePool |
-| nodePool.default.overprovisioning | object | `{"enabled":false,"nodes":1,"podAnnotations":{"description":"Overprovisioning pod for maintaining spare capacity"},"podLabels":{},"resources":{"requests":{"cpu":"1000m","memory":"1Gi"}},"tolerations":[{"operator":"Exists"}],"topologySpreadConstraints":[{"labelSelector":{"matchLabels":{"app.kubernetes.io/component":"overprovisioning"}},"maxSkew":1,"topologyKey":"kubernetes.io/hostname","whenUnsatisfiable":"DoNotSchedule"}]}` | Overprovisioning configuration for pre-scaling nodes. This helps reduce pod startup time by keeping spare capacity available. |
-| nodePool.default.overprovisioning.enabled | bool | `false` | Enable overprovisioning for this nodepool |
-| nodePool.default.overprovisioning.nodes | int | `1` | Number of nodes to keep as spare capacity |
-| nodePool.default.overprovisioning.resources | object | `{"requests":{"cpu":"1000m","memory":"1Gi"}}` | Resource requests for overprovisioning pods. These pods will consume resources to maintain spare capacity. |
-| nodePool.default.overprovisioning.resources.requests.cpu | string | `"1000m"` | CPU request for overprovisioning pods |
-| nodePool.default.overprovisioning.resources.requests.memory | string | `"1Gi"` | Memory request for overprovisioning pods |
-| nodePool.default.overprovisioning.topologySpreadConstraints | list | `[{"labelSelector":{"matchLabels":{"app.kubernetes.io/component":"overprovisioning"}},"maxSkew":1,"topologyKey":"kubernetes.io/hostname","whenUnsatisfiable":"DoNotSchedule"}]` | Topology spread constraints for overprovisioning pods. Ensures dummy pods are spread across different nodes. |
-| nodePool.default.overprovisioning.tolerations | list | `[{"operator":"Exists"}]` | Tolerations for overprovisioning pods. Default tolerates all taints to ensure pods can be scheduled on any node. |
-| nodePool.default.overprovisioning.podLabels | object | `{}` | Additional labels for overprovisioning pods |
-| nodePool.default.overprovisioning.podAnnotations | object | `{"description":"Overprovisioning pod for maintaining spare capacity"}` | Additional annotations for overprovisioning pods |
-| nodePool.default.overprovisioning.podAnnotations.description | string | `"Overprovisioning pod for maintaining spare capacity"` | Description annotation for overprovisioning pods |
+| nodePool.default.overprovisioning | object | `{"affinity":{},"apiVersion":"autoscaling.x-k8s.io/v1beta1","enabled":false,"image":"registry.k8s.io/pause:3.9","limits":{},"nodeSelector":{},"percentage":null,"podAnnotations":{"description":"Buffer pod shape reserving spare capacity"},"podLabels":{},"provisioningStrategy":"buffer.x-k8s.io/active-capacity","replicas":1,"resources":{"requests":{"cpu":"1000m","memory":"1Gi"}},"scalableRef":{},"tolerations":[{"operator":"Exists"}],"topologySpreadConstraints":[{"labelSelector":{"matchLabels":{"app.kubernetes.io/component":"overprovisioning"}},"maxSkew":1,"topologyKey":"kubernetes.io/hostname","whenUnsatisfiable":"DoNotSchedule"}]}` | Reserve headroom as virtual pods. Needs Karpenter 1.14.0+ and the `capacityBuffer` gate. |
+| nodePool.default.overprovisioning.enabled | bool | `false` | Enable overprovisioning |
+| nodePool.default.overprovisioning.apiVersion | string | `"autoscaling.x-k8s.io/v1beta1"` | CapacityBuffer API version |
+| nodePool.default.overprovisioning.provisioningStrategy | string | `"buffer.x-k8s.io/active-capacity"` | Buffer fulfillment strategy |
+| nodePool.default.overprovisioning.replicas | int | `1` | Buffer chunks to keep, one chunk is one pod |
+| nodePool.default.overprovisioning.percentage | int | `nil` | Buffer as a percentage of `scalableRef` replicas |
+| nodePool.default.overprovisioning.limits | object | `{}` | Cap on total buffer resources |
+| nodePool.default.overprovisioning.scalableRef | object | `{}` | Take the chunk shape from a workload instead of a PodTemplate |
+| nodePool.default.overprovisioning.image | string | `"registry.k8s.io/pause:3.9"` | Placeholder image, never pulled |
+| nodePool.default.overprovisioning.resources | object | `{"requests":{"cpu":"1000m","memory":"1Gi"}}` | Requests defining one chunk |
+| nodePool.default.overprovisioning.resources.requests.cpu | string | `"1000m"` | CPU per chunk |
+| nodePool.default.overprovisioning.resources.requests.memory | string | `"1Gi"` | Memory per chunk |
+| nodePool.default.overprovisioning.nodeSelector | object | `{}` | Node selector for the chunk |
+| nodePool.default.overprovisioning.affinity | object | pinned to `karpenter.sh/nodepool` | Affinity for the chunk |
+| nodePool.default.overprovisioning.topologySpreadConstraints | list | `[{"labelSelector":{"matchLabels":{"app.kubernetes.io/component":"overprovisioning"}},"maxSkew":1,"topologyKey":"kubernetes.io/hostname","whenUnsatisfiable":"DoNotSchedule"}]` | Spread chunks across nodes |
+| nodePool.default.overprovisioning.tolerations | list | `[{"operator":"Exists"}]` | Tolerations for the chunk |
+| nodePool.default.overprovisioning.podLabels | object | `{}` | Extra labels for the chunk |
+| nodePool.default.overprovisioning.podAnnotations | object | `{"description":"Buffer pod shape reserving spare capacity"}` | Extra annotations for the chunk |
+| nodePool.default.overprovisioning.podAnnotations.description | string | `"Buffer pod shape reserving spare capacity"` | Description annotation |
 | ec2NodeClass | object | `{"default":{"amiFamily":"AL2","amiSelectorTerms":[],"associatePublicIPAddress":false,"blockDeviceMappings":[],"capacityReservationSelectorTerms":[],"detailedMonitoring":false,"enabled":false,"instanceProfile":"","instanceStorePolicy":null,"kubelet":{},"metadataOptions":{},"role":"","securityGroupSelectorTerms":[],"subnetSelectorTerms":[],"tags":{},"userData":""}}` | EC2NodeClass configuration for AWS Karpenter |
 | ec2NodeClass.default | object | `{"amiFamily":"AL2","amiSelectorTerms":[],"associatePublicIPAddress":false,"blockDeviceMappings":[],"capacityReservationSelectorTerms":[],"detailedMonitoring":false,"enabled":false,"instanceProfile":"","instanceStorePolicy":null,"kubelet":{},"metadataOptions":{},"role":"","securityGroupSelectorTerms":[],"subnetSelectorTerms":[],"tags":{},"userData":""}` | Default EC2NodeClass configuration |
 | ec2NodeClass.default.enabled | bool | `false` | Enable or disable this EC2NodeClass resource |

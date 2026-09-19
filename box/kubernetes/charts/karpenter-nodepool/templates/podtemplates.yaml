@@ -1,0 +1,75 @@
+{{/*
+Pod shape for overprovisioning.
+
+One PodTemplate per nodepool describes a single buffer chunk. The CapacityBuffer
+in capacitybuffers.yaml references it by name and Karpenter replays that shape as
+virtual pods, so the pod is never created for real.
+
+Skipped when scalableRef is set, since the buffer then takes its shape from the
+referenced workload and the two references are mutually exclusive.
+*/}}
+
+{{- range $nodePoolName, $nodePoolConfig := .Values.nodePool }}
+{{- $overprovisioning := $nodePoolConfig.overprovisioning }}
+{{- if and $overprovisioning $overprovisioning.enabled (not $overprovisioning.scalableRef) }}
+---
+apiVersion: v1
+kind: PodTemplate
+metadata:
+  name: overprovisioning-{{ $nodePoolName }}
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    {{- include "labels" $ | nindent 4 }}
+    app.kubernetes.io/component: overprovisioning
+    karpenter.sh/nodepool: {{ $nodePoolName }}
+  {{- if $.Values.globalAnnotations }}
+  annotations:
+    {{- include "annotations" $ | nindent 4 }}
+  {{- end }}
+template:
+  metadata:
+    labels:
+      app.kubernetes.io/component: overprovisioning
+      karpenter.sh/nodepool: {{ $nodePoolName }}
+      {{- include "labels" $ | nindent 6 }}
+      {{- with $overprovisioning.podLabels }}
+      {{- toYaml . | nindent 6 }}
+      {{- end }}
+    {{- with $overprovisioning.podAnnotations }}
+    annotations:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+  spec:
+    containers:
+    - name: reserve-resources
+      image: {{ $overprovisioning.image | default "registry.k8s.io/pause:3.9" }}
+      {{- with $overprovisioning.resources }}
+      resources:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    {{- with $overprovisioning.nodeSelector }}
+    nodeSelector:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+    affinity:
+      {{- if $overprovisioning.affinity }}
+      {{- toYaml $overprovisioning.affinity | nindent 6 }}
+      {{- else }}
+      nodeAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          nodeSelectorTerms:
+          - matchExpressions:
+            - key: karpenter.sh/nodepool
+              operator: In
+              values: [{{ $nodePoolName }}]
+      {{- end }}
+    {{- with $overprovisioning.tolerations }}
+    tolerations:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+    {{- with $overprovisioning.topologySpreadConstraints }}
+    topologySpreadConstraints:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+{{- end }}
+{{- end }}

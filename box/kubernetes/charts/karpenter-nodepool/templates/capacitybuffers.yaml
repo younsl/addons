@@ -1,0 +1,50 @@
+{{/*
+Overprovisioning through the Karpenter CapacityBuffer API.
+
+A CapacityBuffer asks Karpenter to keep a number of chunks worth of headroom as
+virtual pods. The pods never exist in etcd, so there is no preemption and no
+scheduler churn. The chunk shape comes from the PodTemplate in podtemplates.yaml,
+or from an existing workload when scalableRef is set.
+
+Requires Karpenter 1.14.0+ with the capacityBuffer feature gate enabled on the
+controller.
+*/}}
+
+{{- range $nodePoolName, $nodePoolConfig := .Values.nodePool }}
+{{- $overprovisioning := $nodePoolConfig.overprovisioning }}
+{{- if and $overprovisioning $overprovisioning.enabled }}
+---
+apiVersion: {{ $overprovisioning.apiVersion | default "autoscaling.x-k8s.io/v1beta1" }}
+kind: CapacityBuffer
+metadata:
+  name: overprovisioning-{{ $nodePoolName }}
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    {{- include "labels" $ | nindent 4 }}
+    app.kubernetes.io/component: overprovisioning
+    karpenter.sh/nodepool: {{ $nodePoolName }}
+  {{- if $.Values.globalAnnotations }}
+  annotations:
+    {{- include "annotations" $ | nindent 4 }}
+  {{- end }}
+spec:
+  provisioningStrategy: {{ $overprovisioning.provisioningStrategy | default "buffer.x-k8s.io/active-capacity" }}
+  {{- if $overprovisioning.scalableRef }}
+  scalableRef:
+    {{- toYaml $overprovisioning.scalableRef | nindent 4 }}
+  {{- else }}
+  podTemplateRef:
+    name: overprovisioning-{{ $nodePoolName }}
+  {{- end }}
+  {{- with $overprovisioning.replicas }}
+  replicas: {{ . }}
+  {{- end }}
+  {{- with $overprovisioning.percentage }}
+  percentage: {{ . }}
+  {{- end }}
+  {{- with $overprovisioning.limits }}
+  limits:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+{{- end }}
+{{- end }}
