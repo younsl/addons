@@ -305,10 +305,19 @@ jobs:
         if: steps.check.outputs.should_release == 'true'
         working-directory: /tmp/digests
         run: |
-          # shellcheck disable=SC2046
-          docker buildx imagetools create \
-            $(jq -cr '.target."docker-metadata-action".tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
-            $(printf "${REGISTRY}/${IMAGE_NAME}@sha256:%s " *)
+          set -euo pipefail
+          # DOCKER_METADATA_OUTPUT_JSON carries the tags at the top level; the
+          # nested .target form belongs to the bake file, which is a separate
+          # output. Reading the wrong one yields an empty tag list, and
+          # imagetools then refuses the push.
+          mapfile -t TAG_ARGS < <(jq -r '.tags[] | "-t", .' <<< "$DOCKER_METADATA_OUTPUT_JSON")
+          [ "${#TAG_ARGS[@]}" -gt 0 ] || { echo "::error::no tags resolved from docker-metadata-action"; exit 1; }
+          DIGEST_REFS=()
+          for f in *; do
+            DIGEST_REFS+=("${REGISTRY}/${IMAGE_NAME}@sha256:${f}")
+          done
+          [ "${#DIGEST_REFS[@]}" -gt 0 ] || { echo "::error::no digests downloaded"; exit 1; }
+          docker buildx imagetools create "${TAG_ARGS[@]}" "${DIGEST_REFS[@]}"
 
       - name: Inspect manifest list
         if: steps.check.outputs.should_release == 'true'
