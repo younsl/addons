@@ -98,10 +98,13 @@ jobs:
   # (tree-sitter, tree-sitter-json have no prebuilds), so QEMU emulation would
   # run node-gyp under an emulated CPU. Native arm64 runners are free on public
   # repositories, so both legs build on real hardware and are joined afterwards.
+  #
+  # This runs alongside the tests rather than after them. Nothing published
+  # here is reachable by tag, so a failing test costs an untagged manifest and
+  # no more; the merge job is what checks the test result before any tag moves.
   # ---------------------------------------------------------------------------
   release:
-    needs: [detect, test-backstage]
-    if: always() && !cancelled()
+    needs: detect
     runs-on: ${{ matrix.platform.runner }}
     permissions:
       contents: read
@@ -130,19 +133,9 @@ jobs:
         env:
           RELEASE_FLAG: ${{ needs.detect.outputs[matrix.container.release_flag] }}
           VERSION: ${{ needs.detect.outputs[matrix.container.version_key] }}
-          BS_TEST: ${{ needs.test-backstage.result }}
         run: |
           SHOULD_RELEASE="false"
-          if [[ "${RELEASE_FLAG}" == "true" ]]; then
-            case "${{ matrix.container.name }}" in
-              backstage)
-                [[ "${BS_TEST}" == "success" ]] && SHOULD_RELEASE="true"
-                ;;
-              *)
-                SHOULD_RELEASE="true"
-                ;;
-            esac
-          fi
+          [[ "${RELEASE_FLAG}" == "true" ]] && SHOULD_RELEASE="true"
           echo "should_release=${SHOULD_RELEASE}" >> "$GITHUB_OUTPUT"
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
 
