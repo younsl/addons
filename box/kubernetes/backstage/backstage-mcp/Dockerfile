@@ -1,5 +1,8 @@
 # Statically linked binary built via GitHub Actions cross-compilation (cargo-zigbuild)
-FROM alpine:3.23 AS certs
+# Pinned to the build platform: the trust store is identical on every
+# architecture, so pulling it from the target platform would only buy an
+# emulated apk run on the arm64 leg.
+FROM --platform=$BUILDPLATFORM alpine:3.23 AS certs
 RUN apk add --no-cache ca-certificates
 
 FROM scratch AS runtime

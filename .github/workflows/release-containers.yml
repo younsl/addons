@@ -93,39 +93,48 @@ jobs:
           yarn workspace @internal/plugin-openapi-registry-backend test --no-cache --ci
 
   # ---------------------------------------------------------------------------
-  # Release: unified build and push (matrix)
+  # Release: one native runner per architecture, each pushing an untagged
+  # manifest identified by digest. Backstage compiles native node modules
+  # (tree-sitter, tree-sitter-json have no prebuilds), so QEMU emulation would
+  # run node-gyp under an emulated CPU. Native arm64 runners are free on public
+  # repositories, so both legs build on real hardware and are joined afterwards.
   # ---------------------------------------------------------------------------
   release:
     needs: [detect, test-backstage]
     if: always() && !cancelled()
-    runs-on: ubuntu-24.04
+    runs-on: ${{ matrix.platform.runner }}
     permissions:
       contents: read
       packages: write
     strategy:
       fail-fast: false
       matrix:
-        include:
+        container:
           - name: backstage
             release_flag: backstage_release
             version_key: backstage_version
             context: box/kubernetes/backstage
-            platforms: linux/amd64
-            push_latest: true
+        platform:
+          - arch: amd64
+            target: linux/amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            target: linux/arm64
+            runner: ubuntu-24.04-arm
     env:
       REGISTRY: ghcr.io
-      IMAGE_NAME: younsl/${{ matrix.name }}
+      IMAGE_NAME: younsl/${{ matrix.container.name }}
     steps:
       - name: Check release eligibility
         id: check
         env:
-          RELEASE_FLAG: ${{ needs.detect.outputs[matrix.release_flag] }}
-          VERSION: ${{ needs.detect.outputs[matrix.version_key] }}
+          RELEASE_FLAG: ${{ needs.detect.outputs[matrix.container.release_flag] }}
+          VERSION: ${{ needs.detect.outputs[matrix.container.version_key] }}
           BS_TEST: ${{ needs.test-backstage.result }}
         run: |
           SHOULD_RELEASE="false"
           if [[ "${RELEASE_FLAG}" == "true" ]]; then
-            case "${{ matrix.name }}" in
+            case "${{ matrix.container.name }}" in
               backstage)
                 [[ "${BS_TEST}" == "success" ]] && SHOULD_RELEASE="true"
                 ;;
@@ -140,10 +149,6 @@ jobs:
       - name: Checkout
         if: steps.check.outputs.should_release == 'true'
         uses: actions/checkout@v6
-
-      - name: Set up QEMU
-        if: steps.check.outputs.should_release == 'true'
-        uses: docker/setup-qemu-action@v4
 
       - name: Set up Docker Buildx
         if: steps.check.outputs.should_release == 'true'
@@ -161,7 +166,7 @@ jobs:
         if: steps.check.outputs.should_release == 'true'
         id: build-args
         run: |
-          case "${{ matrix.name }}" in
+          case "${{ matrix.container.name }}" in
             backstage)
               {
                 echo "args<<EOF"
@@ -174,6 +179,115 @@ jobs:
               ;;
           esac
 
+      # Labels only. Tags belong to the manifest list, which the merge job creates.
+      - name: Extract metadata
+        if: steps.check.outputs.should_release == 'true'
+        id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+
+      - name: Build and push image by digest
+        if: steps.check.outputs.should_release == 'true'
+        id: build
+        uses: docker/build-push-action@v7
+        with:
+          context: ${{ matrix.container.context }}
+          platforms: ${{ matrix.platform.target }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: ${{ steps.build-args.outputs.args }}
+          provenance: false
+          sbom: false
+          outputs: type=image,name=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=gha,scope=${{ matrix.container.name }}-${{ matrix.platform.arch }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.container.name }}-${{ matrix.platform.arch }}
+
+      # The digest is the only thing the merge job needs; the file itself is empty.
+      - name: Export digest
+        if: steps.check.outputs.should_release == 'true'
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          mkdir -p /tmp/digests
+          touch "/tmp/digests/${DIGEST#sha256:}"
+
+      - name: Upload digest
+        if: steps.check.outputs.should_release == 'true'
+        uses: actions/upload-artifact@v6
+        with:
+          name: digests-${{ matrix.container.name }}-${{ matrix.platform.arch }}
+          path: /tmp/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  # ---------------------------------------------------------------------------
+  # Merge: join the per-architecture digests into one tagged manifest list
+  # ---------------------------------------------------------------------------
+  merge:
+    needs: [detect, test-backstage, release]
+    if: always() && !cancelled()
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: backstage
+            release_flag: backstage_release
+            version_key: backstage_version
+            push_latest: true
+    env:
+      REGISTRY: ghcr.io
+      IMAGE_NAME: younsl/${{ matrix.name }}
+    steps:
+      - name: Check release eligibility
+        id: check
+        env:
+          RELEASE_FLAG: ${{ needs.detect.outputs[matrix.release_flag] }}
+          VERSION: ${{ needs.detect.outputs[matrix.version_key] }}
+          BS_TEST: ${{ needs.test-backstage.result }}
+          BUILD_RESULT: ${{ needs.release.result }}
+        run: |
+          SHOULD_RELEASE="false"
+          if [[ "${RELEASE_FLAG}" == "true" && "${BUILD_RESULT}" == "success" ]]; then
+            case "${{ matrix.name }}" in
+              backstage)
+                [[ "${BS_TEST}" == "success" ]] && SHOULD_RELEASE="true"
+                ;;
+              *)
+                SHOULD_RELEASE="true"
+                ;;
+            esac
+          fi
+          echo "should_release=${SHOULD_RELEASE}" >> "$GITHUB_OUTPUT"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout
+        if: steps.check.outputs.should_release == 'true'
+        uses: actions/checkout@v6
+
+      - name: Download digests
+        if: steps.check.outputs.should_release == 'true'
+        uses: actions/download-artifact@v7
+        with:
+          pattern: digests-${{ matrix.name }}-*
+          merge-multiple: true
+          path: /tmp/digests
+
+      - name: Set up Docker Buildx
+        if: steps.check.outputs.should_release == 'true'
+        uses: docker/setup-buildx-action@v4
+
+      - name: Login to Container Registry
+        if: steps.check.outputs.should_release == 'true'
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Extract metadata
         if: steps.check.outputs.should_release == 'true'
         id: meta
@@ -184,20 +298,18 @@ jobs:
             type=raw,value=${{ steps.check.outputs.version }}
             ${{ matrix.push_latest == true && 'type=raw,value=latest' || '' }}
 
-      - name: Build and push Docker image
+      - name: Create manifest list and push
         if: steps.check.outputs.should_release == 'true'
-        uses: docker/build-push-action@v7
-        with:
-          context: ${{ matrix.context }}
-          platforms: ${{ matrix.platforms }}
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          build-args: ${{ steps.build-args.outputs.args }}
-          provenance: false
-          sbom: false
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+        working-directory: /tmp/digests
+        run: |
+          # shellcheck disable=SC2046
+          docker buildx imagetools create \
+            $(jq -cr '.target."docker-metadata-action".tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
+            $(printf "${REGISTRY}/${IMAGE_NAME}@sha256:%s " *)
+
+      - name: Inspect manifest list
+        if: steps.check.outputs.should_release == 'true'
+        run: docker buildx imagetools inspect "${REGISTRY}/${IMAGE_NAME}:${{ steps.check.outputs.version }}"
 
       - name: Summary (backstage)
         if: steps.check.outputs.should_release == 'true' && matrix.name == 'backstage'
