@@ -100,6 +100,8 @@ jobs:
   # repositories, so both legs build on real hardware and are joined afterwards.
   # ---------------------------------------------------------------------------
   release:
+    # Without this the job name expands to the whole matrix object
+    name: release (${{ matrix.container.name }}, ${{ matrix.platform.arch }})
     needs: [detect, test-backstage]
     if: always() && !cancelled()
     runs-on: ${{ matrix.platform.runner }}
@@ -224,6 +226,7 @@ jobs:
   # Merge: join the per-architecture digests into one tagged manifest list
   # ---------------------------------------------------------------------------
   merge:
+    name: merge (${{ matrix.name }})
     needs: [detect, test-backstage, release]
     if: always() && !cancelled()
     runs-on: ubuntu-24.04
