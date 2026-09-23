@@ -1,7 +1,8 @@
 //! Embeds the built React single-page application and serves it with a
 //! history-API fallback (unknown paths return index.html). The dist directory
-//! is produced by `make web-build` (Vite); a placeholder is committed so the
-//! binary always builds even without a frontend build step.
+//! is produced by `make web-build` (Vite) and is not committed. Without it the
+//! binary still builds and serves `webui/placeholder.html`, which lives outside
+//! the build output so a web build never rewrites a tracked file.
 
 use std::borrow::Cow;
 
@@ -34,9 +35,17 @@ impl Files for EmbeddedFiles {
 
 /// The SPA entry document, read once at startup.
 fn index_html() -> Cow<'static, [u8]> {
-    EmbeddedFiles
+    entry_document(&EmbeddedFiles)
+}
+
+/// Served when the binary was built without the web console.
+const PLACEHOLDER: &[u8] = include_bytes!("webui/placeholder.html");
+
+/// The built `index.html`, or the placeholder when there is no web build.
+fn entry_document(files: &dyn Files) -> Cow<'static, [u8]> {
+    files
         .get("index.html")
-        .expect("webui: dist/index.html is missing from the embedded assets")
+        .unwrap_or(Cow::Borrowed(PLACEHOLDER))
 }
 
 /// Serves the embedded SPA. Requests for existing files are served directly;
@@ -49,7 +58,7 @@ fn index_html() -> Cow<'static, [u8]> {
 /// (web/scripts/precompress.mjs); when the client accepts gzip and a sibling
 /// exists it is served with Content-Encoding: gzip, and identity requests keep
 /// getting the original. Both paths degrade cleanly when the .gz files are
-/// absent (placeholder dist).
+/// absent (no web build).
 pub async fn handler(req: Request) -> Response {
     let path = req.uri().path().trim_start_matches('/').to_string();
     if !path.is_empty()
@@ -227,6 +236,21 @@ pub(crate) mod tests {
         }
     }
 
+    #[test]
+    fn entry_document_falls_back_to_the_placeholder() {
+        // No web build: the placeholder, which still mounts the SPA root.
+        let bare = SyntheticFiles(HashMap::new());
+        let doc = String::from_utf8(entry_document(&bare).into_owned()).unwrap();
+        assert!(doc.contains("make web-build"), "placeholder served: {doc}");
+        assert!(doc.contains(r#"<div id="root">"#), "{doc}");
+
+        // A web build: its own index.html wins.
+        let mut files = HashMap::new();
+        files.insert("index.html", &b"<html>built</html>"[..]);
+        let built = SyntheticFiles(files);
+        assert_eq!(&*entry_document(&built), b"<html>built</html>");
+    }
+
     /// Builds the request headers `serve_file` reads.
     fn headers(accept_encoding: Option<&str>) -> HeaderMap {
         let mut h = HeaderMap::new();
@@ -356,11 +380,18 @@ pub(crate) mod tests {
         );
     }
 
-    /// Real files in the embedded tree are served with their own type and are not
-    /// swallowed by the SPA fallback.
+    /// Real files in the tree are served with their own type and are not
+    /// swallowed by the SPA fallback. Synthetic, because the embedded tree is
+    /// empty until `make web-build` has run.
     #[tokio::test]
     async fn embedded_file_is_served_directly() {
-        let resp = call(Method::GET, "/favicon.svg", None).await;
+        let resp = serve_file(
+            &headers(None),
+            &Method::GET,
+            &SyntheticFiles::new(),
+            "favicon.svg",
+        )
+        .expect("favicon served");
         assert_eq!(resp.status(), StatusCode::OK);
         assert_eq!(
             resp.headers().get(header::CONTENT_TYPE).unwrap(),

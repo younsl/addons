@@ -32,12 +32,9 @@ site/.vite/
 site/dist/
 /.pnpm-store/
 
-# Embedded UI build output: keep the committed placeholder index.html so the
-# binary always builds, but ignore compiled assets produced by `make web-build`.
-src/webui/dist/assets/
-src/webui/dist/*.js
-src/webui/dist/*.css
+# Embedded UI build output from `make web-build`. None of it is committed: a
+# binary built without it serves src/webui/placeholder.html instead.
+src/webui/dist/
 
 # Packaged Helm charts
 *.tgz
-src/webui/dist/*.gz
