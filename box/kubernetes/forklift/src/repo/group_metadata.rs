@@ -60,9 +60,11 @@ fn group_metadata_kind(format: &str, wildcard: &str) -> &'static str {
             }
         }
         meta::FORMAT_CARGO => {
+            // `api/v1/` also covers `api/v1/crates?q=`, whose path has no
+            // trailing slash and is a search, not a sparse-index entry.
             if wildcard != "config.json"
                 && !wildcard.contains("/api/v1/crates/")
-                && !wildcard.starts_with("api/v1/crates/")
+                && !wildcard.starts_with("api/v1/")
             {
                 return "cargo";
             }

@@ -246,6 +246,10 @@ impl Service {
             } else {
                 self.principal_from_password(&user, &pass).await
             };
+        } else if is_pat(&authz) {
+            // Cargo's `cargo:token` provider sends the configured token verbatim,
+            // with no scheme, on publish and on every `auth-required` index read.
+            return self.principal_from_token(&authz).await;
         }
         if !authz.is_empty() {
             return Ok(None);
@@ -893,6 +897,33 @@ pub(crate) mod tests {
             assert!(
                 p.can("maven-central", ACTION_READ) && !p.can("maven-central", ACTION_WRITE),
                 "token scope not enforced"
+            );
+
+            // A bare PAT, as cargo sends it, resolves the same principal.
+            let parts = Request::builder()
+                .uri("/")
+                .header(http::header::AUTHORIZATION, plain.as_str())
+                .body(Body::empty())
+                .unwrap()
+                .into_parts()
+                .0;
+            let p = t.svc.resolve(&parts).await.expect("bare token resolve");
+            assert!(
+                p.is_some_and(|p| p.can("maven-central", ACTION_READ)),
+                "bare token must resolve"
+            );
+
+            // Any other scheme-less value stays anonymous.
+            let parts = Request::builder()
+                .uri("/")
+                .header(http::header::AUTHORIZATION, "not-a-token")
+                .body(Body::empty())
+                .unwrap()
+                .into_parts()
+                .0;
+            assert!(
+                t.svc.resolve(&parts).await.unwrap().is_none(),
+                "unknown scheme-less value must not resolve"
             );
 
             // Anonymous request resolves to nil.

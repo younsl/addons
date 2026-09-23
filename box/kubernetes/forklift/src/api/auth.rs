@@ -2093,6 +2093,30 @@ pub(crate) mod tests {
                 ("LicensePolicyConfig", Shape::Ty("LicensePolicyConfig")),
                 ("UploadConfig", Shape::Ty("repoconfig::UploadConfig")),
                 ("UpstreamAuthConfig", Shape::Ty("UpstreamAuthConfig")),
+                // The Cargo Registry Web API bodies are built as maps.
+                (
+                    "CargoSearchResult",
+                    Shape::Json(crate::repo::cargo_search::search_body(Vec::new(), 0)),
+                ),
+                (
+                    "CargoCrateSummary",
+                    Shape::Json(crate::repo::cargo_search::crate_summary_body(
+                        &crate::repo::cargo_search::CrateHit {
+                            name: "widget".to_string(),
+                            max_version: "1.0.0".to_string(),
+                        },
+                        "",
+                    )),
+                ),
+                (
+                    "CargoPublishResult",
+                    Shape::Json(crate::repo::cargo::cargo_publish_body()),
+                ),
+                ("CargoOk", Shape::Json(crate::repo::cargo::cargo_ok_body())),
+                (
+                    "CargoErrors",
+                    Shape::Json(crate::repo::cargo::cargo_error_body("detail")),
+                ),
             ];
 
             let mut failures = Vec::new();

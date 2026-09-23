@@ -34,7 +34,7 @@ export interface AnnouncementInput { body: string; }
 
 export interface SearchResult { query?: string; repositories?: { id?: number; name?: string; format?: string; type?: string; }[] | null; artifacts?: { repo_id?: number; repo_name?: string; path?: string; size?: number; }[] | null; labels?: { repo_id?: number; repo_name?: string; path?: string; label?: string; }[] | null; approvals?: ({ id?: number; repo_name?: string; package?: string; status?: "pending" | "approved" | "rejected"; })[] | null; users?: { id?: number; username?: string; robot?: boolean; }[] | null; roles?: { id?: number; name?: string; description?: string; }[] | null; counts?: Record<string, number>; }
 
-export interface Repository { id: number; name: string; format: "maven" | "npm" | "cargo" | "go" | "pypi" | "raw" | "oci"; type: "hosted" | "proxy" | "group"; upstream_url: string; config: RepoConfig; description: string; disabled: boolean; seeded: boolean; created_at: string; updated_at: string; capabilities: RepositoryCapabilities; publish_methods: ("mvn" | "npm" | "twine" | "docker" | "helm" | "oras")[]; }
+export interface Repository { id: number; name: string; format: "maven" | "npm" | "cargo" | "go" | "pypi" | "raw" | "oci"; type: "hosted" | "proxy" | "group"; upstream_url: string; config: RepoConfig; description: string; disabled: boolean; seeded: boolean; created_at: string; updated_at: string; capabilities: RepositoryCapabilities; publish_methods: ("mvn" | "npm" | "twine" | "cargo" | "docker" | "helm" | "oras")[]; }
 
 export type RepositoryListItem = Repository & { artifact_count: number; total_size: number; pending_approval_count: number; can_write: boolean; scanned_count: number; clean_count: number; };
 
@@ -164,7 +164,7 @@ export interface RepositoryName { name: string; format: string; type: "hosted" |
 
 export interface Artifact { path: string; version: string; size: number; content_type: string; published_at: string | null; cached_at: string; last_accessed_at: string; cached_by: string; downloads_30d: number; last_accessed_by: string; publication_id?: string; artifact_role?: "primary" | "metadata" | "checksum" | "index"; labels: ArtifactLabel[]; can_label: boolean; max_severity?: string; vuln_ids?: string[]; vuln_counts?: Record<string, number>; vuln_advisories?: VulnAdvisory[]; vuln_source?: string; vuln_scanned_at?: string | null; licenses?: string[]; license_source?: string; license_resolved_at?: string | null; blob_missing?: boolean; blob_missing_since?: string | null; blob_missing_last_seen?: string | null; blob_missing_last_status?: number; blob_missing_statuses?: { code?: number; count?: number; }[]; }
 
-export interface ArtifactList { count: number; total_size: number; filtered: number; artifacts: Artifact[]; publications: ArtifactPublication[]; }
+export interface ArtifactList { count: number; total_size: number; filtered: number; labeled_count: number; artifacts: Artifact[]; publications: ArtifactPublication[]; }
 
 export interface ArtifactLabel { label: string; created_by: string; created_at: string; }
 
@@ -189,6 +189,18 @@ export interface MavenUploadManifest { group_id: string; artifact_id: string; ve
 export interface NPMUploadManifest { dist_tag?: string; }
 
 export type PyPIUploadManifest = Record<string, unknown>;
+
+export interface CargoRegistryConfig { dl: string; api?: string; "auth-required"?: boolean; }
+
+export interface CargoSearchResult { crates: CargoCrateSummary[]; meta: { total: number; }; }
+
+export interface CargoCrateSummary { name: string; max_version: string; description: string; }
+
+export interface CargoPublishResult { warnings: { invalid_categories: string[]; invalid_badges: string[]; other: string[]; }; }
+
+export interface CargoOk { ok: boolean; }
+
+export interface CargoErrors { errors: { detail: string; }[]; }
 
 export interface CargoUploadManifest { yanked?: boolean; }
 

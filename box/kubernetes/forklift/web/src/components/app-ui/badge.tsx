@@ -5,7 +5,7 @@ import { Badge as ShadcnBadge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
 
 const badgeVariants = cva(
-  "inline-flex w-fit shrink-0 items-center rounded-md border px-1.5 py-0.5 text-xs leading-normal font-medium whitespace-nowrap",
+  "inline-flex w-fit shrink-0 items-center rounded-full border px-2 py-0.5 text-xs leading-normal font-medium whitespace-nowrap",
   {
     variants: {
       variant: {

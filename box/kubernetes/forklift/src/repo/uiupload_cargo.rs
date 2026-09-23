@@ -27,7 +27,12 @@ struct CargoPackageData {
     index_version: i64,
     links: String,
     rust_version: String,
+    description: String,
 }
+
+/// Bounds the `[package].description` kept for `cargo search`, which prints it
+/// on one line.
+const MAX_CARGO_DESCRIPTION_BYTES: usize = 1024;
 
 impl Uploader {
     pub(crate) async fn publish_cargo(
@@ -171,12 +176,16 @@ impl Uploader {
             .await
             .map_err(|_| stage_failed("The Cargo sparse index could not be staged"))?;
 
+        let mut format_metadata = serde_json::json!({
+            "checksum": asset.digest,
+            "index_schema_version": 1,
+        });
+        if !pkg.description.is_empty() {
+            format_metadata["description"] = serde_json::json!(pkg.description);
+        }
         let owned_metadata = serde_json::to_string(&serde_json::json!({
             "format": "cargo",
-            "format_metadata": {
-                "checksum": asset.digest,
-                "index_schema_version": 1,
-            },
+            "format_metadata": format_metadata,
             "managed_by": "ui_upload",
             "package": pkg.name,
             "role": "primary",
@@ -424,6 +433,11 @@ impl Uploader {
             .and_then(toml::Value::as_str)
             .unwrap_or("")
             .to_string();
+        let description = package_table
+            .get("description")
+            .and_then(toml::Value::as_str)
+            .map(|text| truncate_description(text.split_whitespace().collect::<Vec<_>>().join(" ")))
+            .unwrap_or_default();
         let mut version_id = parsed_version.expect("valid version").to_string();
         if let Some(index) = version_id.find('+') {
             version_id.truncate(index);
@@ -439,6 +453,7 @@ impl Uploader {
             index_version,
             links,
             rust_version,
+            description,
         })
     }
 
@@ -818,12 +833,43 @@ fn clean_archive_path(name: &str) -> String {
     out.join("/")
 }
 
-fn valid_cargo_name(name: &str) -> bool {
+pub(crate) fn valid_cargo_name(name: &str) -> bool {
     if name.is_empty() || name.len() > 64 || !name.starts_with(|c: char| c.is_ascii_alphabetic()) {
         return false;
     }
     name.chars()
         .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+}
+
+/// Cuts a description to [`MAX_CARGO_DESCRIPTION_BYTES`] on a character
+/// boundary.
+fn truncate_description(mut text: String) -> String {
+    if text.len() > MAX_CARGO_DESCRIPTION_BYTES {
+        let mut end = MAX_CARGO_DESCRIPTION_BYTES;
+        while !text.is_char_boundary(end) {
+            end -= 1;
+        }
+        text.truncate(end);
+    }
+    text
+}
+
+/// Extracts `format_metadata.description` from a crate artifact's metadata
+/// envelope.
+pub(crate) fn cargo_description(metadata_json: &str) -> String {
+    #[derive(serde::Deserialize)]
+    struct Envelope {
+        #[serde(default)]
+        format_metadata: FormatMetadata,
+    }
+    #[derive(serde::Deserialize, Default)]
+    struct FormatMetadata {
+        #[serde(default)]
+        description: String,
+    }
+    serde_json::from_str::<Envelope>(metadata_json)
+        .map(|envelope| envelope.format_metadata.description)
+        .unwrap_or_default()
 }
 
 pub(crate) fn cargo_canonical_name(name: &str) -> String {

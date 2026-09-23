@@ -41,7 +41,8 @@ mod upload;
 mod upstreamurl;
 
 mod approvalgate;
-mod cargo;
+pub(crate) mod cargo;
+pub(crate) mod cargo_search;
 mod gomod;
 mod group;
 mod group_metadata;

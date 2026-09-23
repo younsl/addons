@@ -1,4 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
+import { Link } from "@tanstack/react-router";
+import { Search } from "lucide-react";
 import { getErrorMessageIfAny } from "@/lib/http/error/api-error";
 import { openApiQueryOptions } from "@/query/v1/openapi-query-options";
 import { ReactNode } from "react";
@@ -8,6 +10,7 @@ import { SEV_COLOR } from "@/components/app-ui/severity-bar";
 import { useTranslation } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import { formatFileSize } from "@/utils/format-file-size";
+import type { ArtifactFilter } from "@/routes/workspace/repositories/-utils/artifact-filter";
 
 function formatStatTime(d: Date, language: string): string {
   return new Intl.DateTimeFormat(language, {
@@ -27,7 +30,7 @@ function SeverityBreakdown({ counts }: { counts: Record<string, number> }) {
   const { t } = useTranslation();
   const total = SEV_ORDER.reduce((n, s) => n + (counts[s] ?? 0), 0);
   if (total === 0) {
-    return <p className="m-0 text-sm text-emerald-600 dark:text-emerald-400">{t("repo.stat-all-clean")}</p>;
+    return <p className="m-0 text-sm text-[var(--fx-success)]">{t("repo.stat-all-clean")}</p>;
   }
   return (
     <div>
@@ -55,7 +58,8 @@ function SeverityBreakdown({ counts }: { counts: Record<string, number> }) {
 // Statistics is an ungated tab (every authenticated reader): it aggregates the
 // same artifact listing the Artifacts tab uses into repo-wide counts — stored
 // artifacts, size, how many are scanned/clean/vulnerable, distinct licenses,
-// and a repo-wide severity bar. No extra endpoint; scan aggregates are derived
+// labeling coverage, and a repo-wide severity bar. No extra endpoint. Scan
+// aggregates are derived
 // client-side from per-artifact vuln data, so they cover at most the 500
 // most recently accessed artifacts (the listing API's maximum page).
 export function Statistics({ repo }: { repo: Repository }) {
@@ -99,9 +103,15 @@ export function Statistics({ repo }: { repo: Repository }) {
   }
   const scores = [...scoreById.values()];
 
+  // Labeling coverage is counted server-side over the whole repository, not
+  // over the 500-artifact sample the scan panels use.
+  const labeledPct = data.count ? Math.round((data.labeled_count / data.count) * 100) : null;
+
+  // Status tokens rather than Tailwind's palette: emerald-600 measured 2.64:1 on
+  // a light panel.
   const cleanTone = cleanPct === null ? undefined
-    : cleanPct === 100 ? "text-emerald-600 dark:text-emerald-400"
-      : cleanPct >= 50 ? "text-amber-600 dark:text-amber-400"
+    : cleanPct === 100 ? "text-[var(--fx-success)]"
+      : cleanPct >= 50 ? "text-[var(--fx-warning)]"
         : "text-destructive";
 
   return (
@@ -116,21 +126,25 @@ export function Statistics({ repo }: { repo: Repository }) {
         )}
       </div>
       {/* Grafana-style dashboard: each metric is its own titled panel. */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
-        <Panel title={t("common.artifacts")}><BigStat value={data.count.toLocaleString()} /></Panel>
-        <Panel title={t("common.size")}><BigStat value={formatFileSize(data.total_size)} /></Panel>
-        <Panel title={t("repo.stat-scanned")}>
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <Panel title={t("common.artifacts")} drill={{ repoId: repo.id }}><BigStat value={data.count.toLocaleString()} /></Panel>
+        <Panel title={t("common.size")} drill={{ repoId: repo.id }}><BigStat value={formatFileSize(data.total_size)} /></Panel>
+        <Panel title={t("repo.stat-scanned")} drill={{ repoId: repo.id, filter: "scanned" }}>
           <BigStat value={scanned.length.toLocaleString()} sub={`/ ${data.count.toLocaleString()}`} />
         </Panel>
-        <Panel title={t("repo.clean-ratio")}>
+        <Panel title={t("repo.clean-ratio")} drill={{ repoId: repo.id, filter: "clean" }}>
           <BigStat value={cleanPct === null ? "-" : `${cleanPct}%`} tone={cleanTone}
             sub={cleanPct === null ? undefined : `${clean.toLocaleString()} / ${scanned.length.toLocaleString()}`} />
         </Panel>
-        <Panel title={t("repo.stat-vulnerable")}>
+        <Panel title={t("repo.stat-vulnerable")} drill={{ repoId: repo.id, filter: "vulnerable" }}>
           <BigStat value={vulnerable.toLocaleString()} tone={vulnerable > 0 ? "text-destructive" : undefined} />
         </Panel>
-        <Panel title={t("repo.stat-licenses")}><BigStat value={licenses.size.toLocaleString()} /></Panel>
-        <Panel title={t("repo.stat-broken")}>
+        <Panel title={t("repo.stat-licenses")} drill={{ repoId: repo.id, filter: "licensed" }}><BigStat value={licenses.size.toLocaleString()} /></Panel>
+        <Panel title={t("repo.stat-labeled")} drill={{ repoId: repo.id, filter: "labeled" }}>
+          <BigStat value={labeledPct === null ? "-" : `${labeledPct}%`}
+            sub={labeledPct === null ? undefined : `${data.labeled_count.toLocaleString()} / ${data.count.toLocaleString()}`} />
+        </Panel>
+        <Panel title={t("repo.stat-broken")} drill={{ repoId: repo.id, filter: "broken" }}>
           <BigStat
             value={broken.length.toLocaleString()}
             tone={broken.length > 0 ? "text-destructive" : undefined}
@@ -139,12 +153,12 @@ export function Statistics({ repo }: { repo: Repository }) {
         </Panel>
       </div>
       <div className="grid gap-3 lg:grid-cols-2">
-        <Panel title={t("repo.stat-vuln-title")}>
+        <Panel title={t("repo.stat-vuln-title")} drill={{ repoId: repo.id, filter: "vulnerable" }}>
           {scanned.length === 0
             ? <p className="m-0 text-sm text-muted-foreground">{t("repo.stat-none-scanned")}</p>
             : <SeverityBreakdown counts={counts} />}
         </Panel>
-        <Panel title={t("repo.stat-score-title")}>
+        <Panel title={t("repo.stat-score-title")} drill={{ repoId: repo.id, filter: "vulnerable" }}>
           <ScoreDistribution scores={scores} />
         </Panel>
       </div>
@@ -153,23 +167,47 @@ export function Statistics({ repo }: { repo: Repository }) {
 }
 
 // Panel is one Grafana-style dashboard tile: a titled, bordered box. The header
-// is a small uppercase caption; the body holds a single stat or chart.
-function Panel({ title, children }: { title: string; children: ReactNode }) {
+// is a small uppercase caption kept to one line, so every tile in a row has the
+// same header height. A caption too long for a narrow tile is cut and shown in
+// full on hover. `drill` adds a magnifier that opens the Artifacts tab narrowed
+// to what the panel counts (no filter for the repository-wide totals).
+function Panel({ title, drill, children }: {
+  title: string;
+  drill?: { repoId: number; filter?: ArtifactFilter };
+  children: ReactNode;
+}) {
+  const { t } = useTranslation();
   return (
-    <div className="flex flex-col rounded-[var(--radius)] border border-border bg-card">
-      <div className="border-b border-border px-3 py-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{title}</div>
+    <div className="flex min-w-0 flex-col rounded-[var(--radius)] border border-border bg-card">
+      <div className="flex items-center gap-2 border-b border-border px-3 py-1.5">
+        <span className="min-w-0 flex-1 truncate text-[11px] font-medium uppercase tracking-wide text-muted-foreground" title={title}>{title}</span>
+        {drill && (
+          <Link
+            to="/workspace/repositories/$id/$tab"
+            params={{ id: String(drill.repoId), tab: "artifacts" }}
+            search={drill.filter ? { filter: drill.filter } : {}}
+            aria-label={`${t("repo.stat-open-artifacts")}: ${title}`}
+            title={t("repo.stat-open-artifacts")}
+            className="-my-1 -mr-1.5 inline-flex size-5 shrink-0 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-[var(--fx-surface-hover)] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+          >
+            <Search className="size-3.5" aria-hidden="true" />
+          </Link>
+        )}
+      </div>
       <div className="flex flex-1 flex-col p-3">{children}</div>
     </div>
   );
 }
 
 // BigStat is the hero-number body of a stat panel: a large value in an ink/status
-// token (never a series colour) with an optional muted sub-line.
+// token (never a series colour) with an optional muted sub-line. The sub-line's
+// row is reserved even when empty, so values sit on the same line across a row
+// whether or not their panel has one.
 function BigStat({ value, sub, tone }: { value: string; sub?: string; tone?: string }) {
   return (
-    <div className="flex flex-1 flex-col justify-center">
+    <div className="flex flex-1 flex-col">
       <div className={cn("text-3xl font-semibold leading-none tabular-nums", tone)}>{value}</div>
-      {sub && <div className="mt-1.5 text-xs text-muted-foreground tabular-nums">{sub}</div>}
+      <div className="mt-1.5 min-h-4 text-xs leading-4 text-muted-foreground tabular-nums" aria-hidden={sub ? undefined : true}>{sub}</div>
     </div>
   );
 }

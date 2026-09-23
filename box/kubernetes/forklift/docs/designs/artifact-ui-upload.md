@@ -199,7 +199,7 @@ normative for v1:
 | Maven | `mvn deploy` / `mvn deploy:deploy-file` | Supported through repository-path PUTs | Preserve CLI deployment; UI provides atomic release publication. Native multi-request deploy remains legacy/raw and cannot claim UI transaction atomicity |
 | npm | `npm publish` / compatible clients | Supported through npm's packument PUT | Preserve it and refactor it onto the same publication/immutability service as UI upload |
 | PyPI | `twine upload` and clients using the legacy multipart upload API | Supported at the hosted repository root | Preserve it and refactor each uploaded distribution onto the same validation/publication service; sequential wheels extend one release |
-| Cargo | `cargo publish` using the Registry Web API | Not supported; generic path PUT is not Cargo's publish API | UI upload is supported, `cargo publish` remains explicitly unavailable, and `config.json` omits `api` |
+| Cargo | `cargo publish` using the Registry Web API | Not supported; generic path PUT is not Cargo's publish API | UI upload is supported, `cargo publish` remains explicitly unavailable, and `config.json` omits `api`. Superseded after v1: hosted repositories advertise `api` and `cargo publish`/`cargo yank` use the common publication service (see `docs/usage.md`) |
 | Go | No standard module publish command; proxies normally ingest from VCS/module cache | Generic GOPROXY-path PUT only | UI upload is supported; do not present raw PUT as an ecosystem-native publisher |
 
 The repository DTO adds `publish_methods`, computed by format and rollout state:

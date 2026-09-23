@@ -28,7 +28,7 @@ export function ConnectivityHint({
 
   if (health.reachable) {
     return (
-      <p className="mt-1.5 text-sm text-emerald-300">
+      <p className="mt-1.5 text-sm text-[var(--fx-success)]">
         ✓ Reachable - HTTP {health.status}
         {health.latency_ms != null && ` (${formatMilliseconds(health.latency_ms)})`}
       </p>

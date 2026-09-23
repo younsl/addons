@@ -4,7 +4,7 @@ Forklift uses a Linear-inspired product-console style adapted for repository ope
 
 ## Status
 
-**Implementation status: Active convention, in effect.** Verified on 2026-08-28 against `b04378c`. This is not a proposal: the rules below apply to the web UI as it exists today. `PageHeader`, `PageDescription`, `TableWrap`, and `Badge` exist in `web/src/components/app-ui/`. One exception: there is no `Panel` primitive, so panel-like surfaces use the shadcn `Card` family in `web/src/components/ui/card.tsx`.
+**Implementation status: Active convention, in effect, with the visual language superseded.** Since 2026-09-23 the palette, shapes and type follow [apple-inspired.md](apple-inspired.md). The posture, structure and component rules below still apply. Verified on 2026-08-28 against `b04378c`. This is not a proposal: the rules below apply to the web UI as it exists today. `PageHeader`, `PageDescription`, `TableWrap`, and `Badge` exist in `web/src/components/app-ui/`. One exception: there is no `Panel` primitive, so panel-like surfaces use the shadcn `Card` family in `web/src/components/ui/card.tsx`.
 
 ## Overview
 

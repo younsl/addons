@@ -157,11 +157,11 @@ export function GlobalSearch() {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="mb-2 flex h-9 w-full items-center gap-2 rounded-md border border-[var(--fx-border-subtle)] bg-[var(--fx-surface-1)] px-2 text-[13px] text-[var(--fx-text-subtle)] transition-colors hover:bg-[var(--fx-surface-hover)] hover:text-foreground max-lg:hidden"
+        className="mb-2 flex h-9 w-full items-center gap-2 rounded-full border border-[var(--fx-border-subtle)] bg-[var(--fx-surface-1)] px-3 text-[13px] text-[var(--fx-text-subtle)] transition-colors hover:bg-[var(--fx-surface-hover)] hover:text-foreground max-lg:hidden"
       >
         <Search className="size-3.5 shrink-0" aria-hidden="true" />
         <span>{t("common.search")}</span>
-        <kbd className="ml-auto rounded border border-[var(--fx-border-subtle)] bg-[var(--fx-surface-panel)] px-1 font-sans text-[10px] leading-4">⌘K</kbd>
+        <kbd className="ml-auto rounded-full border border-[var(--fx-border-subtle)] bg-[var(--fx-surface-panel)] px-1 font-sans text-[10px] leading-4">⌘K</kbd>
       </button>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent

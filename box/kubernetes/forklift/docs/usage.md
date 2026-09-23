@@ -45,7 +45,7 @@ Use a personal access token as the password.
 
 - Maven: mirror `http://forklift/maven/<repo>/` in `settings.xml`
 - npm: `registry=http://forklift/npm/<repo>/` and `_authToken` in `.npmrc`
-- Cargo: sparse registry `sparse+http://forklift/cargo/<repo>/` in `.cargo/config.toml`
+- Cargo: sparse registry `sparse+http://forklift/cargo/<repo>/` in `.cargo/config.toml`. Cargo sends the token as is, so set the bare access token (see [Publish crates with cargo](#publish-crates-with-cargo))
 - Go: `GOPROXY=http://forklift/go/<repo>` with a `.netrc` entry
 - pip: `index-url = http://forklift/pypi/<repo>/simple/` in `pip.conf`; twine uploads POST to `http://forklift/pypi/<repo>`
 - OCI: the repository name is the first segment of the image name, e.g. `docker pull forklift.example.com/oci-public/library/nginx:1.27`. Push with `docker push`, `helm push oci://forklift.example.com/oci-hosted`, or `oras push`; log in with `docker login` / `helm registry login` (an access token works as the password). containerd and CRI-O require HTTPS or an explicit insecure-registry entry.
@@ -58,9 +58,41 @@ Group repositories combine hosted and proxy repositories behind one read-only UR
 
 UI upload is enabled by default. Users with repository `write` permission can upload Maven releases, npm tarballs, PyPI wheels/sdists, Cargo crates, and Go module ZIPs from the hosted repository page. Set `FORKLIFT_UI_UPLOAD_ENABLED=false` ([Helm](https://github.com/helm/helm): `uiUpload.enabled=false`) to opt out. Forklift validates archive metadata against the entered coordinate, commits every owned file and generated index atomically, and exposes format-specific replace/delete/yank actions only when the principal has the required permission.
 
-Existing native publishers remain available where the ecosystem defines one: `npm publish` and Twine use the same validation/publication service as the UI. Maven's conventional multi-PUT publisher remains supported but cannot provide batch atomicity. Cargo native publish is intentionally unavailable (the sparse `config.json` omits `api`), and Go has no standard module publish command; use the UI or upload API for those formats. Group repositories remain read-only and aggregate mutable metadata across members so newly uploaded hosted versions do not hide proxy versions.
+Existing native publishers remain available where the ecosystem defines one: `npm publish` and Twine use the same validation/publication service as the UI. Maven's conventional multi-PUT publisher remains supported but cannot provide batch atomicity. `cargo publish` and `cargo yank` go through the same service on hosted Cargo repositories (see below). Go has no standard module publish command, so Go modules are published through the UI or upload API. Group repositories remain read-only and aggregate mutable metadata across members so newly uploaded hosted versions do not hide proxy versions.
 
 Upload limits (size, concurrency, duration) are listed in [Configuration](configuration.md); the full contract is in [designs/artifact-ui-upload.md](designs/artifact-ui-upload.md).
+
+
+### Publish crates with cargo
+
+A hosted Cargo repository advertises `api` in its `config.json`, which enables the [Registry Web API](https://doc.rust-lang.org/cargo/reference/registry-web-api.html) subset that `cargo publish`, `cargo yank` and `cargo search` use. A group such as `cargo-public` advertises its own `api` too, so `cargo search --registry` works through it (answered by its first hosted member), while a publish through it is refused as read-only. A group's `dl` also names the group, so every download fans out across its members. Proxy repositories omit `api`. The endpoints are also in the API reference (`/api-docs`, tag `cargo`).
+
+```toml
+# .cargo/config.toml
+[registries.forklift]
+index = "sparse+http://forklift/cargo/cargo-hosted/"
+
+[registry]
+global-credential-providers = ["cargo:token"]
+```
+
+```bash
+export CARGO_REGISTRIES_FORKLIFT_TOKEN=flpat_...   # needs write on the repository
+cargo publish --registry forklift
+cargo yank --registry forklift my-crate@1.2.3
+cargo yank --undo --registry forklift my-crate@1.2.3
+cargo search --registry forklift my-crate
+```
+
+| Endpoint | Behavior |
+| --- | --- |
+| `PUT api/v1/crates/new` | Publishes one immutable version. Identity, dependencies and features come from the normalized `Cargo.toml` inside the `.crate`, not from the JSON metadata cargo sends alongside it, exactly as for a UI upload |
+| `DELETE api/v1/crates/<crate>/<version>/yank` | Sets `yanked` in the sparse index. Requires `write`, the same permission as the UI yank action |
+| `PUT api/v1/crates/<crate>/<version>/unyank` | Clears `yanked` |
+| `GET api/v1/crates?q=<terms>&per_page=<n>` | Searches crate names, ignoring case and `-`/`_`. Every term must occur in the name. Exact matches rank first, then prefix matches. Fully yanked crates are left out and `max_version` is the highest non-yanked version. `per_page` defaults to 10 and is clamped to 100. A proxy answers `404`, so a group falls through to its first hosted member |
+| Any other `api/v1/` route (owners) | `404` with cargo's error envelope |
+
+Only versions published through forklift (UI, upload API, or `cargo publish`) can be yanked or found by search. Search shows the `[package].description` recorded at publish time, so crates published before search existed show an empty description. Crates stored with the raw compatibility PUT are outside the managed index. A dependency on crates.io is recorded as a same-registry dependency, so consumers resolve it through a group repository such as `cargo-public` that includes the `crates-io` proxy.
 
 ## Artifact labels
 
@@ -107,6 +139,8 @@ Surrounding whitespace is trimmed and casing is kept as typed. Every
 attempt is written to the repository's audit log as `artifact.label.add` or
 `artifact.label.remove`, including refused ones, with the label in the entry
 detail. A label is removed with the artifact it describes.
+
+The repository's Statistics tab shows the labeling coverage: how many artifacts carry at least one label, as a count and as a percentage of every stored artifact (index and metadata files included, the same total as the Artifacts panel). It covers the whole repository and comes from `labeled_count` in the artifact listing, which ignores the search.
 
 ## Related documents
 

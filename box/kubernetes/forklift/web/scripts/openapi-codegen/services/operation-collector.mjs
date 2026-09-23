@@ -84,7 +84,9 @@ export function collectOperationsByDomain(spec) {
   for (const [routePath, pathItem] of Object.entries(spec.paths ?? {})) {
     for (const method of methodOrder) {
       const operation = pathItem?.[method];
-      if (!operation) continue;
+      // Ecosystem protocol operations (x-codegen-skip) are documented for
+      // clients such as cargo, not called by the console.
+      if (!operation || operation["x-codegen-skip"]) continue;
 
       const name = operation.operationId
         ? toCamelCase(operation.operationId)

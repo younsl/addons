@@ -407,6 +407,52 @@ async fn artifact_labels_in_listings() {
         "repo search by label = {page}"
     );
 
+    // Labeling coverage counts labeled artifacts, not labels, across the whole
+    // repository whatever the search: a second label on the same artifact and
+    // an unlabeled neighbour leave it at one of two.
+    srv.store
+        .add_artifact_label(ArtifactLabel {
+            repo_id: npm_id,
+            path: PATH.to_string(),
+            label: "team:web".to_string(),
+            created_by: "bob".to_string(),
+            ..Default::default()
+        })
+        .await
+        .expect("add second label");
+    srv.store
+        .put_artifact(Artifact {
+            repo_id: npm_id,
+            path: "left-pad/-/left-pad-1.3.0.tgz".to_string(),
+            version: "1.3.0".to_string(),
+            blob_sha256: "b3".to_string(),
+            size: 3,
+            ..Default::default()
+        })
+        .await
+        .expect("put unlabeled artifact");
+    let got = listing(&srv, "eve", "pw123456").await;
+    assert!(
+        got["count"] == 2 && got["labeled_count"] == 1,
+        "labeling coverage = {} of {}",
+        got["labeled_count"],
+        got["count"]
+    );
+    let resp = srv
+        .do_as(
+            "eve",
+            "pw123456",
+            Method::GET,
+            &format!("/repositories/{npm_id}/artifacts?q=left-pad"),
+            "",
+        )
+        .await;
+    assert_eq!(
+        resp.json()["labeled_count"],
+        1,
+        "search narrowed the coverage"
+    );
+
     // The sidebar's label section is narrowed to readable repositories, and the
     // count reflects the same narrowing rather than the global total.
     let resp = srv

@@ -109,7 +109,7 @@ pub static DEFAULT_REPOSITORIES: LazyLock<Vec<DefaultRepo>> = LazyLock::new(|| {
             r#type: meta::TYPE_HOSTED,
             upstream: "",
             members: &[],
-            description: "Hosted repository for internal Rust crates. Publish through the console upload.",
+            description: "Hosted repository for internal Rust crates. Publish with cargo publish or the console upload.",
         },
         DefaultRepo {
             name: "go-hosted",

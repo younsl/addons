@@ -181,7 +181,7 @@ export interface Repository {
     delete: boolean;
     upload: boolean;
   };
-  publish_methods?: ("mvn" | "npm" | "twine")[];
+  publish_methods?: ("mvn" | "npm" | "twine" | "cargo")[];
   // Vulnerability-scan aggregates (list responses only): how many stored
   // artifacts are scanned, and how many of those are clean (no advisories).
   scanned_count?: number;

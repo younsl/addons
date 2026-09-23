@@ -18,7 +18,7 @@ function PageHeader({
         className
       )}
     >
-      <h1 className="m-0 min-w-0 text-2xl leading-tight font-semibold tracking-normal max-sm:text-xl">
+      <h1 className="m-0 min-w-0 text-[1.75rem] leading-[1.14] font-semibold tracking-[-0.011em] max-sm:text-2xl">
         {title}
       </h1>
       {actions && (

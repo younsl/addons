@@ -12,12 +12,17 @@ body {
   background: linear-gradient(180deg, var(--fx-body-gradient-start) 0%, var(--fx-canvas) 260px);
   color: var(--text);
   font-size: 14px;
-  letter-spacing: 0;
+  /* Apple tracks 14px text at -0.224px; the same -0.016em holds at every size. */
+  letter-spacing: -0.016em;
   text-rendering: geometricPrecision;
 }
 
-a:not([data-slot="button"]) { color: var(--text); text-decoration: none; text-underline-offset: 4px; }
-a:not([data-slot="button"]):hover { color: var(--accent); text-decoration: underline; }
+/* Layered so utilities win: unlayered, these beat every Tailwind utility, and
+ * a nav link's hover:no-underline would still underline its label and badge. */
+@layer base {
+  a:not([data-slot="button"]) { color: var(--text); text-decoration: none; text-underline-offset: 4px; }
+  a:not([data-slot="button"]):hover { color: var(--accent); text-decoration: underline; }
+}
 
 @keyframes login-glow {
   from { opacity: 0.86; transform: scale(1); }

@@ -139,6 +139,25 @@ Measured when this ramp landed:
 | Severity separation, dark | 28.1 | 84.2 |
 | Severity separation, light | 31.3 | 44.0 |
 
+Measured when the Apple palette replaced the ramp's neutrals (2026-09-23), 19
+routes × 2 themes, screen-reader-only labels excluded:
+
+| | Before | After |
+| --- | --- | --- |
+| Real contrast violations | 3 | 0 |
+| Worst text ink against any surface, dark | 5.43 | 5.13 |
+| Worst text ink against any surface, light | 4.76 | 5.25 |
+| Worst accent or status ink against any surface, dark | 5.40 | 4.61 |
+| Worst accent or status ink against any surface, light | 4.72 | 6.01 |
+
+Dark gives up some margin (the accent on surface-3 is the lowest pair, still
+above 4.5) for surfaces that separate more, and light gains on every pair.
+
+The dark step ratios against the canvas are now 1.10 / 1.23 / 1.51 / 1.85 for
+the sidebar and surface-1 to surface-3, wider than the ramp's 1.04 / 1.11 /
+1.22 / 1.49, so stacked surfaces separate more. The three violations before were
+Tailwind `emerald-*` status text, replaced by the status tokens.
+
 ## Deliberate Trade-offs
 
 These are not defects to fix. Changing them means re-opening the decision.

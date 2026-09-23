@@ -90,7 +90,8 @@ export function TableSearchControls({ search, className }: { search: TableSearch
   const { t } = useTranslation();
   return (
     <div className={cn("flex min-w-0 flex-1 items-center gap-2 max-sm:flex-col max-sm:items-stretch", className)}>
-      <Input placeholder={t("common.search-all-columns")} aria-label={t("common.search-all-columns")}
+      {/* Search is a pill, like Apple's search field; form inputs stay rectangular. */}
+      <Input className="rounded-full px-4" placeholder={t("common.search-all-columns")} aria-label={t("common.search-all-columns")}
         value={search.query} onChange={(e) => search.setQuery(e.target.value)} />
     </div>
   );

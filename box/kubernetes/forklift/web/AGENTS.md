@@ -1,6 +1,6 @@
 # Web UI Agent Instructions
 
-When changing the web UI, follow `../docs/designs/linear-inspired.md` and `../docs/designs/tokens.md`. When changing what a colour token is worth rather than which one to use, follow `../docs/designs/color-contrast-ramp.md`.
+When changing the web UI, follow `../docs/designs/apple-inspired.md` for the visual language, `../docs/designs/linear-inspired.md` for structure and component rules, and `../docs/designs/tokens.md`. When changing what a colour token is worth rather than which one to use, follow `../docs/designs/color-contrast-ramp.md`.
 
 - Use `web/src/styles.css` `--fx-*` tokens as the source of truth for colors, surfaces, radius, and theme values.
 - Keep dark mode as the default and preserve `.light` token support when adding new tokens.

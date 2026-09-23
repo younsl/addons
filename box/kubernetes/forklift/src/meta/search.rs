@@ -147,6 +147,34 @@ impl Store {
         offset: i64,
     ) -> Result<(Vec<Artifact>, i64)> {
         let (where_clause, args) = artifact_search_where(repo_id, q);
+        self.search_repo_artifacts_where(where_clause, args, limit, offset)
+            .await
+    }
+
+    /// [`Store::search_repo_artifacts`] narrowed to artifacts carrying at least
+    /// one label, which is the Statistics tab's labeling-coverage drill-down.
+    pub async fn search_repo_labeled_artifacts(
+        &self,
+        repo_id: i64,
+        q: &str,
+        limit: i64,
+        offset: i64,
+    ) -> Result<(Vec<Artifact>, i64)> {
+        let (mut where_clause, args) = artifact_search_where(repo_id, q);
+        where_clause.push_str(
+            " AND EXISTS (SELECT 1 FROM artifact_labels l WHERE l.repo_id = artifacts.repo_id AND l.path = artifacts.path)",
+        );
+        self.search_repo_artifacts_where(where_clause, args, limit, offset)
+            .await
+    }
+
+    async fn search_repo_artifacts_where(
+        &self,
+        where_clause: String,
+        args: Vec<Value>,
+        limit: i64,
+        offset: i64,
+    ) -> Result<(Vec<Artifact>, i64)> {
         self.read(move |conn| {
             let total: i64 = conn
                 .query_row(

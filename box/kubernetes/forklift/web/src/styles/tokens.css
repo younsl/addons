@@ -1,53 +1,41 @@
 /* forklift UI design tokens.
  *
- * These are the v2 values, ported from the Theme collection of the
- * forklift-redesign Figma file (key 3Tbmvu4lQmNPeoVs2zhttY, modes "Dark v2" and
- * "Light v2"), with dark mode's neutral ramp re-anchored on black afterwards
- * (see below). They are not hand-picked: each one is a step on a
- * contrast-anchored neutral/hue ramp in the manner of Adobe Spectrum, where the
- * step number IS a promise about contrast against that theme's canvas, and the
- * same step means the same promise in both themes. That is what lets one
- * semantic name serve dark and light without a second mapping.
+ * The neutrals and inks follow Apple's system palette (docs/designs/
+ * apple-inspired.md): a pure black canvas under #1c1c1e / #2c2c2e / #3a3a3c in
+ * dark, and white cards on a #f5f5f7 parchment canvas in light. The accent and
+ * status colors are forklift's own and unchanged, because the single accent is
+ * forklift yellow rather than Apple's blue.
  *
- * Dark mode keeps forklift's black canvas. What v1 got wrong there was not the
- * black but the stack above it: #050506 with a #070708 sidebar measured 1.012,
- * so the two read as one colour and only the border separated them. The ramp is
- * re-anchored rather than lightened, on a neutral hue instead of v2's warm one,
- * and the step ratios against the canvas are the ones the ramp asks for
- * (1.04 / 1.11 / 1.22 / 1.49 for neutral 100-400). Every ink lands higher than
- * it did on the warm canvas: the lowest text pair on the busiest text-bearing
- * surface is 5.40:1 against the 4.77:1 that canvas produced.
- *
- * Audited against the pairs that actually occur in web/src rather than against
- * the ramp: v1 failed AA on 16 text pairs (4 dark, 12 light); v2 fails on none.
- * Severity separation went from 28.1 to 84.2 in dark and 31.3 to 44.0 in light.
- * Two limits survive and are documented at the bottom of this block.
+ * Every value keeps the promise docs/designs/color-contrast-ramp.md asks of its
+ * role: each text ink and status color holds 4.5:1 on every surface of its
+ * theme (the lowest pairs are noted inline), measured on the rendered DOM in
+ * both themes before and after the change.
  */
 :root,
 .dark {
-  --fx-canvas: #0a0a0b;            /* neutral/0 */
-  --fx-canvas-elevated: #17171a;   /* neutral/200 */
-  --fx-sidebar-bg: #101012;        /* neutral/100 */
-  --fx-surface-1: #17171a;
-  --fx-surface-2: #202024;         /* neutral/300 */
-  --fx-surface-3: #2f2f35;         /* neutral/400 */
-  --fx-surface-panel: #101012;
-  --fx-surface-panel-raised: #17171a;
-  --fx-surface-hover: #202024;
-  --fx-surface-selected: #2f2f35;
-  --fx-input: #17171a;
-  --fx-input-border: #45454c;      /* neutral/500 */
-  --fx-control: #17171a;
-  --fx-control-hover: #202024;
-  --fx-border: #2f2f35;
-  --fx-border-subtle: #202024;
-  --fx-border-strong: #5e5e66;     /* neutral/600 */
+  --fx-canvas: #000000;  /* Apple surface-black */
+  --fx-canvas-elevated: #1c1c1e;
+  --fx-sidebar-bg: #0f0f10;
+  --fx-surface-1: #1c1c1e;
+  --fx-surface-2: #2c2c2e;
+  --fx-surface-3: #3a3a3c;
+  --fx-surface-panel: #0f0f10;
+  --fx-surface-panel-raised: #1c1c1e;
+  --fx-surface-hover: #2c2c2e;
+  --fx-surface-selected: #3a3a3c;
+  --fx-input: #1c1c1e;
+  --fx-input-border: #48484a;
+  --fx-control: #1c1c1e;
+  --fx-control-hover: #2c2c2e;
+  --fx-border: #38383a;
+  --fx-border-subtle: #2c2c2e;
+  --fx-border-strong: #636366;
   /* Text sits on panels, not on bare canvas, so these are anchored at the 900
      step (8.1:1 against canvas) rather than the 700 step that nominally marks
      the 4.5:1 line. Anchoring at 700 measured 4.3 on a panel. */
-  --fx-text: #e2ded7;              /* neutral/1100 */
-  --fx-text-muted: #c4c0ba;        /* neutral/1000 */
-  --fx-text-subtle: #a9a59f;       /* neutral/900 */
+  --fx-text: #f5f5f7;  /* 19.29:1 on canvas, 10.42:1 on surface-3 */
+  --fx-text-muted: #d1d1d6;  /* 7.46:1 on surface-3 */
+  --fx-text-subtle: #aeaeb2;  /* 5.13:1 on surface-3 */
   /* The accent carries three separate jobs, and one value cannot do all three
      in light mode. Yellow is inherently light, so a yellow that reads as yellow
      can never be 4.5:1 against a pale grey surface -- solving for that is what
@@ -69,7 +57,7 @@
   /* Dark surfaces are dark enough that the fill colour also works as ink:
      5.40:1 on the busiest surface. So dark mode needs no split in practice. */
   --fx-accent-ink: #c7a100;
-  --fx-success: #00c055;           /* green/900 */
+  --fx-success: #30d158;  /* 5.61:1 on surface-3 */
   --fx-warning: #bca600;           /* yellow/900 */
   --fx-danger: #ff7e83;            /* red/900 */
   --fx-danger-hover: #ffaaaa;      /* red/1000 */
@@ -83,7 +71,7 @@
   --fx-severity-critical: #ff7e83;
   --fx-severity-high: #ff842f;     /* orange/900 */
   --fx-severity-medium: #bca600;
-  --fx-severity-low: #c4c0ba;
+  --fx-severity-low: #d1d1d6;
   /* GitLab CI viewer tokens. The pipeline is rendered line by line so matched
      lines can carry their own background, which rules out a prebuilt highlighter
      theme. v1 borrowed One Dark here and Atom One Light in .light, two palettes
@@ -97,14 +85,14 @@
   --fx-code-variable: #00c055;
   --fx-code-literal: #d3b3f8;      /* violet/1000 */
   --fx-code-number: #00de63;       /* green/1000 */
-  --fx-code-comment: #a9a59f;
-  --fx-code-punct: #c4c0ba;
+  --fx-code-comment: #aeaeb2;
+  --fx-code-punct: #d1d1d6;
   --fx-code-hit: color-mix(in oklch, var(--fx-success) 18%, transparent);
-  --fx-radius-sm: 6px;
-  --fx-radius-md: 8px;
-  --fx-radius-lg: 10px;
-  --fx-radius-xl: 14px;
-  --fx-radius-2xl: 20px;
+  --fx-radius-sm: 8px;  /* Apple compact utility */
+  --fx-radius-md: 11px;  /* Apple pearl capsule */
+  --fx-radius-lg: 12px;
+  --fx-radius-xl: 18px;  /* Apple utility card */
+  --fx-radius-2xl: 24px;
   --fx-sidebar-width: 236px;
   --fx-content-max: 1120px;
   --fx-main-gutter-x: clamp(10px, 1.8vw, 24px);
@@ -115,13 +103,13 @@
   /* Tighter and less blurred than v1's 24px/80px: on a canvas this dark a wide
      soft shadow reads as haze rather than as height. */
   --fx-overlay-shadow: 0 20px 64px rgba(0, 0, 0, 0.45);
-  --fx-panel-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  --fx-panel-highlight: none;  /* Apple puts no shadow on chrome */
   /* Drawn from the ink tone, not the fill, for the same 3:1 reason as
      --color-ring. */
   --fx-focus-shadow: 0 0 0 3px color-mix(in oklch, var(--fx-accent-ink) 40%, transparent);
   --fx-login-glow: rgba(120, 96, 0, 0.05);
   --fx-login-wave: rgba(222, 219, 212, 0.031);
-  --fx-body-gradient-start: #0a0a0b;
+  --fx-body-gradient-start: #000000;  /* flat: no decorative gradients */
   /* Known limits, unchanged from v1 and not regressions:
      1. --fx-input-border against --fx-input is 1.88:1, below the 3:1 that
         WCAG 1.4.11 asks of a control whose boundary is its only indicator.
@@ -142,26 +130,26 @@
  * raised row inside a panel was invisible. Starting lower buys the room back.
  */
 .light {
-  --fx-canvas: #e9e7e3;
-  --fx-canvas-elevated: #dedbd4;
-  --fx-sidebar-bg: #e5e1db;
-  --fx-surface-1: #dedbd4;
-  --fx-surface-2: #d3d0c9;
-  --fx-surface-3: #bebbb5;
-  --fx-surface-panel: #e5e1db;
-  --fx-surface-panel-raised: #dedbd4;
-  --fx-surface-hover: #d3d0c9;
-  --fx-surface-selected: #bebbb5;
-  --fx-input: #dedbd4;
-  --fx-input-border: #a4a19a;
-  --fx-control: #dedbd4;
-  --fx-control-hover: #d3d0c9;
-  --fx-border: #bebbb5;
-  --fx-border-subtle: #d3d0c9;
-  --fx-border-strong: #88847e;
-  --fx-text: #201d19;
-  --fx-text-muted: #37352f;
-  --fx-text-subtle: #4b4842;
+  --fx-canvas: #f5f5f7;  /* Apple parchment */
+  --fx-canvas-elevated: #ffffff;
+  --fx-sidebar-bg: #f5f5f7;
+  --fx-surface-1: #ffffff;  /* Apple utility card on parchment */
+  --fx-surface-2: #ebebf0;
+  --fx-surface-3: #d2d2d7;
+  --fx-surface-panel: #ffffff;
+  --fx-surface-panel-raised: #f5f5f7;
+  --fx-surface-hover: #ebebf0;
+  --fx-surface-selected: #d2d2d7;
+  --fx-input: #ffffff;
+  --fx-input-border: #aeaeb2;
+  --fx-control: #ffffff;
+  --fx-control-hover: #ebebf0;
+  --fx-border: #d2d2d7;
+  --fx-border-subtle: #ebebf0;
+  --fx-border-strong: #86868b;
+  --fx-text: #1d1d1f;  /* Apple ink, 11.17:1 on surface-3 */
+  --fx-text-muted: #3a3a3c;  /* 7.53:1 on surface-3 */
+  --fx-text-subtle: #515154;  /* 5.25:1 on surface-3 */
   /* Forklift yellow, at the most chroma the gamut allows at this lightness. It
      is 1.08-1.44:1 against the surfaces, so a yellow fill does not outline
      itself here the way it does on a dark canvas -- controls that need a visible
@@ -178,12 +166,12 @@
   --fx-warning: #534900;
   --fx-danger: #920c25;
   --fx-danger-hover: #6e0619;
-  --fx-danger-foreground: #e9e7e3;
+  --fx-danger-foreground: #f5f5f7;
   --fx-info: #204b73;
   --fx-severity-critical: #920c25;
   --fx-severity-high: #793302;
   --fx-severity-medium: #534900;
-  --fx-severity-low: #37352f;
+  --fx-severity-low: #3a3a3c;
   /* Same ramp as the dark code tokens, read from the dark end. Verified against
      --fx-surface-panel-raised, the surface gitlab-ci-view.tsx renders on. */
   --fx-code-job: #584600;
@@ -193,14 +181,14 @@
   --fx-code-variable: #005521;
   --fx-code-literal: #3f2d52;
   --fx-code-number: #003d16;
-  --fx-code-comment: #4b4842;
-  --fx-code-punct: #37352f;
+  --fx-code-comment: #515154;
+  --fx-code-punct: #3a3a3c;
   --fx-code-hit: color-mix(in oklch, var(--fx-success) 14%, transparent);
-  --fx-overlay-shadow: 0 20px 64px rgba(29, 29, 27, 0.16);
-  --fx-panel-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.7);
+  --fx-overlay-shadow: 0 20px 64px rgba(0, 0, 0, 0.12);
+  --fx-panel-highlight: none;
   --fx-focus-shadow: 0 0 0 3px color-mix(in oklch, var(--fx-accent-ink) 40%, transparent);
   --fx-login-glow: rgba(160, 129, 0, 0.04);
   --fx-login-wave: rgba(35, 33, 28, 0.035);
-  --fx-body-gradient-start: #e9e7e3;
+  --fx-body-gradient-start: #f5f5f7;
   color-scheme: light;
 }

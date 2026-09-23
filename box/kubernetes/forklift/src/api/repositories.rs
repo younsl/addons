@@ -114,6 +114,7 @@ impl Handler {
             meta::FORMAT_MAVEN => vec!["mvn".to_string()],
             meta::FORMAT_NPM => vec!["npm".to_string()],
             meta::FORMAT_PYPI => vec!["twine".to_string()],
+            meta::FORMAT_CARGO => vec!["cargo".to_string()],
             meta::FORMAT_OCI => vec!["docker".to_string(), "helm".to_string(), "oras".to_string()],
             _ => Vec::new(),
         };
@@ -1116,6 +1117,10 @@ struct PublicationDTO {
 pub(super) struct ArtifactQuery {
     #[serde(default)]
     pub(super) prefix: String,
+    /// Narrows the listing to the artifacts one Statistics panel counts. See
+    /// [`ArtifactFilter`].
+    #[serde(default)]
+    pub(super) filter: String,
     #[serde(default)]
     pub(super) q: String,
     #[serde(default)]
@@ -1130,6 +1135,53 @@ pub(super) struct ArtifactQuery {
     pub(super) force: String,
     #[serde(default)]
     pub(super) event: String,
+}
+
+/// The artifacts a Statistics panel counts, so its drill-down lists exactly
+/// what the number summarises. Labeling coverage is counted over the whole
+/// repository, so `Labeled` filters in SQL. The scan, license and broken panels
+/// are counted over the most recently accessed [`STATS_WINDOW`] artifacts
+/// (the console's sample), so those filters apply over that same window.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ArtifactFilter {
+    Labeled,
+    Scanned,
+    Clean,
+    Vulnerable,
+    Licensed,
+    Broken,
+}
+
+/// The sample the Statistics tab aggregates its scan panels over: one page of
+/// the listing at its maximum size.
+const STATS_WINDOW: i64 = 500;
+
+impl ArtifactFilter {
+    fn parse(raw: &str) -> Result<Option<Self>, String> {
+        Ok(Some(match raw {
+            "" => return Ok(None),
+            "labeled" => Self::Labeled,
+            "scanned" => Self::Scanned,
+            "clean" => Self::Clean,
+            "vulnerable" => Self::Vulnerable,
+            "licensed" => Self::Licensed,
+            "broken" => Self::Broken,
+            other => return Err(format!("unknown filter {other:?}")),
+        }))
+    }
+
+    /// Reports whether an enriched row is one this filter keeps. `Labeled` is
+    /// applied in SQL and keeps every row it is handed.
+    fn keeps(self, a: &ArtifactDTO) -> bool {
+        match self {
+            Self::Labeled => true,
+            Self::Scanned => !a.max_severity.is_empty(),
+            Self::Clean => a.max_severity == "none",
+            Self::Vulnerable => !a.max_severity.is_empty() && a.max_severity != "none",
+            Self::Licensed => !a.licenses.is_empty(),
+            Self::Broken => a.blob_missing,
+        }
+    }
 }
 
 /// Returns the artifacts stored (hosted or cached) in a repository, powering the
@@ -1157,7 +1209,28 @@ pub(super) async fn list_artifacts(
         limit = 50;
     }
     let offset = int_param(&query.offset, 0).max(0);
-    let page = if !query.prefix.is_empty() {
+    let filter = match ArtifactFilter::parse(&query.filter) {
+        Ok(filter) => filter,
+        Err(msg) => return write_error(StatusCode::BAD_REQUEST, &msg),
+    };
+    if filter.is_some() && (!query.prefix.is_empty() || query.regex == "true") {
+        return write_error(
+            StatusCode::BAD_REQUEST,
+            "filter combines only with a plain q search",
+        );
+    }
+    let page = if let Some(filter) = filter {
+        if filter == ArtifactFilter::Labeled {
+            h.store
+                .search_repo_labeled_artifacts(id, &query.q, limit, offset)
+                .await
+        } else {
+            // The whole window is enriched and filtered below, then paged.
+            h.store
+                .search_repo_artifacts(id, &query.q, STATS_WINDOW, 0)
+                .await
+        }
+    } else if !query.prefix.is_empty() {
         // The legacy path-prefix filter (kept for API compatibility).
         h.store
             .list_repo_artifacts(id, &query.prefix, 500)
@@ -1182,7 +1255,7 @@ pub(super) async fn list_artifacts(
             .search_repo_artifacts(id, &query.q, limit, offset)
             .await
     };
-    let (arts, filtered) = match page {
+    let (arts, mut filtered) = match page {
         Ok(page) => page,
         Err(err) => return map_error(err),
     };
@@ -1235,6 +1308,9 @@ pub(super) async fn list_artifacts(
         Ok(labels) => labels,
         Err(err) => return map_error(err),
     };
+    // Every label row names a stored path (the foreign key cascades on removal),
+    // so the repository-wide map's size is the number of labeled artifacts.
+    let labeled_count = labels_by_path.len() as i64;
     let publishers: HashMap<String, String> = publications
         .iter()
         .map(|publication| (publication.id.clone(), publication.created_by.clone()))
@@ -1308,6 +1384,17 @@ pub(super) async fn list_artifacts(
         }
         out.push(dto);
     }
+    if let Some(filter) = filter
+        && filter != ArtifactFilter::Labeled
+    {
+        out.retain(|a| filter.keeps(a));
+        filtered = out.len() as i64;
+        out = out
+            .into_iter()
+            .skip(offset as usize)
+            .take(limit as usize)
+            .collect();
+    }
     let p = auth::from_request_parts(&parts);
     let can_write = h.authz.is_none()
         || p.as_ref()
@@ -1376,6 +1463,7 @@ pub(super) async fn list_artifacts(
             count,
             total_size: size,
             filtered,
+            labeled_count,
             artifacts: out,
             publications: publication_out,
         },
@@ -1392,6 +1480,9 @@ struct ArtifactListDTO {
     count: i64,
     total_size: i64,
     filtered: i64,
+    /// Artifacts in the repository carrying at least one label, ignoring the
+    /// active search, so `labeled_count / count` is the labeling coverage.
+    labeled_count: i64,
     artifacts: Vec<ArtifactDTO>,
     publications: Vec<PublicationDTO>,
 }
@@ -2060,4 +2151,49 @@ pub(super) async fn list_audit_logs(
                 .collect(),
         },
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn artifact_filter_parses_and_keeps() {
+        assert_eq!(ArtifactFilter::parse(""), Ok(None));
+        assert_eq!(
+            ArtifactFilter::parse("broken"),
+            Ok(Some(ArtifactFilter::Broken))
+        );
+        assert!(ArtifactFilter::parse("Broken").is_err());
+
+        let unscanned = ArtifactDTO::default();
+        let clean = ArtifactDTO {
+            max_severity: "none".to_string(),
+            ..Default::default()
+        };
+        let vulnerable = ArtifactDTO {
+            max_severity: "critical".to_string(),
+            licenses: vec!["MIT".to_string()],
+            ..Default::default()
+        };
+        let broken = ArtifactDTO {
+            blob_missing: true,
+            ..Default::default()
+        };
+        let kept = |filter: ArtifactFilter| -> Vec<bool> {
+            [&unscanned, &clean, &vulnerable, &broken]
+                .into_iter()
+                .map(|a| filter.keeps(a))
+                .collect()
+        };
+        assert_eq!(kept(ArtifactFilter::Scanned), [false, true, true, false]);
+        assert_eq!(kept(ArtifactFilter::Clean), [false, true, false, false]);
+        assert_eq!(
+            kept(ArtifactFilter::Vulnerable),
+            [false, false, true, false]
+        );
+        assert_eq!(kept(ArtifactFilter::Licensed), [false, false, true, false]);
+        assert_eq!(kept(ArtifactFilter::Broken), [false, false, false, true]);
+        assert_eq!(kept(ArtifactFilter::Labeled), [true, true, true, true]);
+    }
 }

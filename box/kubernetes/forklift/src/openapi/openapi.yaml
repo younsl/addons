@@ -6,7 +6,9 @@ info:
     Management API for forklift, a Kubernetes-native artifact repository.
     Package-format endpoints (Maven, npm, Cargo, Go, PyPI, raw) are mounted under
     /maven, /npm, /cargo, /go, /pypi and /raw and follow each ecosystem's native
-    protocol (raw serves plain GET/PUT by path). The OCI distribution API
+    protocol (raw serves plain GET/PUT by path). The Cargo Registry Web API
+    subset forklift implements is documented under the cargo tag. The other
+    format protocols are not. The OCI distribution API
     (container images, Helm charts) is mounted at /v2 with the repository name
     as the first path segment. This specification is served at
     /openapi.yaml with a Scalar reference UI at /api-docs.
@@ -25,6 +27,20 @@ tags:
   - name: notification
   - name: search
   - name: coverage
+  - name: cargo
+    description: >
+      Cargo sparse registry and the Registry Web API subset behind
+      `cargo publish`, `cargo yank` and `cargo search`, under /cargo/{repo}.
+      Hosted repositories serve all of it, groups serve reads and search,
+      proxies serve reads only.
+      Sparse-index entries (`1/<c>`, `2/<cr>`, `3/<a>/<crate>`,
+      `<aa>/<bb>/<crate>`) are newline-delimited JSON and are not listed
+      individually. Cargo sends the configured token as is, so the
+      Authorization header carries a bare personal access token
+      (cargoToken). Basic and Bearer credentials are accepted too. Errors use
+      cargo's envelope (CargoErrors), except 401 and 403, which come from the
+      shared authorization layer as plain text. These operations carry
+      x-codegen-skip because the console does not call them.
 paths:
   /healthz:
     get:
@@ -390,10 +406,24 @@ paths:
         as a case-insensitive substring, or a regular expression when regex=true.
         Download counts, size, vulnerability results, and licenses are not searched.
         There is no server-side sort parameter; column sorting in the console
-        applies only to the loaded page.
+        applies only to the loaded page. filter narrows the listing to what one
+        Statistics panel counts: labeled over the whole repository, and
+        scanned, clean, vulnerable, licensed and broken over the 500 most
+        recently accessed artifacts, the same sample the Statistics tab
+        aggregates. filtered then counts the matches and limit/offset page
+        within them, while count stays the repository total.
       security: [{ basicAuth: [] }, { bearerAuth: [] }]
       parameters:
         - { name: q, in: query, schema: { type: string }, description: Search path, version, content type, cached_by, last_accessed_by, cached/accessed timestamps, and labels. }
+        - name: filter
+          in: query
+          description: >
+            Keep only labeled artifacts (at least one label), scanned (a stored
+            vulnerability scan), clean (scanned, no advisories), vulnerable
+            (scanned, at least one advisory), licensed (a resolved license) or
+            broken (bytes missing from the blob store). Combines with q, not
+            with regex or prefix.
+          schema: { type: string, enum: [labeled, scanned, clean, vulnerable, licensed, broken] }
         - { name: regex, in: query, schema: { type: boolean, default: false }, description: Treat q as a case-insensitive regular expression. }
         - { name: limit, in: query, schema: { type: integer, default: 50, maximum: 500 } }
         - { name: offset, in: query, schema: { type: integer, default: 0 } }
@@ -404,7 +434,7 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ArtifactList" }
-        "400": { description: Invalid regex }
+        "400": { description: Invalid regex, an unknown filter, or a filter combined with regex or prefix }
         "403": { description: Read permission required }
         "404": { description: Not found }
     delete:
@@ -1805,7 +1835,269 @@ paths:
         "400": { description: No scan result yet, or no enabled receiver selected }
         "503": { description: Coverage scanning or notifications are not configured }
 
+  /cargo/{repo}/config.json:
+    get:
+      tags: [cargo]
+      summary: Sparse registry configuration
+      description: >
+        `dl` points at this repository's download endpoint. `api` is present
+        on hosted and group repositories and enables the Registry Web API: a
+        hosted repository serves publish, yank and search, a group serves
+        search and refuses writes with 405. A group answers with its first
+        member's config, but both URLs name the group, so downloads fan out
+        across every member. A proxy has no `api`. `auth-required` is present
+        when anonymous read is disabled.
+      x-codegen-skip: true
+      security: [{}, { cargoToken: [] }, { basicAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/CargoRepo"
+      responses:
+        "200":
+          description: Registry configuration
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CargoRegistryConfig" }
+        "401": { description: Authentication required }
+        "404": { description: Repository not found or not a Cargo repository }
+  /cargo/{repo}/api/v1/crates:
+    get:
+      tags: [cargo]
+      summary: Search crates (cargo search)
+      description: >
+        Hosted repositories only. Matches the crate name, ignoring case and
+        hyphen/underscore differences, and every whitespace-separated term in
+        `q` must occur in it. Results rank an exact match first, then names
+        starting with the first term, then the rest, alphabetically within
+        each rank. Crates whose every version is yanked are left out, and
+        `max_version` is the highest non-yanked version. A proxy answers 404,
+        so a group falls through its members in order and answers from the
+        first hosted one.
+      x-codegen-skip: true
+      security: [{}, { cargoToken: [] }, { basicAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/CargoRepo"
+        - name: q
+          in: query
+          required: false
+          description: Search terms. Empty lists every crate.
+          schema: { type: string }
+        - name: per_page
+          in: query
+          required: false
+          description: Page size. Out-of-range values are clamped.
+          schema: { type: integer, minimum: 1, maximum: 100, default: 10 }
+      responses:
+        "200":
+          description: Matching crates, at most per_page of them
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CargoSearchResult" }
+        "401": { description: Authentication required }
+        "403": { description: Read permission required }
+        "404":
+          description: Not a hosted repository
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CargoErrors" }
+        "503":
+          description: Crates could not be listed
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CargoErrors" }
+  /cargo/{repo}/api/v1/crates/new:
+    put:
+      tags: [cargo]
+      summary: Publish a crate version (cargo publish)
+      description: >
+        Hosted repositories only, write permission. A group answers 405
+        (plain text, "group repositories are read-only"). The body is cargo's
+        publish encoding: a little-endian u32 length and the metadata JSON,
+        then a little-endian u32 length and the .crate archive, with nothing
+        after it. The metadata JSON is bounded at 16 MiB and the archive by
+        FORKLIFT_UI_UPLOAD_MAX_FILE_BYTES. Its name and vers must name a valid
+        crate version, but identity, dependencies, features and description
+        are read from the archive's normalized Cargo.toml, exactly as for a UI
+        upload. The version is committed atomically with the sparse index and
+        is immutable. Cargo treats only 200 as success.
+      x-codegen-skip: true
+      security: [{ cargoToken: [] }, { basicAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/CargoRepo"
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema: { type: string, format: binary }
+      responses:
+        "200":
+          description: Published
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CargoPublishResult" }
+        "400":
+          description: Truncated body, trailing bytes, or invalid metadata
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CargoErrors" }
+        "401": { description: Authentication required }
+        "403": { description: Write permission required }
+        "405":
+          description: A proxy (CargoErrors) or a group (plain text)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CargoErrors" }
+        "409":
+          description: Version exists or was removed, the name conflicts, or the index changed concurrently
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CargoErrors" }
+        "413":
+          description: Metadata or archive exceeds the upload limit
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CargoErrors" }
+        "415":
+          description: The archive is not a .crate
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CargoErrors" }
+        "422":
+          description: Invalid archive, unsafe paths, or an invalid Cargo.toml
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CargoErrors" }
+        "503":
+          description: Upload storage unavailable
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CargoErrors" }
+  /cargo/{repo}/api/v1/crates/{crate}/{version}/download:
+    get:
+      tags: [cargo]
+      summary: Download a .crate archive
+      description: >
+        Hosted repositories serve stored crates. Proxy repositories fetch from
+        upstream and apply the repository's policy gates. A group answers from
+        its first member that has the crate.
+      x-codegen-skip: true
+      security: [{}, { cargoToken: [] }, { basicAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/CargoRepo"
+        - $ref: "#/components/parameters/CargoCrate"
+        - $ref: "#/components/parameters/CargoVersion"
+      responses:
+        "200":
+          description: The .crate archive
+          content:
+            application/gzip:
+              schema: { type: string, format: binary }
+        "401": { description: Authentication required }
+        "403": { description: Read permission required, or blocked by a policy gate }
+        "404": { description: Crate version not found }
+  /cargo/{repo}/api/v1/crates/{crate}/{version}/yank:
+    delete:
+      tags: [cargo]
+      summary: Yank a crate version (cargo yank)
+      description: >
+        Hosted repositories only. Requires write, the same permission as the
+        UI yank action, although the method is DELETE. Only versions published
+        through forklift (UI, upload API or cargo publish) can be yanked. The
+        crate name is matched case-insensitively and build metadata in the
+        version is ignored.
+      x-codegen-skip: true
+      security: [{ cargoToken: [] }, { basicAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/CargoRepo"
+        - $ref: "#/components/parameters/CargoCrate"
+        - $ref: "#/components/parameters/CargoVersion"
+      responses:
+        "200":
+          description: Yanked in the sparse index
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CargoOk" }
+        "400":
+          description: The version is not valid SemVer
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CargoErrors" }
+        "401": { description: Authentication required }
+        "403": { description: Write permission required }
+        "404":
+          description: Crate version not found
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CargoErrors" }
+        "405":
+          description: A proxy (CargoErrors) or a group (plain text)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CargoErrors" }
+        "409":
+          description: The sparse index changed concurrently or is not managed
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CargoErrors" }
+  /cargo/{repo}/api/v1/crates/{crate}/{version}/unyank:
+    put:
+      tags: [cargo]
+      summary: Unyank a crate version (cargo yank --undo)
+      description: Same rules as yank, clearing the flag instead.
+      x-codegen-skip: true
+      security: [{ cargoToken: [] }, { basicAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/CargoRepo"
+        - $ref: "#/components/parameters/CargoCrate"
+        - $ref: "#/components/parameters/CargoVersion"
+      responses:
+        "200":
+          description: Unyanked in the sparse index
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CargoOk" }
+        "400":
+          description: The version is not valid SemVer
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CargoErrors" }
+        "401": { description: Authentication required }
+        "403": { description: Write permission required }
+        "404":
+          description: Crate version not found
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CargoErrors" }
+        "405":
+          description: A proxy (CargoErrors) or a group (plain text)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CargoErrors" }
+        "409":
+          description: The sparse index changed concurrently or is not managed
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CargoErrors" }
+
 components:
+  parameters:
+    CargoRepo:
+      name: repo
+      in: path
+      required: true
+      description: Cargo repository name
+      schema: { type: string }
+    CargoCrate:
+      name: crate
+      in: path
+      required: true
+      description: Crate name
+      schema: { type: string }
+    CargoVersion:
+      name: version
+      in: path
+      required: true
+      description: SemVer version
+      schema: { type: string }
   securitySchemes:
     basicAuth:
       type: http
@@ -1815,6 +2107,11 @@ components:
       type: http
       scheme: bearer
       description: A personal access token (flpat_...) or an OIDC bearer token.
+    cargoToken:
+      type: apiKey
+      in: header
+      name: Authorization
+      description: A bare personal access token (flpat_...) with no scheme, as cargo's cargo:token provider sends it.
   responses:
     UploadProblem:
       description: Structured artifact-upload problem
@@ -2162,7 +2459,7 @@ components:
         publish_methods:
           type: array
           description: Supported ecosystem-native publishers; generic raw PUT is excluded.
-          items: { type: string, enum: [mvn, npm, twine, docker, helm, oras] }
+          items: { type: string, enum: [mvn, npm, twine, cargo, docker, helm, oras] }
     RepositoryListItem:
       description: >
         A repository as the list endpoint returns it: the detail shape plus
@@ -3232,11 +3529,17 @@ components:
         them. Every field is always present: the handler builds the response
         from a fixed set of keys, so an empty repository reports zeroes and
         empty arrays rather than omitting them.
-      required: [artifacts, count, filtered, publications, total_size]
+      required: [artifacts, count, filtered, labeled_count, publications, total_size]
       properties:
         count: { type: integer, description: Total artifacts in the repository, ignoring the search. }
         total_size: { type: integer, format: int64 }
         filtered: { type: integer, description: Artifacts matching the active search across all pages. }
+        labeled_count:
+          type: integer
+          description: >
+            Artifacts in the repository carrying at least one label, ignoring
+            the search. labeled_count / count is the labeling coverage shown on
+            the Statistics tab.
         artifacts:
           type: array
           items: { $ref: "#/components/schemas/Artifact" }
@@ -3388,6 +3691,75 @@ components:
     PyPIUploadManifest:
       type: object
       additionalProperties: false
+    CargoRegistryConfig:
+      type: object
+      description: Sparse registry config.json. Only dl is always present.
+      required: [dl]
+      properties:
+        dl:
+          type: string
+          description: Download URL template with {crate} and {version} markers. On a group it names the group, not a member.
+        api:
+          type: string
+          description: Registry Web API base. Present on hosted and group repositories, absent on a proxy.
+        auth-required:
+          type: boolean
+          description: Present, and true, when anonymous read is disabled.
+    CargoSearchResult:
+      type: object
+      required: [crates, meta]
+      properties:
+        crates:
+          type: array
+          items: { $ref: "#/components/schemas/CargoCrateSummary" }
+        meta:
+          type: object
+          required: [total]
+          properties:
+            total:
+              type: integer
+              description: Number of matching crates across all pages
+    CargoCrateSummary:
+      type: object
+      required: [name, max_version, description]
+      properties:
+        name:
+          type: string
+          description: Crate name as published
+        max_version:
+          type: string
+          description: Highest non-yanked version, build metadata included
+        description:
+          type: string
+          description: The package description, whitespace-collapsed and cut to 1024 bytes. Empty for crates published before descriptions were recorded.
+    CargoPublishResult:
+      type: object
+      required: [warnings]
+      properties:
+        warnings:
+          type: object
+          required: [invalid_categories, invalid_badges, other]
+          properties:
+            invalid_categories: { type: array, items: { type: string } }
+            invalid_badges: { type: array, items: { type: string } }
+            other: { type: array, items: { type: string } }
+    CargoOk:
+      type: object
+      required: [ok]
+      properties:
+        ok: { type: boolean, const: true }
+    CargoErrors:
+      type: object
+      description: Cargo's error envelope. Cargo prints each detail as the cause of the failure.
+      required: [errors]
+      properties:
+        errors:
+          type: array
+          items:
+            type: object
+            required: [detail]
+            properties:
+              detail: { type: string }
     CargoUploadManifest:
       type: object
       additionalProperties: false

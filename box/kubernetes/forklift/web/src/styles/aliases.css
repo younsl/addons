@@ -42,14 +42,18 @@
   --fx-text-xl: 1.25rem;
   --fx-text-2xl: 1.5rem;
   --fx-text-3xl: 1.875rem;
+  /* Apple's system stack first: on macOS and iOS it resolves to SF Pro (and
+     Apple SD Gothic Neo for Hangul) without shipping Apple's licensed files.
+     Elsewhere the bundled Noto Sans KR takes over. */
   --font-sans:
+    -apple-system,
+    BlinkMacSystemFont,
+    "SF Pro Text",
+    "Apple SD Gothic Neo",
     "Noto Sans KR",
     ui-sans-serif,
     system-ui,
-    -apple-system,
-    BlinkMacSystemFont,
     "Segoe UI",
-    "Apple SD Gothic Neo",
     "Noto Sans JP",
     "Noto Sans SC",
     "Noto Sans CJK KR",

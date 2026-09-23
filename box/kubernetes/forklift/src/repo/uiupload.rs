@@ -1847,6 +1847,412 @@ pub(crate) mod tests {
         assert_eq!(artifact.version, "3.1.4");
     }
 
+    /// Encodes a `cargo publish` body: length-prefixed metadata JSON, then the
+    /// length-prefixed `.crate`, then `trailing` bytes past the announced end.
+    fn cargo_publish_body(
+        name: &str,
+        version: &str,
+        crate_len_delta: i64,
+        trailing: &[u8],
+    ) -> Vec<u8> {
+        let metadata = serde_json::to_vec(&serde_json::json!({
+            "name": name,
+            "vers": version,
+            "deps": [],
+            "features": {},
+            "readme": "# widget",
+        }))
+        .expect("metadata json");
+        let cargo_toml = format!(
+            "[package]\nname = \"{name}\"\nversion = \"{version}\"\nedition = \"2021\"\ndescription = \"\"\"\nThe {name}\n  crate.\"\"\"\n\n[dependencies]\nserde = \"1.0\"\n"
+        );
+        let crate_bytes = gzipped_tar(
+            &format!("{name}-{version}/Cargo.toml"),
+            cargo_toml.as_bytes(),
+        );
+        let announced = (crate_bytes.len() as i64 + crate_len_delta) as u32;
+        let mut body = Vec::new();
+        body.extend_from_slice(&(metadata.len() as u32).to_le_bytes());
+        body.extend_from_slice(&metadata);
+        body.extend_from_slice(&announced.to_le_bytes());
+        body.extend_from_slice(&crate_bytes);
+        body.extend_from_slice(trailing);
+        body
+    }
+
+    /// Sends one request through the Cargo protocol handler.
+    async fn cargo_call(
+        manager: &Arc<Manager>,
+        method: http::Method,
+        uri: &str,
+        body: Vec<u8>,
+    ) -> (http::StatusCode, serde_json::Value) {
+        let request = http::Request::builder()
+            .method(method)
+            .uri(uri)
+            .body(Body::from(body))
+            .expect("request");
+        let response = super::super::cargo::handle_cargo(Arc::clone(manager), request).await;
+        let status = response.status();
+        let bytes = axum::body::to_bytes(response.into_body(), 1 << 20)
+            .await
+            .expect("response body");
+        (
+            status,
+            serde_json::from_slice(&bytes).unwrap_or(serde_json::Value::Null),
+        )
+    }
+
+    #[tokio::test]
+    async fn cargo_native_publish_uses_atomic_uploader() {
+        let h = new_upload_test_harness().await;
+        let repository = hosted_repo(&h.store, "cargo-local", meta::FORMAT_CARGO).await;
+        let manager = native_manager(&h);
+        let (status, body) = cargo_call(
+            &manager,
+            http::Method::PUT,
+            "/cargo/cargo-local/api/v1/crates/new",
+            cargo_publish_body("widget", "1.0.0", 0, b""),
+        )
+        .await;
+        assert_eq!(status, http::StatusCode::OK, "{body}");
+        assert!(body["warnings"]["other"].is_array(), "{body}");
+        let artifact = h
+            .store
+            .get_artifact(repository.id, "api/v1/crates/widget/1.0.0/download")
+            .await
+            .expect("crate");
+        assert!(!artifact.publication_id.is_empty());
+        let index = h
+            .store
+            .get_artifact(repository.id, "wi/dg/widget")
+            .await
+            .expect("sparse index");
+        assert!(meta::is_ui_managed_aggregate_metadata(&index.metadata_json));
+        let value = blob_bytes(&h.uploader, &index.blob_sha256).await;
+        let line: serde_json::Value =
+            serde_json::from_str(String::from_utf8_lossy(&value).trim()).expect("index line");
+        assert_eq!(line["vers"], "1.0.0");
+        assert_eq!(line["cksum"], artifact.blob_sha256);
+        assert_eq!(line["deps"][0]["name"], "serde");
+
+        // Republishing the version is refused in cargo's error envelope.
+        let (status, body) = cargo_call(
+            &manager,
+            http::Method::PUT,
+            "/cargo/cargo-local/api/v1/crates/new",
+            cargo_publish_body("widget", "1.0.0", 0, b""),
+        )
+        .await;
+        assert_eq!(status, http::StatusCode::CONFLICT, "{body}");
+        assert!(body["errors"][0]["detail"].is_string(), "{body}");
+    }
+
+    #[tokio::test]
+    async fn cargo_native_publish_rejects_malformed_bodies() {
+        let h = new_upload_test_harness().await;
+        let repository = hosted_repo(&h.store, "cargo-local", meta::FORMAT_CARGO).await;
+        let manager = native_manager(&h);
+        let invalid_metadata = {
+            let metadata = br#"{"name":"../evil","vers":"1.0.0"}"#;
+            let mut body = (metadata.len() as u32).to_le_bytes().to_vec();
+            body.extend_from_slice(metadata);
+            body
+        };
+        for (label, body, detail) in [
+            ("empty", Vec::new(), "publish body is truncated"),
+            (
+                "short crate",
+                cargo_publish_body("widget", "1.0.0", 16, b""),
+                "publish body is truncated",
+            ),
+            (
+                "trailing bytes",
+                cargo_publish_body("widget", "1.0.0", 0, b"junk"),
+                "publish body has trailing bytes",
+            ),
+            (
+                "invalid metadata",
+                invalid_metadata,
+                "publish metadata names an invalid crate version",
+            ),
+        ] {
+            let (status, response) = cargo_call(
+                &manager,
+                http::Method::PUT,
+                "/cargo/cargo-local/api/v1/crates/new",
+                body,
+            )
+            .await;
+            assert_eq!(status, http::StatusCode::BAD_REQUEST, "{label}: {response}");
+            assert_eq!(response["errors"][0]["detail"], detail, "{label}");
+        }
+        assert!(matches!(
+            h.store
+                .get_artifact(repository.id, "api/v1/crates/widget/1.0.0/download")
+                .await,
+            Err(meta::Error::NotFound)
+        ));
+    }
+
+    #[tokio::test]
+    async fn cargo_native_yank_and_unyank() {
+        let h = new_upload_test_harness().await;
+        let repository = hosted_repo(&h.store, "cargo-local", meta::FORMAT_CARGO).await;
+        let manager = native_manager(&h);
+        let (status, _) = cargo_call(
+            &manager,
+            http::Method::PUT,
+            "/cargo/cargo-local/api/v1/crates/new",
+            cargo_publish_body("widget", "1.0.0", 0, b""),
+        )
+        .await;
+        assert_eq!(status, http::StatusCode::OK);
+        for (method, action, yanked) in [
+            (http::Method::DELETE, "yank", true),
+            (http::Method::PUT, "unyank", false),
+        ] {
+            let (status, body) = cargo_call(
+                &manager,
+                method,
+                &format!("/cargo/cargo-local/api/v1/crates/Widget/1.0.0/{action}"),
+                Vec::new(),
+            )
+            .await;
+            assert_eq!(status, http::StatusCode::OK, "{action}: {body}");
+            assert_eq!(body["ok"], true);
+            let index = h
+                .store
+                .get_artifact(repository.id, "wi/dg/widget")
+                .await
+                .expect("sparse index");
+            let value = blob_bytes(&h.uploader, &index.blob_sha256).await;
+            let line: serde_json::Value =
+                serde_json::from_str(String::from_utf8_lossy(&value).trim()).expect("index line");
+            assert_eq!(line["yanked"], serde_json::Value::Bool(yanked), "{action}");
+        }
+        let (status, body) = cargo_call(
+            &manager,
+            http::Method::DELETE,
+            "/cargo/cargo-local/api/v1/crates/widget/9.9.9/yank",
+            Vec::new(),
+        )
+        .await;
+        assert_eq!(status, http::StatusCode::NOT_FOUND, "{body}");
+        let (status, _) = cargo_call(
+            &manager,
+            http::Method::DELETE,
+            "/cargo/cargo-local/api/v1/crates/widget/not-semver/yank",
+            Vec::new(),
+        )
+        .await;
+        assert_eq!(status, http::StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn cargo_web_api_scope_and_config() {
+        let h = new_upload_test_harness().await;
+        hosted_repo(&h.store, "cargo-local", meta::FORMAT_CARGO).await;
+        h.store
+            .create_repository(Repository {
+                name: "crates-proxy".to_string(),
+                format: meta::FORMAT_CARGO.to_string(),
+                r#type: meta::TYPE_PROXY.to_string(),
+                upstream_url: "https://index.crates.io".to_string(),
+                ..Default::default()
+            })
+            .await
+            .expect("create proxy");
+        let manager = native_manager(&h);
+
+        // Hosted repositories advertise the Web API, proxies stay read-only.
+        let (status, config) = cargo_call(
+            &manager,
+            http::Method::GET,
+            "http://forklift/cargo/cargo-local/config.json",
+            Vec::new(),
+        )
+        .await;
+        assert_eq!(status, http::StatusCode::OK);
+        assert!(
+            config["api"]
+                .as_str()
+                .is_some_and(|api| api.ends_with("/cargo/cargo-local")),
+            "{config}"
+        );
+        let (_, config) = cargo_call(
+            &manager,
+            http::Method::GET,
+            "http://forklift/cargo/crates-proxy/config.json",
+            Vec::new(),
+        )
+        .await;
+        assert!(config.get("api").is_none(), "{config}");
+
+        let (status, body) = cargo_call(
+            &manager,
+            http::Method::PUT,
+            "/cargo/crates-proxy/api/v1/crates/new",
+            cargo_publish_body("widget", "1.0.0", 0, b""),
+        )
+        .await;
+        assert_eq!(status, http::StatusCode::METHOD_NOT_ALLOWED, "{body}");
+        let (status, body) = cargo_call(
+            &manager,
+            http::Method::GET,
+            "/cargo/cargo-local/api/v1/crates/widget/owners",
+            Vec::new(),
+        )
+        .await;
+        assert_eq!(status, http::StatusCode::NOT_FOUND);
+        assert!(body["errors"][0]["detail"].is_string(), "{body}");
+    }
+
+    #[tokio::test]
+    async fn cargo_native_search() {
+        let h = new_upload_test_harness().await;
+        hosted_repo(&h.store, "cargo-local", meta::FORMAT_CARGO).await;
+        crate::testing::repo::mk_format_repo(
+            &h.store,
+            "crates-proxy",
+            meta::FORMAT_CARGO,
+            meta::TYPE_PROXY,
+            "https://index.crates.io",
+            crate::repoconfig::default(),
+        )
+        .await;
+        let mut group_cfg = crate::repoconfig::default();
+        group_cfg.group.members = vec!["crates-proxy".to_string(), "cargo-local".to_string()];
+        crate::testing::repo::mk_format_repo(
+            &h.store,
+            "cargo-group",
+            meta::FORMAT_CARGO,
+            meta::TYPE_GROUP,
+            "",
+            group_cfg,
+        )
+        .await;
+        let manager = native_manager(&h);
+        for (name, version) in [
+            ("widget", "1.0.0"),
+            ("widget", "1.1.0"),
+            ("widget_macros", "0.1.0"),
+            ("gadget", "2.0.0"),
+        ] {
+            let (status, body) = cargo_call(
+                &manager,
+                http::Method::PUT,
+                "/cargo/cargo-local/api/v1/crates/new",
+                cargo_publish_body(name, version, 0, b""),
+            )
+            .await;
+            assert_eq!(status, http::StatusCode::OK, "{name}@{version}: {body}");
+        }
+        // Yanking the newest version falls back to the previous one.
+        let (status, _) = cargo_call(
+            &manager,
+            http::Method::DELETE,
+            "/cargo/cargo-local/api/v1/crates/widget/1.1.0/yank",
+            Vec::new(),
+        )
+        .await;
+        assert_eq!(status, http::StatusCode::OK);
+
+        let (status, body) = cargo_call(
+            &manager,
+            http::Method::GET,
+            "/cargo/cargo-local/api/v1/crates?q=WIDGET&per_page=1",
+            Vec::new(),
+        )
+        .await;
+        assert_eq!(status, http::StatusCode::OK, "{body}");
+        assert_eq!(body["meta"]["total"], 2, "{body}");
+        assert_eq!(
+            body["crates"],
+            serde_json::json!([{
+                "name": "widget",
+                "max_version": "1.0.0",
+                "description": "The widget crate.",
+            }])
+        );
+
+        // A proxy has no search, so a group falls through to its hosted member
+        // instead of aggregating the path as a sparse-index entry.
+        let (status, body) = cargo_call(
+            &manager,
+            http::Method::GET,
+            "/cargo/crates-proxy/api/v1/crates?q=widget",
+            Vec::new(),
+        )
+        .await;
+        assert_eq!(status, http::StatusCode::NOT_FOUND, "{body}");
+        let app = crate::testing::repo::mux(&manager);
+        let resp = crate::testing::repo::call(
+            &app,
+            http::Method::GET,
+            "/cargo/cargo-group/api/v1/crates?q=macros",
+            "",
+        )
+        .await;
+        assert_eq!(resp.status, http::StatusCode::OK, "{}", resp.text());
+        let body: serde_json::Value = serde_json::from_slice(&resp.body).expect("search json");
+        assert_eq!(body["crates"][0]["name"], "widget_macros", "{body}");
+
+        // A group's config names the group itself for both downloads and the
+        // API, whichever member answers it, and a publish through that API is
+        // refused as read-only.
+        for group in ["cargo-group", "cargo-hosted-first"] {
+            if group == "cargo-hosted-first" {
+                let mut group_cfg = crate::repoconfig::default();
+                group_cfg.group.members = vec!["cargo-local".to_string()];
+                crate::testing::repo::mk_format_repo(
+                    &h.store,
+                    group,
+                    meta::FORMAT_CARGO,
+                    meta::TYPE_GROUP,
+                    "",
+                    group_cfg,
+                )
+                .await;
+            }
+            let resp = crate::testing::repo::call(
+                &app,
+                http::Method::GET,
+                &format!("http://forklift/cargo/{group}/config.json"),
+                "",
+            )
+            .await;
+            assert_eq!(resp.status, http::StatusCode::OK, "{group}");
+            let config: serde_json::Value =
+                serde_json::from_slice(&resp.body).expect("config json");
+            // Fan-out rebuilds the URI from its path, so without a Host header
+            // (as here) only the path of each URL is meaningful.
+            let base = format!("/cargo/{group}");
+            assert!(
+                config["api"]
+                    .as_str()
+                    .is_some_and(|api| api.ends_with(&base)),
+                "{config}"
+            );
+            assert!(
+                config["dl"]
+                    .as_str()
+                    .is_some_and(|dl| dl.ends_with(&format!(
+                        "{base}/api/v1/crates/{{crate}}/{{version}}/download"
+                    ))),
+                "{config}"
+            );
+        }
+        let resp = crate::testing::repo::call(
+            &app,
+            http::Method::PUT,
+            "/cargo/cargo-group/api/v1/crates/new",
+            "",
+        )
+        .await;
+        assert_eq!(resp.status, http::StatusCode::METHOD_NOT_ALLOWED);
+    }
+
     pub(crate) fn pypi_sdist(name: &str, version: &str) -> (String, Vec<u8>) {
         let filename = format!("{name}-{version}.tar.gz");
         let value = format!("Metadata-Version: 2.3\nName: {name}\nVersion: {version}\n\n");

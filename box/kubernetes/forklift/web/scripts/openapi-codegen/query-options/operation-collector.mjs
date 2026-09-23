@@ -63,7 +63,7 @@ export function collectQueryOptionOperations(spec) {
   for (const [routePath, pathItem] of Object.entries(spec.paths ?? {})) {
     for (const method of methodOrder) {
       const operation = pathItem?.[method];
-      if (!operation || method !== "get") continue;
+      if (!operation || method !== "get" || operation["x-codegen-skip"]) continue;
 
       const name = operation.operationId
         ? toCamelCase(operation.operationId)

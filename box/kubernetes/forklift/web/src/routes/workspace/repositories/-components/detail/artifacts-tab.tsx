@@ -9,7 +9,7 @@ import { getErrorMessageIfAny } from "@/lib/http/error/api-error";
 import { openApiQueryKeys, openApiQueryOptions } from "@/query/v1/openapi-query-options";
 import { operationKeyPrefix } from "@/query/query-key-prefix";
 import { auditTime } from "@/routes/workspace/repositories/-components/detail/audit-logs-tab";
-import { Link, useNavigate } from "@tanstack/react-router";
+import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import { ChevronDown, Lock, TriangleAlert, Upload, X } from "lucide-react";
 import { ReactNode, useEffect, useState } from "react";
 import { ArtifactPublication, api, deleteArtifactPublication, setCargoPublicationYanked } from "@/api";
@@ -48,6 +48,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { MessageKey, useTranslation } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import { formatFileSize } from "@/utils/format-file-size";
+import { ARTIFACT_FILTER_LABEL, SAMPLED_ARTIFACT_FILTERS, parseArtifactFilter } from "@/routes/workspace/repositories/-utils/artifact-filter";
 
 const ART_SEV_RANK: Record<string, number> = { critical: 5, high: 4, medium: 3, low: 2, none: 1 };
 
@@ -93,6 +94,27 @@ export function useUserIds(enabled: boolean): Record<string, number> {
 export function userLink(username: string, ids: Record<string, number>, label?: ReactNode): ReactNode {
   const id = ids[username];
   return id ? <Link to="/access/users/$id" params={{ id: String(id) }}>{label ?? username}</Link> : (label ?? username);
+}
+
+// CargoLifecycleButton explains yank and unyank on hover. Both terms are
+// Cargo's own, and neither deletes the crate, which the label alone does not say.
+function CargoLifecycleButton({ action, onClick }: { action: "yank" | "unyank"; onClick: () => void }) {
+  const { t } = useTranslation();
+  const label = action === "yank" ? t("upload.yank") : t("upload.unyank");
+  const help = action === "yank" ? t("upload.yank-tooltip") : t("upload.unyank-tooltip");
+  return (
+    <Tooltip>
+      <TooltipTrigger render={<Button size="sm" variant="outline" onClick={onClick} />}>
+        {label}
+      </TooltipTrigger>
+      <TooltipContent className="max-w-xs">
+        <span className="flex flex-col gap-1">
+          <span className="text-xs font-medium">{label}</span>
+          <span className="text-xs">{help}</span>
+        </span>
+      </TooltipContent>
+    </Tooltip>
+  );
 }
 
 // BrokenPublication marks a published version whose files are no longer all
@@ -179,13 +201,17 @@ export function Artifacts({ repo, canDelete }: { repo: RepositoryListItem; canDe
 
   const search = useTableSearch();
   const { highlightRe } = search;
+  // A Statistics panel's drill-down, carried in the URL. Read without a route
+  // binding: the tab also renders on /workspace/repositories/$id, which has no
+  // `filter`, and a strict read there throws.
+  const filter = parseArtifactFilter(useSearch({ strict: false }).filter);
 
   // Paging or searching replaces the rows the last batch was about, so its
   // report goes with them.
   useEffect(() => {
     setNotice("");
     setActionError("");
-  }, [search.q, search.regex, search.page]);
+  }, [search.q, search.regex, search.page, filter]);
 
   const artifactsQuery = useQuery({
     ...openApiQueryOptions.listRepositoryArtifacts({
@@ -194,6 +220,7 @@ export function Artifacts({ repo, canDelete }: { repo: RepositoryListItem; canDe
         // Empty search and unset regex are omitted rather than sent as "" and
         // false: a present q is a filter as far as the server is concerned.
         q: search.q || undefined,
+        filter,
         regex: search.regex || undefined,
         limit: ARTIFACTS_PAGE_SIZE,
         offset: search.page * ARTIFACTS_PAGE_SIZE,
@@ -465,6 +492,26 @@ export function Artifacts({ repo, canDelete }: { repo: RepositoryListItem; canDe
         </div>
       </div>
       <TableSearchControls search={search} className="mb-4" />
+      {filter && (
+        <div className="mb-4 flex flex-wrap items-center gap-2">
+          <Badge variant="outline">
+            <span>{t("repo.filter")}: {t(ARTIFACT_FILTER_LABEL[filter])}</span>
+            <Link
+              to="/workspace/repositories/$id/$tab"
+              params={{ id: String(repo.id), tab: "artifacts" }}
+              onClick={() => search.setPage(0)}
+              aria-label={t("repo.filter-clear")}
+              title={t("repo.filter-clear")}
+              className="ml-1 inline-flex items-center text-muted-foreground hover:text-foreground"
+            >
+              <X className="size-3" aria-hidden="true" />
+            </Link>
+          </Badge>
+          {SAMPLED_ARTIFACT_FILTERS.has(filter) && (
+            <span className="text-xs text-muted-foreground">{t("repo.filter-sampled")}</span>
+          )}
+        </div>
+      )}
       {search.regexError && <Alert className="mb-4">{t("common.invalid-regex")}</Alert>}
       {notice && (
         <div className="mb-4 flex items-start justify-between gap-3 rounded-md border border-accent-ink/40 bg-primary/10 px-3 py-2 text-sm">
@@ -528,8 +575,8 @@ export function Artifacts({ repo, canDelete }: { repo: RepositoryListItem; canDe
                     {publication.actions.includes("replace") && <Link className={buttonVariants({ variant: "outline", size: "sm" })} to="/workspace/repositories/$id/upload" params={{ id: String(repo.id) }}>{t("upload.replace")}</Link>}
                     {publication.actions.includes("extend") && <Link className={buttonVariants({ variant: "outline", size: "sm" })} to="/workspace/repositories/$id/upload" params={{ id: String(repo.id) }}>{t("upload.extend")}</Link>}
                     {publication.actions.includes("delete") && <Button size="sm" variant="destructive" onClick={() => setLifecycle({ publication, action: "delete" })}>{t("common.delete")}</Button>}
-                    {publication.actions.includes("yank") && <Button size="sm" variant="outline" onClick={() => setLifecycle({ publication, action: "yank" })}>{t("upload.yank")}</Button>}
-                    {publication.actions.includes("unyank") && <Button size="sm" variant="outline" onClick={() => setLifecycle({ publication, action: "unyank" })}>{t("upload.unyank")}</Button>}
+                    {publication.actions.includes("yank") && <CargoLifecycleButton action="yank" onClick={() => setLifecycle({ publication, action: "yank" })} />}
+                    {publication.actions.includes("unyank") && <CargoLifecycleButton action="unyank" onClick={() => setLifecycle({ publication, action: "unyank" })} />}
                   </div></TableCell>
                 </TableRow>
               ))}</TableBody>
@@ -629,7 +676,7 @@ export function Artifacts({ repo, canDelete }: { repo: RepositoryListItem; canDe
           ))}
           {data && data.artifacts.length === 0 && (
             <TableRow><TableCell colSpan={13 + (canDelete ? 1 : 0)} className="text-muted-foreground">
-              {search.q ? t("common.no-search-matches") : t("repo.no-cached-artifacts")}
+              {search.q || filter ? t("common.no-search-matches") : t("repo.no-cached-artifacts")}
             </TableCell></TableRow>
           )}
         </TableBody>

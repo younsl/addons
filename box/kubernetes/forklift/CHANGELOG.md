@@ -4,6 +4,29 @@ Notable changes per release. Container image versions come from the
 `org.opencontainers.image.version` label in the `Dockerfile`; chart versions from
 `charts/forklift/Chart.yaml`.
 
+## Unreleased
+
+### Added
+
+- `cargo publish`, `cargo yank` and `cargo yank --undo` on hosted Cargo repositories. The sparse `config.json` of a hosted repository now advertises `api`, and the Registry Web API publish body is adapted onto the same validated, atomic publication service as the UI and upload API, like `npm publish` and Twine. Identity, dependencies and features still come from the `.crate`'s normalized `Cargo.toml`. Yank requires `write`, matching the UI action. Owners and every other unimplemented Web API route answer `404` in cargo's error envelope. Proxy and group repositories stay read-only.
+- `cargo search` on hosted Cargo repositories (`GET api/v1/crates?q=&per_page=`). It matches crate names, ignoring case and hyphen/underscore differences, ranks exact then prefix matches first, and leaves fully yanked crates out. Publishing now records the `[package].description` in the crate's metadata so search can show it. A group's `config.json` advertises the group's own `api`, so `cargo search` works through `cargo-public` (answered by its first hosted member) while a publish through it is refused as read-only. Proxies answer `404` and advertise no `api`.
+- The Cargo sparse registry and Registry Web API endpoints are in the OpenAPI document under the `cargo` tag, with a `cargoToken` security scheme for the bare token. They carry `x-codegen-skip`, which the console's client generator now honours.
+- A bare personal access token in `Authorization` (no scheme) now authenticates. Cargo's `cargo:token` provider sends the token verbatim on publish and on every `auth-required` index read, so `CARGO_REGISTRIES_<NAME>_TOKEN=flpat_...` works without a `Bearer ` prefix. Any other scheme-less value stays anonymous.
+
+- Labeling coverage on a repository's Statistics tab: how many artifacts carry at least one label, as a count and a percentage of all artifacts. It is counted over the whole repository, not the 500-artifact sample the scan panels use, from the new `labeled_count` field of the artifact listing (`GET /api/v1/repositories/{id}/artifacts`), which ignores the active search.
+- Hovering the Yank and Unyank buttons of a Cargo version explains what they do, since neither removes the crate.
+- Every Statistics panel has a magnifier that opens the Artifacts tab filtered to what the panel counts, with the filter in the URL (`?filter=`) and a removable filter chip. The artifact listing takes the matching `filter` parameter (`labeled`, `scanned`, `clean`, `vulnerable`, `licensed`, `broken`). `labeled` covers the whole repository. The others cover the 500 most recently accessed artifacts, the same sample their panels aggregate, so the drill-down always lists the number the panel shows. `filtered` counts the matches and `limit`/`offset` page within them.
+
+### Changed
+
+- The web console takes Apple's visual language ([docs/designs/apple-inspired.md](docs/designs/apple-inspired.md)): Apple's system neutrals in both themes (pure black and `#1c1c1e`-`#3a3a3c` in dark, white cards on `#f5f5f7` parchment in light), the system font stack (SF Pro on Apple devices, Noto Sans KR elsewhere) with Apple's tracking, pill-shaped primary buttons, badges and search fields, 8px form controls, 18px cards, a press-to-scale button state and no chrome shadows. The accent stays forklift yellow and dark stays the default. Status text that used Tailwind's `emerald`/`amber` palette now uses the status tokens, fixing three light-mode contrast failures. No text falls below WCAG AA on the audited routes in either theme.
+- Repository `publish_methods` includes `cargo` for Cargo repositories.
+
+### Fixed
+
+- A group's Cargo `config.json` pointed `dl` at its first member, so every `.crate` download bypassed the group and reached only that member. Crates held by later members, such as the `crates-io` proxy behind `cargo-public`, answered `404`. `dl` now names the group.
+- `GET api/v1/crates` on a group, which has no trailing slash, was classified as a sparse-index entry and aggregated. It now fans out like any other Web API call.
+
 ## Chart 0.13.1 (2026-09-18)
 
 forklift remains 0.13.3. forklift-mcp remains 0.3.2.

@@ -1,5 +1,6 @@
 //! Adapts the ecosystem-native publish protocols (npm's attachment envelope,
-//! twine's legacy form) onto the managed upload contract, so a protocol publish
+//! twine's legacy form, cargo's length-prefixed publish body) onto the managed
+//! upload contract, so a protocol publish
 //! and a browser upload commit through exactly the same validated, atomic path.
 //!
 //! Both adapters re-encode the request as the multipart body [`Uploader::receive`] expects.
@@ -9,22 +10,24 @@ use axum::extract::{FromRequest, Multipart, Request};
 use axum::response::{IntoResponse, Response};
 use http::StatusCode;
 use http::request::Parts;
-use tokio::io::{AsyncWrite, AsyncWriteExt as _};
+use tokio::io::{AsyncRead, AsyncReadExt as _, AsyncWrite, AsyncWriteExt as _};
 
 use crate::meta::{self, Repository};
 use crate::server::http_error;
 
+use super::cargo::cargo_api_error;
 use super::npm::base64_decode_stream;
 use super::router::Resolved;
 use super::uiupload::{
-    ArtifactUploadAsset, ArtifactUploadManifest, ArtifactUploadResult, NPMUploadManifest,
-    PyPIUploadManifest, UploadProblem, random_upload_id,
+    ArtifactUploadAsset, ArtifactUploadManifest, ArtifactUploadResult, CargoUploadManifest,
+    NPMUploadManifest, PyPIUploadManifest, UploadProblem, random_upload_id,
 };
+use super::uiupload_cargo::valid_cargo_name;
 use super::{Manager, path_base};
 
 /// The principal a protocol publish is attributed to. Unauthenticated protocol
 /// clients (an open hosted repository) publish as `native-client`.
-fn native_upload_principal(parts: &Parts) -> (String, String) {
+pub(super) fn native_upload_principal(parts: &Parts) -> (String, String) {
     match crate::auth::from_request_parts(parts) {
         Some(principal) => (principal.username.clone(), principal.source.clone()),
         None => ("native-client".to_string(), "protocol".to_string()),
@@ -224,6 +227,146 @@ impl Manager {
             Ok(_) => StatusCode::CREATED.into_response(),
         }
     }
+    /// Adapts cargo's Registry Web API publish body: a little-endian `u32`
+    /// length and the JSON metadata, then a `u32` length and the `.crate`
+    /// bytes, which are streamed rather than buffered. As with twine's form
+    /// fields, the JSON is not trusted for identity: the publisher derives name,
+    /// version, dependencies and features from the archive's normalized
+    /// `Cargo.toml`, exactly as for a UI upload.
+    pub(crate) async fn cargo_publish_atomic(
+        &self,
+        parts: &Parts,
+        res: &Resolved,
+        body: Body,
+    ) -> Response {
+        let Some(uploader) = self.uploader.read().clone() else {
+            return cargo_api_error(StatusCode::SERVICE_UNAVAILABLE, "publish is unavailable");
+        };
+        // The metadata JSON embeds the README, so it is buffered under the
+        // rewrite gate like an npm publish document.
+        let Some(slot) = self.engine.acquire_rewrite(&res.repo.name).await else {
+            return cargo_api_error(StatusCode::SERVICE_UNAVAILABLE, "shutting down");
+        };
+        let mut reader = super::request_body(body);
+        let metadata =
+            match read_cargo_publish_metadata(&mut reader, uploader.cfg.archive_max_meta_bytes)
+                .await
+            {
+                Ok(metadata) => metadata,
+                Err((status, detail)) => return cargo_api_error(status, detail),
+            };
+        drop(slot);
+        let crate_len = match read_u32_le(&mut reader).await {
+            Some(len) => u64::from(len),
+            None => {
+                return cargo_api_error(StatusCode::BAD_REQUEST, "publish body is truncated");
+            }
+        };
+        if crate_len > uploader.cfg.max_file_bytes as u64 {
+            return cargo_api_error(
+                StatusCode::PAYLOAD_TOO_LARGE,
+                "crate exceeds the upload limit",
+            );
+        }
+        let manifest = ArtifactUploadManifest {
+            schema_version: 1,
+            format: meta::FORMAT_CARGO.to_string(),
+            assets: vec![ArtifactUploadAsset {
+                part: "asset0".to_string(),
+                role: "crate".to_string(),
+                ..Default::default()
+            }],
+            cargo: Some(CargoUploadManifest { yanked: false }),
+            ..Default::default()
+        };
+        let filename = format!("{}-{}.crate", metadata.name, metadata.vers);
+        let (boundary, content_type) = native_multipart_boundary();
+        let (writer, duplex_reader) = tokio::io::duplex(64 * 1024);
+        // A body that is shorter or longer than it announced is reported as
+        // `InvalidData`. Any other write error means the receiver stopped
+        // reading, and its own problem is the one to report.
+        let write = async move {
+            let mut writer = writer;
+            write_manifest_part(&mut writer, &boundary, &manifest).await?;
+            write_part_header(&mut writer, &boundary, "asset0", Some(&filename)).await?;
+            let copied = tokio::io::copy(&mut (&mut reader).take(crate_len), &mut writer).await?;
+            if copied != crate_len {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "publish body is truncated",
+                ));
+            }
+            if reader.read(&mut [0u8; 1]).await? != 0 {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "publish body has trailing bytes",
+                ));
+            }
+            writer.write_all(b"\r\n").await?;
+            write_closing_boundary(&mut writer, &boundary).await
+        };
+        let receive = self.receive_native_upload(
+            parts,
+            &res.repo,
+            &content_type,
+            Body::from_stream(tokio_util::io::ReaderStream::new(duplex_reader)),
+        );
+        let (written, outcome) = tokio::join!(write, receive);
+        if let Err(err) = &written
+            && err.kind() == std::io::ErrorKind::InvalidData
+        {
+            return cargo_api_error(StatusCode::BAD_REQUEST, &err.to_string());
+        }
+        match outcome {
+            Err(problem) => cargo_api_error(
+                StatusCode::from_u16(problem.status as u16)
+                    .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
+                &problem.detail,
+            ),
+            // Cargo accepts only 200 as success.
+            Ok(_) => axum::Json(super::cargo::cargo_publish_body()).into_response(),
+        }
+    }
+}
+
+/// The fields of cargo's publish metadata that name the upload.
+#[derive(Debug, serde::Deserialize)]
+struct CargoPublishMetadata {
+    name: String,
+    vers: String,
+}
+
+/// Reads and checks the length-prefixed metadata JSON that opens a cargo
+/// publish body.
+async fn read_cargo_publish_metadata<R: AsyncRead + Unpin>(
+    reader: &mut R,
+    max_bytes: i64,
+) -> Result<CargoPublishMetadata, (StatusCode, &'static str)> {
+    let truncated = (StatusCode::BAD_REQUEST, "publish body is truncated");
+    let len = read_u32_le(reader).await.ok_or(truncated)?;
+    if i64::from(len) > max_bytes {
+        return Err((
+            StatusCode::PAYLOAD_TOO_LARGE,
+            "publish metadata exceeds the limit",
+        ));
+    }
+    let mut value = vec![0u8; len as usize];
+    reader.read_exact(&mut value).await.map_err(|_| truncated)?;
+    let metadata: CargoPublishMetadata = serde_json::from_slice(&value)
+        .map_err(|_| (StatusCode::BAD_REQUEST, "invalid publish metadata"))?;
+    if !valid_cargo_name(&metadata.name) || semver::Version::parse(&metadata.vers).is_err() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "publish metadata names an invalid crate version",
+        ));
+    }
+    Ok(metadata)
+}
+
+async fn read_u32_le<R: AsyncRead + Unpin>(reader: &mut R) -> Option<u32> {
+    let mut value = [0u8; 4];
+    reader.read_exact(&mut value).await.ok()?;
+    Some(u32::from_le_bytes(value))
 }
 
 /// Renders an upload problem the way the native protocols report errors: the

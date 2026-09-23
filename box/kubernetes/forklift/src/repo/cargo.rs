@@ -4,11 +4,17 @@
 //! config.json                           registry config (synthesised)
 //! <a>/<b>/<crate>                       sparse index entries  (metadata)
 //! api/v1/crates/<crate>/<ver>/download  the .crate tarball    (artifact)
+//! api/v1/crates/new                     cargo publish         (hosted, PUT)
+//! api/v1/crates/<crate>/<ver>/yank      cargo yank            (hosted, DELETE)
+//! api/v1/crates/<crate>/<ver>/unyank    cargo yank --undo     (hosted, PUT)
+//! api/v1/crates?q=<query>               cargo search          (hosted, GET)
 //! ```
 //!
 //! `config.json` is generated to point cargo at this repository's own download
 //! endpoint so that artifacts are served (and cached/age-gated) through
-//! forklift.
+//! forklift. Hosted and group repositories also advertise `api`, which enables
+//! the Registry Web API subset above (a group only searches). Every other Web
+//! API route (owners) answers with cargo's error envelope.
 
 use std::sync::Arc;
 
@@ -18,6 +24,7 @@ use http::header::CONTENT_TYPE;
 use http::request::Parts;
 use http::{HeaderValue, Method, StatusCode};
 
+use crate::auth;
 use crate::meta;
 use crate::server::http_error;
 
@@ -32,6 +39,9 @@ pub(crate) async fn handle_cargo(m: Arc<Manager>, req: Request) -> Response {
         Ok(res) => res,
         Err(resp) => return resp,
     };
+    if let Some(op) = cargo_api_op(&parts.method, &res.path) {
+        return m.cargo_api(&parts, &res, body, op).await;
+    }
     if let Err(resp) = m.authorize(
         &parts,
         &res.repo.name,
@@ -100,11 +110,189 @@ pub(crate) async fn handle_cargo(m: Arc<Manager>, req: Request) -> Response {
     }
 }
 
+/// A Registry Web API call, as opposed to an index or download request.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum CargoApiOp {
+    Search,
+    Publish,
+    SetYanked {
+        name: String,
+        version: String,
+        yanked: bool,
+    },
+    Unsupported,
+}
+
+/// Classifies a repo-relative path as a Registry Web API call. Downloads are
+/// excluded: they stay on the artifact path, including the raw compatibility
+/// PUT.
+pub(crate) fn cargo_api_op(method: &Method, path: &str) -> Option<CargoApiOp> {
+    let rest = path.strip_prefix("api/v1/")?;
+    if cargo_kind(path) == Kind::Artifact {
+        return None;
+    }
+    let segments: Vec<&str> = rest.split('/').collect();
+    let op = match (method, segments.as_slice()) {
+        (&Method::GET | &Method::HEAD, ["crates"]) => CargoApiOp::Search,
+        (&Method::PUT, ["crates", "new"]) => CargoApiOp::Publish,
+        (&Method::DELETE, ["crates", name, version, "yank"]) => CargoApiOp::SetYanked {
+            name: (*name).to_string(),
+            version: (*version).to_string(),
+            yanked: true,
+        },
+        (&Method::PUT, ["crates", name, version, "unyank"]) => CargoApiOp::SetYanked {
+            name: (*name).to_string(),
+            version: (*version).to_string(),
+            yanked: false,
+        },
+        _ => CargoApiOp::Unsupported,
+    };
+    Some(op)
+}
+
+/// Renders an error in the Registry Web API envelope, which cargo prints as
+/// the cause of a failed publish or yank.
+pub(crate) fn cargo_api_error(status: StatusCode, detail: &str) -> Response {
+    (status, axum::Json(cargo_error_body(detail))).into_response()
+}
+
+/// The Registry Web API error envelope (`CargoErrors` in the OpenAPI document).
+pub(crate) fn cargo_error_body(detail: &str) -> serde_json::Value {
+    serde_json::json!({"errors": [{"detail": detail}]})
+}
+
+/// The yank and unyank success body (`CargoOk`).
+pub(crate) fn cargo_ok_body() -> serde_json::Value {
+    serde_json::json!({"ok": true})
+}
+
+/// The publish success body (`CargoPublishResult`). Forklift never rewrites
+/// categories or badges, so there is nothing to warn about.
+pub(crate) fn cargo_publish_body() -> serde_json::Value {
+    serde_json::json!({
+        "warnings": {"invalid_categories": [], "invalid_badges": [], "other": []}
+    })
+}
+
 impl Manager {
+    /// Serves the Registry Web API subset. Search needs `read`. Publish and
+    /// yank both need `write`, matching the UI's yank action, even though yank
+    /// arrives as DELETE.
+    async fn cargo_api(
+        &self,
+        parts: &Parts,
+        res: &Resolved,
+        body: axum::body::Body,
+        op: CargoApiOp,
+    ) -> Response {
+        match op {
+            CargoApiOp::Unsupported => cargo_api_error(
+                StatusCode::NOT_FOUND,
+                "this registry supports only search, publish, yank and unyank",
+            ),
+            CargoApiOp::Search => {
+                if let Err(resp) =
+                    self.authorize(parts, &res.repo.name, auth::ACTION_READ, res.cfg.public)
+                {
+                    return resp;
+                }
+                self.cargo_search(parts, res).await
+            }
+            CargoApiOp::Publish | CargoApiOp::SetYanked { .. } => {
+                if let Err(resp) = self.authorize(parts, &res.repo.name, auth::ACTION_WRITE, false)
+                {
+                    return resp;
+                }
+                if res.repo.r#type != meta::TYPE_HOSTED {
+                    return cargo_api_error(
+                        StatusCode::METHOD_NOT_ALLOWED,
+                        "publishing is only allowed on hosted repositories",
+                    );
+                }
+                match op {
+                    CargoApiOp::SetYanked {
+                        name,
+                        version,
+                        yanked,
+                    } => {
+                        self.cargo_set_yanked(parts, res, &name, &version, yanked)
+                            .await
+                    }
+                    _ => self.cargo_publish_atomic(parts, res, body).await,
+                }
+            }
+        }
+    }
+
+    /// Flips a managed crate version's yanked flag through the same lifecycle
+    /// operation the UI uses.
+    async fn cargo_set_yanked(
+        &self,
+        parts: &Parts,
+        res: &Resolved,
+        name: &str,
+        version: &str,
+        yanked: bool,
+    ) -> Response {
+        let Some(uploader) = self.uploader.read().clone() else {
+            return cargo_api_error(StatusCode::SERVICE_UNAVAILABLE, "yank is unavailable");
+        };
+        let Ok(parsed) = semver::Version::parse(version) else {
+            return cargo_api_error(StatusCode::BAD_REQUEST, "invalid crate version");
+        };
+        // Publications are keyed by the lowercase name and the SemVer identity,
+        // which excludes build metadata.
+        let mut identity = parsed.to_string();
+        if let Some(index) = identity.find('+') {
+            identity.truncate(index);
+        }
+        let publication = match self
+            .store
+            .get_artifact_publication_by_identity(
+                res.repo.id,
+                meta::FORMAT_CARGO,
+                &name.to_lowercase(),
+                &identity,
+            )
+            .await
+        {
+            Ok(publication) => publication,
+            Err(meta::Error::NotFound) => {
+                return cargo_api_error(StatusCode::NOT_FOUND, "crate version not found");
+            }
+            Err(_) => {
+                return cargo_api_error(
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "crate version could not be looked up",
+                );
+            }
+        };
+        let (principal, _) = super::native_upload::native_upload_principal(parts);
+        match uploader
+            .set_cargo_yanked(&res.repo, &publication.id, &principal, yanked)
+            .await
+        {
+            Ok(_) => axum::Json(cargo_ok_body()).into_response(),
+            Err(problem) => cargo_api_error(
+                StatusCode::from_u16(problem.status as u16)
+                    .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
+                &problem.detail,
+            ),
+        }
+    }
+
     /// Synthesises the sparse registry `config.json`, pointing cargo's download
     /// URL at this repository so `.crate` fetches flow through forklift.
     fn cargo_config(&self, parts: &Parts, res: &Resolved) -> Response {
-        let base = format!("{}/cargo/{}", self.external_base(parts), res.repo.name);
+        // A group answers with its first member's config, so both URLs name the
+        // group the client is talking to: downloads then fan out across every
+        // member instead of reaching only the first one.
+        let via_group = super::group::via_group(parts);
+        let base = format!(
+            "{}/cargo/{}",
+            self.external_base(parts),
+            super::group::serving_repo_name(parts, &res.repo.name)
+        );
         let mut resp = if parts.method == Method::HEAD {
             StatusCode::OK.into_response()
         } else {
@@ -122,6 +310,14 @@ impl Manager {
                     "{base}/api/v1/crates/{{crate}}/{{version}}/download"
                 )),
             );
+            // Cargo appends `/api/v1/crates/...` to `api` and refuses every
+            // Web API command, search included, without it. A group advertises
+            // its own API: search falls through to its hosted member and a
+            // publish is refused as read-only. A proxy has neither.
+            if (res.repo.r#type == meta::TYPE_HOSTED || via_group) && self.uploader.read().is_some()
+            {
+                document.insert("api".to_string(), serde_json::Value::String(base.clone()));
+            }
             let mut body = serde_json::to_string(&serde_json::Value::Object(document))
                 .unwrap_or_else(|_| "{}".to_string());
             body.push('\n');

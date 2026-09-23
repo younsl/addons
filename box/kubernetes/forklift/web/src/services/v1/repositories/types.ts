@@ -66,7 +66,7 @@ export type ListRepositoryOciTagsResponse = { tags: OCITagInfo[]; };
 export type GetRepositoryOciDetailRequest = { path: { id: number }; query?: { name: string; ref: string } };
 export type GetRepositoryOciDetailResponse = OCIArtifactDetail;
 
-export type ListRepositoryArtifactsRequest = { path: { id: number }; query?: { q?: string; regex?: boolean; limit?: number; offset?: number; prefix?: string } };
+export type ListRepositoryArtifactsRequest = { path: { id: number }; query?: { q?: string; filter?: "labeled" | "scanned" | "clean" | "vulnerable" | "licensed" | "broken"; regex?: boolean; limit?: number; offset?: number; prefix?: string } };
 export type ListRepositoryArtifactsResponse = ArtifactList;
 
 export type DeleteRepositoryArtifactsRequest = { path: { id: number }; query?: { path?: string; force?: boolean } };

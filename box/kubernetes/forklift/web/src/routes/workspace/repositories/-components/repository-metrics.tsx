@@ -59,11 +59,12 @@ export function CleanRatio({ repo }: { repo: RepositoryListItem }) {
   if (scanned === 0) return <span className="text-muted-foreground">-</span>;
 
   const pct = Math.round((clean / scanned) * 100);
+  // Status tokens, which hold 4.5:1 on every surface in both themes.
   const tone =
     pct === 100
-      ? "text-emerald-600 dark:text-emerald-400"
+      ? "text-[var(--fx-success)]"
       : pct >= 50
-        ? "text-amber-600 dark:text-amber-400"
+        ? "text-[var(--fx-warning)]"
         : "text-destructive";
 
   return (
