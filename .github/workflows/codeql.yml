@@ -35,6 +35,13 @@ jobs:
         with:
           languages: ${{ matrix.language }}
           build-mode: none
+          # Test-only code: fixtures hard-code credentials and panic messages
+          # name test users on purpose. forklift's src/testing compiles only
+          # under cfg(test) or the testing feature, never into the binary.
+          config: |
+            paths-ignore:
+              - "**/tests/**"
+              - "**/src/testing/**"
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v4
