@@ -17,3 +17,4 @@
 ## AI
 
 - [getdesign.md | DESIGN.md collection for AI coding agents](https://getdesign.md/)
+- [skills.sh | The Agent Skills Directory](https://skills.sh/)
