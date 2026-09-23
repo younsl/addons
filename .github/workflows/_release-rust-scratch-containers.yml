@@ -54,7 +54,7 @@ jobs:
   # emit dynamic matrices for downstream jobs.
   # ---------------------------------------------------------------------------
   detect:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     permissions:
       packages: read
     outputs:
@@ -85,7 +85,7 @@ jobs:
   test:
     needs: detect
     if: needs.detect.outputs.has_releases == 'true'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     permissions:
       contents: read
     strategy:
@@ -149,7 +149,7 @@ jobs:
   build-binaries:
     needs: [detect, test]
     if: needs.detect.outputs.has_releases == 'true'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     permissions:
       contents: read
     strategy:
@@ -272,7 +272,7 @@ jobs:
   build-docker:
     needs: [detect, test, build-binaries]
     if: needs.detect.outputs.has_releases == 'true'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     permissions:
       contents: read
       packages: write

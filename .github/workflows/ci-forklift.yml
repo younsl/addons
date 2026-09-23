@@ -41,7 +41,7 @@ jobs:
   # The console is built first: the binary embeds src/webui/dist.
   rust:
     name: Rust
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -94,7 +94,7 @@ jobs:
   # The build runs tsc and route-tree generation, so type errors fail here.
   web:
     name: Web
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -127,7 +127,7 @@ jobs:
   # Render the configurations that differ structurally, not just the default.
   chart:
     name: Chart
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -154,7 +154,7 @@ jobs:
   # The official distribution-spec conformance suite against a live binary.
   oci-conformance:
     name: OCI conformance
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     env:
       OCI_SPEC_VERSION: v1.1.1
     steps:

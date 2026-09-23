@@ -25,7 +25,7 @@ jobs:
   # Detect: extract version from Dockerfile label, check GHCR for duplicates
   # ---------------------------------------------------------------------------
   detect:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     permissions:
       packages: read
     outputs:
@@ -56,7 +56,7 @@ jobs:
   test-backstage:
     needs: detect
     if: needs.detect.outputs.backstage_release == 'true'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     permissions:
       contents: read
     defaults:
@@ -119,10 +119,10 @@ jobs:
         platform:
           - arch: amd64
             target: linux/amd64
-            runner: ubuntu-24.04
+            runner: ubuntu-26.04
           - arch: arm64
             target: linux/arm64
-            runner: ubuntu-24.04-arm
+            runner: ubuntu-26.04-arm
     env:
       REGISTRY: ghcr.io
       IMAGE_NAME: younsl/${{ matrix.container.name }}
@@ -229,7 +229,7 @@ jobs:
     name: merge (${{ matrix.name }})
     needs: [detect, test-backstage, release]
     if: always() && !cancelled()
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     permissions:
       contents: read
       packages: write
