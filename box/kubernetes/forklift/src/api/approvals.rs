@@ -139,7 +139,7 @@ pub(super) async fn list(State(h): State<Arc<Handler>>, Query(q): Query<ListQuer
     let offset = int_param(&q.offset, 0).max(0);
 
     let page = if q.regex == "true" && !q.q.is_empty() {
-        let re = match regex::Regex::new(&format!("(?i){}", q.q)) {
+        let re = match super::search_regex(&q.q) {
             Ok(re) => re,
             Err(err) => {
                 return write_error(StatusCode::BAD_REQUEST, &format!("invalid regex: {err}"));

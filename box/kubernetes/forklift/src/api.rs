@@ -658,6 +658,28 @@ pub(crate) fn write_error(status: StatusCode, msg: &str) -> Response {
     write_json(status, serde_json::json!({"error": msg}))
 }
 
+/// The longest `/pattern/` search a listing accepts.
+const MAX_SEARCH_REGEX_LEN: usize = 256;
+/// The compiled-program cap for a search regex, a tenth of the regex crate's
+/// 10 MiB default.
+const SEARCH_REGEX_SIZE_LIMIT: usize = 1 << 20;
+
+/// Compiles a user-supplied, case-insensitive search regex. The regex crate
+/// matches in linear time, so there is no catastrophic backtracking to guard
+/// against; what is left to bound is the pattern length and the size of the
+/// program it compiles to.
+pub(crate) fn search_regex(pattern: &str) -> Result<regex::Regex, String> {
+    if pattern.len() > MAX_SEARCH_REGEX_LEN {
+        return Err(format!("longer than {MAX_SEARCH_REGEX_LEN} bytes"));
+    }
+    regex::RegexBuilder::new(pattern)
+        .case_insensitive(true)
+        .size_limit(SEARCH_REGEX_SIZE_LIMIT)
+        .dfa_size_limit(SEARCH_REGEX_SIZE_LIMIT)
+        .build()
+        .map_err(|e| e.to_string())
+}
+
 /// Translates store errors into HTTP responses.
 pub(crate) fn map_error(err: meta::Error) -> Response {
     match err {
@@ -676,4 +698,25 @@ pub(crate) fn principal_name(parts: &Parts) -> String {
     auth_service::from_request_parts(parts)
         .map(|p| p.username.clone())
         .unwrap_or_default()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn search_regex_is_case_insensitive_and_bounded() {
+        let re = search_regex("^widget-[0-9]+$").expect("plain pattern");
+        assert!(re.is_match("Widget-12"));
+
+        let long = "a".repeat(MAX_SEARCH_REGEX_LEN + 1);
+        assert!(search_regex(&long).is_err(), "over-long pattern accepted");
+
+        // Short to type, but it compiles far past the size limit.
+        assert!(
+            search_regex(r"(?:\w{100}){100}").is_err(),
+            "oversized program accepted"
+        );
+        assert!(search_regex("(unclosed").is_err());
+    }
 }

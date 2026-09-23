@@ -1240,7 +1240,7 @@ pub(super) async fn list_artifacts(
                 (arts, filtered)
             })
     } else if query.regex == "true" && !query.q.is_empty() {
-        match regex::Regex::new(&format!("(?i){}", query.q)) {
+        match super::search_regex(&query.q) {
             Ok(re) => {
                 h.store
                     .search_repo_artifacts_regex(id, &re, limit, offset)

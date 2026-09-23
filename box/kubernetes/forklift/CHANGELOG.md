@@ -27,6 +27,10 @@ Notable changes per release. Container image versions come from the
 - A group's Cargo `config.json` pointed `dl` at its first member, so every `.crate` download bypassed the group and reached only that member. Crates held by later members, such as the `crates-io` proxy behind `cargo-public`, answered `404`. `dl` now names the group.
 - `GET api/v1/crates` on a group, which has no trailing slash, was classified as a sparse-index entry and aggregated. It now fans out like any other Web API call.
 
+### Security
+
+- The `/pattern/` regex search on the artifact and approval listings caps a pattern at 256 bytes and its compiled program at 1 MiB, a tenth of the regex crate's default. Matching was already linear-time, so this bounds the remaining cost, compiling an oversized pattern, per request.
+
 ## Chart 0.13.1 (2026-09-18)
 
 forklift remains 0.13.3. forklift-mcp remains 0.3.2.
