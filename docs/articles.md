@@ -13,3 +13,7 @@
 
 - [Why Is Everyone In Tech So Sad?](https://www.noemamag.com/why-is-everyone-in-tech-so-sad/)
 - [The end of programming](https://pauldix.com/the-end-of-programming)
+
+## AI
+
+- [getdesign.md | DESIGN.md collection for AI coding agents](https://getdesign.md/)
