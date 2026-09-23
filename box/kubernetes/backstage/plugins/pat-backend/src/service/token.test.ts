@@ -47,6 +47,13 @@ describe('token helpers', () => {
     expect(parseBearer(undefined)).toBeUndefined();
   });
 
+  it('rejects bearer headers without a separated token', () => {
+    expect(parseBearer('Bearer')).toBeUndefined();
+    expect(parseBearer('Bearer    ')).toBeUndefined();
+    expect(parseBearer('Bearerabc')).toBeUndefined();
+    expect(parseBearer('Bearer\tabc')).toBe('abc');
+  });
+
   describe('resolveExpiryDays', () => {
     it('accepts integers within range', () => {
       expect(resolveExpiryDays(30, 365)).toEqual({ ok: true, days: 30 });

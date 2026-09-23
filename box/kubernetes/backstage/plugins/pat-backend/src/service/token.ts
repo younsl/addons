@@ -47,11 +47,21 @@ export function isPatToken(value: string | undefined): value is string {
   return typeof value === 'string' && value.startsWith(PAT_PREFIX);
 }
 
-/** Extracts a bearer token from an Authorization header, or undefined when absent. */
+const BEARER_SCHEME = 'bearer';
+
+/**
+ * Extracts a bearer token from an Authorization header, or undefined when absent.
+ * Parsed by slicing rather than a `\s+(.+)` regex, which backtracks polynomially
+ * on a header of `Bearer` followed by a long run of whitespace.
+ */
 export function parseBearer(header: string | undefined): string | undefined {
   if (!header) return undefined;
-  const match = /^Bearer\s+(.+)$/i.exec(header.trim());
-  return match ? match[1].trim() : undefined;
+  const value = header.trim();
+  if (value.slice(0, BEARER_SCHEME.length).toLowerCase() !== BEARER_SCHEME) return undefined;
+  const rest = value.slice(BEARER_SCHEME.length);
+  if (!/^\s/.test(rest)) return undefined;
+  const token = rest.trim();
+  return token || undefined;
 }
 
 export function hashesEqual(a: string, b: string): boolean {

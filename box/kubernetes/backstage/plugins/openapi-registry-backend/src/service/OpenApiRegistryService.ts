@@ -1,7 +1,11 @@
 import { CatalogApi } from '@backstage/catalog-client';
 import { stringifyEntityRef } from '@backstage/catalog-model';
 import { LoggerService, AuthService } from '@backstage/backend-plugin-api';
-import fetch from 'node-fetch';
+import dns from 'dns';
+import http from 'http';
+import https from 'https';
+import { BlockList, isIP, LookupFunction } from 'net';
+import fetch, { Response } from 'node-fetch';
 import yaml from 'js-yaml';
 import { OpenApiRegistryStore } from './OpenApiRegistryStore';
 import {
@@ -19,11 +23,36 @@ export interface OpenApiRegistryServiceOptions {
   baseUrl: string;
 }
 
+const MAX_REDIRECTS = 5;
+const MAX_SPEC_BYTES = 10 * 1024 * 1024;
+const FETCH_TIMEOUT_MS = 15_000;
+
+/**
+ * Addresses a spec URL must never reach: loopback (sidecars and the backend
+ * itself), link-local (cloud instance metadata at 169.254.169.254) and the
+ * EC2 IPv6 metadata endpoint. Private ranges stay reachable on purpose:
+ * registering in-cluster API specs is what this plugin is for.
+ */
+const blockedAddresses = new BlockList();
+blockedAddresses.addSubnet('0.0.0.0', 8, 'ipv4');
+blockedAddresses.addSubnet('127.0.0.0', 8, 'ipv4');
+blockedAddresses.addSubnet('169.254.0.0', 16, 'ipv4');
+blockedAddresses.addAddress('::', 'ipv6');
+blockedAddresses.addAddress('::1', 'ipv6');
+blockedAddresses.addSubnet('fe80::', 10, 'ipv6');
+blockedAddresses.addAddress('fd00:ec2::254', 'ipv6');
+
+/** True for an IP literal in a blocked range, including IPv4-mapped IPv6 forms. */
+export function isBlockedAddress(address: string): boolean {
+  const family = isIP(address);
+  if (family === 0) return false;
+  return blockedAddresses.check(address, family === 6 ? 'ipv6' : 'ipv4');
+}
+
 /**
  * A spec URL is fetched server side, so it must not smuggle another protocol
- * (`file:`, `gopher:`) or embedded credentials into the request. Internal
- * hostnames stay allowed on purpose: registering in-cluster API specs is what
- * this plugin is for.
+ * (`file:`, `gopher:`), embedded credentials or a blocked IP literal into the
+ * request. Hostnames are checked again after DNS resolution by `guardedLookup`.
  */
 export function isValidSpecUrl(raw: string): boolean {
   let url: URL;
@@ -34,7 +63,40 @@ export function isValidSpecUrl(raw: string): boolean {
   }
   if (url.protocol !== 'https:' && url.protocol !== 'http:') return false;
   if (url.username || url.password) return false;
+  if (isBlockedAddress(url.hostname.replace(/^\[(.*)\]$/, '$1'))) return false;
   return true;
+}
+
+/**
+ * DNS lookup that refuses blocked addresses at connect time, so a hostname
+ * that resolves to the metadata endpoint (or is rebound to it) is rejected
+ * even though it passed `isValidSpecUrl`.
+ */
+export const guardedLookup: LookupFunction = (hostname, options, callback) => {
+  dns.lookup(hostname, options, (err, address, family) => {
+    if (err) {
+      callback(err, address, family);
+      return;
+    }
+    const addresses = Array.isArray(address) ? address.map(a => a.address) : [address];
+    const blocked = addresses.find(isBlockedAddress);
+    if (blocked) {
+      callback(
+        new Error(`specUrl host ${hostname} resolves to a blocked address ${blocked}`),
+        address,
+        family,
+      );
+      return;
+    }
+    callback(null, address, family);
+  });
+};
+
+const specHttpAgent = new http.Agent({ lookup: guardedLookup });
+const specHttpsAgent = new https.Agent({ lookup: guardedLookup });
+
+function specAgent(url: URL): http.Agent {
+  return url.protocol === 'https:' ? specHttpsAgent : specHttpAgent;
 }
 
 export class OpenApiRegistryService {
@@ -253,17 +315,7 @@ export class OpenApiRegistryService {
   private async fetchSpec(specUrl: string): Promise<OpenApiSpec> {
     this.logger.debug(`Fetching spec from: ${specUrl}`);
 
-    if (!isValidSpecUrl(specUrl)) {
-      throw new Error(
-        'specUrl must be an http(s) URL without embedded credentials',
-      );
-    }
-
-    const response = await fetch(specUrl, {
-      headers: {
-        Accept: 'application/json, application/yaml, text/yaml, */*',
-      },
-    });
+    const { response, url: finalUrl } = await this.fetchFollowingRedirects(specUrl);
 
     if (!response.ok) {
       throw new Error(`Failed to fetch spec: ${response.status} ${response.statusText}`);
@@ -274,7 +326,7 @@ export class OpenApiRegistryService {
 
     let spec: OpenApiSpec;
 
-    if (contentType.includes('yaml') || specUrl.endsWith('.yaml') || specUrl.endsWith('.yml')) {
+    if (contentType.includes('yaml') || finalUrl.endsWith('.yaml') || finalUrl.endsWith('.yml')) {
       spec = yaml.load(text) as OpenApiSpec;
     } else {
       try {
@@ -295,6 +347,41 @@ export class OpenApiRegistryService {
     }
 
     return spec;
+  }
+
+  /**
+   * Follows redirects by hand so every hop passes `isValidSpecUrl`. node-fetch
+   * would otherwise follow a `Location` pointing at a blocked IP literal, which
+   * never reaches `guardedLookup`.
+   */
+  private async fetchFollowingRedirects(
+    specUrl: string,
+  ): Promise<{ response: Response; url: string }> {
+    let url = specUrl;
+    for (let hop = 0; ; hop++) {
+      if (!isValidSpecUrl(url)) {
+        throw new Error(
+          'specUrl must be an http(s) URL without embedded credentials or a loopback or link-local host',
+        );
+      }
+      const response = await fetch(url, {
+        headers: {
+          Accept: 'application/json, application/yaml, text/yaml, */*',
+        },
+        agent: specAgent,
+        redirect: 'manual',
+        size: MAX_SPEC_BYTES,
+        timeout: FETCH_TIMEOUT_MS,
+      });
+      const location = response.headers.get('location');
+      if (response.status < 300 || response.status >= 400 || !location) {
+        return { response, url };
+      }
+      if (hop >= MAX_REDIRECTS) {
+        throw new Error(`Failed to fetch spec: more than ${MAX_REDIRECTS} redirects`);
+      }
+      url = new URL(location, url).toString();
+    }
   }
 
   private createApiEntity(registration: OpenApiRegistration, spec: OpenApiSpec) {

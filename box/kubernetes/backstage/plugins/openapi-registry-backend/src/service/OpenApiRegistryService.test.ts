@@ -1,7 +1,12 @@
 jest.mock('node-fetch', () => jest.fn());
 
 import fetch from 'node-fetch';
-import { isValidSpecUrl, OpenApiRegistryService } from './OpenApiRegistryService';
+import {
+  guardedLookup,
+  isBlockedAddress,
+  isValidSpecUrl,
+  OpenApiRegistryService,
+} from './OpenApiRegistryService';
 import { OpenApiSpec } from './types';
 
 const mockFetch = fetch as jest.MockedFunction<typeof fetch>;
@@ -363,10 +368,81 @@ describe('OpenApiRegistryService', () => {
       'gopher://example.com/1',
       'ftp://example.com/spec.json',
       'https://user:pass@example.com/spec.json',
+      'http://169.254.169.254/latest/meta-data/',
+      'http://2852039166/latest/meta-data/',
+      'http://127.0.0.1:7007/api/catalog',
+      'http://0.0.0.0:8080/spec.json',
+      'http://[::1]/spec.json',
+      'http://[::ffff:169.254.169.254]/spec.json',
+      'http://[fd00:ec2::254]/latest/meta-data/',
       'not a url',
       '',
     ])('rejects %s', url => {
       expect(isValidSpecUrl(url)).toBe(false);
+    });
+
+    it('allows private ranges used by in-cluster services', () => {
+      expect(isBlockedAddress('10.0.0.1')).toBe(false);
+      expect(isBlockedAddress('192.168.1.1')).toBe(false);
+      expect(isBlockedAddress('example.com')).toBe(false);
+    });
+
+    it('rejects a hostname that resolves to a blocked address', done => {
+      guardedLookup('localhost', {}, err => {
+        expect(err?.message).toContain('blocked address');
+        done();
+      });
+    });
+
+    it('follows a redirect to an allowed URL', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 302,
+        headers: { get: (name: string) => (name === 'location' ? '/v2/openapi.yaml' : null) },
+      } as any);
+      mockFetchResponse('openapi: 3.0.0\ninfo:\n  title: Moved\n  version: "1"\n', {
+        contentType: 'text/plain',
+      });
+
+      const result = await service.previewSpec('https://example.com/v1/openapi.json');
+
+      expect(result.valid).toBe(true);
+      expect(result.title).toBe('Moved');
+      expect(mockFetch).toHaveBeenLastCalledWith(
+        'https://example.com/v2/openapi.yaml',
+        expect.objectContaining({ redirect: 'manual' }),
+      );
+    });
+
+    it('refuses a redirect to the metadata endpoint', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 301,
+        headers: {
+          get: (name: string) =>
+            name === 'location' ? 'http://169.254.169.254/latest/meta-data/' : null,
+        },
+      } as any);
+
+      const result = await service.previewSpec('https://example.com/openapi.json');
+
+      expect(result.valid).toBe(false);
+      expect(result.error).toContain('link-local');
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+    });
+
+    it('stops after too many redirects', async () => {
+      mockFetch.mockResolvedValue({
+        ok: false,
+        status: 302,
+        headers: { get: (name: string) => (name === 'location' ? '/loop' : null) },
+      } as any);
+
+      const result = await service.previewSpec('https://example.com/loop');
+
+      expect(result.valid).toBe(false);
+      expect(result.error).toContain('redirects');
+      mockFetch.mockReset();
     });
 
     it('refuses to fetch a non-http(s) spec URL', async () => {
