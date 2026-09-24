@@ -1,5 +1,7 @@
 # See https://pre-commit.com for more information
 # See https://pre-commit.com/hooks.html for more hooks
+default_install_hook_types: [pre-commit, pre-push]
+
 repos:
   - repo: https://github.com/gitleaks/gitleaks
     rev: v8.30.1
@@ -21,3 +23,19 @@ repos:
         language: system
         files: '^docs/resume/resume\.html$'
         pass_filenames: false
+      - id: cargo-fmt
+        name: cargo fmt
+        entry: scripts/cargo-changed.sh fmt
+        language: script
+        files: '\.rs$|Cargo\.(toml|lock)$'
+      - id: cargo-clippy
+        name: cargo clippy
+        entry: scripts/cargo-changed.sh clippy
+        language: script
+        files: '\.rs$|Cargo\.(toml|lock)$'
+      - id: cargo-test
+        name: cargo test
+        entry: scripts/cargo-changed.sh test
+        language: script
+        files: '\.rs$|Cargo\.(toml|lock)$'
+        stages: [pre-push]

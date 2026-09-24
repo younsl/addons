@@ -44,3 +44,11 @@ The Go module cache is stored read-only at mode 0444, and `rm -rf` fails on it w
 The `du` totals are measured before deletion, so the reported figure is what the paths held rather than what the filesystem later reports. On APFS the two differ, because clones and snapshots share blocks.
 
 Both before and after, the script prints `df` for `/System/Volumes/Data`. On macOS, `df /` reports the read-only system volume and always looks nearly full, which is not the number worth watching.
+
+## cargo-changed.sh
+
+Runs `cargo fmt --check`, `cargo clippy -- -D warnings`, or `cargo test` in every crate that owns one of the given files. The repository has no root Cargo workspace, so the script walks up from each file to the nearest `Cargo.toml`.
+
+It is wired into `.pre-commit-config.yaml`: fmt and clippy run on `pre-commit`, test runs on `pre-push`. Install both hook types once with `pre-commit install`.
+
+The script `cd`s into each crate instead of passing `--manifest-path`, because rustup picks `rust-toolchain.toml` from the working directory.
