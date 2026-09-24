@@ -65,11 +65,28 @@ pub(crate) async fn handle_cargo(m: Arc<Manager>, req: Request) -> Response {
 
     match parts.method {
         Method::GET | Method::HEAD => {
+            let mut cfg = res.cfg.clone();
+            let upstream_url = if res.repo.r#type == meta::TYPE_PROXY
+                && cargo_kind(&res.path) == Kind::Artifact
+            {
+                let url = m
+                    .cargo_upstream_download_url(&res, &cargo_download_crate(&res.path), &version)
+                    .await;
+                // The download host may differ from the index host (crates.io
+                // serves crates from static.crates.io), and the repository's
+                // upstream credentials belong to the index host only.
+                if !super::cargo_dl::same_host(&res.repo.upstream_url, &url) {
+                    cfg.upstream_auth = Default::default();
+                }
+                url
+            } else {
+                join_upstream(&res.repo.upstream_url, &res.path)
+            };
             let spec = FetchSpec {
                 repo: res.repo.clone(),
-                cfg: res.cfg.clone(),
+                cfg,
                 path: res.path.clone(),
-                upstream_url: join_upstream(&res.repo.upstream_url, &res.path),
+                upstream_url,
                 kind: cargo_kind(&res.path),
                 version: version.clone(),
                 content_type: cargo_content_type(&res.path),
@@ -373,6 +390,15 @@ pub(crate) fn cargo_kind(p: &str) -> Kind {
     } else {
         Kind::Metadata
     }
+}
+
+/// The crate segment of a download path, in the case cargo requested it (the
+/// index and the download host are case-sensitive, unlike `cargo_package`).
+fn cargo_download_crate(p: &str) -> String {
+    p.split_once("api/v1/crates/")
+        .and_then(|(_, after)| after.split('/').next())
+        .unwrap_or_default()
+        .to_string()
 }
 
 pub(crate) fn cargo_version(p: &str) -> String {

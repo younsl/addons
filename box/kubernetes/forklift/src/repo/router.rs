@@ -78,6 +78,9 @@ pub struct Manager {
     pub(crate) uploader: parking_lot::RwLock<Option<Arc<Uploader>>>,
     /// Serialises group aggregate rebuilds per cache key.
     pub(crate) group_metadata_locks: parking_lot::Mutex<HashMap<String, Arc<GroupMetadataLock>>>,
+    /// Upstream Cargo `dl` templates, so a proxy fetches crates from where the
+    /// registry serves them rather than from its index host.
+    pub(crate) cargo_dl: super::cargo_dl::CargoDlCache,
     /// When set, overrides request-derived bases in synthesised URLs (see
     /// `external_base`).
     pub(crate) external_url: parking_lot::RwLock<String>,
@@ -150,6 +153,7 @@ impl Manager {
             rec,
             uploader: parking_lot::RwLock::new(None),
             group_metadata_locks: parking_lot::Mutex::new(HashMap::new()),
+            cargo_dl: super::cargo_dl::CargoDlCache::default(),
             external_url: parking_lot::RwLock::new(String::new()),
             scan_ratios: parking_lot::Mutex::new(ScanRatioState::default()),
             scan_ratio_refresh: tokio::sync::Mutex::new(()),

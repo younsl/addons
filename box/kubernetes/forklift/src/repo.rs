@@ -42,6 +42,7 @@ mod upstreamurl;
 
 mod approvalgate;
 pub(crate) mod cargo;
+mod cargo_dl;
 pub(crate) mod cargo_search;
 mod gomod;
 mod group;
@@ -1764,6 +1765,80 @@ pub(crate) mod tests {
             .await;
             assert_eq!(resp.status, StatusCode::OK, "download");
             assert_eq!(resp.text(), "CRATEDATA");
+        }
+
+        /// crates.io serves its index from one host and its crates from another
+        /// (`config.json` `dl`), and the index host 404s the download path. The
+        /// proxy must fetch from `dl`, and must not hand the index credentials to
+        /// the download host.
+        #[tokio::test]
+        async fn cargo_download_follows_upstream_dl() {
+            let seen_auth = Arc::new(parking_lot::Mutex::new(None::<String>));
+            let seen = Arc::clone(&seen_auth);
+            let dl_host = spawn_upstream(Router::new().fallback(any(
+                move |uri: Uri, headers: HeaderMap| {
+                    let seen = Arc::clone(&seen);
+                    async move {
+                        *seen.lock() = headers
+                            .get(http::header::AUTHORIZATION)
+                            .and_then(|v| v.to_str().ok())
+                            .map(str::to_string);
+                        if uri.path() == "/crates/serde/1.0.0/download" {
+                            "CRATEDATA".into_response()
+                        } else {
+                            StatusCode::NOT_FOUND.into_response()
+                        }
+                    }
+                },
+            )))
+            .await;
+            let dl = format!("{dl_host}/crates");
+            let index_host = spawn_upstream(Router::new().fallback(any(move |uri: Uri| {
+                let dl = dl.clone();
+                async move {
+                    match uri.path() {
+                        "/config.json" => format!(r#"{{"dl":"{dl}"}}"#).into_response(),
+                        "/se/rd/serde" => {
+                            r#"{"name":"serde","vers":"1.0.0","cksum":"x"}"#.into_response()
+                        }
+                        _ => StatusCode::NOT_FOUND.into_response(),
+                    }
+                }
+            })))
+            .await;
+
+            let tm = new_test_manager().await;
+            let mut cfg = repoconfig::default();
+            cfg.upstream_auth = crate::repoconfig::UpstreamAuthConfig {
+                type_: crate::repoconfig::UPSTREAM_AUTH_BEARER.to_string(),
+                token: "index-only".to_string(),
+                ..Default::default()
+            };
+            mk_format_repo(
+                &tm.store,
+                "crates",
+                meta::FORMAT_CARGO,
+                meta::TYPE_PROXY,
+                &index_host,
+                cfg,
+            )
+            .await;
+            let app = mux(&tm.manager);
+
+            let resp = call(
+                &app,
+                Method::GET,
+                "/cargo/crates/api/v1/crates/serde/1.0.0/download",
+                "",
+            )
+            .await;
+            assert_eq!(resp.status, StatusCode::OK, "download: {}", resp.text());
+            assert_eq!(resp.text(), "CRATEDATA");
+            assert_eq!(
+                *seen_auth.lock(),
+                None,
+                "index credentials leaked to the download host"
+            );
         }
 
         #[test]
