@@ -13,7 +13,7 @@ use rmcp::handler::server::tool::parse_json_object;
 use rmcp::model::{
     CallToolRequestParams, CallToolResponse, CallToolResult, ContentBlock, ErrorData,
     Implementation, JsonObject, ListToolsResult, PaginatedRequestParams, ProtocolVersion,
-    ServerCapabilities, ServerInfo, Tool,
+    ServerCapabilities, ServerConfig, Tool,
 };
 use rmcp::service::RequestContext;
 use rmcp::{RoleServer, ServerHandler};
@@ -2041,10 +2041,10 @@ fn auth_header(context: &RequestContext<RoleServer>) -> Option<String> {
 }
 
 impl ServerHandler for Server {
-    fn get_info(&self) -> ServerInfo {
+    fn get_info(&self) -> ServerConfig {
         let mut server_info = Implementation::new("forklift-mcp", self.version.clone());
         server_info.title = Some("forklift artifact repository".to_string());
-        let mut info = ServerInfo::new(ServerCapabilities::builder().enable_tools().build());
+        let mut info = ServerConfig::new(ServerCapabilities::builder().enable_tools().build());
         info.protocol_version = ProtocolVersion::default();
         info.server_info = server_info;
         info.instructions = None;

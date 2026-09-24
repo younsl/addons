@@ -4,7 +4,11 @@ Notable changes per release. Container image versions come from the
 `org.opencontainers.image.version` label in the `Dockerfile`; chart versions from
 `charts/forklift/Chart.yaml`.
 
-## Unreleased
+## 0.13.4 (2026-09-24)
+
+Chart 0.13.2. forklift-mcp remains 0.3.2.
+
+The 0.13.3 image was rebuilt on 2026-09-23 with everything below except the crates.io download fix and the dependency upgrade.
 
 ### Added
 
@@ -21,10 +25,12 @@ Notable changes per release. Container image versions come from the
 
 - The web console takes Apple's visual language ([docs/designs/apple-inspired.md](docs/designs/apple-inspired.md)): Apple's system neutrals in both themes (pure black and `#1c1c1e`-`#3a3a3c` in dark, white cards on `#f5f5f7` parchment in light), the system font stack (SF Pro on Apple devices, Noto Sans KR elsewhere) with Apple's tracking, pill-shaped primary buttons, badges and search fields, 8px form controls, 18px cards, a press-to-scale button state and no chrome shadows. The accent stays forklift yellow and dark stays the default. Status text that used Tailwind's `emerald`/`amber` palette now uses the status tokens, fixing three light-mode contrast failures. No text falls below WCAG AA on the audited routes in either theme.
 - Repository `publish_methods` includes `cargo` for Cargo repositories.
+- Every Rust dependency is on its latest release, 14 direct upgrades within their current major versions (among them reqwest 0.13.5, rustls 0.23.45, aws-sdk-s3 1.149.0 and rmcp 3.4.1) and the lockfile refreshed. rmcp's renamed `ServerConfig` replaces the deprecated `ServerInfo` alias in forklift-mcp's server, with no behaviour change.
 
 ### Fixed
 
 - A group's Cargo `config.json` pointed `dl` at its first member, so every `.crate` download bypassed the group and reached only that member. Crates held by later members, such as the `crates-io` proxy behind `cargo-public`, answered `404`. `dl` now names the group.
+- A Cargo proxy of crates.io could not download any crate. It joined the download path onto the upstream index URL, but crates.io serves its index from `index.crates.io` and its crates from `static.crates.io`, so every `.crate` fetch answered `404` and every build pulling a crates.io dependency through forklift failed at the download step. The proxy now reads `dl` from the upstream `config.json` (cached for 15 minutes) and expands it the way cargo does, `{crate}`, `{version}`, `{prefix}`, `{lowerprefix}` and `{sha256-checksum}` included, with cargo's `/{crate}/{version}/download` suffix when there are no markers. A registry without a usable `config.json` keeps the previous behaviour. Upstream credentials are sent to the download host only when it is the index host.
 - `GET api/v1/crates` on a group, which has no trailing slash, was classified as a sparse-index entry and aggregated. It now fans out like any other Web API call.
 
 ### Security

@@ -1,6 +1,6 @@
 # forklift
 
-![Version: 0.13.1](https://img.shields.io/badge/Version-0.13.1-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.13.3](https://img.shields.io/badge/AppVersion-0.13.3-informational?style=flat-square)
+![Version: 0.13.2](https://img.shields.io/badge/Version-0.13.2-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.13.4](https://img.shields.io/badge/AppVersion-0.13.4-informational?style=flat-square)
 
 Lightweight Kubernetes-native artifact repository (Maven, npm, Cargo, Go, PyPI) with proxy caching and supply-chain controls (age policy, package approval, vulnerability scanning)
 
@@ -45,7 +45,7 @@ helm install forklift oci://ghcr.io/younsl/charts/forklift -f values.yaml
 Install a specific version:
 
 ```console
-helm install forklift oci://ghcr.io/younsl/charts/forklift --version 0.13.1
+helm install forklift oci://ghcr.io/younsl/charts/forklift --version 0.13.2
 ```
 
 ### Install from local chart
@@ -53,7 +53,7 @@ helm install forklift oci://ghcr.io/younsl/charts/forklift --version 0.13.1
 Download forklift chart and install from local directory:
 
 ```console
-helm pull oci://ghcr.io/younsl/charts/forklift --untar --version 0.13.1
+helm pull oci://ghcr.io/younsl/charts/forklift --untar --version 0.13.2
 helm install forklift ./forklift
 ```
 
