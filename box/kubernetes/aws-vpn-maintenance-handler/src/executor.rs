@@ -630,7 +630,7 @@ fn status_detail(t: &Tunnel) -> String {
 }
 
 #[cfg(test)]
-pub(crate) mod testing {
+pub mod testing {
     //! Scripted collaborators shared with the controller tests.
 
     use std::collections::VecDeque;
@@ -653,14 +653,6 @@ pub(crate) mod testing {
                 .map(|(l, m)| format!("[{l}] {m}"))
                 .collect::<Vec<_>>()
                 .join("\n")
-        }
-        pub fn levels(&self) -> Vec<String> {
-            self.lines
-                .lock()
-                .unwrap()
-                .iter()
-                .map(|(l, _)| l.clone())
-                .collect()
         }
     }
 
@@ -889,7 +881,7 @@ mod tests {
             "{}",
             rec.text()
         );
-        assert_eq!(api.replace_calls.lock().unwrap()[0].2, true);
+        assert!(api.replace_calls.lock().unwrap()[0].2);
 
         *api.replace_result.lock().unwrap() = Some(ApiError::Uncertain("timeout".into()));
         let rec = Recorded::default();
@@ -1111,7 +1103,7 @@ mod tests {
         let res = exec.run(req, &rec, shutdown).await;
         assert_eq!(res.outcome, Outcome::Aborted);
         assert!(
-            res.duration >= Duration::from_secs(7 * 60),
+            res.duration >= Duration::from_mins(7),
             "measured from the original start"
         );
         assert!(

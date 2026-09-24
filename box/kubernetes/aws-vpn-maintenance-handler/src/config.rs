@@ -452,7 +452,7 @@ fn prune_unset(value: serde_yaml::Value) -> serde_yaml::Value {
 }
 
 #[cfg(test)]
-pub(crate) fn test_env() -> Env {
+pub fn test_env() -> Env {
     Env {
         slack_bot_token: "xoxb-test".into(),
         slack_app_token: "xapp-test".into(),
@@ -464,7 +464,7 @@ pub(crate) fn test_env() -> Env {
 }
 
 #[cfg(test)]
-pub(crate) const MINIMAL_YAML: &str = r#"
+pub const MINIMAL_YAML: &str = r#"
 region: ap-northeast-2
 targets:
   tagFilters:

@@ -128,7 +128,7 @@ mod tests {
             (Duration::from_secs(60), "1m 00s"),
             (Duration::from_secs(3 * 60 + 7), "3m 07s"),
             (Duration::from_secs(3600), "1h 00m 00s"),
-            (Duration::from_secs(3600 + 5 * 60), "1h 05m 00s"),
+            (Duration::from_mins(65), "1h 05m 00s"),
             (Duration::from_secs(2 * 3600 + 34 * 60 + 5), "2h 34m 05s"),
         ] {
             assert_eq!(elapsed(input), want, "{input:?}");
@@ -147,9 +147,9 @@ mod tests {
         for (input, want) in [
             (Duration::ZERO, "0s"),
             (Duration::from_secs(10), "10s"),
-            (Duration::from_secs(5 * 60), "5m0s"),
-            (Duration::from_secs(90 * 60), "1h30m0s"),
-            (Duration::from_secs(168 * 3600), "168h0m0s"),
+            (Duration::from_mins(5), "5m0s"),
+            (Duration::from_mins(90), "1h30m0s"),
+            (Duration::from_hours(168), "168h0m0s"),
             (Duration::from_millis(500), "500ms"),
             (
                 Duration::from_micros(1500),

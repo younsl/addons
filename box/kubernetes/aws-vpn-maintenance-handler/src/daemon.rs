@@ -381,7 +381,6 @@ mod tests {
 
     #[test]
     fn gate_probe_and_approver_formatting() {
-        let cfg = cfg("");
         let mut access = Access {
             identity: "arn".into(),
             account: "1".into(),

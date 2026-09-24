@@ -280,8 +280,8 @@ mod tests {
         let w = window(
             "0 2 * * 2,3,4",
             "Asia/Seoul",
-            Duration::from_secs(3 * 3600),
-            Duration::from_secs(30 * 60),
+            Duration::from_hours(3),
+            Duration::from_mins(30),
         );
         // 2026-07-28 is a Tuesday.
         let (open, detail) = w.open(seoul(2026, 7, 28, 2, 0));
@@ -311,12 +311,12 @@ mod tests {
         let w = window(
             "0 2 * * *",
             "UTC",
-            Duration::from_secs(3 * 3600),
-            Duration::from_secs(30 * 60),
+            Duration::from_hours(3),
+            Duration::from_mins(30),
         );
         let t = Utc.with_ymd_and_hms(2026, 7, 28, 3, 0, 0).unwrap();
-        assert_eq!(w.remaining(t), Duration::from_secs(2 * 3600));
-        assert_eq!(w.start_budget(t), Duration::from_secs(90 * 60));
+        assert_eq!(w.remaining(t), Duration::from_hours(2));
+        assert_eq!(w.start_budget(t), Duration::from_mins(90));
         let late = Utc.with_ymd_and_hms(2026, 7, 28, 4, 45, 0).unwrap();
         assert_eq!(w.start_budget(late), Duration::ZERO);
         let closed = Utc.with_ymd_and_hms(2026, 7, 28, 12, 0, 0).unwrap();
@@ -346,7 +346,7 @@ mod tests {
         );
         let t = Utc.with_ymd_and_hms(2026, 7, 28, 3, 40, 0).unwrap();
         // Fired at 03:30; 50 minutes remain, not 20.
-        assert_eq!(w.remaining(t), Duration::from_secs(50 * 60));
+        assert_eq!(w.remaining(t), Duration::from_mins(50));
     }
 
     #[test]
@@ -354,8 +354,8 @@ mod tests {
         let w = window(
             "0 2 * * *",
             "Asia/Seoul",
-            Duration::from_secs(3 * 3600),
-            Duration::from_secs(30 * 60),
+            Duration::from_hours(3),
+            Duration::from_mins(30),
         );
         assert_eq!(
             w.to_string(),

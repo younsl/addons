@@ -259,7 +259,7 @@ mod tests {
 
     use super::*;
 
-    async fn client(server: &MockServer) -> Client {
+    fn client(server: &MockServer) -> Client {
         let mut headers = BTreeMap::new();
         headers.insert("X-Scope-OrgID".to_string(), "tenant".to_string());
         Client::new(ClientConfig {
@@ -303,14 +303,14 @@ mod tests {
             .respond_with(ResponseTemplate::new(200).set_body_json(vector(&["42.5"])))
             .mount(&server)
             .await;
-        let v = client(&server).await.query("up").await.unwrap();
+        let v = client(&server).query("up").await.unwrap();
         assert!((v - 42.5).abs() < f64::EPSILON);
     }
 
     #[tokio::test]
     async fn instant_query_handles_scalar_empty_and_ambiguous() {
         let server = MockServer::start().await;
-        let c = client(&server).await;
+        let c = client(&server);
 
         let scalar =
             json!({"status": "success", "data": {"resultType": "scalar", "result": [1.0, "1"]}});
@@ -369,7 +369,7 @@ mod tests {
     #[tokio::test]
     async fn transport_and_api_failures_are_reported() {
         let server = MockServer::start().await;
-        let c = client(&server).await;
+        let c = client(&server);
 
         let guard = Mock::given(method("POST"))
             .respond_with(ResponseTemplate::new(500).set_body_string("boom\n"))
@@ -409,7 +409,7 @@ mod tests {
     async fn range_query_decodes_samples_and_skips_nan() {
         let server = MockServer::start().await;
         let matrix = json!({"status": "success", "data": {"resultType": "matrix", "result": [
-            {"metric": {}, "values": [[1700000000.0, "1"], [1700000300.0, "NaN"], [1700000600.0, "3.5"]]}
+            {"metric": {}, "values": [[1_700_000_000.0, "1"], [1_700_000_300.0, "NaN"], [1_700_000_600.0, "3.5"]]}
         ]}});
         Mock::given(method("POST"))
             .and(path("/api/v1/query_range"))
@@ -419,7 +419,6 @@ mod tests {
             .mount(&server)
             .await;
         let samples = client(&server)
-            .await
             .query_range(
                 "q",
                 DateTime::from_timestamp(1_699_000_000, 0).unwrap(),
@@ -435,8 +434,6 @@ mod tests {
 
     #[tokio::test]
     async fn range_query_rejects_bad_shapes() {
-        let server = MockServer::start().await;
-        let c = client(&server).await;
         async fn range(c: &Client) -> Result<Vec<Sample>, QueryError> {
             c.query_range(
                 "q",
@@ -446,6 +443,9 @@ mod tests {
             )
             .await
         }
+
+        let server = MockServer::start().await;
+        let c = client(&server);
 
         let guard = Mock::given(method("POST"))
             .respond_with(ResponseTemplate::new(200).set_body_json(vector(&["1"])))

@@ -169,7 +169,7 @@ mod tests {
             last_status_change: Some(now() - chrono::TimeDelta::minutes(7)),
             ..Tunnel::default()
         };
-        assert_eq!(t.stable_for(now()), Duration::from_secs(7 * 60));
+        assert_eq!(t.stable_for(now()), Duration::from_mins(7));
         assert_eq!(Tunnel::default().stable_for(now()), Duration::ZERO);
         let future = Tunnel {
             last_status_change: Some(now() + chrono::TimeDelta::minutes(1)),
@@ -182,7 +182,7 @@ mod tests {
             auto_applied_after: Some(now() + chrono::TimeDelta::hours(2)),
             last_applied: None,
         };
-        assert_eq!(m.deadline_in(now()), Duration::from_secs(2 * 3600));
+        assert_eq!(m.deadline_in(now()), Duration::from_hours(2));
         assert_eq!(Maintenance::default().deadline_in(now()), Duration::ZERO);
         let past = Maintenance {
             auto_applied_after: Some(now() - chrono::TimeDelta::hours(2)),

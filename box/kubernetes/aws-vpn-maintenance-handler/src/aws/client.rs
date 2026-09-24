@@ -242,7 +242,7 @@ impl StsApi for aws_sdk_sts::Client {
 }
 
 #[cfg(test)]
-pub(crate) mod fake {
+pub mod fake {
     //! In-memory API surfaces for tests.
 
     use std::sync::Mutex;
@@ -274,7 +274,8 @@ pub(crate) mod fake {
             ids: Vec<String>,
         ) -> Result<DescribeVpnConnectionsOutput, ApiError> {
             *self.describe_calls.lock().unwrap() += 1;
-            if let Some(err) = self.describe_error.lock().unwrap().clone() {
+            let err = self.describe_error.lock().unwrap().clone();
+            if let Some(err) = err {
                 return Err(ApiError::Rejected(err));
             }
             let conns: Vec<VpnConnection> = self
@@ -300,7 +301,8 @@ pub(crate) mod fake {
             connection_id: &str,
             outside_ip: &str,
         ) -> Result<GetVpnTunnelReplacementStatusOutput, ApiError> {
-            if let Some(err) = self.status_error.lock().unwrap().clone() {
+            let err = self.status_error.lock().unwrap().clone();
+            if let Some(err) = err {
                 return Err(ApiError::Rejected(err));
             }
             let details = self

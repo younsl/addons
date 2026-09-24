@@ -419,12 +419,20 @@ mod tests {
         assert_eq!(terms.lock().unwrap().len(), 2);
 
         // Another candidate steals the lease: the term ends too.
-        {
-            let mut lease = api.lease.lock().unwrap();
-            let spec = lease.as_mut().unwrap().spec.as_mut().unwrap();
+        let steal = |spec: &mut LeaseSpec| {
             spec.holder_identity = Some("pod-z".into());
             spec.renew_time = Some(micro(Utc::now() + chrono::TimeDelta::hours(1)));
-        }
+        };
+        steal(
+            api.lease
+                .lock()
+                .unwrap()
+                .as_mut()
+                .unwrap()
+                .spec
+                .as_mut()
+                .unwrap(),
+        );
         sleep(Duration::from_millis(100)).await;
         assert!(terms.lock().unwrap()[1].is_cancelled());
         shutdown.cancel();

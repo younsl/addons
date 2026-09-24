@@ -459,7 +459,7 @@ fn peer_status_message(t: &Tunnel) -> &str {
 }
 
 #[cfg(test)]
-pub(crate) mod fixtures {
+pub mod fixtures {
     use super::*;
 
     pub const NOW_UNIX: i64 = 1_785_000_000;
@@ -523,9 +523,9 @@ pub(crate) mod fixtures {
         Thresholds {
             peer_min_stable_for: Duration::from_secs(300),
             peer_min_accepted_routes: 1,
-            per_connection_cooldown: Duration::from_secs(24 * 3600),
+            per_connection_cooldown: Duration::from_hours(24),
             chain_sibling_tunnel: true,
-            escalate_before: Duration::from_secs(168 * 3600),
+            escalate_before: Duration::from_hours(168),
         }
     }
 
@@ -608,8 +608,9 @@ mod tests {
 
     #[test]
     fn peer_checks_block_in_order() {
+        type Mutate = Box<dyn Fn(&mut Connection)>;
         let base = connection("vpn-1");
-        let cases: Vec<(Box<dyn Fn(&mut Connection)>, Reason, &str)> = vec![
+        let cases: Vec<(Mutate, Reason, &str)> = vec![
             (
                 Box::new(|c| c.state = "pending".into()),
                 Reason::ConnectionUnavailable,

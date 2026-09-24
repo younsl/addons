@@ -234,7 +234,7 @@ mod tests {
             "{text}"
         );
         p.record(1, false);
-        let (level, text) = p.report(Duration::from_secs(1200)).unwrap();
+        let (level, text) = p.report(Duration::from_mins(20)).unwrap();
         assert_eq!(level, Level::Warn);
         assert!(text.contains("but 1 did not end healthy"), "{text}");
 
@@ -242,7 +242,7 @@ mod tests {
         p.start(2);
         p.record(0, true);
         p.record(1, true);
-        let (level, text) = p.report(Duration::from_secs(1200)).unwrap();
+        let (level, text) = p.report(Duration::from_mins(20)).unwrap();
         assert_eq!(level, Level::Success);
         assert!(
             text.starts_with("*Run complete.* All 2 tunnel(s)"),

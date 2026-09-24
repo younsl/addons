@@ -437,8 +437,8 @@ impl ConfigMapApi for KubeConfigMaps {
 }
 
 #[cfg(test)]
-pub(crate) mod fake {
-    //! An in-memory ConfigMap with optimistic concurrency.
+pub mod fake {
+    //! An in-memory `ConfigMap` with optimistic concurrency.
 
     use std::sync::{Arc, Mutex};
 
@@ -490,14 +490,16 @@ pub(crate) mod fake {
     #[async_trait]
     impl ConfigMapApi for MemoryConfigMap {
         async fn get(&self) -> Result<Option<ConfigMap>, String> {
-            if let Some(err) = self.fail_get.lock().unwrap().clone() {
+            let err = self.fail_get.lock().unwrap().clone();
+            if let Some(err) = err {
                 return Err(err);
             }
             Ok(self.cm.lock().unwrap().clone())
         }
 
         async fn create(&self, mut cm: ConfigMap) -> Result<ConfigMap, String> {
-            if let Some(err) = self.fail_write.lock().unwrap().clone() {
+            let err = self.fail_write.lock().unwrap().clone();
+            if let Some(err) = err {
                 return Err(err);
             }
             *self.writes.lock().unwrap() += 1;
@@ -507,12 +509,19 @@ pub(crate) mod fake {
         }
 
         async fn update(&self, mut cm: ConfigMap) -> Result<ConfigMap, (bool, String)> {
-            if let Some(err) = self.fail_write.lock().unwrap().clone() {
+            let err = self.fail_write.lock().unwrap().clone();
+            if let Some(err) = err {
                 return Err((false, err));
             }
-            let mut conflicts = self.conflicts.lock().unwrap();
-            if *conflicts > 0 {
-                *conflicts -= 1;
+            let conflicted = {
+                let mut conflicts = self.conflicts.lock().unwrap();
+                let hit = *conflicts > 0;
+                if hit {
+                    *conflicts -= 1;
+                }
+                hit
+            };
+            if conflicted {
                 return Err((true, "the object has been modified".into()));
             }
             *self.writes.lock().unwrap() += 1;

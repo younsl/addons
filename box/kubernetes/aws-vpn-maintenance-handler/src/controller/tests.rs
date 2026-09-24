@@ -1,5 +1,5 @@
 //! Controller tests over in-memory collaborators: a scripted AWS, a recording
-//! Slack, an in-memory ConfigMap, and a scripted replacer.
+//! Slack, an in-memory `ConfigMap`, and a scripted replacer.
 
 use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, Mutex};
@@ -51,13 +51,15 @@ impl FakeVpn {
 #[async_trait]
 impl VpnApi for FakeVpn {
     async fn discover(&self, _input: &DiscoverInput) -> Result<Vec<Connection>, ApiError> {
-        if let Some(err) = self.discover_error.lock().unwrap().clone() {
+        let err = self.discover_error.lock().unwrap().clone();
+        if let Some(err) = err {
             return Err(ApiError::Rejected(err));
         }
         Ok(self.connections.lock().unwrap().clone())
     }
     async fn describe(&self, connection_id: &str) -> Result<Connection, ApiError> {
-        if let Some(err) = self.describe_error.lock().unwrap().clone() {
+        let err = self.describe_error.lock().unwrap().clone();
+        if let Some(err) = err {
             return Err(ApiError::Uncertain(err));
         }
         self.connections
@@ -69,7 +71,8 @@ impl VpnApi for FakeVpn {
             .ok_or_else(|| ApiError::Rejected("not found".into()))
     }
     async fn statuses(&self, conn: &Connection) -> Result<Vec<TunnelStatus>, ApiError> {
-        if let Some(err) = self.status_error.lock().unwrap().clone() {
+        let err = self.status_error.lock().unwrap().clone();
+        if let Some(err) = err {
             return Err(ApiError::Rejected(err));
         }
         Ok(self
@@ -935,15 +938,14 @@ async fn resume_waiting_record_continues_the_chain() {
             queue: Vec::new(),
             done: 1,
         }),
-        connections: [(
+        connections: std::iter::once((
             "vpn-1".to_string(),
             ConnectionRecord {
                 last_replacement_at: Some(replaced_at),
                 last_tunnel_ip: "1.1.1.1".into(),
                 last_result: "succeeded".into(),
             },
-        )]
-        .into_iter()
+        ))
         .collect(),
         ..Snapshot::default()
     });
@@ -1116,15 +1118,14 @@ async fn cooldown_after_a_replacement_blocks_a_repeat_but_chains_the_sibling() {
     let (conn, m) = pending_connection("vpn-1", true, true);
     h.vpn.set(conn, &m);
     h.cm.seed(&Snapshot {
-        connections: [(
+        connections: std::iter::once((
             "vpn-1".to_string(),
             ConnectionRecord {
                 last_replacement_at: Some(Utc::now() - chrono::TimeDelta::minutes(30)),
                 last_tunnel_ip: "1.1.1.1".into(),
                 last_result: "succeeded".into(),
             },
-        )]
-        .into_iter()
+        ))
         .collect(),
         ..Snapshot::default()
     });
@@ -1173,7 +1174,7 @@ fn history_and_summaries() {
     assert!(!history["b"].last_succeeded);
     let cfg = test_config("");
     assert_eq!(tag_filter_summary(&cfg), "managed=true");
-    let mut any = cfg.clone();
+    let mut any = cfg;
     any.targets.tag_filters[0].value.clear();
     assert_eq!(tag_filter_summary(&any), "managed=<any>");
     assert_eq!(up_down(true), "UP");

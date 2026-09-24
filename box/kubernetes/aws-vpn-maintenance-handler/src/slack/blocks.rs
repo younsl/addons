@@ -366,7 +366,7 @@ pub fn human_duration(d: Duration) -> String {
 }
 
 #[cfg(test)]
-pub(crate) fn text_of(blocks: &[Value]) -> String {
+pub fn text_of(blocks: &[Value]) -> String {
     blocks
         .iter()
         .map(Value::to_string)
@@ -393,7 +393,7 @@ mod tests {
             peer_ip: "2.2.2.2".into(),
             peer_routes: 4,
             peer_stable_for: Duration::from_secs(3 * 3600 + 20),
-            deadline_in: Duration::from_secs(50 * 3600),
+            deadline_in: Duration::from_hours(50),
             deadline: Some(DateTime::from_timestamp(1_785_000_000, 0).unwrap()),
             approval_expiry: Duration::from_secs(3600),
             window: "\"0 2 * * *\" for 3h0m0s (UTC), min remaining 30m0s".into(),
@@ -519,7 +519,7 @@ mod tests {
         assert_eq!(human_duration(Duration::ZERO), "0s");
         assert_eq!(human_duration(Duration::from_millis(45_400)), "45s");
         assert_eq!(human_duration(Duration::from_secs(90 * 60 + 40)), "1h31m0s");
-        assert_eq!(human_duration(Duration::from_secs(48 * 3600)), "2d");
-        assert_eq!(human_duration(Duration::from_secs(50 * 3600 + 60)), "2d2h");
+        assert_eq!(human_duration(Duration::from_hours(48)), "2d");
+        assert_eq!(human_duration(Duration::from_mins(3001)), "2d2h");
     }
 }
