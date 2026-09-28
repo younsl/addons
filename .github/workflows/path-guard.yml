@@ -1,0 +1,53 @@
+name: Path Guard
+
+run-name: "🛡️ Path guard for #${{ github.event.pull_request.number }}"
+
+# Keeps scoped collaborators inside the paths they own. The main ruleset
+# requires this check, so a PR that strays outside its author's scope cannot
+# merge. pull_request_target runs the definition on the base branch, so a PR
+# cannot rewrite the guard that judges it. The PR code is never checked out,
+# and the changed file list comes from the API.
+on:
+  pull_request_target:
+    branches: [main]
+    types: [opened, synchronize, reopened, edited]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  path-guard:
+    runs-on: ubuntu-26.04
+    steps:
+      - name: Check changed paths against the author's scope
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          AUTHOR: ${{ github.event.pull_request.user.login }}
+        run: |
+          set -euo pipefail
+
+          # One line per scoped author: "<login> <path prefix>".
+          # Authors not listed here are not restricted.
+          scopes='ByeongGi box/kubernetes/forklift/'
+
+          prefix=$(awk -v a="${AUTHOR}" 'tolower($1) == tolower(a) { print $2 }' <<<"${scopes}")
+          if [[ -z "${prefix}" ]]; then
+            echo "${AUTHOR} has no path scope, nothing to check"
+            exit 0
+          fi
+
+          # A rename is checked on both its old and new path.
+          outside=$(gh api --paginate "repos/${REPO}/pulls/${PR}/files" \
+            --jq '.[] | .filename, (.previous_filename // empty)' \
+            | grep -v "^${prefix}" || true)
+
+          if [[ -n "${outside}" ]]; then
+            echo "::error::${AUTHOR} may only change ${prefix}"
+            echo "Files outside the scope:"
+            echo "${outside}"
+            exit 1
+          fi
+          echo "All changed files are under ${prefix}"
