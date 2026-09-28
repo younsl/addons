@@ -86,7 +86,7 @@ fn agent_clients(cfg: &Config, metrics: &Arc<Metrics>) -> (Arc<a2a::Client>, Arc
         cfg.kagent_poll_interval,
         metrics.clone(),
     );
-    let chat = Arc::new(alert.with_user_id(&cfg.chat_user_id));
+    let chat = Arc::new(alert.acting_as(&cfg.chat_user_id));
     (Arc::new(alert), chat)
 }
 
