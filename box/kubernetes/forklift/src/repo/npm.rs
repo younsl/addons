@@ -31,6 +31,7 @@ use http::{HeaderValue, Method, StatusCode};
 use serde_json::value::RawValue;
 use tokio::io::AsyncReadExt;
 
+use crate::config::format_byte_size;
 use crate::meta::{self, Artifact};
 use crate::repoconfig::{ACTION_BLOCK, AgePolicyConfig};
 use crate::server::http_error;
@@ -575,13 +576,25 @@ impl Manager {
         // A publish document embeds whole tarballs as base64, so parsing it is
         // the most memory-expensive request the npm handler serves; the rewrite
         // gate bounds how many are in flight.
+        let max_file = self.max_upload_file_bytes();
+        let limit = npm_publish_doc_limit(max_file);
+        let declared = super::header_str(&parts.headers, "content-length").parse::<i64>();
+        if declared.is_ok_and(|n| n > limit) {
+            let (limit, max_file) = (format_byte_size(limit), format_byte_size(max_file));
+            return http_error(
+                StatusCode::PAYLOAD_TOO_LARGE,
+                &format!("publish document exceeds the {limit} limit for a {max_file} tarball"),
+            );
+        }
         let Some(slot) = self.engine.acquire_rewrite(&res.repo.name).await else {
             return http_error(StatusCode::SERVICE_UNAVAILABLE, "shutting down");
         };
         let reader = super::request_body(body);
-        let Some(mut doc) =
-            decode_json_stream::<serde_json::Map<String, serde_json::Value>, _>(reader, 256 << 20)
-                .await
+        let Some(mut doc) = decode_json_stream::<serde_json::Map<String, serde_json::Value>, _>(
+            reader,
+            limit as u64,
+        )
+        .await
         else {
             drop(slot);
             return http_error(StatusCode::BAD_REQUEST, "invalid publish document");
@@ -664,6 +677,13 @@ fn write_packument(parts: &Parts, body: Bytes) -> Response {
     resp.headers_mut()
         .insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
     resp
+}
+
+/// Bounds an `npm publish` document: the base64 of a `uiUpload.maxFileBytes`
+/// tarball plus the packument metadata around it (README included). The whole
+/// document is held in memory, so raising the per-file limit raises this too.
+fn npm_publish_doc_limit(max_file_bytes: i64) -> i64 {
+    (max_file_bytes.max(0) + 2) / 3 * 4 + MAX_METADATA_BYTES
 }
 
 pub(crate) fn base64_decode_stream(data: &str) -> Result<Vec<u8>, ()> {

@@ -77,9 +77,7 @@ pub use oci::oci_manifest_path_public as oci_manifest_path;
 pub use oci_detail::OCIArtifactDetail;
 pub use oci_images::OCITagInfo;
 pub use seed::{DEFAULT_REPOSITORIES, DefaultRepo, is_default_repo, seed_defaults};
-pub use upload::{
-    MAX_UI_UPLOAD_BYTES, UploadError, UploadPlan, UploadResult, UploadValidationError,
-};
+pub use upload::{UploadError, UploadPlan, UploadResult, UploadValidationError};
 pub use upstreamurl::upstream_package_url;
 pub use vulnscan::osv_ecosystem;
 pub use vulnscan::{ScanRatio, vuln_coordinate};

@@ -6,13 +6,14 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use axum::body::Body;
-use axum::extract::{FromRequest, Multipart, Request};
+use axum::extract::multipart::MultipartError;
+use axum::extract::{DefaultBodyLimit, FromRequest, Multipart, Request};
 use base64::Engine as _;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sha1::Digest as _;
 
-use crate::config::UploadConfig;
+use crate::config::{UploadConfig, format_byte_size};
 use crate::meta::{
     self, Artifact, ArtifactPublication, ArtifactUploadRequest, Repository, Store,
     UPLOAD_COMMITTED, UPLOAD_CONFLICT, UPLOAD_FAILED, UPLOAD_RECEIVING, UploadRequestKey,
@@ -182,6 +183,29 @@ pub(crate) fn upload_problem(
     })
 }
 
+/// Maps a failed multipart read: reaching the body limit is 413, anything else
+/// (a malformed body, or one that ends before its closing boundary) is 400.
+/// A failed read is never taken as the end of a part, which would commit the
+/// bytes read so far as a complete artifact.
+pub(crate) fn multipart_read_problem(err: &MultipartError, limit: i64) -> Box<UploadProblem> {
+    if err.status() == http::StatusCode::PAYLOAD_TOO_LARGE {
+        let limit = format_byte_size(limit);
+        upload_problem(
+            413,
+            "request_too_large",
+            "Upload too large",
+            &format!("The upload exceeds the {limit} request limit"),
+        )
+    } else {
+        upload_problem(
+            400,
+            "multipart_invalid",
+            "Invalid multipart upload",
+            "The multipart body is malformed or ended early",
+        )
+    }
+}
+
 /// What a format publisher returns.
 pub(crate) type PublishResult = Result<ArtifactUploadResult, Box<UploadProblem>>;
 
@@ -325,8 +349,16 @@ impl Uploader {
         )
     }
 
+    /// The whole-request bound derived from `uiUpload.maxBatchBytes`, applied
+    /// to every multipart body the uploader parses.
     pub fn max_request_bytes(&self) -> i64 {
-        self.cfg.max_batch_bytes + self.cfg.max_manifest_bytes + self.cfg.max_field_bytes
+        self.cfg.max_request_bytes()
+    }
+
+    /// [`Self::max_request_bytes`] as an extractor limit, for requests the
+    /// uploader builds itself or receives without a router-level limit.
+    pub(crate) fn body_limit(&self) -> DefaultBodyLimit {
+        DefaultBodyLimit::max(self.max_request_bytes().max(0) as usize)
     }
 
     /// Streams and publishes one request. The `replay` flag is true only for a
@@ -704,12 +736,17 @@ impl Uploader {
         {
             return Err(multipart_invalid());
         }
-        let request = Request::builder()
+        let mut request = Request::builder()
             .method(http::Method::POST)
             .uri("/")
             .header(http::header::CONTENT_TYPE, content_type)
             .body(body)
             .map_err(|_| multipart_invalid())?;
+        // A request built here carries no extensions, so without an explicit
+        // limit axum's 2 MiB extractor default would apply.
+        self.body_limit().apply(&mut request);
+        let read_problem =
+            |err: MultipartError| multipart_read_problem(&err, self.max_request_bytes());
         let mut multipart = Multipart::from_request(request, &())
             .await
             .map_err(|_| multipart_invalid())?;
@@ -722,7 +759,7 @@ impl Uploader {
                 "The first multipart part must be the manifest field",
             )
         };
-        let Ok(Some(mut part)) = multipart.next_field().await else {
+        let Some(mut part) = multipart.next_field().await.map_err(read_problem)? else {
             return Err(manifest_first());
         };
         if part.name() != Some("manifest") || part.file_name().is_some() {
@@ -730,12 +767,14 @@ impl Uploader {
         }
         let manifest_bytes = read_at_most(&mut part, self.cfg.max_manifest_bytes)
             .await
-            .map_err(|_| {
+            .map_err(read_problem)?
+            .ok_or_else(|| {
+                let limit = format_byte_size(self.cfg.max_manifest_bytes);
                 upload_problem(
                     413,
                     "manifest_too_large",
                     "Manifest too large",
-                    "The upload manifest exceeds 64 KiB",
+                    &format!("The upload manifest exceeds {limit}"),
                 )
             })?;
         // `Multipart::next_field` refuses to advance while the previous field is still alive,
@@ -788,7 +827,7 @@ impl Uploader {
                     "File parts must exactly follow manifest.assets order",
                 )
             };
-            let Ok(Some(mut next)) = multipart.next_field().await else {
+            let Some(mut next) = multipart.next_field().await.map_err(read_problem)? else {
                 return Err(asset_order_invalid());
             };
             let filename = next.file_name().unwrap_or("").to_string();
@@ -813,29 +852,28 @@ impl Uploader {
             let storage_unavailable = |detail: &str| {
                 upload_problem(503, "storage_unavailable", "Upload storage failed", detail)
             };
-            let (digest, size, sha1, sha512) = self
-                .stage_asset(&mut next, limit)
-                .await
-                .map_err(|_| storage_unavailable("The artifact bytes could not be staged"))?;
+            let (digest, size, sha1, sha512) = self.stage_asset(&mut next, limit).await?;
             self.store
                 .ensure_blob(&digest, size)
                 .await
                 .map_err(|_| storage_unavailable("The staged artifact could not be recorded"))?;
             if size > limit {
+                let limit = format_byte_size(limit);
                 return Err(upload_problem(
                     413,
                     "file_too_large",
                     "Artifact too large",
-                    "An artifact exceeds the configured per-file limit",
+                    &format!("An artifact exceeds the {limit} per-file limit"),
                 ));
             }
             total += size;
             if total > self.cfg.max_batch_bytes {
+                let limit = format_byte_size(self.cfg.max_batch_bytes);
                 return Err(upload_problem(
                     413,
                     "batch_too_large",
                     "Upload too large",
-                    "The upload exceeds the configured aggregate limit",
+                    &format!("The upload exceeds the {limit} aggregate limit"),
                 ));
             }
             staged.push(StagedUploadAsset {
@@ -847,7 +885,12 @@ impl Uploader {
                 size,
             });
         }
-        if multipart.next_field().await.ok().flatten().is_some() {
+        if multipart
+            .next_field()
+            .await
+            .map_err(read_problem)?
+            .is_some()
+        {
             return Err(upload_problem(
                 400,
                 "multipart_trailing_part",
@@ -869,16 +912,25 @@ impl Uploader {
         &self,
         field: &mut axum::extract::multipart::Field<'_>,
         limit: i64,
-    ) -> Result<(String, i64, String, String), std::io::Error> {
+    ) -> Result<(String, i64, String, String), Box<UploadProblem>> {
         let (mut sink, source) = tokio::io::duplex(64 * 1024);
         let limited = tokio::io::AsyncReadExt::take(source, (limit + 1) as u64);
         let store_blob = self.engine.blobs.put(Box::pin(limited));
         let mut sha1_hash = sha1::Sha1::new();
         let mut sha512_hash = sha2::Sha512::new();
+        let mut read_failure = None;
         let pump = async {
             use tokio::io::AsyncWriteExt as _;
             let mut written = 0i64;
-            while let Ok(Some(chunk)) = field.chunk().await {
+            loop {
+                let chunk = match field.chunk().await {
+                    Ok(Some(chunk)) => chunk,
+                    Ok(None) => break,
+                    Err(err) => {
+                        read_failure = Some(err);
+                        break;
+                    }
+                };
                 if written > limit {
                     break;
                 }
@@ -892,7 +944,22 @@ impl Uploader {
             let _ = sink.shutdown().await;
         };
         let (stored, ()) = tokio::join!(store_blob, pump);
-        let (digest, size) = stored.map_err(|e| std::io::Error::other(e.to_string()))?;
+        let stored = stored.map_err(|_| {
+            upload_problem(
+                503,
+                "storage_unavailable",
+                "Upload storage failed",
+                "The artifact bytes could not be staged",
+            )
+        });
+        if let Some(err) = read_failure {
+            // The partial blob is recorded so the sweeper reclaims it.
+            if let Ok((digest, size)) = &stored {
+                self.engine.abandon_blob(digest, *size).await;
+            }
+            return Err(multipart_read_problem(&err, self.max_request_bytes()));
+        }
+        let (digest, size) = stored?;
         Ok((
             digest,
             size,
@@ -971,19 +1038,19 @@ pub(crate) fn safe_upload_filename(filename: &str) -> bool {
         .any(|r| r == '\0' || (r as u32) < 0x20 || r as u32 == 0x7f)
 }
 
-/// Reads a multipart field whole, refusing anything over `limit`.
+/// Reads a multipart field whole; `None` when it exceeds `limit`.
 async fn read_at_most(
     field: &mut axum::extract::multipart::Field<'_>,
     limit: i64,
-) -> Result<Vec<u8>, ()> {
+) -> Result<Option<Vec<u8>>, MultipartError> {
     let mut out = Vec::new();
-    while let Ok(Some(chunk)) = field.chunk().await {
+    while let Some(chunk) = field.chunk().await? {
         out.extend_from_slice(&chunk);
         if out.len() as i64 > limit {
-            return Err(());
+            return Ok(None);
         }
     }
-    Ok(out)
+    Ok(Some(out))
 }
 
 pub(crate) fn random_upload_id() -> Option<String> {
@@ -1770,6 +1837,177 @@ pub(crate) mod tests {
         let value = blob_bytes(&h.uploader, &packument.blob_sha256).await;
         let document: serde_json::Value = serde_json::from_slice(&value).expect("decode packument");
         assert_eq!(document["dist-tags"]["next"], "2.0.0");
+    }
+
+    /// An npm tarball carrying `noise` random bytes, so the gzip stays about
+    /// that large.
+    fn large_npm_tarball(name: &str, version: &str, noise: usize) -> Vec<u8> {
+        let mut noise = vec![0u8; noise];
+        rand::fill(noise.as_mut_slice());
+        let encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+        let mut builder = tar::Builder::new(encoder);
+        let package_json = format!(r#"{{"name":"{name}","version":"{version}"}}"#);
+        for (path, value) in [
+            ("package/package.json", package_json.as_bytes()),
+            ("package/noise.bin", noise.as_slice()),
+        ] {
+            let mut header = tar::Header::new_gnu();
+            header.set_path(path).expect("tar path");
+            header.set_size(value.len() as u64);
+            header.set_mode(0o644);
+            header.set_entry_type(tar::EntryType::Regular);
+            header.set_cksum();
+            builder.append(&header, value).expect("tar entry");
+        }
+        builder
+            .into_inner()
+            .expect("tar finish")
+            .finish()
+            .expect("gzip finish")
+    }
+
+    fn npm_body_with_tarball(tarball: Vec<u8>) -> (String, Vec<u8>) {
+        let manifest = ArtifactUploadManifest {
+            schema_version: 1,
+            format: meta::FORMAT_NPM.to_string(),
+            assets: vec![ArtifactUploadAsset {
+                part: "asset0".to_string(),
+                ..Default::default()
+            }],
+            npm: Some(NPMUploadManifest {
+                dist_tag: "latest".to_string(),
+            }),
+            ..Default::default()
+        };
+        multipart_body(vec![
+            Part::Field(
+                "manifest",
+                serde_json::to_string(&manifest).expect("manifest json"),
+            ),
+            Part::File("asset0", "package.tgz".to_string(), tarball),
+        ])
+    }
+
+    #[tokio::test]
+    async fn npm_upload_over_two_mib_is_stored_whole() {
+        let h = new_upload_test_harness().await;
+        let repository = hosted_repo(&h.store, "npm-local", meta::FORMAT_NPM).await;
+        let tarball = large_npm_tarball("big-widget", "1.0.0", 3 << 20);
+        let (content_type, body) = npm_body_with_tarball(tarball.clone());
+        let outcome = receive(
+            &h.uploader,
+            &repository,
+            "npm-large-key-0000000001",
+            &content_type,
+            body,
+        )
+        .await;
+        assert!(outcome.problem.is_none(), "{:?}", outcome.problem);
+        let artifact = h
+            .store
+            .get_artifact(repository.id, "big-widget/-/big-widget-1.0.0.tgz")
+            .await
+            .expect("tarball");
+        assert_eq!(artifact.size, tarball.len() as i64);
+    }
+
+    #[tokio::test]
+    async fn npm_native_publish_over_two_mib_is_stored_whole() {
+        let h = new_upload_test_harness().await;
+        let repository = hosted_repo(&h.store, "npm-local", meta::FORMAT_NPM).await;
+        let tarball = large_npm_tarball("big-widget", "1.0.0", 3 << 20);
+        let doc = serde_json::json!({
+            "name": "big-widget",
+            "dist-tags": {"latest": "1.0.0"},
+            "_attachments": {
+                "big-widget-1.0.0.tgz": {
+                    "data": base64::engine::general_purpose::STANDARD.encode(&tarball),
+                }
+            }
+        });
+        let response = native_manager(&h)
+            .npm_publish(
+                native_request_parts(http::Method::PUT, "/npm/npm-local/big-widget", ""),
+                Resolved {
+                    repo: repository.clone(),
+                    cfg: crate::repoconfig::Config::default(),
+                    path: "big-widget".to_string(),
+                },
+                Body::from(serde_json::to_vec(&doc).expect("publish document")),
+            )
+            .await;
+        assert_eq!(response.status(), http::StatusCode::CREATED);
+        let artifact = h
+            .store
+            .get_artifact(repository.id, "big-widget/-/big-widget-1.0.0.tgz")
+            .await
+            .expect("tarball");
+        assert_eq!(artifact.size, tarball.len() as i64);
+    }
+
+    /// A body that ends mid-file (a dropped connection, or an abandoned
+    /// native-publish pipe) is rejected rather than committed truncated.
+    #[tokio::test]
+    async fn truncated_multipart_body_is_rejected_without_commit() {
+        let h = new_upload_test_harness().await;
+        let repository = hosted_repo(&h.store, "npm-local", meta::FORMAT_NPM).await;
+        let (content_type, mut body) =
+            npm_body_with_tarball(large_npm_tarball("cut-widget", "1.0.0", 3 << 20));
+        body.truncate(body.len() / 2);
+        let outcome = receive(
+            &h.uploader,
+            &repository,
+            "npm-truncated-key-00000001",
+            &content_type,
+            body,
+        )
+        .await;
+        let problem = outcome.problem.expect("truncated body must fail");
+        assert_eq!(
+            (problem.status, problem.code.as_str()),
+            (400, "multipart_invalid")
+        );
+        assert!(matches!(
+            h.store
+                .get_artifact(repository.id, "cut-widget/-/cut-widget-1.0.0.tgz")
+                .await,
+            Err(meta::Error::NotFound)
+        ));
+    }
+
+    #[tokio::test]
+    async fn per_file_limit_rejection_names_the_configured_limit() {
+        let h = new_upload_test_harness().await;
+        let repository = hosted_repo(&h.store, "npm-local", meta::FORMAT_NPM).await;
+        let uploader = Uploader::new(
+            Arc::clone(&h.uploader.engine),
+            UploadConfig {
+                max_file_bytes: 1 << 20,
+                max_batch_bytes: 1 << 20,
+                ..h.uploader.cfg.clone()
+            },
+        );
+        // Over the 1 MiB per-file limit but inside the ~2 MiB request limit, so
+        // the per-file check is the one that fires.
+        let (content_type, body) =
+            npm_body_with_tarball(large_npm_tarball("big-widget", "1.0.0", 3 << 19));
+        let outcome = receive(
+            &uploader,
+            &repository,
+            "npm-limit-key-000000000001",
+            &content_type,
+            body,
+        )
+        .await;
+        let problem = outcome.problem.expect("oversized file must fail");
+        assert_eq!(
+            (problem.status, problem.code.as_str()),
+            (413, "file_too_large")
+        );
+        assert_eq!(
+            problem.detail,
+            "An artifact exceeds the 1MiB per-file limit"
+        );
     }
 
     #[tokio::test]

@@ -7,15 +7,11 @@ use http::request::Parts;
 use serde::Serialize;
 use tokio::io::AsyncRead;
 
+use crate::config::{DEFAULT_UI_UPLOAD_MAX_FILE_BYTES, format_byte_size};
 use crate::meta::{self, Repository};
 use crate::repoconfig::{self, Config, MODE_AUDIT};
 
 use super::{Kind, Manager, username_from_context};
-
-/// Bounds a single browser upload. Keeping the limit aligned with the streaming
-/// PyPI endpoint makes behavior predictable across upload surfaces and prevents
-/// an accidental multi-gigabyte browser request.
-pub const MAX_UI_UPLOAD_BYTES: i64 = 256 << 20;
 
 /// The server-authoritative result of browser-upload preflight.
 /// [`Manager::upload_hosted`] repeats the same validation so preflight cannot be
@@ -69,6 +65,15 @@ fn upload_error(status: StatusCode, message: impl Into<String>) -> UploadError {
 }
 
 impl Manager {
+    /// The per-file upload limit, `uiUpload.maxFileBytes`. Every upload surface
+    /// (browser, npm, PyPI, cargo) reads it here so one setting bounds them all.
+    pub(crate) fn max_upload_file_bytes(&self) -> i64 {
+        self.uploader
+            .read()
+            .as_ref()
+            .map_or(DEFAULT_UI_UPLOAD_MAX_FILE_BYTES, |u| u.cfg.max_file_bytes)
+    }
+
     /// Performs the metadata-only preflight used by the UI.
     pub async fn validate_hosted_upload(
         &self,
@@ -96,10 +101,12 @@ impl Manager {
                 "file must not be empty",
             ));
         }
-        if size > MAX_UI_UPLOAD_BYTES {
+        let max_file = self.max_upload_file_bytes();
+        if size > max_file {
+            let limit = format_byte_size(max_file);
             return Err(upload_error(
                 StatusCode::PAYLOAD_TOO_LARGE,
-                "file exceeds the 256 MiB upload limit",
+                format!("file exceeds the {limit} upload limit"),
             ));
         }
 
@@ -358,7 +365,7 @@ pub(crate) mod tests {
     use crate::meta;
     use crate::repoconfig;
 
-    use crate::repo::upload::MAX_UI_UPLOAD_BYTES;
+    use crate::config::DEFAULT_UI_UPLOAD_MAX_FILE_BYTES;
     use crate::testing::repo::{call, mk_format_repo, mux, new_test_manager};
 
     /// The request parts a browser upload is attributed to.
@@ -570,7 +577,10 @@ pub(crate) mod tests {
             ("../escape.tgz", 10),
             ("lodash/lodash-4.17.21.tgz", 10),
             ("lodash/-/lodash-4.17.21.tgz", 0),
-            ("lodash/-/lodash-4.17.21.tgz", MAX_UI_UPLOAD_BYTES + 1),
+            (
+                "lodash/-/lodash-4.17.21.tgz",
+                DEFAULT_UI_UPLOAD_MAX_FILE_BYTES + 1,
+            ),
         ] {
             assert!(
                 tm.manager

@@ -232,9 +232,9 @@ uiUpload:
   maxConcurrentUser: 2
   # -- (int) Maximum number of uploaded files in one publication.
   maxAssets: 16
-  # -- (string) Maximum size of one non-Go uploaded file.
+  # -- (string) Maximum size of one non-Go uploaded file. Also bounds npm, PyPI, and Cargo publishes; the npm publish document is held in memory at about 4/3 of this plus 64MiB.
   maxFileBytes: 256MiB
-  # -- (string) Maximum total file bytes in one publication.
+  # -- (string) Maximum total file bytes in one publication. The multipart request limit is this plus about 1MiB of manifest and fields.
   maxBatchBytes: 512MiB
   # -- (string) Maximum Go module zip size; cannot exceed the GOPROXY protocol limit.
   goMaxZipBytes: 500MiB

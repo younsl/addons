@@ -144,8 +144,8 @@ The following table lists the configurable parameters and their default values.
 | uiUpload.maxConcurrent | int | `4` | Maximum process-wide concurrent upload requests. |
 | uiUpload.maxConcurrentUser | int | `2` | Maximum concurrent upload requests for one authenticated principal. |
 | uiUpload.maxAssets | int | `16` | Maximum number of uploaded files in one publication. |
-| uiUpload.maxFileBytes | string | `"256MiB"` | Maximum size of one non-Go uploaded file. |
-| uiUpload.maxBatchBytes | string | `"512MiB"` | Maximum total file bytes in one publication. |
+| uiUpload.maxFileBytes | string | `"256MiB"` | Maximum size of one non-Go uploaded file. Also bounds npm, PyPI, and Cargo publishes; the npm publish document is held in memory at about 4/3 of this plus 64MiB. |
+| uiUpload.maxBatchBytes | string | `"512MiB"` | Maximum total file bytes in one publication. The multipart request limit is this plus about 1MiB of manifest and fields. |
 | uiUpload.goMaxZipBytes | string | `"500MiB"` | Maximum Go module zip size; cannot exceed the GOPROXY protocol limit. |
 | vuln.osvUrl | string | `"https://api.osv.dev"` | OSV API base URL used to scan requested versions. Empty disables scanning. |
 | vuln.rescanInterval | string | `"6h"` | How often stale scan results are re-queried. |

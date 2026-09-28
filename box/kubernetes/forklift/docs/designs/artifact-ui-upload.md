@@ -164,6 +164,21 @@ IEC suffixes `KiB`, `MiB`, and `GiB`; values are normalized to `int64` during
 configuration validation. Invalid combinations fail process startup rather than
 silently falling back.
 
+Every upload surface derives its size bounds from these settings; no path
+keeps its own constant or inherits a framework default:
+
+| Bound | Derived from | Applies to |
+| --- | --- | --- |
+| Per file | `max-file-bytes` (`go-max-zip-bytes` for a Go module zip) | UI/API uploads, raw browser upload, npm, PyPI, Cargo |
+| Whole multipart request | `max-batch-bytes` + manifest 64 KiB + fields 1 MiB (`Uploader::max_request_bytes`) | Every multipart body the uploader parses, applied with `DefaultBodyLimit` because axum otherwise caps an extracted body at 2 MiB |
+| npm publish document | base64 of `max-file-bytes` + 64 MiB packument metadata | `npm publish`; the document is held in memory, so raising `max-file-bytes` raises peak memory per publish |
+
+A size rejection names the limit it hit in the same IEC form the setting
+accepts (`config::format_byte_size`), for example `An artifact exceeds the
+256MiB per-file limit`, so the message maps directly to the value to change. A
+multipart read that fails part-way is a 400 or 413, never the end of the part:
+the bytes read so far are not committed.
+
 The remaining bounds are deliberately not public tuning knobs in v1:
 manifest 64 KiB, non-file fields 1 MiB total, 100,000 archive entries, 16 MiB
 of metadata read from any one archive, and a 24-hour idempotency TTL. Keeping
@@ -1755,7 +1770,8 @@ Every error code is stable API surface and maps to one UI recovery action:
 | `upload_in_progress` | 409 | yes | Poll/replay with same idempotency key |
 | `idempotency_key_consumed` | 409 | with new key | Generate new attempt |
 | `multipart_invalid`, `manifest_invalid` | 400 | after edit | Focus error summary/field |
-| `asset_too_large`, `batch_too_large`, `too_many_assets` | 413 | after edit | Remove/replace files |
+| `file_too_large`, `batch_too_large`, `asset_count_exceeded`, `manifest_too_large` | 413 | after edit | Remove/replace files |
+| `request_too_large` | 413 | after edit | The multipart body reached the request limit; remove/replace files |
 | `unsupported_asset` | 415 | after edit | Show accepted types |
 | `metadata_invalid`, `coordinate_mismatch`, `archive_unsafe` | 422 | after edit | Show field/file-specific reason |
 | `pom_requires_flattening` | 422 | after rebuilding | Explain Maven CI-friendly POM flattening requirement |

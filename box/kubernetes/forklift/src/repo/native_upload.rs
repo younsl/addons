@@ -6,12 +6,14 @@
 //! Both adapters re-encode the request as the multipart body [`Uploader::receive`] expects.
 
 use axum::body::Body;
+use axum::extract::multipart::MultipartError;
 use axum::extract::{FromRequest, Multipart, Request};
 use axum::response::{IntoResponse, Response};
 use http::StatusCode;
 use http::request::Parts;
 use tokio::io::{AsyncRead, AsyncReadExt as _, AsyncWrite, AsyncWriteExt as _};
 
+use crate::config::format_byte_size;
 use crate::meta::{self, Repository};
 use crate::server::http_error;
 
@@ -20,7 +22,7 @@ use super::npm::base64_decode_stream;
 use super::router::Resolved;
 use super::uiupload::{
     ArtifactUploadAsset, ArtifactUploadManifest, ArtifactUploadResult, CargoUploadManifest,
-    NPMUploadManifest, PyPIUploadManifest, UploadProblem, random_upload_id,
+    NPMUploadManifest, PyPIUploadManifest, UploadProblem, multipart_read_problem, random_upload_id,
 };
 use super::uiupload_cargo::valid_cargo_name;
 use super::{Manager, path_base};
@@ -160,7 +162,12 @@ impl Manager {
         res: &Resolved,
         body: Body,
     ) -> Response {
-        let request = Request::from_parts(parts.clone(), body);
+        // Only reached with an uploader wired (see `pypi_upload`).
+        let Some(uploader) = self.uploader.read().clone() else {
+            return http_error(StatusCode::SERVICE_UNAVAILABLE, "upload is unavailable");
+        };
+        let mut request = Request::from_parts(parts.clone(), body);
+        uploader.body_limit().apply(&mut request);
         let Ok(mut source) = Multipart::from_request(request, &()).await else {
             return http_error(StatusCode::BAD_REQUEST, "invalid multipart form");
         };
@@ -179,15 +186,20 @@ impl Manager {
         let (writer, reader) = tokio::io::duplex(64 * 1024);
         // Forwards the single `content` part and drops the metadata fields twine
         // sends alongside it; an error here abandons the body, which the
-        // receiver reports as an invalid multipart upload.
-        let write = async move {
+        // receiver reports as an invalid multipart upload. A failed read of the
+        // twine form is kept so the client sees that cause instead.
+        let mut source_failure = None;
+        let write = async {
             let mut writer = writer;
             write_manifest_part(&mut writer, &boundary, &manifest).await?;
             let mut found = false;
-            while let Ok(Some(mut field)) = source.next_field().await {
+            while let Some(mut field) =
+                keep_failure(&mut source_failure, source.next_field().await)?
+            {
                 if field.name() != Some("content") {
                     let mut seen = 0i64;
-                    while let Ok(Some(chunk)) = field.chunk().await {
+                    while let Some(chunk) = keep_failure(&mut source_failure, field.chunk().await)?
+                    {
                         seen += chunk.len() as i64;
                         if seen >= 1 << 20 {
                             break;
@@ -201,11 +213,7 @@ impl Manager {
                 found = true;
                 let filename = field.file_name().unwrap_or("").to_string();
                 write_part_header(&mut writer, &boundary, "asset0", Some(&filename)).await?;
-                while let Some(chunk) = field
-                    .chunk()
-                    .await
-                    .map_err(|err| std::io::Error::other(err.to_string()))?
-                {
+                while let Some(chunk) = keep_failure(&mut source_failure, field.chunk().await)? {
                     writer.write_all(&chunk).await?;
                 }
                 writer.write_all(b"\r\n").await?;
@@ -222,6 +230,12 @@ impl Manager {
             Body::from_stream(tokio_util::io::ReaderStream::new(reader)),
         );
         let (_, outcome) = tokio::join!(write, receive);
+        if let Some(err) = source_failure {
+            return native_upload_problem(&multipart_read_problem(
+                &err,
+                uploader.max_request_bytes(),
+            ));
+        }
         match outcome {
             Err(problem) => native_upload_problem(&problem),
             Ok(_) => StatusCode::CREATED.into_response(),
@@ -253,7 +267,7 @@ impl Manager {
                 .await
             {
                 Ok(metadata) => metadata,
-                Err((status, detail)) => return cargo_api_error(status, detail),
+                Err((status, detail)) => return cargo_api_error(status, &detail),
             };
         drop(slot);
         let crate_len = match read_u32_le(&mut reader).await {
@@ -263,9 +277,10 @@ impl Manager {
             }
         };
         if crate_len > uploader.cfg.max_file_bytes as u64 {
+            let limit = format_byte_size(uploader.cfg.max_file_bytes);
             return cargo_api_error(
                 StatusCode::PAYLOAD_TOO_LARGE,
-                "crate exceeds the upload limit",
+                &format!("crate exceeds the {limit} upload limit"),
             );
         }
         let manifest = ArtifactUploadManifest {
@@ -341,23 +356,36 @@ struct CargoPublishMetadata {
 async fn read_cargo_publish_metadata<R: AsyncRead + Unpin>(
     reader: &mut R,
     max_bytes: i64,
-) -> Result<CargoPublishMetadata, (StatusCode, &'static str)> {
-    let truncated = (StatusCode::BAD_REQUEST, "publish body is truncated");
-    let len = read_u32_le(reader).await.ok_or(truncated)?;
+) -> Result<CargoPublishMetadata, (StatusCode, String)> {
+    let truncated = || {
+        (
+            StatusCode::BAD_REQUEST,
+            "publish body is truncated".to_string(),
+        )
+    };
+    let len = read_u32_le(reader).await.ok_or_else(truncated)?;
     if i64::from(len) > max_bytes {
+        let limit = format_byte_size(max_bytes);
         return Err((
             StatusCode::PAYLOAD_TOO_LARGE,
-            "publish metadata exceeds the limit",
+            format!("publish metadata exceeds the {limit} limit"),
         ));
     }
     let mut value = vec![0u8; len as usize];
-    reader.read_exact(&mut value).await.map_err(|_| truncated)?;
-    let metadata: CargoPublishMetadata = serde_json::from_slice(&value)
-        .map_err(|_| (StatusCode::BAD_REQUEST, "invalid publish metadata"))?;
+    reader
+        .read_exact(&mut value)
+        .await
+        .map_err(|_| truncated())?;
+    let metadata: CargoPublishMetadata = serde_json::from_slice(&value).map_err(|_| {
+        (
+            StatusCode::BAD_REQUEST,
+            "invalid publish metadata".to_string(),
+        )
+    })?;
     if !valid_cargo_name(&metadata.name) || semver::Version::parse(&metadata.vers).is_err() {
         return Err((
             StatusCode::BAD_REQUEST,
-            "publish metadata names an invalid crate version",
+            "publish metadata names an invalid crate version".to_string(),
         ));
     }
     Ok(metadata)
@@ -375,6 +403,18 @@ fn native_upload_problem(problem: &UploadProblem) -> Response {
     let status =
         StatusCode::from_u16(problem.status as u16).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
     http_error(status, &problem.detail)
+}
+
+/// Passes a twine form read through, keeping its error so the response can
+/// report it rather than the receiver's view of the abandoned body.
+fn keep_failure<T>(
+    slot: &mut Option<MultipartError>,
+    result: Result<T, MultipartError>,
+) -> std::io::Result<T> {
+    result.map_err(|err| {
+        *slot = Some(err);
+        std::io::Error::other("twine form read failed")
+    })
 }
 
 /// A random multipart boundary with the content type that announces it.

@@ -5,6 +5,10 @@
 
 use std::time::Duration;
 
+mod upload;
+
+pub use upload::{DEFAULT_UI_UPLOAD_MAX_FILE_BYTES, UploadConfig, format_byte_size};
+
 /// Errors returned while loading or validating configuration.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -107,26 +111,6 @@ pub struct Config {
     /// registry (Maven Central, npm, crates.io, Go proxy) plus a local hosted
     /// repository per format, like a fresh Nexus install. Idempotent.
     pub seed_default_repos: bool,
-}
-
-/// Bounds browser/API artifact publication. Parser limits that are
-/// intentionally fixed in v1 are still carried here so the uploader has one
-/// immutable configuration value and tests can assert every boundary.
-#[derive(Debug, Clone, Default, PartialEq)]
-pub struct UploadConfig {
-    pub enabled: bool,
-    pub max_duration: Duration,
-    pub max_concurrent: i64,
-    pub max_concurrent_user: i64,
-    pub max_assets: i64,
-    pub max_manifest_bytes: i64,
-    pub max_field_bytes: i64,
-    pub max_file_bytes: i64,
-    pub max_batch_bytes: i64,
-    pub go_max_zip_bytes: i64,
-    pub archive_max_entries: i64,
-    pub archive_max_meta_bytes: i64,
-    pub idempotency_ttl: Duration,
 }
 
 /// Bounds the OCI distribution API.
@@ -361,7 +345,7 @@ const HOUR: Duration = Duration::from_secs(60 * 60);
 impl Config {
     /// Builds a `Config` from the environment, applying defaults.
     pub fn load() -> Result<Config> {
-        let mut c = Config {
+        let c = Config {
             data_dir: env("FORKLIFT_DATA_DIR", "/data"),
             storage: StorageConfig {
                 backend: env("FORKLIFT_STORAGE_BACKEND", "fs"),
@@ -433,21 +417,7 @@ impl Config {
                 enabled: env_bool("FORKLIFT_AUDIT_ENABLED", true),
                 retention: env_duration("FORKLIFT_AUDIT_RETENTION", 90 * 24 * HOUR),
             },
-            upload: UploadConfig {
-                enabled: env_bool("FORKLIFT_UI_UPLOAD_ENABLED", true),
-                max_duration: env_duration("FORKLIFT_UI_UPLOAD_MAX_DURATION", 30 * MINUTE),
-                max_concurrent: env_int("FORKLIFT_UI_UPLOAD_MAX_CONCURRENT", 4),
-                max_concurrent_user: env_int("FORKLIFT_UI_UPLOAD_MAX_CONCURRENT_USER", 2),
-                max_assets: env_int("FORKLIFT_UI_UPLOAD_MAX_ASSETS", 16),
-                max_manifest_bytes: 64 << 10,
-                max_field_bytes: 1 << 20,
-                max_file_bytes: 256 << 20,
-                max_batch_bytes: 512 << 20,
-                go_max_zip_bytes: 500 << 20,
-                archive_max_entries: 100_000,
-                archive_max_meta_bytes: 16 << 20,
-                idempotency_ttl: 24 * HOUR,
-            },
+            upload: UploadConfig::from_env()?,
             vuln: VulnConfig {
                 osv_url: env("FORKLIFT_OSV_URL", "https://api.osv.dev"),
                 rescan_interval: env_duration("FORKLIFT_VULN_RESCAN_INTERVAL", 6 * HOUR),
@@ -479,7 +449,6 @@ impl Config {
             },
             seed_default_repos: env_bool("FORKLIFT_SEED_DEFAULT_REPOS", true),
         };
-        apply_upload_byte_env(&mut c.upload)?;
         c.validate()?;
         Ok(c)
     }
@@ -562,60 +531,9 @@ impl Config {
                 return invalid("replication interval must be positive".into());
             }
         }
-        let u = &self.upload;
-        if u.max_duration < MINUTE || u.max_duration > 2 * HOUR {
-            return invalid("UI upload max duration must be between 1m and 2h".into());
-        }
-        if u.max_concurrent < 1 || u.max_concurrent > 32 {
-            return invalid("UI upload max concurrent must be between 1 and 32".into());
-        }
-        if u.max_concurrent_user < 1
-            || u.max_concurrent_user > 8
-            || u.max_concurrent_user > u.max_concurrent
-        {
-            return invalid(
-                "UI upload per-user concurrency must be between 1 and 8 and not exceed global concurrency"
-                    .into(),
-            );
-        }
-        if u.max_assets < 1 || u.max_assets > 64 {
-            return invalid("UI upload max assets must be between 1 and 64".into());
-        }
-        if u.max_file_bytes < 1 << 20 || u.max_file_bytes > 1 << 30 {
-            return invalid("UI upload max file bytes must be between 1MiB and 1GiB".into());
-        }
-        if u.max_batch_bytes < u.max_file_bytes {
-            return invalid("UI upload max batch bytes must be at least max file bytes".into());
-        }
-        if u.go_max_zip_bytes < 1 << 20 || u.go_max_zip_bytes > 500 << 20 {
-            return invalid("UI upload Go max zip bytes must be between 1MiB and 500MiB".into());
-        }
+        self.upload.validate()?;
         Ok(())
     }
-}
-
-fn apply_upload_byte_env(c: &mut UploadConfig) -> Result<()> {
-    let values: [(&str, &mut i64); 3] = [
-        ("FORKLIFT_UI_UPLOAD_MAX_FILE_BYTES", &mut c.max_file_bytes),
-        ("FORKLIFT_UI_UPLOAD_MAX_BATCH_BYTES", &mut c.max_batch_bytes),
-        (
-            "FORKLIFT_UI_UPLOAD_GO_MAX_ZIP_BYTES",
-            &mut c.go_max_zip_bytes,
-        ),
-    ];
-    for (key, dst) in values {
-        let Some(raw) = lookup_env(key) else {
-            continue;
-        };
-        if raw.trim().is_empty() {
-            continue;
-        }
-        *dst = parse_byte_size(&raw).map_err(|e| Error::Env {
-            key: key.to_string(),
-            source: Box::new(e),
-        })?;
-    }
-    Ok(())
 }
 
 /// Parses a positive byte count with an optional KiB, MiB, or GiB suffix.
@@ -1232,6 +1150,43 @@ pub(crate) mod tests {
 
     #[test]
     #[serial]
+    fn upload_byte_env_rejects_malformed_values_and_names_the_key() {
+        let mut g = EnvGuard::new();
+        g.set("FORKLIFT_UI_UPLOAD_MAX_FILE_BYTES", "256MB");
+        let err = Config::load().expect_err("decimal byte suffix must be rejected");
+        assert!(
+            err.to_string()
+                .contains("FORKLIFT_UI_UPLOAD_MAX_FILE_BYTES"),
+            "error must identify the invalid setting: {err}"
+        );
+
+        g.set("FORKLIFT_UI_UPLOAD_MAX_FILE_BYTES", "  ");
+        let c = Config::load().expect("blank byte setting uses its default");
+        assert_eq!(c.upload.max_file_bytes, DEFAULT_UI_UPLOAD_MAX_FILE_BYTES);
+    }
+
+    #[test]
+    #[serial]
+    fn upload_env_rejects_malformed_scalar_values() {
+        for (key, value) in [
+            ("FORKLIFT_UI_UPLOAD_ENABLED", "flase"),
+            ("FORKLIFT_UI_UPLOAD_MAX_DURATION", "soon"),
+            ("FORKLIFT_UI_UPLOAD_MAX_CONCURRENT", "four"),
+            ("FORKLIFT_UI_UPLOAD_MAX_CONCURRENT_USER", "two"),
+            ("FORKLIFT_UI_UPLOAD_MAX_ASSETS", "many"),
+        ] {
+            let mut g = EnvGuard::new();
+            g.set(key, value);
+            let err = Config::load().expect_err("malformed upload setting must be rejected");
+            assert!(
+                err.to_string().contains(key),
+                "error must identify {key}: {err}"
+            );
+        }
+    }
+
+    #[test]
+    #[serial]
     fn upload_can_be_explicitly_disabled() {
         let mut g = EnvGuard::new();
         g.set("FORKLIFT_UI_UPLOAD_ENABLED", "false");
@@ -1264,11 +1219,26 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn format_byte_size_round_trips() {
+        for (n, want) in [
+            (1i64, "1"),
+            (64 << 10, "64KiB"),
+            (256 << 20, "256MiB"),
+            (1 << 30, "1GiB"),
+            ((512 << 20) + (64 << 10) + (1 << 20), "525376KiB"),
+            (1500, "1500"),
+        ] {
+            assert_eq!(format_byte_size(n), want, "format_byte_size({n})");
+            assert_eq!(parse_byte_size(want).ok(), Some(n), "round trip {want}");
+        }
+    }
+
+    #[test]
     #[serial]
     fn upload_validation() {
         let _g = EnvGuard::new();
         type Case = (&'static str, fn(&mut UploadConfig));
-        let tests: [Case; 7] = [
+        let tests: [Case; 8] = [
             ("duration", |c| c.max_duration = Duration::from_secs(30)),
             ("global concurrency", |c| c.max_concurrent = 0),
             ("user concurrency", |c| {
@@ -1277,6 +1247,9 @@ pub(crate) mod tests {
             ("assets", |c| c.max_assets = 65),
             ("file bytes", |c| c.max_file_bytes = 1 << 10),
             ("batch bytes", |c| c.max_batch_bytes = c.max_file_bytes - 1),
+            ("batch below Go zip", |c| {
+                c.max_batch_bytes = c.go_max_zip_bytes - 1
+            }),
             ("go zip bytes", |c| c.go_max_zip_bytes = 501 << 20),
         ];
         for (name, set) in tests {

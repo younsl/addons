@@ -17,7 +17,7 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use axum::body::Body;
-use axum::extract::{FromRequest, Multipart, Request};
+use axum::extract::{DefaultBodyLimit, FromRequest, Multipart, Request};
 use axum::response::{IntoResponse, Response};
 use base64::Engine as _;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD as BASE64URL;
@@ -30,6 +30,7 @@ use serde_json::value::RawValue;
 use tokio::io::AsyncReadExt;
 use url::Url;
 
+use crate::config::format_byte_size;
 use crate::meta::{self, Artifact};
 use crate::repoconfig::{ACTION_BLOCK, AgePolicyConfig};
 use crate::server::http_error;
@@ -42,10 +43,6 @@ use super::{
 
 /// The PEP 691 simple-index media type.
 pub(crate) const PYPI_JSON_TYPE: &str = "application/vnd.pypi.simple.v1+json";
-
-/// Caps a single uploaded distribution file (parity with the previous in-memory
-/// multipart limit).
-const MAX_PYPI_UPLOAD_BYTES: i64 = 256 << 20;
 
 /// Serves the PyPI simple repository protocol.
 pub(crate) async fn handle_pypi(m: Arc<Manager>, req: Request) -> Response {
@@ -608,7 +605,12 @@ impl Manager {
         if self.uploader.read().is_some() {
             return self.pypi_upload_atomic(&parts, &res, body).await;
         }
-        let request = Request::from_parts((*parts).clone(), body);
+        let max_file = self.max_upload_file_bytes();
+        // The distribution plus twine's metadata fields; without an explicit
+        // limit axum's 2 MiB extractor default would apply.
+        let max_request = max_file + MAX_METADATA_BYTES;
+        let mut request = Request::from_parts((*parts).clone(), body);
+        DefaultBodyLimit::max(max_request as usize).apply(&mut request);
         let mut multipart = match Multipart::from_request(request, &()).await {
             Ok(multipart) => multipart,
             Err(_) => return http_error(StatusCode::BAD_REQUEST, "invalid multipart form"),
@@ -646,12 +648,20 @@ impl Manager {
                 // other keeps the upload streaming without buffering the file.
                 let mut field = field;
                 let (mut sink, source) = tokio::io::duplex(64 * 1024);
-                let limited =
-                    tokio::io::AsyncReadExt::take(source, (MAX_PYPI_UPLOAD_BYTES + 1) as u64);
+                let limited = tokio::io::AsyncReadExt::take(source, (max_file + 1) as u64);
                 let store_blob = e.blobs.put(Box::pin(limited));
+                let mut read_failure = None;
                 let pump = async {
                     use tokio::io::AsyncWriteExt as _;
-                    while let Ok(Some(chunk)) = field.chunk().await {
+                    loop {
+                        let chunk = match field.chunk().await {
+                            Ok(Some(chunk)) => chunk,
+                            Ok(None) => break,
+                            Err(err) => {
+                                read_failure = Some(err);
+                                break;
+                            }
+                        };
                         if sink.write_all(&chunk).await.is_err() {
                             break;
                         }
@@ -667,9 +677,26 @@ impl Manager {
                     Err(_) => return http_error(StatusCode::INTERNAL_SERVER_ERROR, "store failed"),
                 }
                 have_content = true;
-                if size > MAX_PYPI_UPLOAD_BYTES {
+                // A failed read leaves a truncated blob, which must never be
+                // recorded as the distribution.
+                if let Some(err) = read_failure {
                     e.abandon_blob(&digest, size).await;
-                    return http_error(StatusCode::PAYLOAD_TOO_LARGE, "file too large");
+                    if err.status() != StatusCode::PAYLOAD_TOO_LARGE {
+                        return http_error(StatusCode::BAD_REQUEST, "invalid multipart form");
+                    }
+                    let limit = format_byte_size(max_request);
+                    return http_error(
+                        StatusCode::PAYLOAD_TOO_LARGE,
+                        &format!("upload exceeds the {limit} request limit"),
+                    );
+                }
+                if size > max_file {
+                    e.abandon_blob(&digest, size).await;
+                    let limit = format_byte_size(max_file);
+                    return http_error(
+                        StatusCode::PAYLOAD_TOO_LARGE,
+                        &format!("file exceeds the {limit} upload limit"),
+                    );
                 }
                 continue;
             }
