@@ -117,9 +117,14 @@ Bot token scopes:
 | `chat:write` | Always. Also covers `chat.update` for the live status message and `chat.postEphemeral` for the mention hints. |
 | `channels:history` | `lookup` mode, public channels, and reading the alert a mention was asked under. |
 | `channels:read` | `lookup` mode, when channels are configured by name. Configuring conversation IDs instead skips the name lookup and this scope. Public channels are resolved with this scope alone; private channels are only listed when the name is not public. Mention invocation needs it too when `CHAT_CHANNELS` or `CHAT_AGENT_MAP` name channels rather than IDs. |
-| `groups:history`, `groups:read` | `lookup` mode, private channels. |
+| `groups:read` | Any private channel configured by name: `lookup` mode, the alert reactions, and `CHAT_CHANNELS` or `CHAT_AGENT_MAP` entries. Names are tried against public channels first, so without this scope a private name fails with `missing_scope` and never matches. Configuring the conversation ID (`G...` or `C...`) instead skips the name lookup and this scope. |
+| `groups:history` | `lookup` mode in private channels, and reading the alert a mention was asked under in a private channel. |
 | `reactions:write` | The investigating/completed reactions on the alert notification, and the `:eyes:` a mention carries while it is being answered. The alert reactions can be turned off by setting `SLACK_INVESTIGATING_REACTION` and `SLACK_COMPLETED_REACTION` to empty; the mention one is fixed, so enabling mentions requires this scope. |
 | `app_mentions:read` | Mention invocation. The only scope the feature adds. |
+
+Working in a private channel requires `groups:read`. The `channels:*` scopes
+cover public channels only, so a private channel named in the config fails to
+resolve without it.
 
 Mention invocation also needs Socket Mode switched on and the `app_mention`
 event subscribed, neither of which is a permission. Adding the scope means
