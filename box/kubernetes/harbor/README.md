@@ -12,7 +12,7 @@ This is a stopgap. Harbor v2.16.0 officially supports `linux/arm64`: multi-arch 
 
 ## Images
 
-Every image is single-architecture `linux/arm64`, tagged with the upstream Harbor version.
+Every image is single-architecture `linux/arm64`, built for [harbor-helm 1.19.2](https://github.com/goharbor/harbor-helm/releases/tag/v1.19.2) whose app version is Harbor 2.15.2, and tagged v2.15.2 to match.
 
 | Image | Chart value ([harbor-helm 1.19.2](https://github.com/goharbor/harbor-helm/releases/tag/v1.19.2)) |
 | --- | --- |
