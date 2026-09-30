@@ -37,12 +37,6 @@
       "path": "plugins/catalog-health-backend"
     },
     {
-      "path": "plugins/gitlab-token-audit"
-    },
-    {
-      "path": "plugins/gitlab-token-audit-backend"
-    },
-    {
       "path": "plugins/iam-user-audit"
     },
     {
@@ -92,9 +86,6 @@
     },
     {
       "path": "plugins/s3-log-extract-backend"
-    },
-    {
-      "path": "plugins/slack-mr-bot-backend"
     }
   ],
   "files": []

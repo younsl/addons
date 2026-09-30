@@ -9,7 +9,6 @@ app:
     iamUserAudit: true
     s3LogExtract: true
     opencost: true
-    gitlabTokenAudit: true
     opensearchAccount: true
     opensearchViewer: true
     opensearchScaling: true
@@ -97,7 +96,6 @@ backend:
     #       - plugin: openapi-registry
     #       - plugin: catalog-health
     #       - plugin: argocd-appset
-    #       - plugin: gitlab-token-audit
     #       - plugin: opencost
     #       - plugin: iam-user-audit
     #       - plugin: opensearch-account
@@ -255,32 +253,6 @@ iamUserAudit:
     # -- (string) Cron for Slack notification. Evaluated in UTC
     cron: '0 10 * * 1-5'
 
-slackMrBot:
-  # -- (bool) Enable the Slack MR review request bot (Socket Mode)
-  enabled: true
-  # -- (string) Slack bot token (xoxb-...). Requires scopes: commands, chat:write. Add users:read, users:read.email to mention approvers instead of naming them
-  botToken: ${SLACK_MR_BOT_TOKEN}
-  # -- (string) Slack app-level token (xapp-...) for Socket Mode. Requires scope: connections:write
-  appToken: ${SLACK_MR_BOT_APP_TOKEN}
-  # -- (string) Slash command registered in the Slack app
-  command: /mr
-  # -- (string) First line of the posted message
-  headerText: 'MR 리뷰 부탁드립니다~'
-  # -- (object) Thread replies as reviewers approve and someone merges. Every key has a default, so this block can be omitted
-  # reviewNotify:
-  #   # -- (bool) Follow posted requests and reply in their thread (default: true)
-  #   enabled: true
-  #   # -- (number) How often to poll the provider for tracked requests (default: 60)
-  #   pollIntervalSeconds: 60
-  #   # -- (number) Stop following a request this many days after it was posted (default: 14)
-  #   trackDays: 14
-  # -- (object) Review providers. Omit to reuse the `integrations` hosts and tokens
-  # providers:
-  #   gitlab:
-  #     - host: gitlab.example.com
-  #       apiBaseUrl: https://gitlab.example.com/api/v4
-  #       token: ${GITLAB_TOKEN}
-
 s3LogExtract:
   # -- (string) S3 bucket name
   bucket: ${S3_LOG_BUCKET}
@@ -404,32 +376,6 @@ opensearchViewer:
   tls:
     # -- (bool) Reject invalid/self-signed certs. Defaults to opensearchAccount.tls.rejectUnauthorized
     rejectUnauthorized: true
-
-gitlabTokenAudit:
-  # -- (bool) Enable the GitLab Token Audit plugin
-  enabled: true
-  # -- (object) Default webhook seeded into the DB at boot; UI edits override at runtime but a backend restart re-applies these values
-  # webhook:
-  #   enabled: true
-  #   url: https://hooks.slack.com/services/XXX/YYY/ZZZ
-  #   daysBefore: [30, 14]
-  # -- (object) Scope filters for which projects/groups to include or exclude
-  scope:
-    # -- (list) Project paths or IDs to explicitly scan for project access tokens. Exact match only (no regex; GitLab API needs concrete paths)
-    includeProjects: []
-    # -- (list) Group paths or IDs to explicitly scan for group access tokens. Exact match only (no regex; GitLab API needs concrete paths)
-    includeGroups: []
-    # -- (list) Project paths to drop from results. Entry is exact match by default or a regex when wrapped in slashes, e.g. '/^archived\//'
-    excludeProjects: []
-    # -- (list) Group paths to drop from results. Entry is exact match by default or a regex when wrapped in slashes, e.g. '/^sandbox-/'
-    excludeGroups: []
-  schedule:
-    # -- (string) IANA timezone applied to fetchCron and notifyCron
-    timezone: Asia/Seoul
-    # -- (string) Cron for refreshing GitLab tokens. Evaluated in the configured timezone
-    fetchCron: '0 */6 * * *'
-    # -- (string) Cron for webhook notification scan. Evaluated in the configured timezone
-    notifyCron: '0 10 * * *'
 
 search:
   collators:

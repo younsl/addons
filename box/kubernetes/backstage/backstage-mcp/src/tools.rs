@@ -7,7 +7,6 @@
 pub mod argocd;
 pub mod catalog;
 pub mod catalog_health;
-pub mod gitlab_token_audit;
 pub mod iam_user_audit;
 pub mod openapi_registry;
 pub mod opencost;

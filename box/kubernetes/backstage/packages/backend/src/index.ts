@@ -84,12 +84,6 @@ backend.add(import('@internal/plugin-opensearch-viewer-backend'));
 
 backend.add(import('@internal/plugin-opensearch-scaling-backend'));
 
-if (!disableGitlab) {
-  backend.add(import('@internal/plugin-gitlab-token-audit-backend'));
-}
-
-backend.add(import('@internal/plugin-slack-mr-bot-backend'));
-
 backend.add(import('@internal/plugin-pat-backend'));
 
 backend.add(import('@backstage-community/plugin-sonarqube-backend'));

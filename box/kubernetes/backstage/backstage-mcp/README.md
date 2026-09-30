@@ -30,7 +30,6 @@ Serving is stateless: every MCP request is answered on its own, so replicas scal
 | API Registry | `openapi_registry_list_registrations`, `openapi_registry_get_registration`, `openapi_registry_get_entity_yaml` |
 | Catalog Health | `catalog_health_get_coverage`, `catalog_health_list_projects`, `catalog_health_list_groups`, `catalog_health_get_history`, `catalog_health_list_branches` |
 | ArgoCD | `argocd_get_status`, `argocd_list_application_sets`, `argocd_get_application_set`, `argocd_list_upstream_charts`, `argocd_get_upstream_chart`, `argocd_get_upstream_scan_status`, `argocd_list_audit_logs`, `argocd_list_repo_branches` |
-| GitLab Tokens | `gitlab_token_audit_get_status`, `gitlab_token_audit_list_tokens`, `gitlab_token_audit_get_webhook`, `gitlab_token_audit_list_notifications` |
 | Cost Report | `opencost_get_config`, `opencost_list_filters`, `opencost_list_years`, `opencost_search_controllers`, `opencost_get_monthly_totals`, `opencost_get_daily_summary`, `opencost_list_monthly_pod_costs`, `opencost_list_daily_pod_costs`, `opencost_get_pod_daily_costs`, `opencost_list_collection_runs` |
 | IAM Audit | `iam_audit_get_status`, `iam_audit_list_users`, `iam_audit_list_password_reset_requests`, `iam_audit_get_password_reset_request`, `iam_audit_list_muted_users`, `iam_audit_get_warning_dm_logs`, `iam_audit_get_slack_health` |
 | OpenSearch | `opensearch_account_get_config`, `opensearch_account_list_accounts`, `opensearch_account_list_roles`, `opensearch_account_list_requests`, `opensearch_account_get_request`, `opensearch_viewer_get_config`, `opensearch_viewer_list_snapshots`, `opensearch_viewer_get_snapshot` |
@@ -64,7 +63,6 @@ backend:
           - plugin: openapi-registry
           - plugin: catalog-health
           - plugin: argocd-appset
-          - plugin: gitlab-token-audit
           - plugin: opencost
           - plugin: iam-user-audit
           - plugin: opensearch-account

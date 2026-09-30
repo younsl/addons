@@ -43,8 +43,6 @@ SONARQUBE_API_KEY
 SLACK_WEBHOOK_URL
 IAM_AUDIT_ASSUME_ROLE_ARN
 IAM_AUDIT_SLACK_BOT_TOKEN
-SLACK_MR_BOT_TOKEN
-SLACK_MR_BOT_APP_TOKEN
 ```
 
 Missing keys disable the matching integration rather than crash the app, so a partial `.env` is fine for working on a single plugin.
@@ -81,32 +79,12 @@ app:
     opensearchAccount: false
     opensearchScaling: false
     opensearchViewer: false
-    gitlabTokenAudit: false
     s3LogExtract: false
 ```
 
-The flag names are the ones in the plugin's `plugin.ts`; `app.plugins.slackMrBot` does not exist, since that plugin turns itself off when `slackMrBot.botToken` is unset.
+The flag names are the ones in the plugin's `plugin.ts`.
 
-Other overrides worth keeping here rather than in `.env`: an on-disk SQLite database (`backend.database.connection.directory`, remembering the directory is not git-ignored), a longer schedule for a noisy task, or a plugin's own config such as `slackMrBot.command` (see below).
-
-### Plugins holding an outbound connection
-
-A plugin that keeps a connection open — the Slack MR bot's Socket Mode link, for one — competes with the deployed instance when both use the same credentials: Slack delivers each event to exactly one connection, so a slash command lands on the pod or on the laptop at random and the local run looks broken.
-
-Either take the deployed instance out of the way for the duration:
-
-```bash
-kubectl -n backstage scale deploy/backstage --replicas=0   # remember to scale back
-```
-
-or, better, register a second Slack app for development with its own tokens and a command of its own:
-
-```yaml
-slackMrBot:
-  command: /mr-dev
-```
-
-The second way leaves the deployed bot serving the team while you iterate.
+Other overrides worth keeping here rather than in `.env`: an on-disk SQLite database (`backend.database.connection.directory`, remembering the directory is not git-ignored), a longer schedule for a noisy task, or a plugin's own config.
 
 ## AWS access for IAM auditing
 

@@ -44,6 +44,4 @@ export const DEFAULT_SCOPABLE_PLUGINS: readonly ScopablePlugin[] = [
     label: 'OpenSearch Scaling',
     description: 'Cluster scaling operations',
   },
-  { id: 'gitlab-token-audit', label: 'GitLab Token Audit', description: 'Access token inventory' },
-  { id: 'slack-mr-bot', label: 'Slack MR Bot', description: 'Merge request notifications' },
 ];

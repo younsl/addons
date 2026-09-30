@@ -52,7 +52,6 @@ impl BackstageMcp {
                 + Self::openapi_registry_router()
                 + Self::catalog_health_router()
                 + Self::argocd_router()
-                + Self::gitlab_token_audit_router()
                 + Self::opencost_router()
                 + Self::iam_user_audit_router()
                 + Self::opensearch_router()

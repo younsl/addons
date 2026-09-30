@@ -18,11 +18,10 @@ import TrendingUpIcon from '@material-ui/icons/TrendingUp';
 import VerifiedUserIcon from '@material-ui/icons/VerifiedUser';
 import FingerprintIcon from '@material-ui/icons/Fingerprint';
 import { Text } from '@backstage/ui';
-import { siArgo, siGitlab, siKubernetes } from 'simple-icons';
+import { siArgo, siKubernetes } from 'simple-icons';
 import { createIcon } from '@dweber019/backstage-plugin-simple-icons';
 
 const ArgocdIcon = createIcon(siArgo, false);
-const GitlabIcon = createIcon(siGitlab, false);
 const KubernetesIcon = createIcon(siKubernetes, false);
 import {
   Settings as SidebarSettings,
@@ -234,60 +233,6 @@ const S3LogExtractSidebarItem = () => {
   );
 };
 
-const GitlabTokenAuditSidebarItem = () => {
-  const discoveryApi = useApi(discoveryApiRef);
-  const fetchApi = useApi(fetchApiRef);
-  const [visible, setVisible] = useState(false);
-  const [expiringCount, setExpiringCount] = useState(0);
-
-  useEffect(() => {
-    let cancelled = false;
-    const fetchData = async () => {
-      try {
-        const baseUrl = await discoveryApi.getBaseUrl('gitlab-token-audit');
-        const adminRes = await fetchApi.fetch(`${baseUrl}/admin-status`);
-        if (!adminRes.ok) return;
-        const adminData = await adminRes.json();
-        if (!adminData?.isAdmin) {
-          if (!cancelled) setVisible(false);
-          return;
-        }
-        if (!cancelled) setVisible(true);
-        const statusRes = await fetchApi.fetch(`${baseUrl}/status`);
-        if (!statusRes.ok) return;
-        const status = await statusRes.json();
-        if (!cancelled) {
-          setExpiringCount(
-            (status.expiringSoonTokens ?? 0) + (status.expiredTokens ?? 0),
-          );
-        }
-      } catch {
-        /* ignore */
-      }
-    };
-    fetchData();
-    const interval = setInterval(fetchData, 60_000);
-    return () => {
-      cancelled = true;
-      clearInterval(interval);
-    };
-  }, [discoveryApi, fetchApi]);
-
-  if (!visible) return null;
-
-  return (
-    <SidebarItem icon={GitlabIcon} to="gitlab-token-audit" text="GitLab Tokens">
-      <span
-        className={
-          expiringCount > 0 ? 'sidebar-badge' : 'sidebar-badge sidebar-badge-zero'
-        }
-      >
-        {expiringCount}
-      </span>
-    </SidebarItem>
-  );
-};
-
 /**
  * Admin-only section. Visibility follows the backend's admin check rather
  * than a frontend list so the sidebar and the page agree on who is an admin.
@@ -370,7 +315,6 @@ export const Root = ({ children }: PropsWithChildren<{}>) => {
   const iamUserAuditEnabled = config.getOptionalBoolean('app.plugins.iamUserAudit') ?? true;
   const s3LogExtractEnabled = config.getOptionalBoolean('app.plugins.s3LogExtract') ?? true;
   const opencostEnabled = config.getOptionalBoolean('app.plugins.opencost') ?? true;
-  const gitlabTokenAuditEnabled = config.getOptionalBoolean('app.plugins.gitlabTokenAudit') ?? true;
   const opensearchAccountEnabled = config.getOptionalBoolean('app.plugins.opensearchAccount') ?? true;
   const opensearchScalingEnabled = config.getOptionalBoolean('app.plugins.opensearchScaling') ?? true;
   const patEnabled = config.getOptionalBoolean('app.plugins.pat') ?? true;
@@ -399,7 +343,6 @@ export const Root = ({ children }: PropsWithChildren<{}>) => {
         {argocdAppSetEnabled && (
           <SidebarItem icon={ArgocdIcon} to="argocd-appset" text="ArgoCD" />
         )}
-        {gitlabTokenAuditEnabled && <GitlabTokenAuditSidebarItem />}
         {opencostEnabled && (
           <SidebarItem icon={AttachMoneyIcon} to="cost-report" text="Cost Report" />
         )}
