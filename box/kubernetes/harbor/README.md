@@ -14,7 +14,7 @@ This is a stopgap. Harbor v2.16.0 officially supports `linux/arm64`: multi-arch 
 
 Every image is single-architecture `linux/arm64`, tagged with the upstream Harbor version.
 
-| Image | Chart value (harbor-helm 1.19.2) |
+| Image | Chart value ([harbor-helm 1.19.2](https://github.com/goharbor/harbor-helm/releases/tag/v1.19.2)) |
 | --- | --- |
 | `ghcr.io/younsl/harbor/nginx-photon:v2.15.2` | `nginx.image` |
 | `ghcr.io/younsl/harbor/harbor-portal:v2.15.2` | `portal.image` |
