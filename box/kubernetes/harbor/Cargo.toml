@@ -1,0 +1,42 @@
+[package]
+name = "harbor-arm64"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.98.1"
+authors = ["younsl <cysl@kakao.com>"]
+license = "Apache-2.0"
+description = "Builds the Harbor Helm chart images for linux/arm64 from the upstream source"
+readme = "README.md"
+repository = "https://github.com/younsl/addons"
+
+[[bin]]
+name = "harbor-arm64"
+path = "src/main.rs"
+
+[dependencies]
+# CLI
+clap = { version = "4.6.6", features = ["derive", "env"] }
+
+# Scratch directory for binary architecture checks
+tempfile = "3.27.0"
+
+# Error handling
+thiserror = "2.0.20"
+
+# Logging
+tracing = "0.1.44"
+tracing-subscriber = "0.3.23"
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+all = "warn"
+pedantic = "warn"
+nursery = "warn"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true

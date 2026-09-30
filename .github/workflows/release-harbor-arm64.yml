@@ -1,0 +1,124 @@
+name: Release Harbor arm64
+run-name: "📦 Release Harbor arm64 images (VERSION change)"
+
+# Upstream Harbor publishes amd64-only images before 2.16.0. harbor-arm64
+# rebuilds every image the harbor-helm chart deploys from the upstream source on
+# a native arm64 runner. The upstream Makefile has no platform flag, so
+# emulation is not an option: the build must run on arm64 hardware.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'box/kubernetes/harbor/**'
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Rebuild even if every image already exists on GHCR (overwrites the tags)"
+        required: false
+        default: false
+        type: boolean
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  detect:
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+      packages: read
+    outputs:
+      release: ${{ steps.check.outputs.release }}
+      version: ${{ steps.check.outputs.version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          # ci-changed-files.sh diffs the whole push
+          fetch-depth: 0
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.98.1
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: box/kubernetes/harbor
+
+      - name: Check VERSION and GHCR
+        id: check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          FORCE: ${{ inputs.force }}
+          EVENT_NAME: ${{ github.event_name }}
+          PUSH_BEFORE: ${{ github.event.before }}
+        run: .github/scripts/ci-detect-harbor-release.sh box/kubernetes/harbor
+
+  release:
+    needs: detect
+    if: needs.detect.outputs.release == 'true'
+    runs-on: ubuntu-26.04-arm
+    timeout-minutes: 180
+    permissions:
+      contents: read
+      packages: write
+    defaults:
+      run:
+        working-directory: box/kubernetes/harbor
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.98.1
+          components: clippy, rustfmt
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: box/kubernetes/harbor
+
+      - name: Check
+        run: |
+          cargo fmt --check
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo test --locked
+
+      - name: Login to Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build, verify and push
+        env:
+          VERSION: ${{ needs.detect.outputs.version }}
+          VERGEN_GIT_SHA: ${{ github.sha }}
+        run: |
+          cargo run --release --locked -- build \
+            --harbor-version "${VERSION}" \
+            --registry ghcr.io/younsl/harbor \
+            --workdir "${RUNNER_TEMP}/harbor" \
+            --push
+
+      - name: Summary
+        env:
+          VERSION: ${{ needs.detect.outputs.version }}
+        run: |
+          {
+            echo "## Harbor ${VERSION} linux/arm64"
+            echo
+            echo "| Image | Digest |"
+            echo "| --- | --- |"
+            for image in $(cargo run --release --locked --quiet -- images); do
+              ref="ghcr.io/younsl/harbor/${image}:${VERSION}"
+              digest=$(docker image inspect --format '{{join .RepoDigests "\n"}}' "${ref}" \
+                | grep -F "ghcr.io/younsl/harbor/${image}@" | cut -d@ -f2)
+              echo "| \`${ref}\` | \`${digest}\` |"
+            done
+          } >> "$GITHUB_STEP_SUMMARY"
