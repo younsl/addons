@@ -36,7 +36,7 @@ make helm-lint    # lint the chart
 
 ## Toolchain
 
-The crate pins Rust 1.98.1 in `rust-toolchain.toml`; `rustup` picks it up on
+The crate pins Rust 1.99.0 in `rust-toolchain.toml`; `rustup` picks it up on
 first build. The container image and `make cross` link the Linux binaries with
 [cargo-zigbuild](https://github.com/rust-cross/cargo-zigbuild), which drives a
 `zig cc` cross toolchain for `x86_64-unknown-linux-musl` and
@@ -45,12 +45,10 @@ without QEMU. Install it with `pip install cargo-zigbuild` (ships zig) or
 `cargo install cargo-zigbuild` plus a zig on `PATH`. The bundled SQLite and the
 `ring` crypto backend are the only C code in the build.
 
-The Docker builders start from the published `rust:1.98.0-slim-bookworm`
-image and install Rust 1.98.1 with rustup. This keeps the compiler pinned even
-while the official Docker images lag the Rust patch release.
-Both builders pin cargo-zigbuild 0.23.4 and Zig 0.15.1, and both release
-workflows pass their Rust version as `FORKLIFT_RUST_VERSION` to avoid the
-base image's inherited `RUST_VERSION` environment variable.
+Release binaries are cross-compiled by
+`.github/workflows/_release-rust-scratch-containers.yml`, which pins the same
+Rust 1.99.0 toolchain plus cargo-zigbuild and Zig, then copied into the
+`scratch` images. The Dockerfiles do not compile anything.
 
 Browser tests also start the Rust binary through `cargo run --locked`. Install
 the matching browser once with `pnpm --dir web exec playwright install chromium`,

@@ -3,7 +3,7 @@
 [![GitHub Container Registry](https://img.shields.io/badge/ghcr.io-harbor%2F*-black?style=flat-square&logo=docker&logoColor=white)](https://github.com/younsl?tab=packages&repo_name=addons&q=harbor)
 [![Harbor](https://img.shields.io/badge/harbor-v2.15.2-black?style=flat-square&logo=harbor&logoColor=white)](https://github.com/goharbor/harbor/releases/tag/v2.15.2)
 [![Platform](https://img.shields.io/badge/platform-linux%2Farm64-black?style=flat-square&logo=linux&logoColor=white)](https://aws.amazon.com/ec2/graviton/)
-[![Rust](https://img.shields.io/badge/rust-1.98.1-black?style=flat-square&logo=rust&logoColor=white)](https://www.rust-lang.org/)
+[![Rust](https://img.shields.io/badge/rust-1.99.0-black?style=flat-square&logo=rust&logoColor=white)](https://www.rust-lang.org/)
 [![GitHub license](https://img.shields.io/github/license/younsl/addons?style=flat-square&color=black)](https://github.com/younsl/addons/blob/main/LICENSE)
 
 A bundle of custom-built [Harbor](https://goharbor.io/) v2.15.2 images for [AWS Graviton](https://aws.amazon.com/ec2/graviton/) (`linux/arm64`). Upstream publishes the v2.15.x images for amd64 only, so this component rebuilds every image the [harbor-helm](https://github.com/goharbor/harbor-helm) chart deploys from the unmodified upstream source, driven by `harbor-arm64`, a small Rust CLI.
@@ -62,7 +62,7 @@ Before anything is pushed, the build checks that every image reports `arm64` and
 
 ## Building
 
-Requirements: a native arm64 Docker host (Linux on Graviton, or Docker Desktop on Apple Silicon), `git`, `make`, and Rust 1.98.1.
+Requirements: a native arm64 Docker host (Linux on Graviton, or Docker Desktop on Apple Silicon), `git`, `make`, and Rust 1.99.0.
 
 ```bash
 cd box/kubernetes/harbor

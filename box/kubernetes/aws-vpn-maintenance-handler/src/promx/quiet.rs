@@ -85,7 +85,10 @@ impl History {
         }
         #[allow(clippy::cast_precision_loss)]
         let frac = pos - lower as f64;
-        self.values[lower] + frac * (self.values[lower + 1] - self.values[lower])
+        frac.mul_add(
+            self.values[lower + 1] - self.values[lower],
+            self.values[lower],
+        )
     }
 
     /// What share of the distribution `v` is at or above, so a verdict can say

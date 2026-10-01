@@ -2,7 +2,7 @@
 name = "kuo"
 version = "0.6.0"
 edition = "2024"
-rust-version = "1.98.1"
+rust-version = "1.99.0"
 authors = ["Younsung Lee <cysl@kakao.com>"]
 license = "Apache-2.0"
 description = "Kubernetes Upgrade Operator for EKS clusters"

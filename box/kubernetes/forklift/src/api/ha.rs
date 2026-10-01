@@ -42,7 +42,7 @@ pub struct HAStatus {
     /// This pod's forklift version, shown on the architecture diagram.
     #[serde(skip_serializing_if = "String::is_empty")]
     pub version: String,
-    /// The Rust toolchain this pod's binary was built with, e.g. "rustc 1.98.1".
+    /// The Rust toolchain this pod's binary was built with, e.g. "rustc 1.99.0".
     #[serde(skip_serializing_if = "String::is_empty")]
     pub runtime: String,
 }

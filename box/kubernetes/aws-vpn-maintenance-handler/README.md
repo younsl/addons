@@ -2,7 +2,7 @@
 
 [![GitHub Container Registry](https://img.shields.io/badge/ghcr.io-aws--vpn--maintenance--handler-black?style=flat-square&logo=docker&logoColor=white)](https://github.com/younsl/addons/pkgs/container/aws-vpn-maintenance-handler)
 [![Helm Chart](https://img.shields.io/badge/ghcr.io-charts%2Faws--vpn--maintenance--handler-black?style=flat-square&logo=helm&logoColor=white)](https://github.com/younsl/addons/pkgs/container/charts%2Faws-vpn-maintenance-handler)
-[![Rust](https://img.shields.io/badge/rust-1.98.1-black?style=flat-square&logo=rust&logoColor=white)](https://www.rust-lang.org/)
+[![Rust](https://img.shields.io/badge/rust-1.99.0-black?style=flat-square&logo=rust&logoColor=white)](https://www.rust-lang.org/)
 [![GitHub license](https://img.shields.io/github/license/younsl/addons?style=flat-square&color=black)](https://github.com/younsl/addons/blob/main/LICENSE)
 
 Takes ownership of AWS Site-to-Site VPN tunnel endpoint maintenance.

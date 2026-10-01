@@ -2,7 +2,7 @@
 name = "forklift"
 version = "0.13.4"
 edition = "2024"
-rust-version = "1.98.1"
+rust-version = "1.99.0"
 license = "Apache-2.0"
 description = "Lightweight Kubernetes-native artifact repository (Maven, npm, Cargo, Go, PyPI, raw, OCI) with proxy caching and supply-chain policy gates"
 publish = false

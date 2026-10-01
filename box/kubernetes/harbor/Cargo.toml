@@ -2,7 +2,7 @@
 name = "harbor-arm64"
 version = "0.1.0"
 edition = "2024"
-rust-version = "1.98.1"
+rust-version = "1.99.0"
 authors = ["younsl <cysl@kakao.com>"]
 license = "Apache-2.0"
 description = "Builds the Harbor Helm chart images for linux/arm64 from the upstream source"

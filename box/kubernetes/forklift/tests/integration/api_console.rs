@@ -343,12 +343,12 @@ async fn ha_status_and_step_down() {
         is_leader: true,
         role: "leader".to_string(),
         fencing_token: 7,
-        runtime: "rustc 1.98.1".to_string(),
+        runtime: "rustc 1.99.0".to_string(),
         ..Default::default()
     }));
     let st = srv.admin_do(Method::GET, "/ha", "").await.json();
     assert!(
-        st["backend"] == "s3" && st["fencing_token"] == 7 && st["runtime"] == "rustc 1.98.1",
+        st["backend"] == "s3" && st["fencing_token"] == 7 && st["runtime"] == "rustc 1.99.0",
         "injected HA = {st}"
     );
 

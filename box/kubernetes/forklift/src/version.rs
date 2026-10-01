@@ -10,7 +10,7 @@ pub const COMMIT: &str = match option_env!("FORKLIFT_COMMIT") {
     None => "none",
 };
 
-/// Rust toolchain the binary was built with, e.g. "rustc 1.98.1".
+/// Rust toolchain the binary was built with, e.g. "rustc 1.99.0".
 pub const RUSTC: &str = match option_env!("FORKLIFT_RUSTC_VERSION") {
     Some(v) => v,
     None => "rustc unknown",
