@@ -54,7 +54,7 @@ jobs:
           case "${PROJECT_NAME}" in
             ij)
               PROJECT_BASE_DIR="box/tools/ij"
-              MACOS_RUNNER="macos-latest"
+              MACOS_RUNNER="macos-26"
               ;;
             *)
               echo "::error::Unknown project '${PROJECT_NAME}'"
