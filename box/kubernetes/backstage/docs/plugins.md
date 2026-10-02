@@ -53,11 +53,7 @@ Most custom plugins ship as `<name>` (frontend) plus `<name>-backend` (backend).
 | Platforms | `platforms-backend` | Internal platform services link cards with search and tag filtering, plus popularity ranking and daily visitor counts |
 | OpenAPI Registry | `openapi-registry` | Register external OpenAPI specs by URL with search and filters |
 | ArgoCD AppSets | `argocd-appset` | View/manage ArgoCD ApplicationSets with mute/unmute, Slack alerts, audit log |
-| IAM User Audit | `iam-user-audit` | AWS IAM inactive user monitoring with password reset and Slack DM |
 | Catalog Health | `catalog-health` | Track `catalog-info.yaml` coverage across GitLab projects |
 | OpenCost | `opencost` | Multi-cluster Kubernetes cost visualization |
-| S3 Log Extract | `s3-log-extract` | S3-based Java log extraction with approval workflow |
-| OpenSearch | `opensearch-account` | Self-service OpenSearch Security internal user create/list/delete/modify with admin approval, RBAC, and audit trail |
-| Capacity | `opensearch-scaling` | Self-service reserved scaling of OpenSearch Service domains (instance type, node count, EBS) at a scheduled time with in-progress pre-validation |
 | Access Tokens | `pat` | Admin-issued personal access tokens for external systems, scoped per plugin with read or write access, one-year maximum lifetime, and an audit log of every call |
 | Build Info | - | Settings page showing build metadata, installed plugins, BUI migration progress |

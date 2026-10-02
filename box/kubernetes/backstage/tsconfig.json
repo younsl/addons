@@ -37,12 +37,6 @@
       "path": "plugins/catalog-health-backend"
     },
     {
-      "path": "plugins/iam-user-audit"
-    },
-    {
-      "path": "plugins/iam-user-audit-backend"
-    },
-    {
       "path": "plugins/openapi-registry"
     },
     {
@@ -55,24 +49,6 @@
       "path": "plugins/opencost-backend"
     },
     {
-      "path": "plugins/opensearch-account"
-    },
-    {
-      "path": "plugins/opensearch-account-backend"
-    },
-    {
-      "path": "plugins/opensearch-scaling"
-    },
-    {
-      "path": "plugins/opensearch-scaling-backend"
-    },
-    {
-      "path": "plugins/opensearch-viewer"
-    },
-    {
-      "path": "plugins/opensearch-viewer-backend"
-    },
-    {
       "path": "plugins/pat"
     },
     {
@@ -80,12 +56,6 @@
     },
     {
       "path": "plugins/platforms-backend"
-    },
-    {
-      "path": "plugins/s3-log-extract"
-    },
-    {
-      "path": "plugins/s3-log-extract-backend"
     }
   ],
   "files": []

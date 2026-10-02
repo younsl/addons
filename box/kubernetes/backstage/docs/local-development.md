@@ -40,9 +40,6 @@ KEYCLOAK_CATALOG_CLIENT_SECRET
 AUTH_SESSION_SECRET
 SONARQUBE_BASE_URL
 SONARQUBE_API_KEY
-SLACK_WEBHOOK_URL
-IAM_AUDIT_ASSUME_ROLE_ARN
-IAM_AUDIT_SLACK_BOT_TOKEN
 ```
 
 Missing keys disable the matching integration rather than crash the app, so a partial `.env` is fine for working on a single plugin.
@@ -51,7 +48,7 @@ Missing keys disable the matching integration rather than crash the app, so a pa
 
 `app-config.yaml` is written for the deployed instance, so a laptop run needs two things overridden. Neither belongs in the committed config, which is why this file exists and is git-ignored.
 
-The catalog Keycloak module treats its provider config as required and **fails backend startup** when `KEYCLOAK_BASE_URL` and friends are absent, so a run without Keycloak credentials needs placeholder values. The plugins that talk to the cluster, AWS or OpenSearch cannot reach anything from here and otherwise fill the log with connection and permission errors, so turn off the ones you are not working on. Every in-house plugin reads an `app.plugins.<name>` flag that defaults to on.
+The catalog Keycloak module treats its provider config as required and **fails backend startup** when `KEYCLOAK_BASE_URL` and friends are absent, so a run without Keycloak credentials needs placeholder values. The plugins that talk to the cluster or GitLab cannot reach anything from here and otherwise fill the log with connection and permission errors, so turn off the ones you are not working on. Every in-house plugin reads an `app.plugins.<name>` flag that defaults to on.
 
 A file that leaves only one plugin running:
 
@@ -69,53 +66,17 @@ catalog:
         clientId: local
         clientSecret: local
 
-# Plugins that need cluster or AWS access this machine does not have.
+# Plugins that need cluster or GitLab access this machine does not have.
 app:
   plugins:
     argocdAppSet: false
-    iamUserAudit: false
     catalogHealth: false
     opencost: false
-    opensearchAccount: false
-    opensearchScaling: false
-    opensearchViewer: false
-    s3LogExtract: false
 ```
 
 The flag names are the ones in the plugin's `plugin.ts`.
 
 Other overrides worth keeping here rather than in `.env`: an on-disk SQLite database (`backend.database.connection.directory`, remembering the directory is not git-ignored), a longer schedule for a noisy task, or a plugin's own config.
-
-## AWS access for IAM auditing
-
-The `iam-user-audit` plugin reads IAM data through an assumed role. In production, EKS Pod Identity hands the pod credentials for the audit role directly. There is no Pod Identity locally, so you supply a base identity that is allowed to assume that role, which lets local runs hit IAM with the exact production permission set.
-
-Add a named profile to `~/.aws/config` that assumes the audit role from your default credentials. Replace the account ID with your own:
-
-```ini
-[profile backstage-iam-audit]
-region = ap-northeast-2
-role_arn = arn:aws:iam::123456789012:role/backstage-iam-user-audit-role
-source_profile = default
-```
-
-- `source_profile = default`: your everyday credentials act as the base identity, the same way the node/Pod Identity does in the cluster.
-- `role_arn`: the same audit role the workload assumes in production, so you exercise the real permission boundary, not your own broader access.
-
-Wire it into the running app one of two ways:
-
-| Approach | `.env` / env | How credentials resolve |
-|----------|--------------|-------------------------|
-| Plugin assumes the role (matches production) | `IAM_AUDIT_ASSUME_ROLE_ARN=arn:aws:iam::123456789012:role/backstage-iam-user-audit-role`, run with `default` creds | `IamUserService` calls `sts:AssumeRole` on the ARN on each refresh |
-| Profile assumes the role | leave `IAM_AUDIT_ASSUME_ROLE_ARN` empty, set `AWS_PROFILE=backstage-iam-audit` | the profile assumes the role; the plugin uses those credentials directly |
-
-Verify access before starting Backstage:
-
-```bash
-aws --profile backstage-iam-audit iam list-users --max-items 1
-```
-
-Keep `iamUserAudit.dryRun: true` (the default in `app-config.yaml`) while developing, so password-reset actions are logged without calling AWS or sending Slack messages.
 
 ## Install dependencies
 
@@ -192,7 +153,7 @@ yarn backstage-cli repo test
 A single workspace (faster while iterating on one plugin):
 
 ```bash
-yarn workspace @internal/plugin-opensearch-scaling-backend test
+yarn workspace @internal/plugin-pat-backend test
 ```
 
 Watch mode for the package you are editing:

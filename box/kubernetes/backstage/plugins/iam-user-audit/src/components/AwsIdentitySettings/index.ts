@@ -1,1 +1,0 @@
-export { AwsIdentitySettings } from './AwsIdentitySettings';

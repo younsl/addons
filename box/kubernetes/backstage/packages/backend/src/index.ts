@@ -67,22 +67,11 @@ backend.add(import('@internal/plugin-openapi-registry-backend'));
 
 backend.add(import('@internal/plugin-argocd-appset-backend'));
 
-backend.add(import('@internal/plugin-iam-user-audit-backend'));
-
-
-backend.add(import('@internal/plugin-s3-log-extract-backend'));
-
 if (!disableGitlab) {
   backend.add(import('@internal/plugin-catalog-health-backend'));
 }
 
 backend.add(import('@internal/plugin-opencost-backend'));
-
-backend.add(import('@internal/plugin-opensearch-account-backend'));
-
-backend.add(import('@internal/plugin-opensearch-viewer-backend'));
-
-backend.add(import('@internal/plugin-opensearch-scaling-backend'));
 
 backend.add(import('@internal/plugin-pat-backend'));
 

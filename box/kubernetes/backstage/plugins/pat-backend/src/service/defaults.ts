@@ -22,26 +22,5 @@ export const DEFAULT_SCOPABLE_PLUGINS: readonly ScopablePlugin[] = [
   { id: 'openapi-registry', label: 'API Registry', description: 'OpenAPI specifications' },
   { id: 'argocd-appset', label: 'ArgoCD AppSets', description: 'ApplicationSet inventory' },
   { id: 'catalog-health', label: 'Catalog Health', description: 'catalog-info.yaml coverage' },
-  {
-    id: 'iam-user-audit',
-    label: 'IAM User Audit',
-    description: 'AWS IAM user audit and password resets',
-  },
-  { id: 's3-log-extract', label: 'S3 Log Extract', description: 'Log extraction jobs from S3' },
   { id: 'opencost', label: 'OpenCost', description: 'Kubernetes cost reports' },
-  {
-    id: 'opensearch-account',
-    label: 'OpenSearch Account',
-    description: 'OpenSearch user accounts',
-  },
-  {
-    id: 'opensearch-viewer',
-    label: 'OpenSearch Viewer',
-    description: 'Index and document browsing',
-  },
-  {
-    id: 'opensearch-scaling',
-    label: 'OpenSearch Scaling',
-    description: 'Cluster scaling operations',
-  },
 ];

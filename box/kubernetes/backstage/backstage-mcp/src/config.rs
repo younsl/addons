@@ -160,8 +160,8 @@ mod tests {
         assert_eq!(cfg.mcp_path, "/mcp");
         assert_eq!(cfg.request_timeout, Duration::from_secs(30));
         assert_eq!(cfg.max_result_chars, 100_000);
-        assert!(cfg.backstage_token.is_empty());
-        assert!(cfg.mcp_bearer_token.is_empty());
+        assert_eq!(cfg.backstage_token, "");
+        assert_eq!(cfg.mcp_bearer_token, "");
         assert_eq!(cfg.log_format, "json");
     }
 

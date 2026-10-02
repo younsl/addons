@@ -5,7 +5,6 @@ import {
   CategoryIcon,
   ExtensionIcon,
   CloudUploadIcon,
-  SecurityIcon,
   HealthIcon,
   CostIcon,
 } from './icons';
@@ -28,7 +27,6 @@ export const quickLinks: QuickLinkItem[] = [
   { url: '/catalog-health', label: 'Catalog Health', Icon: HealthIcon, description: 'Analyze catalog-info.yaml coverage' },
   { url: '/argocd-appset', label: 'ArgoCD', Icon: ArgocdIcon, description: 'Manage ArgoCD ApplicationSets' },
   { url: '/cost-report', label: 'Cost Report', Icon: CostIcon, description: 'View cluster cost breakdown' },
-  { url: '/iam-user-audit', label: 'IAM Audit', Icon: SecurityIcon, description: 'Audit IAM users and manage credentials' },
 ];
 
 export const searchTypeLabels: Record<string, string> = {

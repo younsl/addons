@@ -40,7 +40,7 @@ kubectl create secret generic backstage-secrets \
   --from-literal=auth-session-secret=$(openssl rand -base64 32)
 ```
 
-Plugin keys (SonarQube, Slack, OpenCost, IAM audit) are covered in [Plugins](plugins.md) and the per-feature docs. Add them as extra entries in the same Secret only when you turn the plugin on.
+Plugin keys (SonarQube, OpenCost) are covered in [Plugins](plugins.md) and the per-feature docs. Add them as extra entries in the same Secret only when you turn the plugin on.
 
 ### Managing secrets on AWS
 

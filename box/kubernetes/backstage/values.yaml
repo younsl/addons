@@ -74,8 +74,6 @@ backstage:
       plugins:
         catalogHealth: true
         argocdAppSet: true
-        iamUserAudit: true
-        opensearchViewer: true
 
     organization:
       name: DevOps Portal
@@ -119,11 +117,6 @@ backstage:
               - plugin: catalog-health
               - plugin: argocd-appset
               - plugin: opencost
-              - plugin: iam-user-audit
-              - plugin: opensearch-account
-              - plugin: opensearch-viewer
-              - plugin: opensearch-scaling
-              - plugin: s3-log-extract
               - plugin: pat
       auditor:
         severityLogLevelMappings:
@@ -211,31 +204,12 @@ backstage:
       baseUrl: https://sonarqube.example.com
       apiKey: ${SONARQUBE_TOKEN}
 
-    iamUserAudit:
-      inactiveDays: 90
-      warningDays: 14
-
     catalogHealth:
       # Concurrent requests when checking catalog-info.yaml (default: 10)
       concurrency: 10
       schedule:
         # How often to scan GitLab (default: every 1 hour)
         cron: '0 * * * *'
-
-
-    opensearchViewer:
-      # Defaults to opensearchAccount.endpoint/username/password when those are configured.
-      # endpoint: ${OPENSEARCH_ENDPOINT}
-      # username: ${OPENSEARCH_ADMIN_USERNAME}
-      # password: ${OPENSEARCH_ADMIN_PASSWORD}
-      targets:
-        - name: All indices
-          indexPattern: '*'
-      ignoredIndexPatterns:
-        - .kibana*
-        - .opensearch-*
-      # Periodic automatic refresh for field type conflict impact snapshots.
-      scanCron: '*/15 * * * *'
 
     proxy:
       endpoints: {}

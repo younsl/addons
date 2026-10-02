@@ -19,7 +19,7 @@ Serving is stateless: every MCP request is answered on its own, so replicas scal
 
 ## Tools
 
-67 tools, all annotated `readOnlyHint: true`. Names are prefixed by the Backstage page they read from.
+39 tools, all annotated `readOnlyHint: true`. Names are prefixed by the Backstage page they read from.
 
 | Page | Tools |
 | --- | --- |
@@ -31,13 +31,9 @@ Serving is stateless: every MCP request is answered on its own, so replicas scal
 | Catalog Health | `catalog_health_get_coverage`, `catalog_health_list_projects`, `catalog_health_list_groups`, `catalog_health_get_history`, `catalog_health_list_branches` |
 | ArgoCD | `argocd_get_status`, `argocd_list_application_sets`, `argocd_get_application_set`, `argocd_list_upstream_charts`, `argocd_get_upstream_chart`, `argocd_get_upstream_scan_status`, `argocd_list_audit_logs`, `argocd_list_repo_branches` |
 | Cost Report | `opencost_get_config`, `opencost_list_filters`, `opencost_list_years`, `opencost_search_controllers`, `opencost_get_monthly_totals`, `opencost_get_daily_summary`, `opencost_list_monthly_pod_costs`, `opencost_list_daily_pod_costs`, `opencost_get_pod_daily_costs`, `opencost_list_collection_runs` |
-| IAM Audit | `iam_audit_get_status`, `iam_audit_list_users`, `iam_audit_list_password_reset_requests`, `iam_audit_get_password_reset_request`, `iam_audit_list_muted_users`, `iam_audit_get_warning_dm_logs`, `iam_audit_get_slack_health` |
-| OpenSearch | `opensearch_account_get_config`, `opensearch_account_list_accounts`, `opensearch_account_list_roles`, `opensearch_account_list_requests`, `opensearch_account_get_request`, `opensearch_viewer_get_config`, `opensearch_viewer_list_snapshots`, `opensearch_viewer_get_snapshot` |
-| Capacity | `opensearch_scaling_get_config`, `opensearch_scaling_list_domains`, `opensearch_scaling_get_domain`, `opensearch_scaling_list_requests` |
-| S3 Log Extract | `s3_log_extract_get_config`, `s3_log_extract_list_apps`, `s3_log_extract_precheck`, `s3_log_extract_list_requests`, `s3_log_extract_get_request` |
 | Access Tokens | `pat_get_settings`, `pat_list_tokens`, `pat_get_token`, `pat_list_audit_events`, `pat_get_audit_summary` |
 
-List tools take `offset` and `limit` and report `total` and `truncated`, so an agent pages instead of raising the limit. A result longer than `MAX_RESULT_CHARS` is cut with a note asking the model to narrow the query. Secrets never leave the server: the GitLab token audit webhook URL is reduced to a configured flag, the S3 archive and its password are not reachable at all, and a personal access token is only ever reported by its short non-secret prefix, because Backstage stores a hash and shows the secret once at creation.
+List tools take `offset` and `limit` and report `total` and `truncated`, so an agent pages instead of raising the limit. A result longer than `MAX_RESULT_CHARS` is cut with a note asking the model to narrow the query. Secrets never leave the server: a personal access token is only ever reported by its short non-secret prefix, because Backstage stores a hash and shows the secret once at creation.
 
 `backstage-mcp --list-tools` prints the registered names, and `tools/list` on the endpoint returns the JSON schemas the descriptions above are generated from.
 
@@ -64,11 +60,6 @@ backend:
           - plugin: catalog-health
           - plugin: argocd-appset
           - plugin: opencost
-          - plugin: iam-user-audit
-          - plugin: opensearch-account
-          - plugin: opensearch-viewer
-          - plugin: opensearch-scaling
-          - plugin: s3-log-extract
           - plugin: pat
 ```
 

@@ -7,14 +7,10 @@
 pub mod argocd;
 pub mod catalog;
 pub mod catalog_health;
-pub mod iam_user_audit;
 pub mod openapi_registry;
 pub mod opencost;
-pub mod opensearch;
-pub mod opensearch_scaling;
 pub mod pat;
 pub mod platforms;
-pub mod s3_log_extract;
 pub mod search;
 pub mod techdocs;
 
@@ -186,15 +182,6 @@ pub fn join_csv(values: Option<&[String]>) -> Option<String> {
     }
 }
 
-/// Sorts rows by an ISO timestamp field, newest first.
-pub fn sort_newest_first(rows: &mut [Value], key: &str) {
-    rows.sort_by(|a, b| {
-        str_field(b, key)
-            .unwrap_or("")
-            .cmp(str_field(a, key).unwrap_or(""))
-    });
-}
-
 /// Sorts rows by a numeric field, largest first.
 pub fn sort_desc_by(rows: &mut [Value], key: &str) {
     rows.sort_by(|a, b| {
@@ -274,7 +261,7 @@ mod tests {
             3,
         );
         assert_eq!((p.offset, p.limit), (10, 1));
-        assert!(p.items.is_empty());
+        assert_eq!(p.items, [] as [u32; 0]);
         assert!(!p.truncated);
     }
 
@@ -321,8 +308,6 @@ mod tests {
             json!({"createdAt": "2026-03-01", "cost": 0.5}),
             json!({"cost": 9.0}),
         ];
-        sort_newest_first(&mut rows, "createdAt");
-        assert_eq!(str_field(&rows[0], "createdAt"), Some("2026-03-01"));
         sort_desc_by(&mut rows, "cost");
         assert_eq!(f64_field(&rows[0], "cost"), Some(9.0));
         assert_eq!(join_csv(None), None);

@@ -540,6 +540,6 @@ mod tests {
                 }))
                 .await,
         );
-        assert!(branches["branches"].as_array().unwrap().is_empty());
+        assert_eq!(branches["branches"], serde_json::json!([]));
     }
 }

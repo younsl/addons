@@ -9,12 +9,8 @@ import CloudUploadIcon from '@material-ui/icons/CloudUpload';
 import ExpandMoreIcon from '@material-ui/icons/ExpandMore';
 import ExpandLessIcon from '@material-ui/icons/ExpandLess';
 import FavoriteBorderIcon from '@material-ui/icons/FavoriteBorder';
-import SecurityIcon from '@material-ui/icons/Security';
 import StorageIcon from '@material-ui/icons/Storage';
 import AttachMoneyIcon from '@material-ui/icons/AttachMoney';
-import FindInPageIcon from '@material-ui/icons/FindInPage';
-import VpnKeyIcon from '@material-ui/icons/VpnKey';
-import TrendingUpIcon from '@material-ui/icons/TrendingUp';
 import VerifiedUserIcon from '@material-ui/icons/VerifiedUser';
 import FingerprintIcon from '@material-ui/icons/Fingerprint';
 import { Text } from '@backstage/ui';
@@ -159,80 +155,6 @@ const FoldableSection = ({
   );
 };
 
-const IamAuditSidebarItem = () => {
-  const discoveryApi = useApi(discoveryApiRef);
-  const fetchApi = useApi(fetchApiRef);
-  const [pendingCount, setPendingCount] = useState(0);
-
-  useEffect(() => {
-    const fetchPending = async () => {
-      try {
-        const baseUrl = await discoveryApi.getBaseUrl('iam-user-audit');
-        const response = await fetchApi.fetch(
-          `${baseUrl}/password-reset/requests`,
-        );
-        const data = await response.json();
-        setPendingCount(
-          data.filter((r: any) => r.status === 'pending').length,
-        );
-      } catch {
-        /* ignore */
-      }
-    };
-    fetchPending();
-    const interval = setInterval(fetchPending, 60_000);
-    return () => clearInterval(interval);
-  }, [discoveryApi, fetchApi]);
-
-  return (
-    <SidebarItem icon={SecurityIcon} to="iam-user-audit" text="IAM Audit">
-      <span
-        className={
-          pendingCount > 0 ? 'sidebar-badge' : 'sidebar-badge sidebar-badge-zero'
-        }
-      >
-        {pendingCount}
-      </span>
-    </SidebarItem>
-  );
-};
-
-const S3LogExtractSidebarItem = () => {
-  const discoveryApi = useApi(discoveryApiRef);
-  const fetchApi = useApi(fetchApiRef);
-  const [pendingCount, setPendingCount] = useState(0);
-
-  useEffect(() => {
-    const fetchPending = async () => {
-      try {
-        const baseUrl = await discoveryApi.getBaseUrl('s3-log-extract');
-        const response = await fetchApi.fetch(`${baseUrl}/requests`);
-        const data = await response.json();
-        setPendingCount(
-          data.filter((r: any) => r.status === 'pending').length,
-        );
-      } catch {
-        /* ignore */
-      }
-    };
-    fetchPending();
-    const interval = setInterval(fetchPending, 15_000);
-    return () => clearInterval(interval);
-  }, [discoveryApi, fetchApi]);
-
-  return (
-    <SidebarItem icon={FindInPageIcon} to="s3-log-extract" text="S3 Log Extract">
-      <span
-        className={
-          pendingCount > 0 ? 'sidebar-badge' : 'sidebar-badge sidebar-badge-zero'
-        }
-      >
-        {pendingCount}
-      </span>
-    </SidebarItem>
-  );
-};
-
 /**
  * Admin-only section. Visibility follows the backend's admin check rather
  * than a frontend list so the sidebar and the page agree on who is an admin.
@@ -312,11 +234,7 @@ export const Root = ({ children }: PropsWithChildren<{}>) => {
   const config = useApi(configApiRef);
   const catalogHealthEnabled = config.getOptionalBoolean('app.plugins.catalogHealth') ?? true;
   const argocdAppSetEnabled = config.getOptionalBoolean('app.plugins.argocdAppSet') ?? true;
-  const iamUserAuditEnabled = config.getOptionalBoolean('app.plugins.iamUserAudit') ?? true;
-  const s3LogExtractEnabled = config.getOptionalBoolean('app.plugins.s3LogExtract') ?? true;
   const opencostEnabled = config.getOptionalBoolean('app.plugins.opencost') ?? true;
-  const opensearchAccountEnabled = config.getOptionalBoolean('app.plugins.opensearchAccount') ?? true;
-  const opensearchScalingEnabled = config.getOptionalBoolean('app.plugins.opensearchScaling') ?? true;
   const patEnabled = config.getOptionalBoolean('app.plugins.pat') ?? true;
 
   return (
@@ -346,14 +264,6 @@ export const Root = ({ children }: PropsWithChildren<{}>) => {
         {opencostEnabled && (
           <SidebarItem icon={AttachMoneyIcon} to="cost-report" text="Cost Report" />
         )}
-        {iamUserAuditEnabled && <IamAuditSidebarItem />}
-        {opensearchAccountEnabled && (
-          <SidebarItem icon={VpnKeyIcon} to="opensearch" text="OpenSearch" />
-        )}
-        {opensearchScalingEnabled && (
-          <SidebarItem icon={TrendingUpIcon} to="opensearch-scaling" text="Capacity" />
-        )}
-        {s3LogExtractEnabled && <S3LogExtractSidebarItem />}
       </FoldableSection>
 
       {patEnabled && <PatSidebarSection />}

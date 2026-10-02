@@ -28,7 +28,7 @@ const SHUTDOWN_GRACE: Duration = Duration::from_secs(5);
 
 pub const INSTRUCTIONS: &str = "Read-only access to a Backstage developer portal. Nothing here creates, changes or deletes anything.
 
-Start with catalog_search_entities or search_query to find things, then drill in with the *_get_* tools. Entity references look like kind:namespace/name (component:default/payments-api). Most list tools accept offset and limit and report total and truncated, so page rather than raising limit. Cost, token and IAM data comes from the last scheduled collection, so check the *_get_status or *_get_config tools for the collection time when freshness matters.";
+Start with catalog_search_entities or search_query to find things, then drill in with the *_get_* tools. Entity references look like kind:namespace/name (component:default/payments-api). Most list tools accept offset and limit and report total and truncated, so page rather than raising limit. Cost data comes from the last scheduled collection, so check opencost_list_collection_runs for the collection time when freshness matters.";
 
 /// The tool handler. Cheap to clone: the HTTP transport builds one per
 /// session and every clone shares the same Backstage client.
@@ -53,10 +53,6 @@ impl BackstageMcp {
                 + Self::catalog_health_router()
                 + Self::argocd_router()
                 + Self::opencost_router()
-                + Self::iam_user_audit_router()
-                + Self::opensearch_router()
-                + Self::opensearch_scaling_router()
-                + Self::s3_log_extract_router()
                 + Self::pat_router(),
         }
     }
@@ -274,7 +270,7 @@ mod tests {
         assert!(info.capabilities.tools.is_some());
         assert_eq!(info.instructions.as_deref(), Some(INSTRUCTIONS));
         let names = handler.tool_names();
-        assert!(names.len() > 40, "{names:?}");
+        assert!(names.len() > 25, "{names:?}");
         assert!(names.contains(&"catalog_search_entities".to_string()));
         assert!(
             names

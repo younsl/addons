@@ -40,20 +40,8 @@ import {
 } from '@backstage/theme';
 import { OpenApiRegistryPage } from '@internal/plugin-openapi-registry';
 import { ArgocdAppsetPage } from '@internal/plugin-argocd-appset';
-import { IamUserAuditPage } from '@internal/plugin-iam-user-audit';
-import { S3LogExtractPage } from '@internal/plugin-s3-log-extract';
 import { CatalogHealthPage, GenerateCatalogInfoPage } from '@internal/plugin-catalog-health';
 import { OpenCostPage, CostAdjustPage } from '@internal/plugin-opencost';
-import {
-  OpenSearchAccountPage,
-  OpenSearchAccountCreatePage,
-  OpenSearchAccountApprovalsPage,
-} from '@internal/plugin-opensearch-account';
-import {
-  OpenSearchScalingPage,
-  OpenSearchScalingCreatePage,
-} from '@internal/plugin-opensearch-scaling';
-import { OpenSearchViewerPage } from '@internal/plugin-opensearch-viewer';
 import { PatPage } from '@internal/plugin-pat';
 import { BuiThemerPage } from '@backstage/plugin-mui-to-bui';
 import { BuildInfoSettings } from './components/settings/AboutSettings';
@@ -132,18 +120,10 @@ const routes = (
     <Route path="/catalog-graph" element={<CatalogGraphPage />} />
     <Route path="/openapi-registry" element={<OpenApiRegistryPage />} />
     <Route path="/argocd-appset/*" element={<ArgocdAppsetPage />} />
-    <Route path="/iam-user-audit" element={<IamUserAuditPage />} />
-    <Route path="/s3-log-extract" element={<S3LogExtractPage />} />
     <Route path="/catalog-health" element={<CatalogHealthPage />} />
     <Route path="/catalog-health/generate" element={<GenerateCatalogInfoPage />} />
     <Route path="/cost-report" element={<OpenCostPage />} />
     <Route path="/cost-report/custom-export" element={<CostAdjustPage />} />
-    <Route path="/opensearch" element={<OpenSearchAccountPage />} />
-    <Route path="/opensearch/create" element={<OpenSearchAccountCreatePage />} />
-    <Route path="/opensearch/approvals" element={<OpenSearchAccountApprovalsPage />} />
-    <Route path="/opensearch/conflicts" element={<OpenSearchViewerPage />} />
-    <Route path="/opensearch-scaling" element={<OpenSearchScalingPage />} />
-    <Route path="/opensearch-scaling/create" element={<OpenSearchScalingCreatePage />} />
     <Route path="/pat/*" element={<PatPage />} />
     <Route path="/mui-to-bui" element={<BuiThemerPage />} />
     <Route path="/settings" element={<UserSettingsPage />}>

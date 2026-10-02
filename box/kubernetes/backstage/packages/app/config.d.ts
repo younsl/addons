@@ -16,25 +16,10 @@ export interface Config {
        */
       argocdAppSet?: boolean;
       /**
-       * Enable or disable IAM User Audit plugin
-       * @visibility frontend
-       */
-      iamUserAudit?: boolean;
-      /**
-       * Enable or disable S3 Log Extract plugin
-       * @visibility frontend
-       */
-      s3LogExtract?: boolean;
-      /**
        * Enable or disable OpenCost plugin
        * @visibility frontend
        */
       opencost?: boolean;
-      /**
-       * Enable or disable OpenSearch Viewer plugin
-       * @visibility frontend
-       */
-      opensearchViewer?: boolean;
     };
     /**
      * Internal platform services for developers

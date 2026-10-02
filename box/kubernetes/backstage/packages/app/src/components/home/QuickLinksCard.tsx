@@ -11,7 +11,6 @@ import {
 } from '@backstage/ui';
 import { configApiRef, useApi } from '@backstage/core-plugin-api';
 import { quickLinks } from './homeConfig';
-import { useIamPendingCount } from './hooks';
 
 const iconStyle: React.CSSProperties = {
   fontSize: 32,
@@ -36,11 +35,9 @@ const quickLinkBadgeStyle: React.CSSProperties = {
 export const QuickLinksCard = () => {
   const configApi = useApi(configApiRef);
   const platformsCount = (configApi.getOptionalConfigArray('app.platforms') ?? []).length;
-  const iamPendingCount = useIamPendingCount();
 
   const links = quickLinks.map(link => {
     if (link.url === '/platforms' && platformsCount > 0) return { ...link, badge: platformsCount };
-    if (link.url === '/iam-user-audit') return { ...link, badge: iamPendingCount };
     return link;
   });
 

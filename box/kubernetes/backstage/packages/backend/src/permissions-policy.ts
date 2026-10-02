@@ -15,7 +15,6 @@ import {
 
 const ADMIN_PERMISSIONS = [
   'argocd.appset.mute',
-  'iam.password-reset.review',
   'gitlab.token.audit.view',
   'gitlab.token.audit.manage',
 ];

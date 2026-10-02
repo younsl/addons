@@ -6,12 +6,7 @@ app:
   plugins:
     catalogHealth: true
     argocdAppSet: true
-    iamUserAudit: true
-    s3LogExtract: true
     opencost: true
-    opensearchAccount: true
-    opensearchViewer: true
-    opensearchScaling: true
     pat: true
   platforms:
     - name: Grafana
@@ -97,11 +92,6 @@ backend:
     #       - plugin: catalog-health
     #       - plugin: argocd-appset
     #       - plugin: opencost
-    #       - plugin: iam-user-audit
-    #       - plugin: opensearch-account
-    #       - plugin: opensearch-viewer
-    #       - plugin: opensearch-scaling
-    #       - plugin: s3-log-extract
     #       - plugin: pat
   reading:
     allow:
@@ -231,38 +221,6 @@ argocdApplicationSet:
     # -- (string) Cron for Slack notification. Evaluated in UTC
     cron: '0 10-11,14-18 * * 1-5'
 
-iamUserAudit:
-  # -- (bool) When true, password reset is logged only (no AWS API call, no Slack notification)
-  dryRun: true
-  # -- (int) Days of inactivity to flag a user
-  inactiveDays: 90
-  # -- (int) Days before threshold to send warning DM
-  warningDays: 14
-  # -- (string) AWS region for IAM API (IAM is global, but SDK needs a region)
-  region: us-east-1
-  # -- (string) IAM role ARN to assume for API calls. In production, EKS Pod Identity provides credentials directly
-  # assumeRoleArn: arn:aws:iam::123456789012:role/backstage-iam-user-audit-role
-  slack:
-    # -- (string) Slack webhook URL for warning notifications
-    webhookUrl: ${SLACK_WEBHOOK_URL}
-    # -- (string) Slack bot token (xoxb-...) for DM on approval. Requires scopes: users:read.email, chat:write
-    botToken: ${IAM_AUDIT_SLACK_BOT_TOKEN}
-  schedule:
-    # -- (string) Cron for fetching IAM user data. Evaluated in UTC
-    fetchCron: '*/5 * * * *'
-    # -- (string) Cron for Slack notification. Evaluated in UTC
-    cron: '0 10 * * 1-5'
-
-s3LogExtract:
-  # -- (string) S3 bucket name
-  bucket: ${S3_LOG_BUCKET}
-  # -- (string) S3 key prefix
-  prefix: ${S3_LOG_PREFIX}
-  # -- (string) AWS region of the S3 bucket
-  region: ap-northeast-2
-  # -- (string) IAM role ARN to assume for S3 access (for local dev or cross-account)
-  # assumeRoleArn: arn:aws:iam::123456789012:role/backstage-s3-log-extract
-
 catalogHealth:
   # -- (int) Concurrent requests when checking catalog-info.yaml
   concurrency: 10
@@ -314,68 +272,6 @@ opencost:
     - name: prd
       alias: Production
       url: ${OPENCOST_PRD_URL}
-
-opensearchAccount:
-  # -- (string) OpenSearch base URL exposing the Security API
-  endpoint: ${OPENSEARCH_ENDPOINT}
-  # -- (string) Admin user for the Security API
-  username: ${OPENSEARCH_ADMIN_USERNAME}
-  # -- (string) Admin password for the Security API
-  password: ${OPENSEARCH_ADMIN_PASSWORD}
-  # -- (bool) Require admin approval before create/delete is executed
-  requiresApproval: true
-  tls:
-    # -- (bool) Reject invalid/self-signed certs. Set false for self-signed clusters
-    rejectUnauthorized: true
-
-opensearchScaling:
-  # -- (string) AWS region of the OpenSearch Service domains
-  region: ap-northeast-2
-  # -- (string) Optional IAM role to assume for OpenSearch Service API calls (omit to use IRSA/instance profile)
-  # assumeRoleArn: arn:aws:iam::123456789012:role/backstage-opensearch-scaling
-  # -- (string) Default IANA timezone shown in the reservation form
-  defaultTimezone: Asia/Seoul
-  # -- (string[]) Selectable IANA timezones for the reservation form
-  timezones:
-    - Asia/Seoul
-    - UTC
-    - America/New_York
-  # -- (string[]) Fallback instance types. Types are normally fetched from the AWS
-  #    API (ListInstanceTypeDetails) for the selected domain's engine version; this
-  #    list is used only before a domain is selected or if that call returns nothing.
-  instanceTypes:
-    - r6g.large.search
-    - r6g.xlarge.search
-    - r6g.2xlarge.search
-    - r6g.4xlarge.search
-    - m6g.large.search
-    - m6g.xlarge.search
-    - m6g.2xlarge.search
-    - c6g.large.search
-    - c6g.xlarge.search
-  # -- (number) Hours after the reserved time to keep retrying when a change is already in progress
-  executionGraceHours: 2
-
-opensearchViewer:
-  # -- (string) OpenSearch endpoint to scan. Defaults to opensearchAccount.endpoint
-  # endpoint: ${OPENSEARCH_ENDPOINT}
-  # -- (string) OpenSearch API username. Defaults to opensearchAccount.username
-  # username: ${OPENSEARCH_ADMIN_USERNAME}
-  # -- (string) OpenSearch API password. Defaults to opensearchAccount.password
-  # password: ${OPENSEARCH_ADMIN_PASSWORD}
-  # -- (object[]) Index patterns scanned independently for field type conflicts
-  targets:
-    - name: All indices
-      indexPattern: '*'
-  # -- (string[]) Index patterns excluded from conflict impact calculations
-  ignoredIndexPatterns:
-    - .kibana*
-    - .opensearch-*
-  # -- (string) Cron for automatic conflict impact refresh
-  scanCron: '*/15 * * * *'
-  tls:
-    # -- (bool) Reject invalid/self-signed certs. Defaults to opensearchAccount.tls.rejectUnauthorized
-    rejectUnauthorized: true
 
 search:
   collators:

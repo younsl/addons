@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { discoveryApiRef, fetchApiRef, identityApiRef, useApi } from '@backstage/core-plugin-api';
+import { identityApiRef, useApi } from '@backstage/core-plugin-api';
 import { searchApiRef } from '@backstage/plugin-search-react';
 import { SearchResult } from '@backstage/plugin-search-common';
 
@@ -74,26 +74,4 @@ export const useSearchSuggestions = () => {
   useEffect(() => () => abortRef.current?.abort(), []);
 
   return { term, search, results, loading };
-};
-
-export const useIamPendingCount = () => {
-  const discoveryApi = useApi(discoveryApiRef);
-  const fetchApi = useApi(fetchApiRef);
-  const [count, setCount] = useState(0);
-
-  useEffect(() => {
-    const fetchPending = async () => {
-      try {
-        const baseUrl = await discoveryApi.getBaseUrl('iam-user-audit');
-        const response = await fetchApi.fetch(`${baseUrl}/password-reset/requests`);
-        const data = await response.json();
-        setCount(data.filter((r: any) => r.status === 'pending').length);
-      } catch { /* ignore */ }
-    };
-    fetchPending();
-    const interval = setInterval(fetchPending, 60_000);
-    return () => clearInterval(interval);
-  }, [discoveryApi, fetchApi]);
-
-  return count;
 };
