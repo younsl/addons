@@ -2,9 +2,9 @@
 //!
 //! Dashboards, alerts and log queries were written against slog's output, so
 //! the format is part of the contract, not a detail: JSON lines carry `time`,
-//! `level`, `msg` and the event's fields flattened next to them, and the text
-//! handler writes `key=value` pairs with slog's quoting rules. `tracing` has
-//! no such formatter, so this module implements one.
+//! `level`, `component`, `msg` and the event's fields flattened next to them,
+//! and the text handler writes `key=value` pairs with slog's quoting rules.
+//! `tracing` has no such formatter, so this module implements one.
 
 use std::fmt;
 
@@ -57,11 +57,35 @@ where
         event.record(&mut visitor);
         let time = crate::meta::time::now_rfc3339();
         let level = level_text(*event.metadata().level());
+        let head = Head {
+            time: &time,
+            level,
+            component: component(event.metadata().target()),
+        };
         let line = match self {
-            SlogFormat::Json => format_json(&time, level, &visitor.message, &visitor.fields),
-            SlogFormat::Text => format_text(&time, level, &visitor.message, &visitor.fields),
+            SlogFormat::Json => format_json(&head, &visitor.message, &visitor.fields),
+            SlogFormat::Text => format_text(&head, &visitor.message, &visitor.fields),
         };
         writeln!(writer, "{line}")
+    }
+}
+
+/// The fields every line starts with.
+pub(crate) struct Head<'a> {
+    pub(crate) time: &'a str,
+    pub(crate) level: &'a str,
+    pub(crate) component: &'a str,
+}
+
+/// The module an event comes from: the first module under the crate for
+/// forklift's own code (`forklift::migrate::lease` is `migrate`), `main` for a
+/// binary's entry point and the crate name for a dependency.
+pub(crate) fn component(target: &str) -> &str {
+    let mut parts = target.split("::");
+    let krate = parts.next().unwrap_or(target);
+    match krate {
+        "forklift" | "forklift_mcp" => parts.next().unwrap_or("main"),
+        _ => krate,
     }
 }
 
@@ -148,19 +172,16 @@ impl Visit for FieldVisitor {
     }
 }
 
-/// Renders one JSON line: `time`, `level`, `msg`, then the fields flattened at
-/// the top level in the order they were recorded.
-pub(crate) fn format_json(
-    time: &str,
-    level: &str,
-    msg: &str,
-    fields: &[(String, FieldValue)],
-) -> String {
-    let mut out = String::with_capacity(96 + msg.len());
+/// Renders one JSON line: `time`, `level`, `component`, `msg`, then the fields
+/// flattened at the top level in the order they were recorded.
+pub(crate) fn format_json(head: &Head<'_>, msg: &str, fields: &[(String, FieldValue)]) -> String {
+    let mut out = String::with_capacity(112 + msg.len());
     out.push_str("{\"time\":");
-    out.push_str(&quote_json(time));
+    out.push_str(&quote_json(head.time));
     out.push_str(",\"level\":");
-    out.push_str(&quote_json(level));
+    out.push_str(&quote_json(head.level));
+    out.push_str(",\"component\":");
+    out.push_str(&quote_json(head.component));
     out.push_str(",\"msg\":");
     out.push_str(&quote_json(msg));
     for (name, value) in fields {
@@ -174,17 +195,14 @@ pub(crate) fn format_json(
 }
 
 /// Renders one text line the way slog's `TextHandler` does.
-pub(crate) fn format_text(
-    time: &str,
-    level: &str,
-    msg: &str,
-    fields: &[(String, FieldValue)],
-) -> String {
-    let mut out = String::with_capacity(64 + msg.len());
+pub(crate) fn format_text(head: &Head<'_>, msg: &str, fields: &[(String, FieldValue)]) -> String {
+    let mut out = String::with_capacity(80 + msg.len());
     out.push_str("time=");
-    out.push_str(&quote_text(time));
+    out.push_str(&quote_text(head.time));
     out.push_str(" level=");
-    out.push_str(&quote_text(level));
+    out.push_str(&quote_text(head.level));
+    out.push_str(" component=");
+    out.push_str(&quote_text(head.component));
     out.push_str(" msg=");
     out.push_str(&quote_text(msg));
     for (name, value) in fields {
@@ -271,6 +289,23 @@ pub(crate) mod tests {
         String::from_utf8(out).expect("utf-8")
     }
 
+    const HEAD: Head<'static> = Head {
+        time: "T",
+        level: "INFO",
+        component: "server",
+    };
+
+    #[test]
+    fn component_is_the_module_under_the_crate() {
+        assert_eq!(component("forklift::migrate::lease"), "migrate");
+        assert_eq!(component("forklift::objstore"), "objstore");
+        assert_eq!(component("forklift"), "main");
+        assert_eq!(component("forklift_mcp"), "main");
+        assert_eq!(component("forklift_mcp::tools"), "tools");
+        assert_eq!(component("kube_runtime::controller"), "kube_runtime");
+        assert_eq!(component("aws_config"), "aws_config");
+    }
+
     #[test]
     fn json_line_has_slog_shape() {
         let line = capture(SlogFormat::Json, || {
@@ -283,6 +318,7 @@ pub(crate) mod tests {
         });
         let v: serde_json::Value = serde_json::from_str(line.trim()).expect("valid json");
         assert_eq!(v["level"], "INFO");
+        assert_eq!(v["component"], "server");
         assert_eq!(v["msg"], "http listening");
         assert_eq!(v["addr"], "127.0.0.1:8080");
         // Numbers and booleans keep their JSON type; only text is quoted.
@@ -318,7 +354,7 @@ pub(crate) mod tests {
         });
         let line = line.trim();
         assert!(line.starts_with("time="), "{line}");
-        assert!(line.contains(" level=WARN "), "{line}");
+        assert!(line.contains(" level=WARN component=server "), "{line}");
         // Spaces force quoting; bare words stay bare; numbers stay numbers.
         assert!(line.contains(r#"msg="readiness check failed""#), "{line}");
         assert!(line.contains(r#"err="boom now""#), "{line}");
@@ -330,8 +366,7 @@ pub(crate) mod tests {
     fn text_quoting_rules() {
         let fields = |v: &str| {
             format_text(
-                "T",
-                "INFO",
+                &HEAD,
                 "m",
                 &[(
                     "k".to_string(),
@@ -352,8 +387,7 @@ pub(crate) mod tests {
     #[test]
     fn json_escapes_field_names_and_values() {
         let line = format_json(
-            "T",
-            "ERROR",
+            &HEAD,
             "quote \" here",
             &[(
                 "a\"b".to_string(),

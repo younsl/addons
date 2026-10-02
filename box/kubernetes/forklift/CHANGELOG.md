@@ -8,7 +8,7 @@ Notable changes per release. Container image versions come from the
 
 Chart 0.14.0. forklift-mcp remains 0.3.2.
 
-The 0.14.0 image and chart were rebuilt on 2026-10-03 so the bundled SeaweedFS and the migration Job work under Argo CD: forklift and the migration Job create a missing bucket themselves, the migration Job is named by a hash of its settings instead of the Helm revision, every migration run is recorded and shown on the Storage page, and the bundled SeaweedFS no longer restarts on every Argo CD sync. The first 0.14.0 build lacks all four.
+The 0.14.0 image and chart were rebuilt on 2026-10-03 so the bundled SeaweedFS and the migration Job work under Argo CD: forklift and the migration Job create a missing bucket themselves, the migration Job is named by a hash of its settings instead of the Helm revision, every migration run is recorded and shown on the Storage page, the bundled SeaweedFS no longer restarts on every Argo CD sync, and every log line names its component. The first 0.14.0 build lacks all five.
 
 ### Removed
 
@@ -22,6 +22,7 @@ The 0.14.0 image and chart were rebuilt on 2026-10-03 so the bundled SeaweedFS a
 - Postflight integrity checks (PV01-PV04) after the copy: the uploaded snapshot hash, every named blob's size, a re-hash of a sample (or all, `--verify=full`) of the blobs starting with the ones skipped as present, and the source snapshot ETag. A failure deletes the bad target blobs and the target snapshot so a rerun copies them again.
 - Migration history. Every `migrate-storage` run, succeeded, failed or dry, writes a record to `<prefix>/meta/migrations/` in the target. The Storage page lists them with provider logos, copy progress and per-check status, and opens a full report: the stage reached, failing checks and cleanup, timings, settings, every check with its latency, where the record is stored, and the raw JSON. The admin API serves them at `GET /api/v1/storage/migrations` and `GET /api/v1/storage/migrations/{id}`, and `GET /api/v1/storage` adds `last_migration`.
 - Hovering a role on the Users page shows its description and how many users hold it.
+- Every log line carries `component`, the module it comes from (`migrate`, `objstore`, `cluster`, `api` and so on, `main` for startup, the crate name for a dependency), after `level` in JSON and text alike.
 - `storage.migration.*` runs that migration as a chart Job, keeping forklift at 0 replicas while enabled. The target is the chart's own storage, bundled SeaweedFS included.
 - A startup probe for S3 conditional writes. HA refuses to start on a store that accepts writes whose precondition failed (Garage), since metadata fencing depends on them. The result is on the Storage page.
 
