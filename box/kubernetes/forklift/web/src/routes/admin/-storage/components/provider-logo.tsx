@@ -5,6 +5,7 @@ import garage from "@/assets/storage-providers/garage.svg";
 import minio from "@/assets/storage-providers/minio.png";
 import rustfs from "@/assets/storage-providers/rustfs.png";
 import seaweedfs from "@/assets/storage-providers/seaweedfs.svg";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
 import type { MigrationLocation } from "@/services/v1/openapi-types";
@@ -57,9 +58,12 @@ export function Location({ location, className }: { location: MigrationLocation;
       <ProviderLogo id={location.provider} />
       <div className="min-w-0">
         <div className="truncate text-[13px] font-medium">{providerName(location.provider)}</div>
-        <div className="truncate text-[11px] tabular-nums text-muted-foreground" title={where}>
-          {where}
-        </div>
+        <Tooltip>
+          <TooltipTrigger render={<div className="truncate text-[11px] tabular-nums text-muted-foreground" />}>
+            {where}
+          </TooltipTrigger>
+          <TooltipContent side="bottom">{location.endpoint || "s3.amazonaws.com"} / {location.bucket}{location.prefix ? ` / ${location.prefix}` : ""}</TooltipContent>
+        </Tooltip>
       </div>
     </div>
   );

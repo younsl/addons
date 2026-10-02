@@ -13,6 +13,7 @@ import {
   TableRow,
   TableWrap,
 } from "@/components/app-ui/table";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { getErrorMessageIfAny } from "@/lib/http/error/api-error";
 import { useTranslation, type MessageKey } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
@@ -75,15 +76,24 @@ function CheckDots({ label, checks }: { label: string; checks: MigrationCheckSta
   return (
     <div className="flex items-center gap-2 whitespace-nowrap">
       <span className="w-4 font-mono text-[11px] text-muted-foreground">{label}</span>
-      <div className="flex gap-[2px]">
-        {checks.map((c) => (
-          <span
-            key={c.id}
-            title={`${c.id} ${c.name}: ${c.status}`}
-            className={cn("size-[7px] rounded-[1.5px]", statusDot[c.status])}
-          />
-        ))}
-      </div>
+      <Tooltip>
+        <TooltipTrigger render={<span className="flex gap-[2px] py-1" />}>
+          {checks.map((c) => (
+            <span key={c.id} className={cn("size-[7px] rounded-[1.5px]", statusDot[c.status])} />
+          ))}
+        </TooltipTrigger>
+        <TooltipContent side="bottom" className="items-start px-3 py-2">
+          <ul className="m-0 grid list-none grid-cols-[auto_auto_minmax(0,1fr)] items-center gap-x-2 gap-y-1 p-0">
+            {checks.map((c) => (
+              <li key={c.id} className="contents">
+                <span className={cn("size-[7px] rounded-[1.5px]", statusDot[c.status])} />
+                <span className="font-mono">{c.id}</span>
+                <span className="opacity-80">{c.name}</span>
+              </li>
+            ))}
+          </ul>
+        </TooltipContent>
+      </Tooltip>
       {failed.length > 0 && <span className="font-mono text-[11px] text-destructive">{failed.join(" ")}</span>}
     </div>
   );
@@ -104,7 +114,7 @@ export function CopyBar({ required, copied, skipped, planned }: { required: numb
 // A row opens the full report.
 export function MigrationHistory() {
   const { t, language } = useTranslation();
-  const { date, time, full } = useMemo(() => formatters(language), [language]);
+  const { date, time } = useMemo(() => formatters(language), [language]);
   const [openId, setOpenId] = useState<string | null>(null);
   const query = useQuery({
     ...openApiQueryOptions.listStorageMigrations(),
@@ -148,7 +158,7 @@ export function MigrationHistory() {
                     data-testid={`migration-row-${m.id}`}
                     onClick={() => setOpenId(m.id)}
                   >
-                    <TableCell className="tabular-nums" title={full.format(finished)}>
+                    <TableCell className="tabular-nums">
                       <div className="whitespace-nowrap">{date.format(finished)}</div>
                       <div className="whitespace-nowrap text-xs text-muted-foreground">{time.format(finished)}</div>
                     </TableCell>
