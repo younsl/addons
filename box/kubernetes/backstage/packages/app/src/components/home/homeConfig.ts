@@ -5,7 +5,6 @@ import {
   CategoryIcon,
   ExtensionIcon,
   CloudUploadIcon,
-  HealthIcon,
   CostIcon,
 } from './icons';
 
@@ -24,7 +23,6 @@ export const quickLinks: QuickLinkItem[] = [
   { url: '/api-docs', label: 'APIs', Icon: ExtensionIcon, description: 'Explore API documentation' },
   { url: '/openapi-registry', label: 'API Registry', Icon: CloudUploadIcon, description: 'Upload and manage OpenAPI specs' },
   // Operations
-  { url: '/catalog-health', label: 'Catalog Health', Icon: HealthIcon, description: 'Analyze catalog-info.yaml coverage' },
   { url: '/argocd-appset', label: 'ArgoCD', Icon: ArgocdIcon, description: 'Manage ArgoCD ApplicationSets' },
   { url: '/cost-report', label: 'Cost Report', Icon: CostIcon, description: 'View cluster cost breakdown' },
 ];

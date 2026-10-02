@@ -31,12 +31,6 @@
       "path": "plugins/argocd-appset-backend"
     },
     {
-      "path": "plugins/catalog-health"
-    },
-    {
-      "path": "plugins/catalog-health-backend"
-    },
-    {
       "path": "plugins/openapi-registry"
     },
     {
@@ -47,12 +41,6 @@
     },
     {
       "path": "plugins/opencost-backend"
-    },
-    {
-      "path": "plugins/pat"
-    },
-    {
-      "path": "plugins/pat-backend"
     },
     {
       "path": "plugins/platforms-backend"

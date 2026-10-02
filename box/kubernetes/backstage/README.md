@@ -36,4 +36,3 @@ Authentication is Keycloak OIDC only. Guest login is disabled.
 - [GitLab CI/CD](docs/plugins/gitlab/overview.md)
 - [OpenCost](docs/plugins/opencost/overview.md)
 - [OpenCost ERD](docs/plugins/opencost/erd.md)
-- [Personal Access Tokens](docs/plugins/pat/overview.md)

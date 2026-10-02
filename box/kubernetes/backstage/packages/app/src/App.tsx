@@ -40,9 +40,7 @@ import {
 } from '@backstage/theme';
 import { OpenApiRegistryPage } from '@internal/plugin-openapi-registry';
 import { ArgocdAppsetPage } from '@internal/plugin-argocd-appset';
-import { CatalogHealthPage, GenerateCatalogInfoPage } from '@internal/plugin-catalog-health';
 import { OpenCostPage, CostAdjustPage } from '@internal/plugin-opencost';
-import { PatPage } from '@internal/plugin-pat';
 import { BuiThemerPage } from '@backstage/plugin-mui-to-bui';
 import { BuildInfoSettings } from './components/settings/AboutSettings';
 
@@ -120,11 +118,8 @@ const routes = (
     <Route path="/catalog-graph" element={<CatalogGraphPage />} />
     <Route path="/openapi-registry" element={<OpenApiRegistryPage />} />
     <Route path="/argocd-appset/*" element={<ArgocdAppsetPage />} />
-    <Route path="/catalog-health" element={<CatalogHealthPage />} />
-    <Route path="/catalog-health/generate" element={<GenerateCatalogInfoPage />} />
     <Route path="/cost-report" element={<OpenCostPage />} />
     <Route path="/cost-report/custom-export" element={<CostAdjustPage />} />
-    <Route path="/pat/*" element={<PatPage />} />
     <Route path="/mui-to-bui" element={<BuiThemerPage />} />
     <Route path="/settings" element={<UserSettingsPage />}>
       <SettingsLayout.Route path="/build-info" title="Build Info">

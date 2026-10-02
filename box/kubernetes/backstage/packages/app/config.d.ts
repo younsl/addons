@@ -6,11 +6,6 @@ export interface Config {
      */
     plugins?: {
       /**
-       * Enable or disable Catalog Health (catalog-health) plugin
-       * @visibility frontend
-       */
-      catalogHealth?: boolean;
-      /**
        * Enable or disable ArgoCD AppSet plugin
        * @visibility frontend
        */

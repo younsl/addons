@@ -48,7 +48,7 @@ Missing keys disable the matching integration rather than crash the app, so a pa
 
 `app-config.yaml` is written for the deployed instance, so a laptop run needs two things overridden. Neither belongs in the committed config, which is why this file exists and is git-ignored.
 
-The catalog Keycloak module treats its provider config as required and **fails backend startup** when `KEYCLOAK_BASE_URL` and friends are absent, so a run without Keycloak credentials needs placeholder values. The plugins that talk to the cluster or GitLab cannot reach anything from here and otherwise fill the log with connection and permission errors, so turn off the ones you are not working on. Every in-house plugin reads an `app.plugins.<name>` flag that defaults to on.
+The catalog Keycloak module treats its provider config as required and **fails backend startup** when `KEYCLOAK_BASE_URL` and friends are absent, so a run without Keycloak credentials needs placeholder values. The plugins that talk to the cluster cannot reach anything from here and otherwise fill the log with connection and permission errors, so turn off the ones you are not working on. Every in-house plugin reads an `app.plugins.<name>` flag that defaults to on.
 
 A file that leaves only one plugin running:
 
@@ -66,11 +66,10 @@ catalog:
         clientId: local
         clientSecret: local
 
-# Plugins that need cluster or GitLab access this machine does not have.
+# Plugins that need cluster access this machine does not have.
 app:
   plugins:
     argocdAppSet: false
-    catalogHealth: false
     opencost: false
 ```
 
@@ -153,7 +152,7 @@ yarn backstage-cli repo test
 A single workspace (faster while iterating on one plugin):
 
 ```bash
-yarn workspace @internal/plugin-pat-backend test
+yarn workspace @internal/plugin-openapi-registry-backend test
 ```
 
 Watch mode for the package you are editing:

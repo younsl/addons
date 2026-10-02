@@ -289,9 +289,6 @@ export const CatalogPage = () => {
               Browse and discover all entities registered in the Backstage
               Catalog
             </Text>
-            <Link href="/catalog-health" style={{ whiteSpace: 'nowrap', textDecoration: 'underline', fontSize: 'var(--bui-font-size-2, 0.875rem)' }}>
-              Catalog Health
-            </Link>
           </Flex>
 
           <Box

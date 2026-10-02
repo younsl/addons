@@ -4,10 +4,8 @@ app:
   gitlab:
     host: ${GITLAB_HOST}
   plugins:
-    catalogHealth: true
     argocdAppSet: true
     opencost: true
-    pat: true
   platforms:
     - name: Grafana
       category: Observability
@@ -89,10 +87,8 @@ backend:
     #       - plugin: techdocs
     #       - plugin: platforms
     #       - plugin: openapi-registry
-    #       - plugin: catalog-health
     #       - plugin: argocd-appset
     #       - plugin: opencost
-    #       - plugin: pat
   reading:
     allow:
       - host: localhost:7007
@@ -221,38 +217,12 @@ argocdApplicationSet:
     # -- (string) Cron for Slack notification. Evaluated in UTC
     cron: '0 10-11,14-18 * * 1-5'
 
-catalogHealth:
-  # -- (int) Concurrent requests when checking catalog-info.yaml
-  concurrency: 10
-  schedule:
-    # -- (string) Cron for GitLab scan
-    cron: '0 * * * *'
-
 permission:
   # -- (list) Admin user entity refs granted access to admin-gated routes
   admins:
     # - user:development/guest
     - user:default/admin1
     - user:default/admin2
-
-# Personal access tokens for external systems. Only permission.admins can
-# issue them; each token is scoped per plugin (read or write) and expires.
-pat:
-  # -- (int) Longest lifetime an admin may pick, in days. Hard-capped at 365.
-  maxExpiryDays: 365
-  audit:
-    # -- (int) Days to keep api call and token lifecycle events.
-    retentionDays: 365
-  # -- (list) Plugins a token may be scoped to. When the key is absent every
-  # backend plugin with an API is offered (see plugins/pat-backend/src/service/defaults.ts).
-  # Set it to restrict the list. An explicit empty list disables scoping entirely.
-  # The pat plugin itself is never scopable. A token can only reach /api/<id>
-  # for ids on the list.
-  # scopablePlugins:
-  #   - id: catalog
-  #     label: Catalog
-  #     description: Entities, locations and refresh
-  #   - search
 
 opencost:
   timezone: Asia/Seoul

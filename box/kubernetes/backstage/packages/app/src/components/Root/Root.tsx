@@ -8,11 +8,8 @@ import BuildIcon from '@material-ui/icons/Build';
 import CloudUploadIcon from '@material-ui/icons/CloudUpload';
 import ExpandMoreIcon from '@material-ui/icons/ExpandMore';
 import ExpandLessIcon from '@material-ui/icons/ExpandLess';
-import FavoriteBorderIcon from '@material-ui/icons/FavoriteBorder';
 import StorageIcon from '@material-ui/icons/Storage';
 import AttachMoneyIcon from '@material-ui/icons/AttachMoney';
-import VerifiedUserIcon from '@material-ui/icons/VerifiedUser';
-import FingerprintIcon from '@material-ui/icons/Fingerprint';
 import { Text } from '@backstage/ui';
 import { siArgo, siKubernetes } from 'simple-icons';
 import { createIcon } from '@dweber019/backstage-plugin-simple-icons';
@@ -155,64 +152,6 @@ const FoldableSection = ({
   );
 };
 
-/**
- * Admin-only section. Visibility follows the backend's admin check rather
- * than a frontend list so the sidebar and the page agree on who is an admin.
- * The badge is the count of denied token calls in the last 24h; the audit
- * log itself is a tab inside the Access Tokens page.
- */
-const PatSidebarSection = () => {
-  const discoveryApi = useApi(discoveryApiRef);
-  const fetchApi = useApi(fetchApiRef);
-  const [visible, setVisible] = useState(false);
-  const [deniedCount, setDeniedCount] = useState(0);
-
-  useEffect(() => {
-    let cancelled = false;
-    const fetchData = async () => {
-      try {
-        const baseUrl = await discoveryApi.getBaseUrl('pat');
-        const adminRes = await fetchApi.fetch(`${baseUrl}/admin-status`);
-        if (!adminRes.ok) return;
-        const adminData = await adminRes.json();
-        if (!adminData?.isAdmin) {
-          if (!cancelled) setVisible(false);
-          return;
-        }
-        if (!cancelled) setVisible(true);
-        const summaryRes = await fetchApi.fetch(`${baseUrl}/audit/summary`);
-        if (!summaryRes.ok) return;
-        const summary = await summaryRes.json();
-        if (!cancelled) setDeniedCount(summary.denied ?? 0);
-      } catch {
-        /* ignore */
-      }
-    };
-    fetchData();
-    const interval = setInterval(fetchData, 60_000);
-    return () => {
-      cancelled = true;
-      clearInterval(interval);
-    };
-  }, [discoveryApi, fetchApi]);
-
-  if (!visible) return null;
-
-  return (
-    <FoldableSection title="Administration" icon={<VerifiedUserIcon />} defaultOpen={false}>
-      <SidebarItem icon={FingerprintIcon} to="pat" text="Access Tokens">
-        <span
-          className={
-            deniedCount > 0 ? 'sidebar-badge' : 'sidebar-badge sidebar-badge-zero'
-          }
-        >
-          {deniedCount}
-        </span>
-      </SidebarItem>
-    </FoldableSection>
-  );
-};
-
 const PlatformsSidebarItem = () => {
   const configApi = useApi(configApiRef);
   const platformsCount = (configApi.getOptionalConfigArray('app.platforms') ?? []).length;
@@ -232,10 +171,8 @@ const PlatformsSidebarItem = () => {
 
 export const Root = ({ children }: PropsWithChildren<{}>) => {
   const config = useApi(configApiRef);
-  const catalogHealthEnabled = config.getOptionalBoolean('app.plugins.catalogHealth') ?? true;
   const argocdAppSetEnabled = config.getOptionalBoolean('app.plugins.argocdAppSet') ?? true;
   const opencostEnabled = config.getOptionalBoolean('app.plugins.opencost') ?? true;
-  const patEnabled = config.getOptionalBoolean('app.plugins.pat') ?? true;
 
   return (
   <SidebarPage>
@@ -255,9 +192,6 @@ export const Root = ({ children }: PropsWithChildren<{}>) => {
       </FoldableSection>
 
       <FoldableSection title="Operations" icon={<BuildIcon />} defaultOpen={false}>
-        {catalogHealthEnabled && (
-          <SidebarItem icon={FavoriteBorderIcon} to="catalog-health" text="Catalog Health" />
-        )}
         {argocdAppSetEnabled && (
           <SidebarItem icon={ArgocdIcon} to="argocd-appset" text="ArgoCD" />
         )}
@@ -265,8 +199,6 @@ export const Root = ({ children }: PropsWithChildren<{}>) => {
           <SidebarItem icon={AttachMoneyIcon} to="cost-report" text="Cost Report" />
         )}
       </FoldableSection>
-
-      {patEnabled && <PatSidebarSection />}
 
       <SidebarDivider />
       <SidebarScrollWrapper>

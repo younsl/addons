@@ -19,7 +19,7 @@ Serving is stateless: every MCP request is answered on its own, so replicas scal
 
 ## Tools
 
-39 tools, all annotated `readOnlyHint: true`. Names are prefixed by the Backstage page they read from.
+29 tools, all annotated `readOnlyHint: true`. Names are prefixed by the Backstage page they read from.
 
 | Page | Tools |
 | --- | --- |
@@ -28,12 +28,10 @@ Serving is stateless: every MCP request is answered on its own, so replicas scal
 | Docs | `techdocs_get_metadata`, `techdocs_get_page` (HTML rendered to text with headings and fenced code) |
 | Platforms | `platforms_get_stats` |
 | API Registry | `openapi_registry_list_registrations`, `openapi_registry_get_registration`, `openapi_registry_get_entity_yaml` |
-| Catalog Health | `catalog_health_get_coverage`, `catalog_health_list_projects`, `catalog_health_list_groups`, `catalog_health_get_history`, `catalog_health_list_branches` |
 | ArgoCD | `argocd_get_status`, `argocd_list_application_sets`, `argocd_get_application_set`, `argocd_list_upstream_charts`, `argocd_get_upstream_chart`, `argocd_get_upstream_scan_status`, `argocd_list_audit_logs`, `argocd_list_repo_branches` |
 | Cost Report | `opencost_get_config`, `opencost_list_filters`, `opencost_list_years`, `opencost_search_controllers`, `opencost_get_monthly_totals`, `opencost_get_daily_summary`, `opencost_list_monthly_pod_costs`, `opencost_list_daily_pod_costs`, `opencost_get_pod_daily_costs`, `opencost_list_collection_runs` |
-| Access Tokens | `pat_get_settings`, `pat_list_tokens`, `pat_get_token`, `pat_list_audit_events`, `pat_get_audit_summary` |
 
-List tools take `offset` and `limit` and report `total` and `truncated`, so an agent pages instead of raising the limit. A result longer than `MAX_RESULT_CHARS` is cut with a note asking the model to narrow the query. Secrets never leave the server: a personal access token is only ever reported by its short non-secret prefix, because Backstage stores a hash and shows the secret once at creation.
+List tools take `offset` and `limit` and report `total` and `truncated`, so an agent pages instead of raising the limit. A result longer than `MAX_RESULT_CHARS` is cut with a note asking the model to narrow the query.
 
 `backstage-mcp --list-tools` prints the registered names, and `tools/list` on the endpoint returns the JSON schemas the descriptions above are generated from.
 
@@ -57,15 +55,11 @@ backend:
           - plugin: techdocs
           - plugin: platforms
           - plugin: openapi-registry
-          - plugin: catalog-health
           - plugin: argocd-appset
           - plugin: opencost
-          - plugin: pat
 ```
 
 **Plugins that accept a service principal on reads.** The in-house plugins used to accept only signed-in users (`allow: ['user']`), so an external token got 401 from every list endpoint. Since `1.54.6-1` their auth helpers also accept a service principal on GET requests, with admin visibility so list endpoints return every row, and reject it on any other method, so the token can never approve, mute, reserve or download anything even if it were pointed at those routes.
-
-The `pat` plugin first shipped without that helper and refused every service principal, so the `pat_*` tools answered 403. Image `1.55.3-1` and later carry it. Dropping `- plugin: pat` from `accessRestrictions` keeps the plugin unreachable for deployments that would rather not put token metadata in an agent's context. A personal access token can never reach the tools' own plugin the other way round either: `pat` is refused as a scope target, so one token cannot enumerate or audit another.
 
 ## Configuration
 

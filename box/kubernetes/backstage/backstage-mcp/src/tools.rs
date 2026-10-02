@@ -6,10 +6,8 @@
 
 pub mod argocd;
 pub mod catalog;
-pub mod catalog_health;
 pub mod openapi_registry;
 pub mod opencost;
-pub mod pat;
 pub mod platforms;
 pub mod search;
 pub mod techdocs;

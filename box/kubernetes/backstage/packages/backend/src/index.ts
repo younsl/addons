@@ -1,30 +1,12 @@
 import { createBackend } from '@backstage/backend-defaults';
-import { rootHttpRouterServiceFactory } from '@backstage/backend-defaults/rootHttpRouter';
 import {
   gitlabPlugin,
   catalogPluginGitlabFillerProcessorModule,
 } from '@immobiliarelabs/backstage-plugin-gitlab-backend';
 import { catalogModuleSonarQubeAnnotationProcessor } from './processors';
 import { permissionModuleAdminPolicy } from './permissions-policy';
-import { createPatGatewayMiddleware } from '@internal/plugin-pat-backend';
 
 const backend = createBackend();
-
-// Personal access tokens are validated before any plugin router runs. The
-// middleware only acts on bearer tokens with the PAT prefix, so ordinary
-// Backstage user and service tokens pass through untouched. It is installed
-// ahead of applyDefaults() so the stock middleware chain stays intact across
-// upgrades; the gateway throttles invalid tokens per client itself.
-backend.add(
-  rootHttpRouterServiceFactory({
-    configure({ app, logger, applyDefaults }) {
-      // The cast bridges @types/express 4 (this package) and 5 (the plugin);
-      // the handler signature is identical at runtime.
-      app.use(createPatGatewayMiddleware({ logger }) as any);
-      applyDefaults();
-    },
-  }),
-);
 
 const disableGitlab = process.env.DISABLE_GITLAB === 'true';
 
@@ -67,13 +49,7 @@ backend.add(import('@internal/plugin-openapi-registry-backend'));
 
 backend.add(import('@internal/plugin-argocd-appset-backend'));
 
-if (!disableGitlab) {
-  backend.add(import('@internal/plugin-catalog-health-backend'));
-}
-
 backend.add(import('@internal/plugin-opencost-backend'));
-
-backend.add(import('@internal/plugin-pat-backend'));
 
 backend.add(import('@backstage-community/plugin-sonarqube-backend'));
 
