@@ -7,9 +7,9 @@ Custom Backstage image with GitLab auto-discovery, Keycloak OIDC, and in-house p
 
 ## Announcement
 
-### Most in-house plugins moved to a dedicated platform (2026-10-03)
+### Plugins moved to an internal platform (2026-10-03)
 
-Most in-house plugins have been retired from this image. The decision to build a dedicated internal platform shifted the operational tooling that had grown on top of Backstage, such as access audits, self-service account requests, log extraction and capacity reservations, onto that platform, and this image now depends on the Backstage framework far less than before. What remains is the developer portal core: the software catalog, API docs, TechDocs, scaffolder templates, the platforms page, the OpenAPI registry and the cost report, plus the ArgoCD ApplicationSets view while its move is still in progress. The [changelog](docs/changelog.md) lists every removed plugin by release.
+Most in-house plugins are retired. Operational tooling such as access audits, account requests, log extraction and capacity reservations moved to a dedicated internal platform, so this image now leans on Backstage far less. What stays is the portal core (catalog, API docs, TechDocs, templates, platforms, OpenAPI registry, cost report) plus ArgoCD ApplicationSets until its move finishes. The [changelog](docs/changelog.md) lists the removed plugins.
 
 ## Quick Start
 
