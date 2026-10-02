@@ -176,3 +176,15 @@ Any pair below works in either direction. Verified on kind with MinIO RELEASE.20
 | `lost the HA lease` | The Lease was taken during the copy. Rerun once nothing else contends for it |
 | `... is not reachable` | The endpoint, bucket or credentials are wrong, or the store did not come up within `wait` |
 | `postflight failed ... removed N bad target blobs` | The target held corrupt or truncated copies. Rerun to copy them again, and check the target store's health if it repeats |
+| `PF06 source-blobs N named blobs are missing in the source` | The source already lost those blobs, so their artifacts fail to download today too. Check `forklift_dangling_blob_refs_total` or the Storage page's broken artifacts before the cutover. Delete or reupload them in the source and rerun, or set `allowMissingSourceBlobs` to carry them over in the same broken state and fix them from the Storage page afterwards. PF05 reports the same count as `without a blobs row` |
+| No log line for minutes after `acquired leadership` | Preflight prints its report only when every check is done. A large snapshot takes time to download (2.9 GiB took about 4 minutes) and `integrity_check` reads all of it from staging, bound by disk rather than CPU. Watch the Job pod's network and disk reads instead of its log, and budget the same again for PV01 after the copy |
+| `object store not ready; retrying ... connection closed before message completed` right after the Job starts | The bundled SeaweedFS is still starting. The Job retries until `wait` runs out, then creates the bucket and continues |
+| The SeaweedFS pod restarts on every Argo CD sync | The subchart's S3 identities Secret holds a random read-only key that changes on every render without `lookup`. Keep `seaweedfs.allInOne.s3.existingConfigSecret` set so the chart writes a stable identities file instead |
+| `secret "<release>-seaweedfs-s3-secret" not found` when SeaweedFS starts | The manifests were applied without Helm hooks, and the subchart creates that Secret in a `pre-install` hook. Keep `seaweedfs.allInOne.s3.existingConfigSecret` set, or apply the hooks first |
+
+## Conclusion
+
+- A migration is a chart Job: preflight before the first write, a verified copy, then postflight on the target. Every run leaves a record on the Storage page.
+- forklift stays at 0 replicas from the first sync with `storage.migration.enabled` until the cutover, dry run included. Run the dry run, the copy and the cutover back to back.
+- Read the dry run's preflight before copying. A failure there costs nothing, while the copy itself takes the snapshot download twice plus the blobs.
+- Blobs already missing in the source are a source problem. Decide before the copy whether to fix them first or carry them over broken.
