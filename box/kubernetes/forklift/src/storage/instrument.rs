@@ -91,6 +91,13 @@ impl BlobStore for InstrumentedStore {
         res
     }
 
+    async fn size(&self, digest: &str) -> Result<Option<i64>> {
+        let start = Instant::now();
+        let res = self.inner.size(digest).await;
+        self.observe("size", start, &res);
+        res
+    }
+
     async fn delete(&self, digest: &str) -> Result<()> {
         let start = Instant::now();
         let res = self.inner.delete(digest).await;

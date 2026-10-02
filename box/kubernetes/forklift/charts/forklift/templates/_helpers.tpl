@@ -57,63 +57,105 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 
 {{/*
 s3Enabled is the effective S3 toggle: the operator explicitly set the s3 backend,
-OR the bundled MinIO subchart is enabled (which is wired to the s3 backend
+OR the bundled SeaweedFS subchart is enabled (which is wired to the s3 backend
 automatically). Used by every template that branches on object-storage mode so
-"minio.enabled" alone is enough to switch the whole chart to S3.
+"seaweedfs.enabled" alone is enough to switch the whole chart to S3.
 */}}
 {{- define "forklift.s3Enabled" -}}
-{{- if or (eq .Values.storage.backend "s3") .Values.minio.enabled -}}true{{- else -}}false{{- end -}}
+{{- if or (eq .Values.storage.backend "s3") .Values.seaweedfs.enabled -}}true{{- else -}}false{{- end -}}
 {{- end -}}
 
 {{/*
-Fully qualified name of the bundled MinIO release, matching the minio subchart's
-own fullname logic (release-name + chart-name, unless the release name already
-contains it). Honors minio.fullnameOverride.
+Service of the bundled SeaweedFS all-in-one server, matching the subchart's
+fullname logic. Honors seaweedfs.fullnameOverride.
 */}}
-{{- define "forklift.minioFullname" -}}
-{{- if .Values.minio.fullnameOverride -}}
-{{- .Values.minio.fullnameOverride | trunc 63 | trimSuffix "-" -}}
-{{- else if contains "minio" .Release.Name -}}
-{{- .Release.Name | trunc 63 | trimSuffix "-" -}}
+{{- define "forklift.seaweedfsService" -}}
+{{- $full := "" -}}
+{{- if .Values.seaweedfs.fullnameOverride -}}
+{{- $full = .Values.seaweedfs.fullnameOverride | trunc 63 | trimSuffix "-" -}}
+{{- else if contains "seaweedfs" .Release.Name -}}
+{{- $full = .Release.Name | trunc 63 | trimSuffix "-" -}}
 {{- else -}}
-{{- printf "%s-minio" .Release.Name | trunc 63 | trimSuffix "-" -}}
+{{- $full = printf "%s-seaweedfs" .Release.Name | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
+{{- printf "%s-all-in-one" $full -}}
 {{- end -}}
 
-{{/*
-Effective S3 endpoint: an explicitly configured endpoint wins; otherwise, when
-MinIO is bundled, point at the in-cluster MinIO API service. Empty (AWS default).
-*/}}
 {{- define "forklift.s3Endpoint" -}}
 {{- if .Values.storage.s3.endpoint -}}
 {{- .Values.storage.s3.endpoint -}}
-{{- else if .Values.minio.enabled -}}
-{{- printf "http://%s:9000" (include "forklift.minioFullname" .) -}}
+{{- else if .Values.seaweedfs.enabled -}}
+{{- printf "http://%s:8333" (include "forklift.seaweedfsService" .) -}}
+{{- end -}}
+{{- end -}}
+
+{{- define "forklift.s3CredSecret" -}}
+{{- if .Values.storage.s3.existingSecret -}}
+{{- .Values.storage.s3.existingSecret -}}
+{{- else if .Values.seaweedfs.enabled -}}
+{{- include "forklift.fullname" . -}}
+{{- end -}}
+{{- end -}}
+
+{{- define "forklift.s3Region" -}}
+{{- if .Values.storage.s3.region -}}
+{{- .Values.storage.s3.region -}}
+{{- else if .Values.seaweedfs.enabled -}}
+us-east-1
+{{- end -}}
+{{- end -}}
+
+{{- define "forklift.replicas" -}}
+{{- if .Values.storage.migration.enabled }}0{{ else }}{{ .Values.replicaCount }}{{ end }}
+{{- end -}}
+
+{{- define "forklift.s3Provider" -}}
+{{- if .Values.storage.s3.provider -}}
+{{- .Values.storage.s3.provider -}}
+{{- else if .Values.seaweedfs.enabled -}}
+seaweedfs
+{{- end -}}
+{{- end -}}
+
+{{- define "forklift.s3AdminEndpoint" -}}
+{{- if .Values.storage.s3.adminEndpoint -}}
+{{- .Values.storage.s3.adminEndpoint -}}
+{{- else if .Values.seaweedfs.enabled -}}
+{{- printf "http://%s:9333" (include "forklift.seaweedfsService" .) -}}
 {{- end -}}
 {{- end -}}
 
 {{/*
 Effective S3 bucket: an explicit storage.s3.bucket wins; otherwise the first
-bucket the MinIO subchart provisions. Fails when neither is available.
+bucket the SeaweedFS subchart provisions. Fails when neither is available.
 */}}
 {{- define "forklift.s3Bucket" -}}
+{{- $buckets := ((.Values.seaweedfs.allInOne).s3).createBuckets -}}
 {{- if .Values.storage.s3.bucket -}}
 {{- .Values.storage.s3.bucket -}}
-{{- else if and .Values.minio.enabled .Values.minio.buckets -}}
-{{- (first .Values.minio.buckets).name -}}
+{{- else if and .Values.seaweedfs.enabled $buckets -}}
+{{- (first $buckets).name -}}
 {{- else -}}
-{{- fail "storage.s3.bucket is required when storage.backend is s3 (or define minio.buckets when using the bundled MinIO)" -}}
+{{- fail "storage.s3.bucket is required when storage.backend is s3 (or define seaweedfs.allInOne.s3.createBuckets when using the bundled SeaweedFS)" -}}
 {{- end -}}
 {{- end -}}
 
 {{/*
 Validate mutually exclusive storage/HA modes. The s3 backend (including the
-bundled MinIO) already shares blobs and snapshots metadata to S3, so PV-based
+bundled SeaweedFS) already shares blobs and snapshots metadata to S3, so PV-based
 peer replication is redundant and would compete for the metadata snapshot.
 */}}
 {{- define "forklift.validateStorage" -}}
 {{- if and (eq (include "forklift.s3Enabled" .) "true") .Values.replication.enabled -}}
-{{- fail "object-storage mode (storage.backend=s3 or minio.enabled=true) is incompatible with replication.enabled=true; disable one (s3 mode shares blobs and snapshots metadata to S3, so peer replication is unnecessary)" -}}
+{{- fail "object-storage mode (storage.backend=s3 or seaweedfs.enabled=true) is incompatible with replication.enabled=true; disable one (s3 mode shares blobs and snapshots metadata to S3, so peer replication is unnecessary)" -}}
+{{- end -}}
+{{- if .Values.storage.migration.enabled -}}
+{{- if ne (include "forklift.s3Enabled" .) "true" -}}
+{{- fail "storage.migration.enabled copies into object storage; set storage.backend=s3 or seaweedfs.enabled=true" -}}
+{{- end -}}
+{{- if not .Values.storage.migration.sourceObjectStorage.bucket -}}
+{{- fail "storage.migration.sourceObjectStorage.bucket is required when storage.migration.enabled is true" -}}
+{{- end -}}
 {{- end -}}
 {{- if not (has .Values.storage.backend (list "fs" "s3")) -}}
 {{- fail (printf "storage.backend must be \"fs\" or \"s3\", got %q" .Values.storage.backend) -}}
@@ -171,9 +213,7 @@ StatefulSet (PV-based replication mode).
 - name: FORKLIFT_STORAGE_S3_PREFIX
   value: {{ . | quote }}
 {{- end }}
-{{- $region := .Values.storage.s3.region }}
-{{- if and (not $region) .Values.minio.enabled }}{{ $region = "us-east-1" }}{{- end }}
-{{- with $region }}
+{{- with (include "forklift.s3Region" .) }}
 - name: FORKLIFT_STORAGE_S3_REGION
   value: {{ . | quote }}
 {{- end }}
@@ -182,19 +222,24 @@ StatefulSet (PV-based replication mode).
   value: {{ . | quote }}
 {{- end }}
 - name: FORKLIFT_STORAGE_S3_FORCE_PATH_STYLE
-  value: {{ or .Values.storage.s3.forcePathStyle .Values.minio.enabled | quote }}
+  value: {{ or .Values.storage.s3.forcePathStyle .Values.seaweedfs.enabled | quote }}
+{{- with (include "forklift.s3Provider" .) }}
+- name: FORKLIFT_STORAGE_S3_PROVIDER
+  value: {{ . | quote }}
+{{- end }}
+{{- with (include "forklift.s3AdminEndpoint" .) }}
+- name: FORKLIFT_STORAGE_S3_ADMIN_ENDPOINT
+  value: {{ . | quote }}
+{{- end }}
 - name: FORKLIFT_STORAGE_META_SYNC_INTERVAL
   value: {{ .Values.storage.s3.metaSyncInterval | quote }}
 {{- /*
-S3 credentials. An explicit existingSecret wins. Otherwise, when MinIO is
-bundled, read the root credentials forklift mirrors into its own Secret. With
+S3 credentials. An explicit existingSecret wins. Otherwise, when SeaweedFS is
+bundled, read the admin credentials forklift mirrors into its own Secret. With
 neither, no static keys are set and the app falls back to the AWS default
 credential chain (EKS IRSA / Pod Identity).
 */}}
-{{- $credSecret := "" }}
-{{- if .Values.storage.s3.existingSecret }}{{ $credSecret = .Values.storage.s3.existingSecret }}
-{{- else if .Values.minio.enabled }}{{ $credSecret = include "forklift.fullname" . }}{{- end }}
-{{- with $credSecret }}
+{{- with (include "forklift.s3CredSecret" .) }}
 - name: FORKLIFT_STORAGE_S3_ACCESS_KEY_ID
   valueFrom:
     secretKeyRef:
@@ -205,6 +250,20 @@ credential chain (EKS IRSA / Pod Identity).
     secretKeyRef:
       name: {{ . }}
       key: secret-access-key
+{{- end }}
+{{- if .Values.storage.s3.existingSecret }}
+- name: FORKLIFT_STORAGE_S3_ADMIN_TOKEN
+  valueFrom:
+    secretKeyRef:
+      name: {{ .Values.storage.s3.existingSecret }}
+      key: admin-token
+      optional: true
+{{- else if .Values.storage.s3.adminToken }}
+- name: FORKLIFT_STORAGE_S3_ADMIN_TOKEN
+  valueFrom:
+    secretKeyRef:
+      name: {{ include "forklift.fullname" . }}
+      key: s3-admin-token
 {{- end }}
 {{- end }}
 - name: FORKLIFT_LOG_LEVEL

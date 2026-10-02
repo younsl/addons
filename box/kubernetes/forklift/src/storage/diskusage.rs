@@ -1,5 +1,5 @@
 //! Filesystem capacity for the data directory (the fs backend's answer to the
-//! MinIO admin metrics).
+//! object-store admin metrics).
 
 use std::io;
 use std::path::Path;
@@ -7,7 +7,7 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 
 /// The capacity of the filesystem a data directory lives on. It is the
-/// filesystem backend's counterpart to [`super::MinIOInfo`]: the same "how full
+/// filesystem backend's counterpart to [`super::ClusterInfo`]: the same "how full
 /// is the thing artifacts are written to" question, answered for a
 /// PersistentVolume.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]

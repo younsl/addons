@@ -37,7 +37,6 @@ beforeEach(() => {
   mockedHa.getHa.mockResolvedValue(status as never);
   mockedHa.getStorage.mockResolvedValue({
     backend: "fs",
-    mode: "filesystem",
     blob_count: 0,
     blob_bytes: 0,
     dangling: [],
@@ -52,7 +51,7 @@ afterEach(() => {
 describe("useHaStatus", () => {
   // Leadership and capacity change on completely different timescales: a
   // failover is seconds, a volume filling is days. Polling them together would
-  // put a MinIO Admin API round trip on the 5s election beat.
+  // put an object-store admin API round trip on the 5s election beat.
   test("polls leadership fast and storage slowly", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     const { wrapper } = withQueryClient();
@@ -111,15 +110,15 @@ describe("useHaStatus", () => {
 });
 
 describe("storageUsage", () => {
-  test("prefers the MinIO cluster when there is one", () => {
+  test("prefers the object-store cluster when there is one", () => {
     expect(
       storageUsage({
         backend: "s3",
-        mode: "minio",
+        provider: "seaweedfs",
         blob_count: 0,
         blob_bytes: 0,
         dangling: [],
-        minio: {
+        cluster: {
           total_capacity_bytes: 1000,
           used_bytes: 400,
           usage_ratio: 0.4,
@@ -132,7 +131,6 @@ describe("storageUsage", () => {
     expect(
       storageUsage({
         backend: "fs",
-        mode: "filesystem",
         blob_count: 0,
         blob_bytes: 0,
         dangling: [],
@@ -147,7 +145,6 @@ describe("storageUsage", () => {
     expect(
       storageUsage({
         backend: "s3",
-        mode: "s3",
         blob_count: 0,
         blob_bytes: 0,
         dangling: [],
@@ -159,7 +156,6 @@ describe("storageUsage", () => {
     expect(
       storageUsage({
         backend: "fs",
-        mode: "filesystem",
         blob_count: 0,
         blob_bytes: 0,
         dangling: [],

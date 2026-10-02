@@ -12,7 +12,7 @@ import { postStepDownHa } from "@/services/v1/ha/api";
 export const HA_REFRESH_MS = 5_000;
 
 // Storage capacity is polled on its own, much slower cadence: a volume fills up
-// over days, and for a MinIO backend each read is an Admin API round trip that
+// over days, and for an object-store backend each read is an admin API round trip that
 // does not belong on the 5s leader-election beat.
 const STORAGE_REFRESH_MS = 30_000;
 

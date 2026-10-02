@@ -5,7 +5,7 @@ import { getErrorMessageIfAny } from "@/lib/http/error/api-error";
 import { openApiQueryOptions } from "@/query/v1/openapi-query-options";
 
 // Auto-refresh cadence when the toggle is on, keeping drive health and usage
-// current without hammering the MinIO admin API behind it.
+// current without hammering the object-store admin API behind it.
 const REFRESH_MS = 10_000;
 
 // useStorageStatus is the one query the storage overview needs, plus the

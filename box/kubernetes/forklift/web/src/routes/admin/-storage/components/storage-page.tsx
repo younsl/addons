@@ -3,15 +3,14 @@ import { Button } from "@/components/ui/button";
 import { PageDescription, PageHeader } from "@/components/app-ui/page";
 import { Switch } from "@/components/ui/switch";
 import { useTranslation } from "@/lib/i18n";
-import { MinioClusterPanel } from "@/routes/admin/-storage/components/minio-cluster-panel";
+import { ClusterPanel } from "@/routes/admin/-storage/components/cluster-panel";
 import { StorageOverview } from "@/routes/admin/-storage/components/storage-overview";
 import { useStorageStatus } from "@/routes/admin/-storage/hooks/use-storage-status";
 import { formatTimestamp } from "@/utils/format-timestamp";
 
 // StoragePage is the object-storage operations overview: the active backend and
-// forklift's deduplicated blob footprint (always available), plus - for a MinIO
-// backend - live cluster capacity, usage, object and bucket counts, and drive
-// health from the MinIO Admin API.
+// forklift's deduplicated blob footprint (always available), plus live cluster
+// capacity and health for a provider with an admin API.
 export function StoragePage() {
   const { t } = useTranslation();
   const { error, isAutoRefreshing, isLoading, refresh, setAutoRefreshing, storage, updatedAt } =
@@ -49,13 +48,19 @@ export function StoragePage() {
         <div className="space-y-6">
           <StorageOverview storage={storage} />
 
-          {storage.minio ? (
-            <MinioClusterPanel minio={storage.minio} />
-          ) : storage.minio_error ? (
-            // The backend claims MinIO but the admin API did not answer. Worth
-            // saying plainly: the cluster panel being absent is a symptom, not
-            // a configuration choice.
-            <Alert>{t("storage.minio-unavailable")}: {storage.minio_error}</Alert>
+          {storage.conditional_writes === false && (
+            <Alert>
+              {t("storage.conditional-writes-ignored")}
+              {storage.conditional_writes_detail ? `: ${storage.conditional_writes_detail}` : ""}
+            </Alert>
+          )}
+
+          {storage.cluster ? (
+            <ClusterPanel cluster={storage.cluster} providerName={storage.provider_name} />
+          ) : storage.cluster_error ? (
+            // The cluster panel being absent is a symptom, not a configuration
+            // choice, so say why.
+            <Alert>{t("storage.cluster-unavailable")}: {storage.cluster_error}</Alert>
           ) : storage.backend !== "s3" ? (
             <div className="rounded-md border border-dashed border-[var(--fx-border-subtle)] px-3 py-6 text-center text-sm text-muted-foreground">
               {t("storage.fs-note")}

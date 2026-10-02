@@ -161,9 +161,14 @@ impl Elector {
             on_started_leading(c);
         };
         let me = Arc::clone(&self);
+        let shutting_down = cancel.clone();
         let on_stopped = move || {
             me.state.lock().leading = false;
-            tracing::warn!(identity = %me.cfg.identity, "lost leadership");
+            if shutting_down.is_cancelled() {
+                tracing::info!(identity = %me.cfg.identity, "released leadership");
+            } else {
+                tracing::warn!(identity = %me.cfg.identity, "lost leadership");
+            }
             on_stopped_leading();
         };
         let mut lock = lock;

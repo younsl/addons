@@ -25,6 +25,11 @@ use tokio_util::sync::CancellationToken;
 /// arriving mid-startup.
 const INIT_TIMEOUT: Duration = Duration::from_secs(90);
 
+/// Bounds waiting for the object store at boot, e.g. a bundled store that
+/// starts alongside forklift. It stays under the chart's startupProbe budget
+/// (5s x 60) so a store that never comes up still ends in a restart.
+const STORE_BOOT_BUDGET: Duration = Duration::from_secs(240);
+
 /// Bounds the metadata snapshot flush on demotion and shutdown. It has to fit
 /// inside the pod's termination grace period, and a snapshot upload is a
 /// `VACUUM INTO` plus a single PUT.
@@ -35,6 +40,10 @@ fn main() -> std::process::ExitCode {
         Ok(cfg) => cfg,
         Err(e) => return fatal(&e.to_string()),
     };
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    if args.first().map(String::as_str) == Some("migrate-storage") {
+        return migrate_storage(&cfg, &args[1..]);
+    }
     match parse_flags(&mut cfg) {
         Ok(true) => {
             println!("forklift {}", version::string());
@@ -58,6 +67,71 @@ fn main() -> std::process::ExitCode {
     match runtime.block_on(run(Arc::new(cfg), CancellationToken::new())) {
         Ok(()) => std::process::ExitCode::SUCCESS,
         Err(e) => fatal(&format!("{e:#}")),
+    }
+}
+
+fn migrate_storage(cfg: &config::Config, args: &[String]) -> std::process::ExitCode {
+    use forklift::migrate::cli;
+    let args = match cli::parse_args(args) {
+        Ok(args) => args,
+        Err(e) => {
+            if !e.is_empty() {
+                eprintln!("{e}");
+            }
+            eprintln!("{}", cli::USAGE);
+            return std::process::ExitCode::from(2);
+        }
+    };
+    if cfg.storage.backend != "s3" {
+        return fatal(
+            "migrate-storage copies between object stores; the source needs FORKLIFT_STORAGE_BACKEND=s3",
+        );
+    }
+    let _ = rustls::crypto::ring::default_provider().install_default();
+    server::logging::init_logging(&cfg.log_level, &cfg.log_format);
+    tracing::info!(
+        version = %version::string(),
+        rust = %version::rust(),
+        staging = %args.staging.display(),
+        "starting forklift migrate-storage"
+    );
+    let runtime = match tokio::runtime::Runtime::new() {
+        Ok(runtime) => runtime,
+        Err(e) => return fatal(&e.to_string()),
+    };
+    let result = runtime.block_on(async {
+        if args.interactive {
+            let mut console = cli::Terminal {
+                input: std::io::stdin().lock(),
+                output: std::io::stdout(),
+            };
+            cli::run_interactive(&mut console, &cfg.storage.s3, &args).await
+        } else {
+            cli::run(&cfg.storage.s3, &args).await.map(Some)
+        }
+    });
+    match result {
+        Ok(Some(report)) => {
+            if !args.interactive {
+                eprintln!(
+                    "{}",
+                    forklift::migrate::preflight::render(&report.preflight)
+                );
+                if !report.postflight.is_empty() {
+                    eprintln!(
+                        "{}",
+                        forklift::migrate::preflight::render(&report.postflight)
+                    );
+                }
+            }
+            println!("{}", serde_json::to_string(&report).unwrap_or_default());
+            std::process::ExitCode::SUCCESS
+        }
+        Ok(None) => {
+            eprintln!("migration cancelled");
+            std::process::ExitCode::from(1)
+        }
+        Err(e) => fatal(&e),
     }
 }
 
@@ -158,6 +232,7 @@ async fn run(cfg: Arc<config::Config>, cancel: CancellationToken) -> anyhow::Res
     // shared directly in the bucket and the metadata database is snapshotted to
     // S3 by meta_sync, so the deployment needs no EBS/RWX volume.
     let mut meta_sync: Option<Arc<objstore::MetaSync>> = None;
+    let mut conditional_writes: Option<objstore::ConditionalWrites> = None;
     let blobs: Arc<storage::InstrumentedStore> = if cfg.storage.backend == "s3" {
         let s3cfg = to_s3_config(&cfg.storage.s3);
         let s3blobs = storage::S3BlobStore::new(&s3cfg, data_dir.join("blob-tmp"))
@@ -165,11 +240,17 @@ async fn run(cfg: Arc<config::Config>, cancel: CancellationToken) -> anyhow::Res
             .context("open s3 blob store")?;
         let client = s3blobs.client();
         let blobs = Arc::new(storage::instrument(Arc::new(s3blobs), "s3", &reg));
+        let object_api: Arc<dyn objstore::ObjectApi> = Arc::new(objstore::S3Api::new(client));
+        conditional_writes = Some(
+            check_conditional_writes(object_api.as_ref(), &cfg)
+                .await
+                .context("probe s3 conditional writes")?,
+        );
         let sync = objstore::MetaSync::new(objstore::MetaOptions {
             store: Arc::clone(&store),
-            api: Arc::new(objstore::S3Api::new(client)),
+            api: object_api,
             bucket: cfg.storage.s3.bucket.clone(),
-            key: meta_key(&cfg.storage.s3.prefix),
+            key: objstore::meta_key(&cfg.storage.s3.prefix),
             data_dir: data_dir.clone(),
             interval: cfg.storage.meta_sync_interval,
             registry: Some(reg.clone()),
@@ -177,9 +258,14 @@ async fn run(cfg: Arc<config::Config>, cancel: CancellationToken) -> anyhow::Res
         // Restore the latest snapshot before bootstrap/seed so they see existing
         // data. The live SQLite file lives on an ephemeral volume that loses its
         // contents on restart; an empty bucket is a clean no-op.
-        sync.restore_on_boot()
-            .await
-            .context("restore metadata from s3")?;
+        objstore::retry_transient(
+            "restore metadata",
+            STORE_BOOT_BUDGET,
+            Duration::from_secs(1),
+            || sync.restore_on_boot(),
+        )
+        .await
+        .context("restore metadata from s3")?;
         tokio::spawn(Arc::clone(&sync).run(shutdown.clone()));
         meta_sync = Some(sync);
         tracing::info!(
@@ -693,53 +779,44 @@ async fn run(cfg: Arc<config::Config>, cancel: CancellationToken) -> anyhow::Res
         }));
     }
 
-    // Storage overview for the admin console: the backend descriptor plus, for a
-    // MinIO endpoint, a live MinIO Admin API query. fs and AWS S3 (no endpoint)
-    // expose no admin metrics, so the page then shows just the blob footprint.
     {
-        let (endpoint, bucket, prefix) = if cfg.storage.backend == "s3" {
-            let bucket = cfg.storage.s3.bucket.clone();
-            let ep = cfg.storage.s3.endpoint.trim_end_matches('/');
-            let endpoint = if ep.is_empty() {
-                format!("s3://{bucket}")
-            } else {
-                ep.to_string()
-            };
-            (
-                endpoint,
-                bucket,
-                cfg.storage.s3.prefix.trim_start_matches('/').to_string(),
-            )
+        let s3 = &cfg.storage.s3;
+        let mut descriptor = if cfg.storage.backend == "s3" {
+            let ep = s3.endpoint.trim_end_matches('/');
+            api::StorageBackend {
+                backend: "s3".into(),
+                provider: s3.effective_provider().to_string(),
+                endpoint: if ep.is_empty() {
+                    format!("s3://{}", s3.bucket)
+                } else {
+                    ep.to_string()
+                },
+                bucket: s3.bucket.clone(),
+                prefix: s3.prefix.trim_start_matches('/').to_string(),
+                ..Default::default()
+            }
         } else {
-            (cfg.data_dir.clone(), String::new(), String::new())
-        };
-        let minio: Option<api::MinIOInfoFn> =
-            (cfg.storage.backend == "s3" && !cfg.storage.s3.endpoint.is_empty()).then(|| {
-                let s3cfg = Arc::new(to_s3_config(&cfg.storage.s3));
-                Arc::new(move || {
-                    let s3cfg = Arc::clone(&s3cfg);
-                    Box::pin(async move {
-                        match tokio::time::timeout(
-                            Duration::from_secs(5),
-                            storage::minio_admin_info(&s3cfg),
-                        )
-                        .await
-                        {
-                            Ok(res) => res.map_err(|e| e.to_string()),
-                            Err(_) => Err("minio admin info: timed out".to_string()),
-                        }
-                    }) as std::pin::Pin<Box<dyn Future<Output = _> + Send>>
-                }) as api::MinIOInfoFn
-            });
-        api_handler.set_storage_backend(
             api::StorageBackend {
                 backend: cfg.storage.backend.clone(),
-                endpoint,
-                bucket,
-                prefix,
-            },
-            minio,
-        );
+                endpoint: cfg.data_dir.clone(),
+                ..Default::default()
+            }
+        };
+        if let Some(cw) = &conditional_writes {
+            descriptor.conditional_writes = Some(cw.is_enforced());
+            if let objstore::ConditionalWrites::Ignored { reason } = cw {
+                descriptor.conditional_writes_detail = reason.clone();
+            }
+        }
+        let mut cluster: Option<api::ClusterInfoFn> = None;
+        if let Some(spec) = storage::admin::provider(&descriptor.provider) {
+            match storage::cluster_admin(spec, &to_admin_config(s3)) {
+                Ok(Some(admin)) => cluster = Some(cluster_info_fn(admin)),
+                Ok(None) => {}
+                Err(e) => descriptor.cluster_unavailable = e.to_string(),
+            }
+        }
+        api_handler.set_storage_backend(descriptor, cluster);
     }
 
     // PV-based replication: the leader serves token-gated snapshot/blob
@@ -1126,13 +1203,57 @@ fn to_s3_config(c: &config::S3Config) -> storage::S3Config {
     }
 }
 
-fn meta_key(prefix: &str) -> String {
-    let prefix = prefix.trim_matches('/');
-    if prefix.is_empty() {
-        "meta/forklift.db".to_string()
-    } else {
-        format!("{prefix}/meta/forklift.db")
+fn to_admin_config(c: &config::S3Config) -> storage::AdminConfig {
+    storage::AdminConfig {
+        s3_endpoint: c.endpoint.clone(),
+        admin_endpoint: c.admin_endpoint.clone(),
+        region: c.region.clone(),
+        access_key_id: c.access_key_id.clone(),
+        secret_access_key: c.secret_access_key.clone(),
+        admin_token: c.admin_token.clone(),
     }
+}
+
+fn cluster_info_fn(admin: Arc<dyn storage::ClusterAdmin>) -> api::ClusterInfoFn {
+    Arc::new(move || {
+        let admin = Arc::clone(&admin);
+        Box::pin(async move {
+            match tokio::time::timeout(Duration::from_secs(5), admin.cluster_info()).await {
+                Ok(res) => res.map_err(|e| e.to_string()),
+                Err(_) => Err("cluster admin info: timed out".to_string()),
+            }
+        }) as std::pin::Pin<Box<dyn Future<Output = _> + Send>>
+    })
+}
+
+/// HA fencing is unsound on a store that accepts writes whose precondition
+/// failed, so HA refuses to start there; a single instance only warns.
+async fn check_conditional_writes(
+    api: &dyn objstore::ObjectApi,
+    cfg: &config::Config,
+) -> anyhow::Result<objstore::ConditionalWrites> {
+    let key = format!(
+        "{}.probe/{}",
+        objstore::meta_key(&cfg.storage.s3.prefix).trim_end_matches("forklift.db"),
+        uuid::Uuid::new_v4()
+    );
+    let result = objstore::retry_transient(
+        "probe conditional writes",
+        STORE_BOOT_BUDGET,
+        Duration::from_secs(1),
+        || objstore::probe_conditional_writes(api, &cfg.storage.s3.bucket, &key),
+    )
+    .await?;
+    if let objstore::ConditionalWrites::Ignored { reason } = &result {
+        let provider = cfg.storage.s3.effective_provider();
+        if cfg.ha.enabled {
+            anyhow::bail!(
+                "s3 provider {provider} does not enforce conditional writes ({reason}); HA metadata fencing needs them, so disable HA or use a store that enforces If-Match/If-None-Match"
+            );
+        }
+        tracing::warn!(provider, reason = %reason, "s3 store ignores conditional writes; HA must stay disabled");
+    }
+    Ok(result)
 }
 
 async fn signals() {

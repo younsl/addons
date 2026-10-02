@@ -8,7 +8,7 @@ use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
 use std::time::Duration;
 
 use async_trait::async_trait;
-use aws_sdk_s3::error::ProvideErrorMetadata;
+use aws_sdk_s3::error::{DisplayErrorContext, ProvideErrorMetadata};
 use aws_smithy_runtime_api::client::orchestrator::HttpResponse;
 use aws_smithy_runtime_api::client::result::SdkError;
 use prometheus::{Gauge, IntCounterVec, Opts, Registry};
@@ -29,6 +29,10 @@ pub enum Error {
     /// Any other object-store failure.
     #[error("{0}")]
     ObjectStore(String),
+    /// The store could not be reached or is not ready yet (connection, timeout,
+    /// 5xx, throttling, a bucket still being created). Worth retrying.
+    #[error("{0}")]
+    Unavailable(String),
     /// A metadata store failure (snapshot, swap).
     #[error("{0}")]
     Meta(#[from] meta::Error),
@@ -54,7 +58,15 @@ impl Error {
         Error::Io { op, source }
     }
 
-    fn context(self, context: impl Into<String>) -> Error {
+    pub fn is_transient(&self) -> bool {
+        match self {
+            Error::Unavailable(_) => true,
+            Error::Context { source, .. } => source.is_transient(),
+            _ => false,
+        }
+    }
+
+    pub(crate) fn context(self, context: impl Into<String>) -> Error {
         Error::Context {
             context: context.into(),
             source: Box::new(self),
@@ -178,13 +190,35 @@ fn sdk_error<E>(op: &'static str, err: SdkError<E, HttpResponse>) -> Error
 where
     E: ProvideErrorMetadata + std::error::Error + Send + Sync + 'static,
 {
-    if is_not_found(&err) {
+    // A missing bucket is a 404 too, but it must not read as "no snapshot".
+    if err.code() != Some("NoSuchBucket") && is_not_found(&err) {
         return Error::NotFound;
     }
     if is_precondition_failed(&err) {
         return Error::PreconditionFailed(format!("{op}: {err}"));
     }
-    Error::ObjectStore(format!("{op}: {err}"))
+    let transient = is_transient(&err);
+    let msg = format!("{op}: {}", DisplayErrorContext(&err));
+    if transient {
+        Error::Unavailable(msg)
+    } else {
+        Error::ObjectStore(msg)
+    }
+}
+
+fn is_transient<E: ProvideErrorMetadata>(err: &SdkError<E, HttpResponse>) -> bool {
+    match err {
+        SdkError::DispatchFailure(_) | SdkError::TimeoutError(_) | SdkError::ResponseError(_) => {
+            true
+        }
+        _ => {
+            let status = err.raw_response().map(|r| r.status().as_u16());
+            matches!(
+                err.code(),
+                Some("NoSuchBucket" | "SlowDown" | "ServiceUnavailable")
+            ) || status.is_some_and(|s| s == 429 || s >= 500)
+        }
+    }
 }
 
 #[async_trait]

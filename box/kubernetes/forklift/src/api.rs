@@ -44,10 +44,10 @@ pub type HAStepDownFn = Arc<dyn Fn() -> bool + Send + Sync>;
 /// Starts a manual coverage scan detached from the request, reporting whether it
 /// was accepted (false when one is already running).
 pub type CoverageScanFn = Arc<dyn Fn(&str) -> bool + Send + Sync>;
-/// Queries the MinIO Admin API when the backend is a MinIO endpoint.
-pub type MinIOInfoFn = Arc<
+/// Queries the object store's admin API for cluster capacity and health.
+pub type ClusterInfoFn = Arc<
     dyn Fn() -> std::pin::Pin<
-            Box<dyn Future<Output = Result<storage_backend::MinIOInfo, String>> + Send>,
+            Box<dyn Future<Output = Result<storage_backend::ClusterInfo, String>> + Send>,
         > + Send
         + Sync,
 >;
@@ -56,9 +56,15 @@ pub type MinIOInfoFn = Arc<
 #[derive(Debug, Clone, Default)]
 pub struct StorageBackend {
     pub backend: String,
+    /// A [`storage_backend::admin::PROVIDERS`] id; empty for fs.
+    pub provider: String,
     pub endpoint: String,
     pub bucket: String,
     pub prefix: String,
+    /// `None` when the store was not probed.
+    pub conditional_writes: Option<bool>,
+    pub conditional_writes_detail: String,
+    pub cluster_unavailable: String,
 }
 
 /// Everything `main` injects after construction.
@@ -68,7 +74,7 @@ struct Injected {
     ha_step_down: Option<HAStepDownFn>,
     notifier: Option<Arc<notify::Notifier>>,
     storage: StorageBackend,
-    minio: Option<MinIOInfoFn>,
+    cluster: Option<ClusterInfoFn>,
     upload_enabled: bool,
     uploader: Option<Arc<repo::Uploader>>,
     external_url: String,
@@ -150,10 +156,10 @@ impl Handler {
     }
 
     /// Describes the storage backend the Storage admin page renders.
-    pub fn set_storage_backend(&self, backend: StorageBackend, minio: Option<MinIOInfoFn>) {
+    pub fn set_storage_backend(&self, backend: StorageBackend, cluster: Option<ClusterInfoFn>) {
         let mut injected = self.injected.write();
         injected.storage = backend;
-        injected.minio = minio;
+        injected.cluster = cluster;
     }
 
     pub(crate) fn uploader(&self) -> Option<Arc<repo::Uploader>> {

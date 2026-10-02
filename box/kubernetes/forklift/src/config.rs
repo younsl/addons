@@ -175,6 +175,23 @@ pub struct S3Config {
     pub force_path_style: bool,
     pub access_key_id: String,
     pub secret_access_key: String,
+    /// An id from [`crate::storage::admin::PROVIDERS`]. Empty infers `aws`
+    /// without an endpoint and `minio` with one.
+    pub provider: String,
+    /// The provider's admin API when it is not served on the S3 endpoint.
+    pub admin_endpoint: String,
+    pub admin_token: String,
+}
+
+impl S3Config {
+    /// The provider with the empty default resolved.
+    pub fn effective_provider(&self) -> &str {
+        match self.provider.as_str() {
+            "" if self.endpoint.trim().is_empty() => "aws",
+            "" => "minio",
+            p => p,
+        }
+    }
 }
 
 /// Configures OSV-based vulnerability scanning.
@@ -361,6 +378,9 @@ impl Config {
                     force_path_style: env_bool("FORKLIFT_STORAGE_S3_FORCE_PATH_STYLE", false),
                     access_key_id: env("FORKLIFT_STORAGE_S3_ACCESS_KEY_ID", ""),
                     secret_access_key: env("FORKLIFT_STORAGE_S3_SECRET_ACCESS_KEY", ""),
+                    provider: env("FORKLIFT_STORAGE_S3_PROVIDER", "").to_ascii_lowercase(),
+                    admin_endpoint: env("FORKLIFT_STORAGE_S3_ADMIN_ENDPOINT", ""),
+                    admin_token: env("FORKLIFT_STORAGE_S3_ADMIN_TOKEN", ""),
                 },
             },
             http_addr: env("FORKLIFT_HTTP_ADDR", ":8080"),
@@ -483,6 +503,13 @@ impl Config {
                         "s3 static credentials require both access key id and secret access key"
                             .into(),
                     );
+                }
+                let provider = self.storage.s3.provider.as_str();
+                if !provider.is_empty() && crate::storage::admin::provider(provider).is_none() {
+                    return invalid(format!(
+                        "invalid s3 provider {provider:?} (want one of {})",
+                        crate::storage::admin::provider_ids().join(", ")
+                    ));
                 }
                 if self.storage.meta_sync_interval.is_zero() {
                     return invalid("storage meta sync interval must be positive".into());
@@ -1035,6 +1062,39 @@ pub(crate) mod tests {
             Duration::from_secs(10),
             "meta sync interval"
         );
+    }
+
+    #[test]
+    #[serial]
+    fn storage_s3_provider_loads_and_defaults() {
+        let mut g = EnvGuard::new();
+        g.set("FORKLIFT_STORAGE_BACKEND", "s3");
+        g.set("FORKLIFT_STORAGE_S3_BUCKET", "b");
+        let c = Config::load().unwrap();
+        assert_eq!(c.storage.s3.effective_provider(), "aws", "no endpoint");
+
+        g.set("FORKLIFT_STORAGE_S3_ENDPOINT", "http://store:9000");
+        let c = Config::load().unwrap();
+        assert_eq!(c.storage.s3.effective_provider(), "minio", "endpoint only");
+
+        g.set("FORKLIFT_STORAGE_S3_PROVIDER", "Garage");
+        g.set("FORKLIFT_STORAGE_S3_ADMIN_ENDPOINT", "http://store:3903");
+        g.set("FORKLIFT_STORAGE_S3_ADMIN_TOKEN", "t");
+        let c = Config::load().unwrap();
+        assert_eq!(c.storage.s3.effective_provider(), "garage");
+        assert_eq!(c.storage.s3.admin_endpoint, "http://store:3903");
+        assert_eq!(c.storage.s3.admin_token, "t");
+    }
+
+    #[test]
+    #[serial]
+    fn storage_s3_rejects_unknown_provider() {
+        let mut g = EnvGuard::new();
+        g.set("FORKLIFT_STORAGE_BACKEND", "s3");
+        g.set("FORKLIFT_STORAGE_S3_BUCKET", "b");
+        g.set("FORKLIFT_STORAGE_S3_PROVIDER", "ceph");
+        let err = Config::load().unwrap_err();
+        assert!(err.to_string().contains("ceph"), "err = {err}");
     }
 
     #[test]

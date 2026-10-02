@@ -6,7 +6,7 @@ import { formatFileSize } from "@/utils/format-file-size";
 import type { StorageStats } from "@/services/v1/openapi-types";
 
 // The backend and forklift's own deduplicated blob footprint. Available for
-// every backend, unlike the MinIO cluster panel below it.
+// every backend, unlike the cluster panel below it.
 export function StorageOverview({ storage }: { storage: StorageStats }) {
   const { t } = useTranslation();
   // Artifacts the server has observed to be missing their bytes. Reported here
@@ -24,11 +24,9 @@ export function StorageOverview({ storage }: { storage: StorageStats }) {
           label={t("storage.mode")}
           value={
             <Badge>
-              {storage.mode === "minio"
-                ? t("storage.mode-minio")
-                : storage.mode === "s3"
-                  ? t("storage.mode-s3")
-                  : t("storage.mode-filesystem")}
+              {storage.backend === "s3"
+                ? storage.provider_name || t("storage.mode-s3")
+                : t("storage.mode-filesystem")}
             </Badge>
           }
           hint={storage.endpoint}

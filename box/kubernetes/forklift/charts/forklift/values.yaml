@@ -85,60 +85,122 @@ persistence:
 # the metadata snapshot while standbys restore it on promotion. The s3 backend
 # is mutually exclusive with replication.enabled.
 storage:
-  # -- (string) Storage backend: "fs" or "s3". Bundled MinIO (minio.enabled) forces s3.
+  # -- (string) Storage backend: "fs" or "s3". Bundled SeaweedFS (seaweedfs.enabled) forces s3.
   backend: fs
   s3:
-    # -- (string) S3 bucket. Required for s3 without bundled MinIO; else defaults to the first minio.buckets entry.
+    # -- (string) S3 bucket. Defaults to the first bundled SeaweedFS bucket.
     bucket: ""
     # -- (string) Key prefix within the bucket.
     prefix: ""
     # -- (string) AWS region. Empty uses the AWS default chain.
     region: ""
-    # -- (string) Custom S3 endpoint for S3-compatible stores. Auto-targets the bundled MinIO when enabled.
+    # -- (string) S3-compatible endpoint. Defaults to the bundled SeaweedFS.
     endpoint: ""
-    # -- (bool) Path-style addressing (MinIO needs it). Forced on with bundled MinIO.
+    # -- (bool) Path-style addressing. Forced on with bundled SeaweedFS.
     forcePathStyle: false
     # -- (string) Metadata snapshot sync cadence; the bounded data-loss window on failover.
     metaSyncInterval: 30s
-    # -- (string) Existing Secret with keys access-key-id and secret-access-key. Empty uses the AWS default chain (IRSA/Pod Identity).
+    # -- (string) Secret with access-key-id, secret-access-key, optional admin-token. Empty uses IRSA/Pod Identity.
     existingSecret: ""
+    # -- (string) Store for admin metrics: aws, minio, rustfs, seaweedfs, garage or generic. Empty auto-detects.
+    provider: ""
+    # -- (string) Admin API URL when not the S3 endpoint (SeaweedFS master, Garage admin).
+    adminEndpoint: ""
+    # -- (string) Garage admin token, without ".". Ignored with existingSecret.
+    adminToken: ""
+  # Copies data from another S3-compatible store into the configured one. While
+  # enabled, forklift is scaled to 0 and a Job holds the HA Lease.
+  migration:
+    # -- (bool) Run the migration Job and keep forklift at 0 replicas.
+    enabled: false
+    sourceObjectStorage:
+      # -- (string) Source S3 endpoint. Empty is AWS S3.
+      endpoint: ""
+      # -- (string) Source bucket. Required.
+      bucket: ""
+      # -- (string) Source key prefix.
+      prefix: ""
+      # -- (string) Source region.
+      region: ""
+      # -- (bool) Source path-style addressing.
+      forcePathStyle: true
+      # -- (string) Secret with the source access-key-id and secret-access-key. Empty uses IRSA/Pod Identity.
+      existingSecret: ""
+    # -- (int) Blobs copied in parallel.
+    concurrency: 8
+    # -- (bool) Run preflight and report the plan without copying.
+    dryRun: false
+    # -- (bool) Replace a metadata snapshot already in the target.
+    overwriteMeta: false
+    # -- (bool) Carry over metadata whose blobs are already missing in the source.
+    allowMissingSourceBlobs: false
+    # -- (string) Wait for forklift pods to exit and the Lease to free.
+    wait: 3m
+    # -- (int) Job deadline in seconds.
+    activeDeadlineSeconds: 21600
+    # -- (int) Seconds a finished Job is kept.
+    ttlSecondsAfterFinished: 86400
+    # -- (string) Postflight blob re-hash after the copy: off, sample or full.
+    verify: sample
+    # -- (int) Share of named blobs re-hashed in sample mode, at least 20 blobs.
+    verifySamplePercent: 5
+    # -- (string) Staging emptyDir size limit. Must fit concurrency times the largest blob.
+    stagingSizeLimit: ""
+    # -- (object) Job resources.
+    resources: {}
+    # -- (object) Job pod annotations. Karpenter must not evict a running copy.
+    podAnnotations:
+      karpenter.sh/do-not-disrupt: "true"
 
-# Bundled MinIO object storage (minio/minio subchart). Enabled by default so the
-# chart provides S3-backed HA storage with no external bucket: forklift's s3
-# backend is auto-wired to the in-cluster MinIO (endpoint, bucket, path-style,
-# credentials). The single-node standalone default suits dev/demo; for production
-# disable it (minio.enabled=false) and point storage.s3.* at AWS S3 (with EKS
-# IRSA / Pod Identity) or a hardened external MinIO. These keys are passed
-# straight to the subchart — see https://github.com/minio/minio/tree/master/helm/minio
-# for the full set.
-minio:
-  # -- (bool) Deploy bundled MinIO and wire forklift's s3 backend to it.
+# Bundled SeaweedFS (all-in-one subchart), auto-wired to the s3 backend. For
+# production disable it and point storage.s3.* at an external store.
+seaweedfs:
+  # -- (bool) Deploy bundled SeaweedFS.
   enabled: true
-  image:
-    # -- (string) MinIO server image repository.
-    repository: quay.io/minio/minio
-    # -- (string) MinIO image tag. Pinned for the S3 conditional-write support HA fencing needs.
-    tag: RELEASE.2025-09-07T16-13-09Z
-  # -- (string) Deployment mode: "standalone" or "distributed".
-  mode: standalone
-  # -- (string) MinIO root access key, mirrored as the S3 access-key-id. CHANGE for non-dev use.
-  rootUser: forklift
-  # -- (string) MinIO root secret key (min 8 chars), mirrored as the S3 secret-access-key. CHANGE for non-dev use.
-  rootPassword: forklift-minio-change-me
-  # -- (list) Buckets to provision. The first entry is forklift's unless storage.s3.bucket overrides it.
-  buckets:
-    - name: forklift
-      policy: none
-      purge: false
-  persistence:
-    # -- (bool) Persist MinIO data on a PVC.
+  master:
+    enabled: false
+  volume:
+    enabled: false
+  filer:
+    enabled: false
+  s3:
+    credentials:
+      admin:
+        # -- (string) S3 admin access key. CHANGE for non-dev use.
+        accessKey: forklift
+        # -- (string) S3 admin secret key. CHANGE for non-dev use.
+        secretKey: forklift-seaweedfs-change-me
+  allInOne:
+    # -- (bool) Single-pod master, volume, filer and S3.
     enabled: true
-    # -- (string) Size of the MinIO data volume.
-    size: 10Gi
-  resources:
-    requests:
-      # -- (string) MinIO memory request, lowered from the subchart's 16Gi default.
-      memory: 512Mi
+    s3:
+      enabled: true
+      enableAuth: true
+      # -- (list) Buckets to create. The first is forklift's unless storage.s3.bucket is set.
+      createBuckets:
+        - name: forklift
+    data:
+      # -- (string) Data volume type.
+      type: persistentVolumeClaim
+      # -- (string) Data volume size.
+      size: 10Gi
+      # -- (string) Data PVC storage class. Null uses the cluster default.
+      storageClass: null
+    resources:
+      requests:
+        memory: 256Mi
+    # -- (string) Pod affinity as a templated multi-line string. Subchart default.
+    affinity: |
+      podAntiAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                app.kubernetes.io/name: {{ template "seaweedfs.name" . }}
+                app.kubernetes.io/instance: {{ .Release.Name }}
+                app.kubernetes.io/component: seaweedfs-all-in-one
+            topologyKey: kubernetes.io/hostname
+    # -- (string) Pod tolerations as a multi-line string. Subchart default.
+    tolerations: ""
 
 # Authentication and authorization.
 auth:

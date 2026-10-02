@@ -17,7 +17,7 @@ Lightweight, Kubernetes-native artifact repository: one static Rust binary that 
 | Auth | Keycloak OIDC with group-to-role mapping, local accounts, scoped access tokens ([docs](docs/access-control.md)) |
 | Supply chain | Age policy, package approval, version denies, OSV vulnerabilities, deps.dev licenses ([docs](docs/security-policies.md)) |
 | Publishing | Native `npm publish` / Twine / Maven PUT, plus atomic UI and API upload for every format ([docs](docs/usage.md#managed-artifact-upload)) |
-| HA | Lease leader election on an RWX volume, PV-based replication, or S3 ([docs](docs/architecture.md)) |
+| HA | Lease leader election on an RWX volume, PV-based replication, or S3-compatible storage (SeaweedFS, MinIO, RustFS, AWS S3) ([docs](docs/architecture.md)) |
 | Ops | Static musl scratch image (linux/amd64, linux/arm64), Prometheus metrics ([docs](docs/metrics.md)), per-repository audit log, OpenAPI 3.1 docs, MCP server ([docs](docs/mcp.md)) |
 
 ## Supply-chain gates
@@ -35,7 +35,7 @@ helm install forklift oci://ghcr.io/younsl/charts/forklift \
   --set auth.bootstrap.adminPassword=change-me
 ```
 
-The default `replicaCount: 2` needs a ReadWriteMany volume; without RWX storage use PV-based replication or the S3 backend ([docs](docs/installation.md)). Then point a client at a repository, e.g. `registry=http://forklift/npm/npm-public/`.
+The default install runs two replicas on the bundled SeaweedFS. Disable it for an RWX volume, PV-based replication or an external S3 store ([docs](docs/installation.md)), and see [Storage migration](docs/storage-migration.md) to move off MinIO. Then point a client at a repository, e.g. `registry=http://forklift/npm/npm-public/`.
 
 ## Documentation
 

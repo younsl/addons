@@ -12,40 +12,32 @@ use crate::storage;
 
 use super::{Handler, map_error, write_json};
 
-/// The object-storage overview shown on the Storage admin page: the active
-/// backend and where artifacts live, forklift's own content-addressed footprint
-/// (always available), and — for a MinIO backend — live cluster capacity, usage,
-/// object counts and drive health from the MinIO Admin API.
+/// The object-storage overview shown on the Storage admin page.
 #[derive(Debug, Clone, Default, Serialize)]
 struct StorageStats {
     /// `fs` (PersistentVolume) or `s3` (object storage).
     backend: String,
-    /// The human-facing storage mode for the overview: `filesystem`, `minio`
-    /// (S3-compatible endpoint with a reachable MinIO admin API), or `s3` (AWS
-    /// S3 or an S3-compatible endpoint without MinIO admin metrics).
-    mode: String,
-    /// Where artifacts live: the object-storage endpoint/bucket (s3) or the data
-    /// directory (fs).
+    #[serde(skip_serializing_if = "String::is_empty")]
+    provider: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    provider_name: String,
     #[serde(skip_serializing_if = "String::is_empty")]
     endpoint: String,
     #[serde(skip_serializing_if = "String::is_empty")]
     bucket: String,
     #[serde(skip_serializing_if = "String::is_empty")]
     prefix: String,
-    /// Forklift's deduplicated, content-addressed blob footprint from the
-    /// metadata database. Available for every backend.
     blob_count: i64,
     blob_bytes: i64,
-    /// Live MinIO cluster metrics; absent for fs or when the MinIO Admin API is
-    /// unreachable (`minio_error` then explains why).
     #[serde(skip_serializing_if = "Option::is_none")]
-    minio: Option<MinIOStats>,
+    cluster: Option<ClusterStats>,
     #[serde(skip_serializing_if = "String::is_empty")]
-    minio_error: String,
-    /// The capacity of the volume the data directory lives on; set only for the
-    /// fs backend, and absent when the filesystem cannot be measured (`fs_error`
-    /// then explains why). AWS S3 has no such notion, so it stays absent there:
-    /// the bucket is not a disk that fills up.
+    cluster_error: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    conditional_writes: Option<bool>,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    conditional_writes_detail: String,
+    /// Absent for S3: a bucket is not a disk that fills up.
     #[serde(skip_serializing_if = "Option::is_none")]
     fs: Option<storage::Disk>,
     #[serde(skip_serializing_if = "String::is_empty")]
@@ -107,16 +99,19 @@ pub(super) fn status_counts(in_: &HashMap<i64, i64>) -> Vec<StatusCountDTO> {
 /// long, the point has already been made.
 const MAX_DANGLING_REPORTED: usize = 100;
 
-/// Mirrors [`storage::MinIOInfo`] for JSON delivery.
+/// Mirrors [`storage::ClusterInfo`] for JSON delivery.
 #[derive(Debug, Clone, Default, Serialize)]
-struct MinIOStats {
+struct ClusterStats {
     total_capacity_bytes: i64,
     used_bytes: i64,
     available_bytes: i64,
     usage_ratio: f64,
-    logical_used_bytes: i64,
-    object_count: i64,
-    bucket_count: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    logical_used_bytes: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    object_count: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    bucket_count: Option<i64>,
     online_drives: i64,
     offline_drives: i64,
     servers: i64,
@@ -124,32 +119,48 @@ struct MinIOStats {
     version: String,
 }
 
-/// Reports the object-storage overview. Admin-only. The blob footprint always
-/// comes from the metadata DB; MinIO cluster metrics are added when a MinIO
-/// query closure is wired and reachable.
+impl From<storage::ClusterInfo> for ClusterStats {
+    fn from(info: storage::ClusterInfo) -> Self {
+        ClusterStats {
+            total_capacity_bytes: info.total_capacity_bytes,
+            used_bytes: info.used_bytes,
+            available_bytes: info.available_bytes,
+            usage_ratio: info.usage_ratio,
+            logical_used_bytes: info.logical_used_bytes,
+            object_count: info.object_count,
+            bucket_count: info.bucket_count,
+            online_drives: info.online_drives,
+            offline_drives: info.offline_drives,
+            servers: info.servers,
+            version: info.version,
+        }
+    }
+}
+
+/// Reports the object-storage overview. Admin-only.
 pub(super) async fn get_stats(State(h): State<Arc<Handler>>) -> Response {
-    let (descriptor, minio) = {
+    let (descriptor, cluster) = {
         let injected = h.injected.read();
-        (injected.storage.clone(), injected.minio.clone())
+        (injected.storage.clone(), injected.cluster.clone())
     };
     let backend = if descriptor.backend.is_empty() {
         "fs".to_string()
     } else {
         descriptor.backend.clone()
     };
-    // The mode distinguishes filesystem / MinIO (S3-compatible endpoint, admin
-    // API wired) / plain AWS S3, for the overview label.
-    let mode = if backend == "s3" {
-        if minio.is_some() { "minio" } else { "s3" }
-    } else {
-        "filesystem"
-    };
+    let provider_name = storage::admin::provider(&descriptor.provider)
+        .map(|p| p.display_name.to_string())
+        .unwrap_or_default();
     let mut out = StorageStats {
         backend: backend.clone(),
-        mode: mode.to_string(),
+        provider: descriptor.provider.clone(),
+        provider_name,
         endpoint: descriptor.endpoint.clone(),
         bucket: descriptor.bucket.clone(),
         prefix: descriptor.prefix.clone(),
+        cluster_error: descriptor.cluster_unavailable.clone(),
+        conditional_writes: descriptor.conditional_writes,
+        conditional_writes_detail: descriptor.conditional_writes_detail.clone(),
         ..Default::default()
     };
     match h.store.blob_stats().await {
@@ -159,33 +170,16 @@ pub(super) async fn get_stats(State(h): State<Arc<Handler>>) -> Response {
         }
         Err(err) => return map_error(err),
     }
-    // Filesystem backend: report how full the volume is. This is the fs answer
-    // to the capacity question MinIO answers below, and the only one available
-    // for a PersistentVolume.
     if backend == "fs" && !descriptor.endpoint.is_empty() {
         match storage::disk_usage(&descriptor.endpoint) {
             Ok(disk) => out.fs = Some(disk),
             Err(err) => out.fs_error = err.to_string(),
         }
     }
-    if let Some(minio) = minio {
-        match minio().await {
-            Ok(info) => {
-                out.minio = Some(MinIOStats {
-                    total_capacity_bytes: info.total_capacity_bytes,
-                    used_bytes: info.used_bytes,
-                    available_bytes: info.available_bytes,
-                    usage_ratio: info.usage_ratio,
-                    logical_used_bytes: info.logical_used_bytes,
-                    object_count: info.object_count,
-                    bucket_count: info.bucket_count,
-                    online_drives: info.online_drives,
-                    offline_drives: info.offline_drives,
-                    servers: info.servers,
-                    version: info.version,
-                });
-            }
-            Err(err) => out.minio_error = err,
+    if let Some(cluster) = cluster {
+        match cluster().await {
+            Ok(info) => out.cluster = Some(info.into()),
+            Err(err) => out.cluster_error = err,
         }
     }
     out.dangling = dangling_refs(&h, 0).await;
@@ -290,6 +284,79 @@ pub(crate) mod tests {
             None,
         );
         srv
+    }
+
+    /// The cluster panel reads whichever admin client is wired, and a
+    /// failing one is reported rather than dropped.
+    #[tokio::test]
+    async fn storage_stats_cluster_from_injected_admin() {
+        let srv = new_test_server().await;
+        srv.handler.set_storage_backend(
+            StorageBackend {
+                backend: "s3".into(),
+                provider: "seaweedfs".into(),
+                conditional_writes: Some(true),
+                ..Default::default()
+            },
+            Some(std::sync::Arc::new(|| {
+                Box::pin(async {
+                    let mut info = crate::storage::ClusterInfo {
+                        servers: 2,
+                        ..Default::default()
+                    };
+                    info.set_capacity(100, 25, 75);
+                    Ok(info)
+                })
+            })),
+        );
+        let stats = get_storage(&srv).await;
+        assert_eq!(stats["provider"], "seaweedfs");
+        assert_eq!(stats["provider_name"], "SeaweedFS");
+        assert_eq!(stats["conditional_writes"], true);
+        assert_eq!(stats["cluster"]["usage_ratio"], 0.25);
+        assert_eq!(stats["cluster"]["servers"], 2);
+        assert_eq!(
+            stats["cluster"]["object_count"],
+            Value::Null,
+            "unknown count"
+        );
+
+        let srv = new_test_server().await;
+        srv.handler.set_storage_backend(
+            StorageBackend {
+                backend: "s3".into(),
+                provider: "garage".into(),
+                conditional_writes: Some(false),
+                conditional_writes_detail: "ignored".into(),
+                ..Default::default()
+            },
+            Some(std::sync::Arc::new(|| {
+                Box::pin(async { Err("garage admin: 401".to_string()) })
+            })),
+        );
+        let stats = get_storage(&srv).await;
+        assert_eq!(stats["cluster"], Value::Null);
+        assert_eq!(stats["cluster_error"], "garage admin: 401");
+        assert_eq!(stats["conditional_writes"], false);
+        assert_eq!(stats["conditional_writes_detail"], "ignored");
+    }
+
+    /// Missing admin settings are explained on the page instead of hiding the
+    /// panel silently.
+    #[tokio::test]
+    async fn storage_stats_reports_unavailable_admin() {
+        let srv = new_test_server().await;
+        srv.handler.set_storage_backend(
+            StorageBackend {
+                backend: "s3".into(),
+                provider: "garage".into(),
+                cluster_unavailable: "admin api unavailable: token".into(),
+                ..Default::default()
+            },
+            None,
+        );
+        let stats = get_storage(&srv).await;
+        assert_eq!(stats["cluster_error"], "admin api unavailable: token");
     }
 
     async fn get_storage(srv: &TestServer) -> Value {

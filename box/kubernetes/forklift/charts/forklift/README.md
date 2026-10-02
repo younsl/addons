@@ -1,6 +1,6 @@
 # forklift
 
-![Version: 0.13.2](https://img.shields.io/badge/Version-0.13.2-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.13.4](https://img.shields.io/badge/AppVersion-0.13.4-informational?style=flat-square)
+![Version: 0.14.0](https://img.shields.io/badge/Version-0.14.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.14.0](https://img.shields.io/badge/AppVersion-0.14.0-informational?style=flat-square)
 
 Lightweight Kubernetes-native artifact repository (Maven, npm, Cargo, Go, PyPI) with proxy caching and supply-chain controls (age policy, package approval, vulnerability scanning)
 
@@ -10,7 +10,7 @@ Lightweight Kubernetes-native artifact repository (Maven, npm, Cargo, Go, PyPI) 
 
 | Repository | Name | Version |
 |------------|------|---------|
-| https://charts.min.io/ | minio | 5.4.0 |
+| https://seaweedfs.github.io/seaweedfs/helm | seaweedfs | 4.48.0 |
 
 ## Installation
 
@@ -45,7 +45,7 @@ helm install forklift oci://ghcr.io/younsl/charts/forklift -f values.yaml
 Install a specific version:
 
 ```console
-helm install forklift oci://ghcr.io/younsl/charts/forklift --version 0.13.2
+helm install forklift oci://ghcr.io/younsl/charts/forklift --version 0.14.0
 ```
 
 ### Install from local chart
@@ -53,7 +53,7 @@ helm install forklift oci://ghcr.io/younsl/charts/forklift --version 0.13.2
 Download forklift chart and install from local directory:
 
 ```console
-helm pull oci://ghcr.io/younsl/charts/forklift --untar --version 0.13.2
+helm pull oci://ghcr.io/younsl/charts/forklift --untar --version 0.14.0
 helm install forklift ./forklift
 ```
 
@@ -103,24 +103,52 @@ The following table lists the configurable parameters and their default values.
 | persistence.accessModes | list | `["ReadWriteMany"]` | PVC access modes. MUST be ReadWriteMany for replicaCount > 1. |
 | persistence.size | string | `"20Gi"` | PVC storage size. |
 | persistence.annotations | object | `{}` | Annotations to add to the PVC. |
-| storage.backend | string | `"fs"` | Storage backend: "fs" or "s3". Bundled MinIO (minio.enabled) forces s3. |
-| storage.s3.bucket | string | `""` | S3 bucket. Required for s3 without bundled MinIO; else defaults to the first minio.buckets entry. |
+| storage.backend | string | `"fs"` | Storage backend: "fs" or "s3". Bundled SeaweedFS (seaweedfs.enabled) forces s3. |
+| storage.s3.bucket | string | `""` | S3 bucket. Defaults to the first bundled SeaweedFS bucket. |
 | storage.s3.prefix | string | `""` | Key prefix within the bucket. |
 | storage.s3.region | string | `""` | AWS region. Empty uses the AWS default chain. |
-| storage.s3.endpoint | string | `""` | Custom S3 endpoint for S3-compatible stores. Auto-targets the bundled MinIO when enabled. |
-| storage.s3.forcePathStyle | bool | `false` | Path-style addressing (MinIO needs it). Forced on with bundled MinIO. |
+| storage.s3.endpoint | string | `""` | S3-compatible endpoint. Defaults to the bundled SeaweedFS. |
+| storage.s3.forcePathStyle | bool | `false` | Path-style addressing. Forced on with bundled SeaweedFS. |
 | storage.s3.metaSyncInterval | string | `"30s"` | Metadata snapshot sync cadence; the bounded data-loss window on failover. |
-| storage.s3.existingSecret | string | `""` | Existing Secret with keys access-key-id and secret-access-key. Empty uses the AWS default chain (IRSA/Pod Identity). |
-| minio.enabled | bool | `true` | Deploy bundled MinIO and wire forklift's s3 backend to it. |
-| minio.image.repository | string | `"quay.io/minio/minio"` | MinIO server image repository. |
-| minio.image.tag | string | `"RELEASE.2025-09-07T16-13-09Z"` | MinIO image tag. Pinned for the S3 conditional-write support HA fencing needs. |
-| minio.mode | string | `"standalone"` | Deployment mode: "standalone" or "distributed". |
-| minio.rootUser | string | `"forklift"` | MinIO root access key, mirrored as the S3 access-key-id. CHANGE for non-dev use. |
-| minio.rootPassword | string | `"forklift-minio-change-me"` | MinIO root secret key (min 8 chars), mirrored as the S3 secret-access-key. CHANGE for non-dev use. |
-| minio.buckets | list | `[{"name":"forklift","policy":"none","purge":false}]` | Buckets to provision. The first entry is forklift's unless storage.s3.bucket overrides it. |
-| minio.persistence.enabled | bool | `true` | Persist MinIO data on a PVC. |
-| minio.persistence.size | string | `"10Gi"` | Size of the MinIO data volume. |
-| minio.resources.requests.memory | string | `"512Mi"` | MinIO memory request, lowered from the subchart's 16Gi default. |
+| storage.s3.existingSecret | string | `""` | Secret with access-key-id, secret-access-key, optional admin-token. Empty uses IRSA/Pod Identity. |
+| storage.s3.provider | string | `""` | Store for admin metrics: aws, minio, rustfs, seaweedfs, garage or generic. Empty auto-detects. |
+| storage.s3.adminEndpoint | string | `""` | Admin API URL when not the S3 endpoint (SeaweedFS master, Garage admin). |
+| storage.s3.adminToken | string | `""` | Garage admin token, without ".". Ignored with existingSecret. |
+| storage.migration.enabled | bool | `false` | Run the migration Job and keep forklift at 0 replicas. |
+| storage.migration.sourceObjectStorage.endpoint | string | `""` | Source S3 endpoint. Empty is AWS S3. |
+| storage.migration.sourceObjectStorage.bucket | string | `""` | Source bucket. Required. |
+| storage.migration.sourceObjectStorage.prefix | string | `""` | Source key prefix. |
+| storage.migration.sourceObjectStorage.region | string | `""` | Source region. |
+| storage.migration.sourceObjectStorage.forcePathStyle | bool | `true` | Source path-style addressing. |
+| storage.migration.sourceObjectStorage.existingSecret | string | `""` | Secret with the source access-key-id and secret-access-key. Empty uses IRSA/Pod Identity. |
+| storage.migration.concurrency | int | `8` | Blobs copied in parallel. |
+| storage.migration.dryRun | bool | `false` | Run preflight and report the plan without copying. |
+| storage.migration.overwriteMeta | bool | `false` | Replace a metadata snapshot already in the target. |
+| storage.migration.allowMissingSourceBlobs | bool | `false` | Carry over metadata whose blobs are already missing in the source. |
+| storage.migration.wait | string | `"3m"` | Wait for forklift pods to exit and the Lease to free. |
+| storage.migration.activeDeadlineSeconds | int | `21600` | Job deadline in seconds. |
+| storage.migration.ttlSecondsAfterFinished | int | `86400` | Seconds a finished Job is kept. |
+| storage.migration.verify | string | `"sample"` | Postflight blob re-hash after the copy: off, sample or full. |
+| storage.migration.verifySamplePercent | int | `5` | Share of named blobs re-hashed in sample mode, at least 20 blobs. |
+| storage.migration.stagingSizeLimit | string | `""` | Staging emptyDir size limit. Must fit concurrency times the largest blob. |
+| storage.migration.resources | object | `{}` | Job resources. |
+| storage.migration.podAnnotations | object | `{"karpenter.sh/do-not-disrupt":"true"}` | Job pod annotations. Karpenter must not evict a running copy. |
+| seaweedfs.enabled | bool | `true` | Deploy bundled SeaweedFS. |
+| seaweedfs.master.enabled | bool | `false` |  |
+| seaweedfs.volume.enabled | bool | `false` |  |
+| seaweedfs.filer.enabled | bool | `false` |  |
+| seaweedfs.s3.credentials.admin.accessKey | string | `"forklift"` | S3 admin access key. CHANGE for non-dev use. |
+| seaweedfs.s3.credentials.admin.secretKey | string | `"forklift-seaweedfs-change-me"` | S3 admin secret key. CHANGE for non-dev use. |
+| seaweedfs.allInOne.enabled | bool | `true` | Single-pod master, volume, filer and S3. |
+| seaweedfs.allInOne.s3.enabled | bool | `true` |  |
+| seaweedfs.allInOne.s3.enableAuth | bool | `true` |  |
+| seaweedfs.allInOne.s3.createBuckets | list | `[{"name":"forklift"}]` | Buckets to create. The first is forklift's unless storage.s3.bucket is set. |
+| seaweedfs.allInOne.data.type | string | `"persistentVolumeClaim"` | Data volume type. |
+| seaweedfs.allInOne.data.size | string | `"10Gi"` | Data volume size. |
+| seaweedfs.allInOne.data.storageClass | string | `nil` | Data PVC storage class. Null uses the cluster default. |
+| seaweedfs.allInOne.resources.requests.memory | string | `"256Mi"` |  |
+| seaweedfs.allInOne.affinity | string | `"podAntiAffinity:\n  requiredDuringSchedulingIgnoredDuringExecution:\n    - labelSelector:\n        matchLabels:\n          app.kubernetes.io/name: {{ template \"seaweedfs.name\" . }}\n          app.kubernetes.io/instance: {{ .Release.Name }}\n          app.kubernetes.io/component: seaweedfs-all-in-one\n      topologyKey: kubernetes.io/hostname\n"` | Pod affinity as a templated multi-line string. Subchart default. |
+| seaweedfs.allInOne.tolerations | string | `""` | Pod tolerations as a multi-line string. Subchart default. |
 | auth.anonymousRead | bool | `false` | Allow unauthenticated read (pull) access. |
 | auth.sessionTTL | string | `"12h"` | Session cookie lifetime. |
 | auth.sessionSecret | string | `""` | Session cookie signing secret, shared across replicas. Empty generates one into the chart Secret. |

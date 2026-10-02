@@ -15,6 +15,7 @@ pub mod mcp;
 pub mod memlimit;
 pub mod meta;
 pub mod metrics;
+pub mod migrate;
 pub mod notify;
 pub mod objstore;
 pub mod openapi;

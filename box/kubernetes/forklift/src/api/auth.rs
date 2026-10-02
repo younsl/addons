@@ -2059,7 +2059,7 @@ pub(crate) mod tests {
                 ("StatusCount", Shape::Ty("StatusCountDTO")),
                 ("VulnAdvisory", Shape::Ty("VulnAdvisory")),
                 ("PendingApprovalRepo", Shape::Ty("PendingRepoDTO")),
-                ("MinioStats", Shape::Ty("MinIOStats")),
+                ("ClusterStats", Shape::Ty("ClusterStats")),
                 // Forklift coverage.
                 ("CoverageProject", Shape::Ty("coverage::types::Project")),
                 ("CoverageExcludedProject", Shape::Ty("ExcludedProject")),

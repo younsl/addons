@@ -7,7 +7,7 @@ metadata:
   labels:
     {{- include "forklift.labels" . | nindent 4 }}
 spec:
-  replicas: {{ .Values.replicaCount }}
+  replicas: {{ include "forklift.replicas" . }}
   revisionHistoryLimit: {{ .Values.revisionHistoryLimit }}
   {{- if .Values.strategy }}
   strategy:

@@ -15,14 +15,14 @@ use async_trait::async_trait;
 use sha2::{Digest, Sha256};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt};
 
+pub mod admin;
 pub mod diskusage;
 pub mod instrument;
-pub mod minioadmin;
 pub mod s3;
 
+pub use admin::{AdminConfig, ClusterAdmin, ClusterInfo, ProviderSpec, cluster_admin};
 pub use diskusage::{Disk, disk_usage};
 pub use instrument::{InstrumentedStore, instrument};
-pub use minioadmin::{MinIOInfo, minio_admin_info};
 pub use s3::{S3BlobStore, S3Config, is_not_found, is_precondition_failed, new_s3_client};
 
 /// Result alias used throughout the module.
@@ -35,10 +35,10 @@ pub enum Error {
     /// The blob digest is not present in the store.
     #[error("blob not found")]
     NotFound,
-    /// MinIO admin metrics cannot be collected because the backend is not a
-    /// credentialed MinIO endpoint (unavailable or misconfigured).
-    #[error("minio admin metrics unavailable")]
-    MinIOUnavailable,
+    /// The store's admin API cannot be queried with the configured settings;
+    /// the message names what is missing.
+    #[error("admin api unavailable: {0}")]
+    AdminUnavailable(String),
     /// A filesystem failure, with the operation it came from.
     #[error("{op}: {source}")]
     Io {
@@ -88,6 +88,14 @@ pub trait BlobStore: Send + Sync {
     async fn exists(&self, digest: &str) -> Result<bool>;
     /// Removes a blob. Deleting a missing blob returns `Ok(())`.
     async fn delete(&self, digest: &str) -> Result<()>;
+    /// The stored size of a blob, `None` when it is absent.
+    async fn size(&self, digest: &str) -> Result<Option<i64>> {
+        match self.open(digest).await {
+            Ok((_, n)) => Ok(Some(n)),
+            Err(Error::NotFound) => Ok(None),
+            Err(e) => Err(e),
+        }
+    }
     /// The store's random-access view, when it has one. The default is `None`;
     /// wrappers forward to their inner store so wrapping never hides the
     /// capability.
@@ -292,6 +300,17 @@ impl BlobStore for FsStore {
         }
     }
 
+    async fn size(&self, digest: &str) -> Result<Option<i64>> {
+        if !valid_digest(digest) {
+            return Ok(None);
+        }
+        match tokio::fs::metadata(self.path(digest)).await {
+            Ok(m) => Ok(Some(m.len() as i64)),
+            Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
+            Err(e) => Err(Error::io("stat blob", e)),
+        }
+    }
+
     fn as_seekable(&self) -> Option<&dyn SeekableStore> {
         Some(self)
     }
@@ -490,11 +509,14 @@ pub(crate) mod tests {
             .expect("walk");
             assert_eq!(walked, vec![want_hex], "walk");
 
+            assert_eq!(s.size(&digest).await.unwrap(), Some(data.len() as i64));
             s.delete(&digest).await.expect("delete");
             assert!(
                 !s.exists(&digest).await.unwrap(),
                 "blob still exists after delete"
             );
+            assert_eq!(s.size(&digest).await.unwrap(), None);
+            assert_eq!(s.size("bad").await.unwrap(), None);
         }
     }
 

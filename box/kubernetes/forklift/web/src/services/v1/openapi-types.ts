@@ -96,7 +96,7 @@ export interface TokenScope { repo_pattern: string; actions: ("read" | "write" |
 
 export interface HAStatus { enabled: boolean; mode: string; backend: "fs" | "s3"; storage_endpoint?: string; identity: string; leader: string; is_leader: boolean; role: "leader" | "standby"; lease_name?: string; fencing_token?: number; started_at?: string; version?: string; runtime?: string; }
 
-export interface StorageStats { backend: "fs" | "s3"; mode: "filesystem" | "minio" | "s3"; endpoint?: string; bucket?: string; prefix?: string; blob_count: number; blob_bytes: number; minio_error?: string; fs_error?: string; fs?: DiskUsage; dangling: DanglingRef[]; minio?: MinioStats; }
+export interface StorageStats { backend: "fs" | "s3"; provider?: string; provider_name?: string; endpoint?: string; bucket?: string; prefix?: string; blob_count: number; blob_bytes: number; cluster?: ClusterStats; cluster_error?: string; conditional_writes?: boolean; conditional_writes_detail?: string; fs_error?: string; fs?: DiskUsage; dangling: DanglingRef[]; }
 
 export interface DiskUsage { path?: string; total_bytes: number; used_bytes: number; available_bytes: number; usage_ratio: number; }
 
@@ -104,7 +104,7 @@ export interface DanglingRef { repository: string; repo_id: number; path: string
 
 export interface StatusCount { code: number; count: number; }
 
-export interface MinioStats { total_capacity_bytes: number; used_bytes: number; available_bytes: number; usage_ratio: number; logical_used_bytes: number; object_count: number; bucket_count: number; online_drives: number; offline_drives: number; servers: number; version?: string; }
+export interface ClusterStats { total_capacity_bytes: number; used_bytes: number; available_bytes: number; usage_ratio: number; logical_used_bytes?: number; object_count?: number; bucket_count?: number; online_drives: number; offline_drives: number; servers: number; version?: string; }
 
 export interface CoverageProject { id: number; path: string; group: string; name: string; web_url: string; default_branch: string; topics: string[]; applied: "yes" | "partial" | "no" | "error"; branch: string; on_default: boolean | null; format: string; ci_wired: boolean; registry_pinned: boolean; muted_scopes: ("ci" | "registry")[]; evidence: string[]; note: string; skipped: boolean; last_activity_at: string; exclude_reason: string; }
 

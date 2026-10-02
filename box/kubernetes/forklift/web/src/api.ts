@@ -306,14 +306,17 @@ export interface HAStatus {
 // StorageStats is the object-storage overview for the admin Storage page.
 export interface StorageStats {
   backend: string; // "fs" | "s3"
-  mode: string; // "filesystem" | "minio" | "s3"
+  provider?: string;
+  provider_name?: string;
   endpoint?: string;
   bucket?: string;
   prefix?: string;
   blob_count: number;
   blob_bytes: number;
-  minio?: MinIOStats;
-  minio_error?: string;
+  cluster?: ClusterStats;
+  cluster_error?: string;
+  conditional_writes?: boolean;
+  conditional_writes_detail?: string;
   // fs: capacity of the volume the data directory lives on. Present only for the
   // filesystem backend; a bucket is not a disk that fills up, so S3 has none.
   fs?: DiskStats;
@@ -357,15 +360,15 @@ export interface DiskStats {
   usage_ratio: number;
 }
 
-// MinIOStats is the live MinIO cluster metadata (present only for a MinIO backend).
-export interface MinIOStats {
+// ClusterStats is live cluster capacity and health from the provider's admin API.
+export interface ClusterStats {
   total_capacity_bytes: number;
   used_bytes: number;
   available_bytes: number;
   usage_ratio: number;
-  logical_used_bytes: number;
-  object_count: number;
-  bucket_count: number;
+  logical_used_bytes?: number;
+  object_count?: number;
+  bucket_count?: number;
   online_drives: number;
   offline_drives: number;
   servers: number;

@@ -8,19 +8,20 @@ export type StorageUsage = {
   totalBytes: number;
 };
 
-// storageUsage picks the utilization to draw on the topology: the MinIO cluster
-// for a MinIO endpoint, the PersistentVolume for the filesystem backend. Plain
-// AWS S3 returns null and gets no bar - a bucket has no capacity to run out of,
-// so a "94% full" reading there would be inventing a limit that does not exist.
+// storageUsage picks the utilization to draw on the topology: the object-store
+// cluster when its admin API reports one, the PersistentVolume for the
+// filesystem backend. Plain AWS S3 returns null and gets no bar - a bucket has
+// no capacity to run out of, so a "94% full" reading there would be inventing a
+// limit that does not exist.
 export function storageUsage(stats: StorageStats | undefined | null): StorageUsage | null {
   if (!stats) return null;
 
-  const minio = stats.minio;
-  if (minio && minio.total_capacity_bytes > 0) {
+  const cluster = stats.cluster;
+  if (cluster && cluster.total_capacity_bytes > 0) {
     return {
-      ratio: minio.usage_ratio,
-      usedBytes: minio.used_bytes,
-      totalBytes: minio.total_capacity_bytes,
+      ratio: cluster.usage_ratio,
+      usedBytes: cluster.used_bytes,
+      totalBytes: cluster.total_capacity_bytes,
     };
   }
 

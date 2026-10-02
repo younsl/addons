@@ -1385,12 +1385,13 @@ paths:
   /api/v1/storage:
     get:
       tags: [ha]
-      summary: Object-storage overview — backend, blob footprint, MinIO cluster metrics (admin)
+      summary: Object-storage overview — backend, blob footprint, cluster metrics (admin)
       description: >
         Reports the active storage backend and forklift's deduplicated blob
-        footprint (blob_count/blob_bytes). For a MinIO backend it also returns
-        live cluster capacity, usage, object/bucket counts and drive health from
-        the MinIO Admin API (minio); minio_error explains why those are absent.
+        footprint (blob_count/blob_bytes). For an S3 provider with an admin API
+        (MinIO, RustFS, SeaweedFS, Garage) it also returns live cluster capacity,
+        usage and storage-unit health (cluster); cluster_error explains why those
+        are absent.
         For the fs backend it returns the capacity of the volume the data
         directory lives on (fs); fs_error explains why it is absent.
       security: [{ basicAuth: [] }, { bearerAuth: [] }]
@@ -2912,19 +2913,23 @@ components:
     StorageStats:
       type: object
       description: >
-        The object-storage overview: the active backend, forklift's own
-        deduplicated blob footprint, and whichever capacity source the backend
-        offers - the volume for fs, the MinIO admin API for minio.
-      required: [backend, blob_bytes, blob_count, dangling, mode]
+        The object-storage overview: the active backend and provider, forklift's
+        own deduplicated blob footprint, and whichever capacity source the
+        backend offers - the volume for fs, the provider's admin API for s3.
+      required: [backend, blob_bytes, blob_count, dangling]
       properties:
         backend: { type: string, enum: [fs, s3] }
-        mode: { type: string, enum: [filesystem, minio, s3], description: Human-facing storage mode for the overview. }
+        provider: { type: string, description: S3 provider id (aws, minio, rustfs, seaweedfs, garage, generic). Absent for fs. }
+        provider_name: { type: string, description: Display name of the provider. }
         endpoint: { type: string, description: Where artifacts live - the object-storage endpoint (s3) or the data directory (fs). }
         bucket: { type: string }
         prefix: { type: string }
         blob_count: { type: integer }
         blob_bytes: { type: integer }
-        minio_error: { type: string, description: Why the MinIO cluster metrics are absent. }
+        cluster: { $ref: "#/components/schemas/ClusterStats" }
+        cluster_error: { type: string, description: Why the cluster metrics are absent. }
+        conditional_writes: { type: boolean, description: Whether the store rejected failed S3 preconditions at startup. Absent for fs. }
+        conditional_writes_detail: { type: string, description: Which precondition the store ignored. }
         fs_error: { type: string, description: Why the filesystem capacity could not be measured. }
         fs: { $ref: "#/components/schemas/DiskUsage" }
         dangling:
@@ -2935,7 +2940,6 @@ components:
             re-checked against its artifact row before it is reported, and
             the list is capped at 100.
           items: { $ref: "#/components/schemas/DanglingRef" }
-        minio: { $ref: "#/components/schemas/MinioStats" }
     DiskUsage:
       type: object
       description: >
@@ -2975,12 +2979,11 @@ components:
       properties:
         code: { type: integer }
         count: { type: integer }
-    MinioStats:
+    ClusterStats:
       type: object
-      description: Live cluster metrics from the MinIO admin API; absent for every other backend.
+      description: Live cluster capacity and health from the provider's admin API. Counts the provider does not report are absent.
       required:
-        [available_bytes, bucket_count, logical_used_bytes, object_count, offline_drives,
-         online_drives, servers, total_capacity_bytes, usage_ratio, used_bytes]
+        [available_bytes, offline_drives, online_drives, servers, total_capacity_bytes, usage_ratio, used_bytes]
       properties:
         total_capacity_bytes: { type: integer }
         used_bytes: { type: integer }
@@ -2989,7 +2992,7 @@ components:
         logical_used_bytes: { type: integer }
         object_count: { type: integer }
         bucket_count: { type: integer }
-        online_drives: { type: integer }
+        online_drives: { type: integer, description: Healthy storage units (drives, volume-server disks or storage nodes). }
         offline_drives: { type: integer }
         servers: { type: integer }
         version: { type: string }

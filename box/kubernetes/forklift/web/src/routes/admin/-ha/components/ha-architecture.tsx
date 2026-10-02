@@ -20,7 +20,7 @@ export function HaArchitecture({ status, usage }: { status: HAStatus; usage: Sto
   const ha = status.enabled;
   const s3 = status.backend === "s3";
   // The storage box grows to hold the utilization bar when there is a capacity
-  // to show (PersistentVolume or MinIO cluster).
+  // to show (PersistentVolume or object-store cluster).
   const usagePct = usage ? Math.min(100, Math.max(0, usage.ratio * 100)) : null;
   const storageH = usagePct === null ? 88 : 128;
   // Green below the warning mark, amber to the critical one, red above it.
@@ -157,7 +157,7 @@ export function HaArchitecture({ status, usage }: { status: HAStatus; usage: Sto
           <text className={subLabelClass} x="985" y="194" textAnchor="middle">
             {s3 ? (showFencing ? `fenced · token ${status.fencing_token}` : "fenced writes") : t("ha.single-writer")}
           </text>
-          {/* Utilization of the volume (PersistentVolume) or MinIO cluster. Plain
+          {/* Utilization of the volume (PersistentVolume) or object-store cluster. Plain
               AWS S3 has no capacity to fill, so it carries no bar. */}
           {usagePct !== null && usage && (
             <>

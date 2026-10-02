@@ -10,7 +10,7 @@ use async_trait::async_trait;
 use aws_config::BehaviorVersion;
 use aws_credential_types::Credentials;
 use aws_sdk_s3::Client;
-use aws_sdk_s3::config::Region;
+use aws_sdk_s3::config::{Region, RequestChecksumCalculation, ResponseChecksumValidation};
 use aws_sdk_s3::error::{ProvideErrorMetadata, SdkError};
 use aws_sdk_s3::primitives::{ByteStream, Length};
 use aws_smithy_http_client::tls;
@@ -63,7 +63,12 @@ pub async fn new_s3_client(cfg: &S3Config) -> Result<Client> {
     let sdk = loader.load().await;
     let mut builder = aws_sdk_s3::config::Builder::from(&sdk);
     if !cfg.endpoint.is_empty() {
-        builder = builder.endpoint_url(&cfg.endpoint);
+        // Self-hosted stores (Garage among them) reject the SDK's default
+        // aws-chunked checksum trailers as an invalid payload signature.
+        builder = builder
+            .endpoint_url(&cfg.endpoint)
+            .request_checksum_calculation(RequestChecksumCalculation::WhenRequired)
+            .response_checksum_validation(ResponseChecksumValidation::WhenRequired);
     }
     builder = builder.force_path_style(cfg.force_path_style);
     Ok(Client::from_conf(builder.build()))
@@ -222,6 +227,24 @@ impl BlobStore for S3BlobStore {
             return Ok(false);
         }
         self.exists_key(&self.key(digest)).await
+    }
+
+    async fn size(&self, digest: &str) -> Result<Option<i64>> {
+        if !valid_digest(digest) {
+            return Ok(None);
+        }
+        match self
+            .client
+            .head_object()
+            .bucket(&self.bucket)
+            .key(self.key(digest))
+            .send()
+            .await
+        {
+            Ok(out) => Ok(out.content_length()),
+            Err(e) if is_not_found(&e) => Ok(None),
+            Err(e) => Err(Error::s3("head blob", e)),
+        }
     }
 
     /// Deleting a missing blob is a no-op.
@@ -574,6 +597,16 @@ pub(crate) mod tests {
         assert_eq!(n, data.len() as i64, "size");
 
         assert!(s.exists(&digest).await.unwrap(), "exists");
+        assert_eq!(
+            s.size(&digest).await.unwrap(),
+            Some(data.len() as i64),
+            "size"
+        );
+        assert_eq!(
+            s.size(&"0".repeat(64)).await.unwrap(),
+            None,
+            "size of a missing blob"
+        );
 
         let (mut rc, size) = s.open(&digest).await.expect("open");
         assert_eq!(size, data.len() as i64, "open size");
