@@ -3,7 +3,7 @@
 [![GHCR](https://img.shields.io/badge/GHCR-ghcr.io%2Fyounsl%2Fbackstage-black?style=flat-square&logo=github&logoColor=white)](https://ghcr.io/younsl/backstage)
 [![Backstage](https://img.shields.io/badge/Backstage-1.55.3-black?style=flat-square&logo=backstage&logoColor=white)](https://github.com/backstage/backstage/releases/tag/v1.55.3)
 
-Custom Backstage image with GitLab auto-discovery, Keycloak OIDC, and in-house plugins built on [Backstage UI](https://backstage.io/docs/getting-started/ui) (BUI). Optimized for the official [Backstage Helm chart](https://github.com/backstage/charts): just swap the image.
+Custom Backstage image with GitLab auto-discovery, [Keycloak](https://github.com/keycloak/keycloak) OIDC, and in-house plugins built on [Backstage UI](https://backstage.io/docs/getting-started/ui) (BUI). Optimized for the official [Backstage Helm chart](https://github.com/backstage/charts): just swap the image.
 
 ## Announcement
 
@@ -20,7 +20,7 @@ make build  # build container image
 make run    # run container locally (requires .env)
 ```
 
-Authentication is Keycloak OIDC only. Guest login is disabled.
+Authentication is [Keycloak](https://github.com/keycloak/keycloak) OIDC only. Guest login is disabled.
 
 ## MCP Server
 
