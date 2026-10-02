@@ -9,8 +9,12 @@ import { openApiQueryKeys } from "@/query/v1/openapi-query-keys";
 import {
   getHa,
   getStorage,
+  getStorageMigration,
+  listStorageMigrations,
 } from "@/services/v1/ha/api";
-
+import type {
+  GetStorageMigrationRequest,
+} from "@/services/v1/ha/types";
 export function createHaOpenApiQueryOptions(client: HttpClient) {
   return {
     getHa: () =>
@@ -24,6 +28,18 @@ export function createHaOpenApiQueryOptions(client: HttpClient) {
         queryKey: openApiQueryKeys.getStorage(),
         queryFn: ({ signal }) =>
           getStorage({ signal, client }),
+      }),
+    listStorageMigrations: () =>
+      queryOptions({
+        queryKey: openApiQueryKeys.listStorageMigrations(),
+        queryFn: ({ signal }) =>
+          listStorageMigrations({ signal, client }),
+      }),
+    getStorageMigration: (params: GetStorageMigrationRequest) =>
+      queryOptions({
+        queryKey: openApiQueryKeys.getStorageMigration(params),
+        queryFn: ({ signal }) =>
+          getStorageMigration(params, { signal, client }),
       }),
   } as const;
 }

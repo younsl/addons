@@ -3,6 +3,7 @@
 // OpenAPI: forklift API 0.1.0
 
 import {
+  buildOpenApiPath,
   resolveOpenApiRequestOptions,
   type OpenApiRequestOptions,
 } from "@/services/v1/openapi-runtime";
@@ -11,7 +12,10 @@ import { API_PREFIX } from "@/services/paths";
 
 import type {
   GetHaResponse,
+  GetStorageMigrationRequest,
+  GetStorageMigrationResponse,
   GetStorageResponse,
+  ListStorageMigrationsResponse,
   PostStepDownHaResponse,
 } from "./types";
 
@@ -29,6 +33,24 @@ export function getStorage(options?: OpenApiRequestOptions) {
 
   return client.get<GetStorageResponse>(
     `${API_PREFIX}/storage`,
+    requestOptions,
+  );
+}
+
+export function listStorageMigrations(options?: OpenApiRequestOptions) {
+  const { client, requestOptions } = resolveOpenApiRequestOptions(options);
+
+  return client.get<ListStorageMigrationsResponse>(
+    `${API_PREFIX}/storage/migrations`,
+    requestOptions,
+  );
+}
+
+export function getStorageMigration(params: GetStorageMigrationRequest, options?: OpenApiRequestOptions) {
+  const { client, requestOptions } = resolveOpenApiRequestOptions(options);
+
+  return client.get<GetStorageMigrationResponse>(
+    buildOpenApiPath(`${API_PREFIX}/storage/migrations/{id}`, params.path),
     requestOptions,
   );
 }

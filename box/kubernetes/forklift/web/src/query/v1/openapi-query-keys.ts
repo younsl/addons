@@ -15,6 +15,9 @@ import type {
   ListCoverageHistoryRequest,
 } from "@/services/v1/coverage/types";
 import type {
+  GetStorageMigrationRequest,
+} from "@/services/v1/ha/types";
+import type {
   GetRepositoryNotificationSampleRequest,
 } from "@/services/v1/notification/types";
 import type {
@@ -95,6 +98,9 @@ export const openApiQueryKeys = {
   listGroupMappings: () => key("GET", "/api/v1/group-mappings"),
   getHa: () => key("GET", "/api/v1/ha"),
   getStorage: () => key("GET", "/api/v1/storage"),
+  listStorageMigrations: () => key("GET", "/api/v1/storage/migrations"),
+  getStorageMigration: (params: GetStorageMigrationRequest) =>
+    key("GET", "/api/v1/storage/migrations/{id}", params),
   listNotificationReceivers: () => key("GET", "/api/v1/notification/receivers"),
   getRepositoryNotificationSample: (params: GetRepositoryNotificationSampleRequest) =>
     key("GET", "/api/v1/repositories/{id}/notification/sample", params),

@@ -4,8 +4,13 @@
  * the palette changes.
  */
 
+html {
+  overscroll-behavior-y: none;
+}
+
 body {
   margin: 0;
+  overscroll-behavior-y: none;
   min-width: 0;
   overflow-x: hidden;
   font-family: var(--font-sans);

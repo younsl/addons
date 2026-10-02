@@ -182,7 +182,7 @@ export function GlobalSearch() {
               className="h-11 w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
             />
           </div>
-          <div className="max-h-[50dvh] overflow-y-auto p-2">
+          <div className="max-h-[50dvh] overflow-y-auto overscroll-y-none p-2">
             {q.trim().length < 2 && (
               <div className="px-2 py-6 text-center text-sm text-muted-foreground">{t("search.type-to-search")}</div>
             )}

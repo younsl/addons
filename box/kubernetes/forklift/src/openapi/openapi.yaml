@@ -1401,6 +1401,38 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/StorageStats" }
+  /api/v1/storage/migrations:
+    get:
+      operationId: listStorageMigrations
+      tags: [ha]
+      summary: Storage migration history, newest first (admin)
+      description: >
+        Lists the forklift migrate-storage runs recorded in this object store,
+        succeeded, failed or dry, at most 100. Empty for the fs backend.
+      security: [{ basicAuth: [] }, { bearerAuth: [] }]
+      responses:
+        "200":
+          description: Migration runs
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MigrationList" }
+        "502": { description: The object store could not be read }
+  /api/v1/storage/migrations/{id}:
+    get:
+      operationId: getStorageMigration
+      tags: [ha]
+      summary: One storage migration run with every preflight and postflight check (admin)
+      security: [{ basicAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string }, description: Record id, e.g. 20261003T010203Z-0123abcd }
+      responses:
+        "200":
+          description: Migration run
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MigrationRecord" }
+        "404": { description: Not found }
+        "502": { description: The object store could not be read }
   /api/v1/ha/step-down:
     post:
       tags: [ha]
@@ -2930,6 +2962,8 @@ components:
         cluster_error: { type: string, description: Why the cluster metrics are absent. }
         conditional_writes: { type: boolean, description: Whether the store rejected failed S3 preconditions at startup. Absent for fs. }
         conditional_writes_detail: { type: string, description: Which precondition the store ignored. }
+        last_migration: { $ref: "#/components/schemas/MigrationSummary" }
+        migration_history_error: { type: string, description: Why the migration history could not be read. }
         fs_error: { type: string, description: Why the filesystem capacity could not be measured. }
         fs: { $ref: "#/components/schemas/DiskUsage" }
         dangling:
@@ -2979,6 +3013,117 @@ components:
       properties:
         code: { type: integer }
         count: { type: integer }
+    MigrationList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/MigrationSummary" }
+    MigrationLocation:
+      type: object
+      required: [bucket, endpoint]
+      properties:
+        provider:
+          type: string
+          description: Provider id (aws, generic, minio, rustfs, seaweedfs, garage). Absent in older records.
+        endpoint: { type: string }
+        bucket: { type: string }
+        prefix: { type: string }
+    MigrationCheck:
+      type: object
+      description: One preflight (PF01-PF12) or postflight (PV01-PV04) check.
+      required: [detail, id, name, status]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        status: { type: string, enum: [pass, warn, fail, skip] }
+        detail: { type: string }
+        latency_us: { type: integer, description: Wall time of the requests behind the check. }
+    MigrationSettings:
+      type: object
+      required: [allow_missing_source_blobs, concurrency, dry_run, overwrite_meta, require_conditional_writes, verify]
+      properties:
+        concurrency: { type: integer }
+        dry_run: { type: boolean }
+        overwrite_meta: { type: boolean }
+        allow_missing_source_blobs: { type: boolean }
+        require_conditional_writes: { type: boolean }
+        verify: { type: string }
+    MigrationSummary:
+      type: object
+      required: [bytes_copied, copied, duration_ms, finished_at, id, outcome, postflight, preflight, preflight_summary, required, skipped, source, started_at, target]
+      properties:
+        id: { type: string }
+        outcome: { type: string, enum: [succeeded, failed, dry_run] }
+        failed_stage: { type: string, enum: [preflight, copy, verify, upload, postflight] }
+        started_at: { type: string, format: date-time }
+        finished_at: { type: string, format: date-time }
+        duration_ms: { type: integer }
+        source: { $ref: "#/components/schemas/MigrationLocation" }
+        target: { $ref: "#/components/schemas/MigrationLocation" }
+        required: { type: integer }
+        copied: { type: integer }
+        skipped: { type: integer }
+        bytes_copied: { type: integer }
+        preflight_summary: { type: string }
+        postflight_summary: { type: string }
+        preflight:
+          type: array
+          items: { $ref: "#/components/schemas/MigrationCheckStatus" }
+        postflight:
+          type: array
+          items: { $ref: "#/components/schemas/MigrationCheckStatus" }
+    MigrationCheckStatus:
+      type: object
+      required: [id, name, status]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        status: { type: string, enum: [pass, warn, fail, skip] }
+    MigrationRecord:
+      type: object
+      description: A recorded migrate-storage run with its settings and every check.
+      required: [bytes_copied, copied, duration_ms, finished_at, forklift_version, id, meta_copied, outcome, postflight, preflight, preflight_summary, required, settings, skipped, source, started_at, target, verified_blobs]
+      properties:
+        id: { type: string }
+        outcome: { type: string, enum: [succeeded, failed, dry_run] }
+        failed_stage: { type: string, enum: [preflight, copy, verify, upload, postflight] }
+        error: { type: string }
+        remediation: { type: string, description: What postflight removed from the target after a failure. }
+        started_at: { type: string, format: date-time }
+        finished_at: { type: string, format: date-time }
+        duration_ms: { type: integer }
+        forklift_version: { type: string }
+        source: { $ref: "#/components/schemas/MigrationLocation" }
+        target: { $ref: "#/components/schemas/MigrationLocation" }
+        settings: { $ref: "#/components/schemas/MigrationSettings" }
+        required: { type: integer }
+        copied: { type: integer }
+        skipped: { type: integer }
+        bytes_copied: { type: integer }
+        verified_blobs: { type: integer }
+        meta_copied: { type: boolean }
+        preflight_summary: { type: string }
+        postflight_summary: { type: string }
+        preflight:
+          type: array
+          items: { $ref: "#/components/schemas/MigrationCheck" }
+        postflight:
+          type: array
+          items: { $ref: "#/components/schemas/MigrationCheck" }
+        stored_at: { $ref: "#/components/schemas/MigrationStoredAt" }
+    MigrationStoredAt:
+      type: object
+      description: Where the record object is kept, filled in by the API on read.
+      required: [bucket, endpoint, key, provider, uri]
+      properties:
+        provider: { type: string }
+        endpoint: { type: string }
+        region: { type: string }
+        bucket: { type: string }
+        key: { type: string }
+        uri: { type: string }
     ClusterStats:
       type: object
       description: Live cluster capacity and health from the provider's admin API. Counts the provider does not report are absent.

@@ -166,6 +166,42 @@ impl S3Api {
     pub fn new(client: aws_sdk_s3::Client) -> S3Api {
         S3Api(client)
     }
+
+    /// Creates `bucket` when it does not exist, reporting whether it did.
+    /// Losing a creation race to another writer counts as existing.
+    pub async fn ensure_bucket(&self, bucket: &str) -> Result<bool> {
+        match self.0.head_bucket().bucket(bucket).send().await {
+            Ok(_) => return Ok(false),
+            Err(e) => match sdk_error("head bucket", e) {
+                Error::NotFound => {}
+                other => return Err(other),
+            },
+        }
+        let mut req = self.0.create_bucket().bucket(bucket);
+        if let Some(region) = self.0.config().region().map(|r| r.as_ref().to_string())
+            && region != "us-east-1"
+        {
+            req = req.create_bucket_configuration(
+                aws_sdk_s3::types::CreateBucketConfiguration::builder()
+                    .location_constraint(aws_sdk_s3::types::BucketLocationConstraint::from(
+                        region.as_str(),
+                    ))
+                    .build(),
+            );
+        }
+        match req.send().await {
+            Ok(_) => Ok(true),
+            Err(e)
+                if matches!(
+                    e.code(),
+                    Some("BucketAlreadyOwnedByYou" | "BucketAlreadyExists")
+                ) =>
+            {
+                Ok(false)
+            }
+            Err(e) => Err(sdk_error("create bucket", e)),
+        }
+    }
 }
 
 /// Reports whether `err` is an S3 "no such key"/404, across the SDK's typed

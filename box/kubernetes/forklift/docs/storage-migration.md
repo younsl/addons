@@ -42,7 +42,7 @@ Named blobs are the union of `blobs`, `artifacts`, `group_metadata_cache` and `a
 4. Bring forklift back on SeaweedFS with `--set storage.migration.enabled=false`.
 5. Verify, then retire MinIO. The source is never written to, so rolling back is reverting the Helm values.
 
-The Job is named `<fullname>-migrate-r<revision>` and kept after the release moves on (`helm.sh/resource-policy: keep`) until `ttlSecondsAfterFinished` removes it. Its pod carries `karpenter.sh/do-not-disrupt: "true"`. Set the key to `null` to drop it.
+The Job is named `<fullname>-migrate-<hash>`, where the hash covers every `storage.migration` value, the image and the target. Changing any of them (for example `dryRun`) creates a new Job instead of editing an immutable one, and an unchanged sync leaves a finished Job alone. Set `storage.migration.runId` to rerun with the same settings. The Job is kept after the release moves on (`helm.sh/resource-policy: keep`) until `ttlSecondsAfterFinished` removes it. Its pod carries `karpenter.sh/do-not-disrupt: "true"`. Set the key to `null` to drop it.
 
 ## Preflight
 
@@ -71,7 +71,15 @@ All checks run and are reported together, so one rerun fixes every problem at on
 preflight: 12 checks, 11 passed, 0 warned, 1 failed, 0 skipped (PF10)
 ```
 
-A check is `SKIP` when an earlier failure leaves nothing to check, so the total is always 12. Before the checks, the Job waits up to `wait` for both stores to answer, which covers a bundled target starting in the same upgrade and a bucket its hook has not created yet.
+A check is `SKIP` when an earlier failure leaves nothing to check, so the total is always 12. Before the checks, the Job waits up to `wait` for both stores to answer, which covers a bundled target starting in the same upgrade. With the bundled SeaweedFS (or `storage.s3.createBucket`) it then creates the target bucket when it is missing, since its chart hook may not have run yet.
+
+## Argo CD
+
+The steps work the same under Argo CD, with three behaviours to know:
+
+- Argo CD runs Helm `post-install` hooks as PostSync, after every resource is healthy. The bundled SeaweedFS bucket hook therefore runs after forklift and the migration Job, which is why both create the bucket themselves. The hook then finds the bucket and skips it.
+- Argo CD renders every sync as revision 1. The hash in the Job name, not the revision, is what gives each new setting a new Job.
+- Argo CD renders without `lookup`, so Secrets that Helm keeps by looking them up come out new on every render. The SeaweedFS subchart's own S3 identities Secret generates a random read-only key that way, and its hash is on the SeaweedFS pod, which would restart it on every sync. The chart therefore writes the identities to `forklift-seaweedfs-s3-config` itself, admin only and identical on every render (`seaweedfs.allInOne.s3.existingConfigSecret`). With `seaweedfs.s3.credentials.admin.existingSecret` the file names the keys as `${SEAWEEDFS_S3_ADMIN_ACCESS_KEY_ID}` and `${SEAWEEDFS_S3_ADMIN_SECRET_ACCESS_KEY}`, which SeaweedFS reads from that Secret.
 
 ## During the copy
 
@@ -107,6 +115,14 @@ The Job prints a JSON report on stdout:
 {"required":31,"copied":31,"skipped":0,"bytes_copied":8473536,"meta_copied":true,"dry_run":false,"verified_blobs":20,"preflight":[...],"postflight":[{"id":"PV01","name":"target-metadata-hash","status":"pass","detail":"...","latency_us":3900}]}
 ```
 
+## History
+
+Every run, succeeded, failed or dry, writes a record to the target bucket at `<prefix>/meta/migrations/<id>.json` before the Job exits. The id is the finish time plus a random suffix, so ids sort by time. A run that cannot write to the target leaves no record and its Job log is the only trace.
+
+The Storage page lists the newest 100 records with the source and target providers, the share of blobs copied and every check as a status dot. Opening a run shows the full report: the stage each run reached (preflight, copy, verify, upload, postflight), the failing checks and what postflight removed, timings and settings, every preflight and postflight check with its latency, and the bucket, key and URI the record was read from. A JSON tab shows the stored record as is.
+
+The same data is in the admin API: `GET /api/v1/storage/migrations` lists summaries and `GET /api/v1/storage/migrations/{id}` returns one record with `stored_at`. With the `fs` backend the list is empty.
+
 ## Values
 
 | Value | Default | Effect |
@@ -120,13 +136,14 @@ The Job prints a JSON report on stdout:
 | `storage.migration.wait` | `3m` | Wait for writers to exit, the Lease to free and both stores to answer |
 | `storage.migration.verify` | `sample` | PV03 target-blob-content mode: `off`, `sample` or `full` |
 | `storage.migration.verifySamplePercent` | `5` | Share of named blobs PV03 target-blob-content re-hashes in sample mode, at least 20 |
+| `storage.migration.runId` | | Change to rerun with otherwise identical settings |
 | `storage.migration.stagingSizeLimit` | | `emptyDir` limit for `/tmp` |
 
 The target is the chart's own storage configuration, bundled SeaweedFS included. `--require-conditional-writes` is passed when `replicaCount > 1`.
 
 ## Running without the chart
 
-`forklift migrate-storage` reads the source from `FORKLIFT_STORAGE_S3_*` and the target from `FORKLIFT_MIGRATE_TO_S3_BUCKET`, `_PREFIX`, `_REGION`, `_ENDPOINT`, `_FORCE_PATH_STYLE`, `_ACCESS_KEY_ID`, `_SECRET_ACCESS_KEY`, plus `_PROVIDER`, `_ADMIN_ENDPOINT` and `_ADMIN_TOKEN` for PF11 target-capacity. Run `forklift migrate-storage -h` for the flags. Without `--lease-name` and `--writer-selector`, PF01 lease and PF02 writers-stopped become a warning that the operator must make sure every replica is stopped.
+`forklift migrate-storage` reads the source from `FORKLIFT_STORAGE_S3_*` and the target from `FORKLIFT_MIGRATE_TO_S3_BUCKET`, `_PREFIX`, `_REGION`, `_ENDPOINT`, `_FORCE_PATH_STYLE`, `_ACCESS_KEY_ID`, `_SECRET_ACCESS_KEY`, plus `_CREATE_BUCKET` to create a missing target bucket and `_PROVIDER`, `_ADMIN_ENDPOINT` and `_ADMIN_TOKEN` for PF11 target-capacity. Run `forklift migrate-storage -h` for the flags. Without `--lease-name` and `--writer-selector`, PF01 lease and PF02 writers-stopped become a warning that the operator must make sure every replica is stopped.
 
 `--interactive` (`-i`) prompts for the target (the secret is not echoed), runs the preflight, prints the report and copies only after `y`:
 

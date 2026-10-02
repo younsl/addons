@@ -59,6 +59,7 @@ pub struct StorageBackend {
     /// A [`storage_backend::admin::PROVIDERS`] id; empty for fs.
     pub provider: String,
     pub endpoint: String,
+    pub region: String,
     pub bucket: String,
     pub prefix: String,
     /// `None` when the store was not probed.
@@ -75,6 +76,7 @@ struct Injected {
     notifier: Option<Arc<notify::Notifier>>,
     storage: StorageBackend,
     cluster: Option<ClusterInfoFn>,
+    migrations: Option<Arc<dyn crate::migrate::record::History>>,
     upload_enabled: bool,
     uploader: Option<Arc<repo::Uploader>>,
     external_url: String,
@@ -160,6 +162,11 @@ impl Handler {
         let mut injected = self.injected.write();
         injected.storage = backend;
         injected.cluster = cluster;
+    }
+
+    /// Injects the migration history the Storage page reads (object storage only).
+    pub fn set_migration_history(&self, history: Arc<dyn crate::migrate::record::History>) {
+        self.injected.write().migrations = Some(history);
     }
 
     pub(crate) fn uploader(&self) -> Option<Arc<repo::Uploader>> {
@@ -418,6 +425,14 @@ pub fn routes(h: Arc<Handler>) -> Router {
         .route("/ha", axum::routing::get(ha::get_status))
         .route("/ha/step-down", axum::routing::post(ha::step_down))
         .route("/storage", axum::routing::get(storage::get_stats))
+        .route(
+            "/storage/migrations",
+            axum::routing::get(storage::list_migrations),
+        )
+        .route(
+            "/storage/migrations/{id}",
+            axum::routing::get(storage::get_migration),
+        )
         .route(
             "/repositories/{id}/artifacts/bulk-delete",
             axum::routing::post(artifacts_bulk::bulk_delete),

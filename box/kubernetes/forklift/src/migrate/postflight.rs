@@ -44,6 +44,16 @@ impl Verify {
     }
 }
 
+impl std::fmt::Display for Verify {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Verify::Off => write!(f, "off"),
+            Verify::Sample { percent } => write!(f, "sample {percent}%"),
+            Verify::Full => write!(f, "full"),
+        }
+    }
+}
+
 pub const MIN_SAMPLE: usize = 20;
 
 pub struct Outcome {
@@ -291,11 +301,7 @@ async fn blob_content(
             }
         }
     }
-    let mode = match verify {
-        Verify::Full => "full".to_string(),
-        Verify::Sample { percent } => format!("sample {percent}%"),
-        Verify::Off => unreachable!(),
-    };
+    let mode = verify.to_string();
     let throughput = if elapsed > Duration::ZERO {
         format!(
             ", {}/s",

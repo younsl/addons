@@ -17,6 +17,7 @@ pub mod cli;
 pub mod lease;
 pub mod postflight;
 pub mod preflight;
+pub mod record;
 mod snapshot;
 
 pub use postflight::Verify;
@@ -64,6 +65,8 @@ pub struct Endpoint {
     pub meta_key: String,
     /// Normalised endpoint URL, compared to refuse overlapping locations.
     pub endpoint: String,
+    /// Provider id kept in the migration record, resolved like the server's `effective_provider`.
+    pub provider: String,
     pub admin: Option<Arc<dyn ClusterAdmin>>,
 }
 
@@ -103,10 +106,13 @@ pub struct Guard {
 impl Guard {
     pub fn unverified() -> Guard {
         Guard {
-            checks: vec![Check::warn(
-                "writers-stopped",
-                "not verified outside Kubernetes; make sure every forklift replica is stopped",
-            )],
+            checks: vec![
+                Check::new("lease", Status::Skip, "no HA Lease outside Kubernetes"),
+                Check::warn(
+                    "writers-stopped",
+                    "not verified outside Kubernetes; make sure every forklift replica is stopped",
+                ),
+            ],
             held: Box::new(|| true),
         }
     }
@@ -123,6 +129,9 @@ pub struct Report {
     pub verified_blobs: i64,
     pub preflight: Vec<Check>,
     pub postflight: Vec<Check>,
+    /// The history record id, when the record could be written.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub record_id: Option<String>,
 }
 
 pub async fn has_meta(e: &Endpoint) -> Result<bool> {
@@ -133,13 +142,60 @@ pub async fn has_meta(e: &Endpoint) -> Result<bool> {
     }
 }
 
+/// What a run got through, kept so a failure is recorded as precisely as a
+/// success.
+#[derive(Default)]
+pub(crate) struct RunProgress {
+    pub(crate) stage: &'static str,
+    pub(crate) report: Report,
+    pub(crate) remediation: Option<String>,
+}
+
+/// Runs a migration and records its outcome, success or failure, in the
+/// target's migration history.
 pub async fn migrate(
     src: &Endpoint,
     dst: &Endpoint,
     opts: &Options,
     guard: Guard,
 ) -> Result<Report> {
-    let plan = preflight::run(src, dst, opts, guard.checks).await?;
+    let started_at = chrono::Utc::now();
+    let mut progress = RunProgress {
+        stage: "preflight",
+        ..RunProgress::default()
+    };
+    let result = run(src, dst, opts, guard, &mut progress).await;
+    let rec = record::build(src, dst, opts, &progress, result.as_ref().err(), started_at);
+    let id = match record::write(dst.objects.as_ref(), &dst.bucket, &dst.prefix, &rec).await {
+        Ok(()) => Some(rec.id.clone()),
+        Err(e) => {
+            tracing::warn!(err = %e, "migrate: could not write the migration record");
+            None
+        }
+    };
+    result.map(|mut report| {
+        report.record_id = id;
+        report
+    })
+}
+
+async fn run(
+    src: &Endpoint,
+    dst: &Endpoint,
+    opts: &Options,
+    guard: Guard,
+    progress: &mut RunProgress,
+) -> Result<Report> {
+    progress.report.dry_run = opts.dry_run;
+    let plan = match preflight::run(src, dst, opts, guard.checks).await {
+        Ok(plan) => plan,
+        Err(Error::Preflight(checks)) => {
+            progress.report.preflight = checks.clone();
+            return Err(Error::Preflight(checks));
+        }
+        Err(e) => return Err(e),
+    };
+    progress.report.preflight = plan.checks.clone();
     let mut report = Report {
         required: plan.snapshot.blobs.len() as i64,
         skipped: (plan.snapshot.blobs.len() - plan.missing.len()) as i64,
@@ -150,13 +206,17 @@ pub async fn migrate(
     if opts.dry_run {
         report.copied = plan.missing.len() as i64;
         report.bytes_copied = plan.missing.values().map(|s| s.unwrap_or(0)).sum();
+        progress.stage = "done";
+        progress.report = report.clone();
         return Ok(report);
     }
+    progress.stage = "copy";
+    progress.report = report.clone();
 
     let counters = Counters::default();
     let total = plan.missing.len();
     let held = &guard.held;
-    stream::iter(plan.missing.keys().map(Ok))
+    let copied = stream::iter(plan.missing.keys().map(Ok))
         .try_for_each_concurrent(opts.concurrency.max(1), |digest| {
             let counters = &counters;
             async move {
@@ -168,10 +228,13 @@ pub async fn migrate(
                 Ok::<_, Error>(())
             }
         })
-        .await?;
+        .await;
     report.copied = counters.copied.load(Ordering::Relaxed);
     report.bytes_copied = counters.bytes.load(Ordering::Relaxed);
+    progress.report = report.clone();
+    copied?;
 
+    progress.stage = "verify";
     verify_target(
         dst,
         &plan.snapshot.blobs,
@@ -190,8 +253,10 @@ pub async fn migrate(
             "lost the HA lease before the metadata upload".into(),
         ));
     }
+    progress.stage = "upload";
     upload_meta(dst, &plan.snapshot, opts.overwrite_meta).await?;
     report.meta_copied = true;
+    progress.stage = "postflight";
 
     let skipped: BTreeSet<String> = plan
         .snapshot
@@ -211,16 +276,22 @@ pub async fn migrate(
     .await;
     report.verified_blobs = outcome.verified_blobs as i64;
     report.postflight = outcome.checks.clone();
+    progress.report = report.clone();
     if outcome.checks.iter().any(|c| c.status == Status::Fail) {
         let remediation = match postflight::remediate(dst, &outcome.bad_blobs).await {
             Ok(done) => done,
             Err(e) => format!("cleanup failed, remove the target metadata snapshot by hand: {e}"),
         };
+        report.meta_copied = false;
+        progress.report.meta_copied = false;
+        progress.remediation = Some(remediation.clone());
         return Err(Error::Postflight {
             checks: outcome.checks,
             remediation,
         });
     }
+    progress.stage = "done";
+    progress.report = report.clone();
     Ok(report)
 }
 
@@ -432,6 +503,7 @@ pub(crate) mod tests {
             prefix: String::new(),
             meta_key: "meta/forklift.db".into(),
             endpoint: s.endpoint.clone(),
+            provider: "generic".into(),
             admin: None,
         }
     }
@@ -578,8 +650,12 @@ pub(crate) mod tests {
         assert!(!report.meta_copied && report.dry_run);
         assert_eq!(count(&dst.blobs).await, 0);
         assert!(
-            dst.objects.items.lock().is_empty(),
-            "dry run leaves no probe objects either"
+            dst.objects
+                .items
+                .lock()
+                .keys()
+                .all(|k| k.starts_with("meta/migrations/")),
+            "a dry run leaves only its history record, no probe objects"
         );
     }
 
@@ -796,5 +872,125 @@ pub(crate) mod tests {
             panic!("{err}");
         };
         assert_eq!(postflight_ids(checks, Status::Fail), ["PV04"]);
+    }
+
+    fn records(side: &Side) -> Vec<record::MigrationRecord> {
+        let items = side.objects.items.lock();
+        let mut out: Vec<record::MigrationRecord> = items
+            .iter()
+            .filter(|(k, _)| k.starts_with("meta/migrations/"))
+            .map(|(_, v)| serde_json::from_slice(&v.0).unwrap())
+            .collect();
+        out.sort_by(|a, b| a.id.cmp(&b.id));
+        out
+    }
+
+    #[tokio::test]
+    async fn every_outcome_is_recorded() {
+        let (src, _) = seeded().await;
+        let dst = side("http://dst");
+        let staging = tempfile::tempdir().unwrap();
+
+        let dry = migrate(
+            &endpoint(&src),
+            &endpoint(&dst),
+            &Options {
+                dry_run: true,
+                ..opts(staging.path())
+            },
+            ok_guard(),
+        )
+        .await
+        .unwrap();
+        let ok = migrate(
+            &endpoint(&src),
+            &endpoint(&dst),
+            &opts(staging.path()),
+            ok_guard(),
+        )
+        .await
+        .unwrap();
+        let err = migrate(
+            &endpoint(&src),
+            &endpoint(&dst),
+            &opts(staging.path()),
+            ok_guard(),
+        )
+        .await
+        .unwrap_err();
+        assert!(matches!(err, Error::Preflight(_)), "{err}");
+
+        let recs = records(&dst);
+        assert_eq!(
+            recs.len(),
+            3,
+            "dry run, success and failure are all recorded"
+        );
+        let by_outcome = |o: &str| recs.iter().find(|r| r.outcome == o).unwrap().clone();
+        let d = by_outcome("dry_run");
+        assert_eq!(Some(d.id.clone()), dry.record_id);
+        assert!(d.settings.dry_run && !d.meta_copied && d.postflight.is_empty());
+
+        let s = by_outcome("succeeded");
+        assert_eq!(Some(s.id.clone()), ok.record_id);
+        assert_eq!((s.copied, s.required, s.verified_blobs), (5, 5, 5));
+        assert!(s.meta_copied && s.failed_stage.is_none() && s.error.is_none());
+        assert_eq!(s.settings.verify, "full");
+        assert_eq!(s.source.endpoint, "http://src");
+        assert_eq!(s.preflight.len(), 12);
+        assert!(
+            s.postflight_summary
+                .starts_with("postflight: 4 checks, 4 passed")
+        );
+
+        let f = by_outcome("failed");
+        assert_eq!(f.failed_stage.as_deref(), Some("preflight"));
+        assert!(
+            f.error.as_deref().unwrap().contains("(PF10)"),
+            "{:?}",
+            f.error
+        );
+        assert!(
+            f.preflight
+                .iter()
+                .any(|c| c.id == "PF10" && c.status == "fail")
+        );
+    }
+
+    #[tokio::test]
+    async fn a_postflight_failure_records_the_remediation() {
+        let (src, digests) = seeded().await;
+        let dst = side("http://dst");
+        dst.blobs.put(reader(b"blob-2")).await.unwrap();
+        std::fs::write(blob_path(&dst, &digests[2]), b"BLOB-2").unwrap();
+        let staging = tempfile::tempdir().unwrap();
+        migrate(
+            &endpoint(&src),
+            &endpoint(&dst),
+            &opts(staging.path()),
+            ok_guard(),
+        )
+        .await
+        .unwrap_err();
+        let recs = records(&dst);
+        assert_eq!(recs.len(), 1);
+        let f = &recs[0];
+        assert_eq!(
+            (f.outcome.as_str(), f.failed_stage.as_deref()),
+            ("failed", Some("postflight"))
+        );
+        assert!(!f.meta_copied, "the snapshot was withdrawn");
+        assert!(
+            f.remediation
+                .as_deref()
+                .unwrap()
+                .contains("removed 1 bad target blobs")
+        );
+        assert!(
+            f.postflight
+                .iter()
+                .any(|c| c.id == "PV03" && c.status == "fail")
+        );
+        assert_eq!(f.copied, 4);
     }
 }

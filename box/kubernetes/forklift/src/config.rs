@@ -181,6 +181,10 @@ pub struct S3Config {
     /// The provider's admin API when it is not served on the S3 endpoint.
     pub admin_endpoint: String,
     pub admin_token: String,
+    /// Creates the bucket at boot when it is missing. The chart sets it for
+    /// the bundled store, whose own bucket hook may only run after forklift
+    /// is up (Argo CD runs Helm post-install hooks as PostSync).
+    pub create_bucket: bool,
 }
 
 impl S3Config {
@@ -381,6 +385,7 @@ impl Config {
                     provider: env("FORKLIFT_STORAGE_S3_PROVIDER", "").to_ascii_lowercase(),
                     admin_endpoint: env("FORKLIFT_STORAGE_S3_ADMIN_ENDPOINT", ""),
                     admin_token: env("FORKLIFT_STORAGE_S3_ADMIN_TOKEN", ""),
+                    create_bucket: env_bool("FORKLIFT_STORAGE_S3_CREATE_BUCKET", false),
                 },
             },
             http_addr: env("FORKLIFT_HTTP_ADDR", ":8080"),
@@ -1080,7 +1085,9 @@ pub(crate) mod tests {
         g.set("FORKLIFT_STORAGE_S3_PROVIDER", "Garage");
         g.set("FORKLIFT_STORAGE_S3_ADMIN_ENDPOINT", "http://store:3903");
         g.set("FORKLIFT_STORAGE_S3_ADMIN_TOKEN", "t");
+        g.set("FORKLIFT_STORAGE_S3_CREATE_BUCKET", "true");
         let c = Config::load().unwrap();
+        assert!(c.storage.s3.create_bucket);
         assert_eq!(c.storage.s3.effective_provider(), "garage");
         assert_eq!(c.storage.s3.admin_endpoint, "http://store:3903");
         assert_eq!(c.storage.s3.admin_token, "t");

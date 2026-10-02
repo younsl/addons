@@ -197,7 +197,7 @@ function Sidebar({ me, onLogout }: { me: Me; onLogout: () => void }) {
       className={cn(
         // --fx-impersonation-h is set only while the impersonation banner is up;
         // it keeps the sidebar docked below the banner instead of under it.
-        "sticky top-[var(--fx-impersonation-h,0px)] z-40 flex h-[calc(100dvh-var(--fx-impersonation-h,0px))] shrink-0 flex-col gap-1 overflow-y-auto border-r border-[var(--fx-border-subtle)] bg-[var(--fx-sidebar-bg)] py-4 transition-[width] duration-150 lg:self-start max-lg:h-auto max-lg:w-full max-lg:overflow-visible max-lg:border-r-0 max-lg:border-b max-lg:px-3 max-lg:py-2 max-sm:px-2",
+        "sticky top-[var(--fx-impersonation-h,0px)] z-40 flex h-[calc(100dvh-var(--fx-impersonation-h,0px))] shrink-0 flex-col gap-1 overflow-y-auto overscroll-y-none border-r border-[var(--fx-border-subtle)] bg-[var(--fx-sidebar-bg)] py-4 transition-[width] duration-150 lg:self-start max-lg:h-auto max-lg:w-full max-lg:overflow-visible max-lg:border-r-0 max-lg:border-b max-lg:px-3 max-lg:py-2 max-sm:px-2",
         collapsed ? "w-16 px-2" : "w-[var(--fx-sidebar-width)] px-3"
       )}
     >

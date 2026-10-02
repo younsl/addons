@@ -114,6 +114,7 @@ The following table lists the configurable parameters and their default values.
 | storage.s3.provider | string | `""` | Store for admin metrics: aws, minio, rustfs, seaweedfs, garage or generic. Empty auto-detects. |
 | storage.s3.adminEndpoint | string | `""` | Admin API URL when not the S3 endpoint (SeaweedFS master, Garage admin). |
 | storage.s3.adminToken | string | `""` | Garage admin token, without ".". Ignored with existingSecret. |
+| storage.s3.createBucket | bool | `false` | Create the bucket at boot when missing. Forced on with bundled SeaweedFS. |
 | storage.migration.enabled | bool | `false` | Run the migration Job and keep forklift at 0 replicas. |
 | storage.migration.sourceObjectStorage.endpoint | string | `""` | Source S3 endpoint. Empty is AWS S3. |
 | storage.migration.sourceObjectStorage.bucket | string | `""` | Source bucket. Required. |
@@ -121,6 +122,7 @@ The following table lists the configurable parameters and their default values.
 | storage.migration.sourceObjectStorage.region | string | `""` | Source region. |
 | storage.migration.sourceObjectStorage.forcePathStyle | bool | `true` | Source path-style addressing. |
 | storage.migration.sourceObjectStorage.existingSecret | string | `""` | Secret with the source access-key-id and secret-access-key. Empty uses IRSA/Pod Identity. |
+| storage.migration.runId | string | `""` | Change to rerun a Job whose settings are unchanged. The Job name hashes every setting. |
 | storage.migration.concurrency | int | `8` | Blobs copied in parallel. |
 | storage.migration.dryRun | bool | `false` | Run preflight and report the plan without copying. |
 | storage.migration.overwriteMeta | bool | `false` | Replace a metadata snapshot already in the target. |
@@ -142,6 +144,7 @@ The following table lists the configurable parameters and their default values.
 | seaweedfs.allInOne.enabled | bool | `true` | Single-pod master, volume, filer and S3. |
 | seaweedfs.allInOne.s3.enabled | bool | `true` |  |
 | seaweedfs.allInOne.s3.enableAuth | bool | `true` |  |
+| seaweedfs.allInOne.s3.existingConfigSecret | string | `"forklift-seaweedfs-s3-config"` | Secret the chart writes the S3 identities file to, admin only, so every render (Argo CD included) is identical. Empty uses the subchart's generated one. |
 | seaweedfs.allInOne.s3.createBuckets | list | `[{"name":"forklift"}]` | Buckets to create. The first is forklift's unless storage.s3.bucket is set. |
 | seaweedfs.allInOne.data.type | string | `"persistentVolumeClaim"` | Data volume type. |
 | seaweedfs.allInOne.data.size | string | `"10Gi"` | Data volume size. |

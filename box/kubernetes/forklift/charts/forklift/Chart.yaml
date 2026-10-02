@@ -36,3 +36,5 @@ annotations:
       description: "storage.s3.provider, adminEndpoint and adminToken for MinIO, RustFS, SeaweedFS and Garage admin metrics"
     - kind: added
       description: "storage.migration runs forklift migrate-storage as a Job with twelve preflight checks, keeping forklift at 0 replicas"
+    - kind: fixed
+      description: "Bundled SeaweedFS and the migration Job work under Argo CD: the bucket is created without waiting for the PostSync hook, and the Job is named by a hash of its settings"

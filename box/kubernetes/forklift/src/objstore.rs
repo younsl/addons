@@ -190,6 +190,52 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn ensure_bucket_creates_once_and_tolerates_races() {
+        use wiremock::matchers::{method, path_regex};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+        let server = MockServer::start().await;
+        Mock::given(method("HEAD"))
+            .and(path_regex("^/missing/?$"))
+            .respond_with(ResponseTemplate::new(404))
+            .mount(&server)
+            .await;
+        Mock::given(method("PUT"))
+            .and(path_regex("^/missing/?$"))
+            .respond_with(ResponseTemplate::new(200))
+            .expect(1)
+            .mount(&server)
+            .await;
+        Mock::given(method("HEAD"))
+            .and(path_regex("^/present/?$"))
+            .respond_with(ResponseTemplate::new(200))
+            .mount(&server)
+            .await;
+        Mock::given(method("HEAD"))
+            .and(path_regex("^/raced/?$"))
+            .respond_with(ResponseTemplate::new(404))
+            .mount(&server)
+            .await;
+        Mock::given(method("PUT"))
+            .and(path_regex("^/raced/?$"))
+            .respond_with(ResponseTemplate::new(409).set_body_string(
+                "<Error><Code>BucketAlreadyOwnedByYou</Code><Message>m</Message></Error>",
+            ))
+            .mount(&server)
+            .await;
+        let s3 = api(&server.uri()).await;
+        assert!(s3.ensure_bucket("missing").await.unwrap(), "created");
+        assert!(!s3.ensure_bucket("present").await.unwrap(), "already there");
+        assert!(!s3.ensure_bucket("raced").await.unwrap(), "lost the race");
+
+        let down = api("http://127.0.0.1:1")
+            .await
+            .ensure_bucket("b")
+            .await
+            .unwrap_err();
+        assert!(down.is_transient(), "{down}");
+    }
+
     #[test]
     fn meta_key_cases() {
         assert_eq!(meta_key(""), "meta/forklift.db");

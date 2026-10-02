@@ -10,12 +10,14 @@ PrismLight.registerLanguage("yaml", yaml);
 // languages the OCI artifact page shows (manifest/config JSON, chart YAML).
 // The style follows the console theme; only the two grammars actually used are
 // registered so the highlighter stays out of the main bundle's hot path.
-export function CodeView({ code, language }: { code: string; language: "json" | "yaml" }) {
+export function CodeView({ code, language, lineNumbers }: { code: string; language: "json" | "yaml"; lineNumbers?: boolean }) {
   const dark = typeof document !== "undefined" && document.documentElement.classList.contains("dark");
   return (
     <PrismLight
       language={language}
       style={dark ? oneDark : oneLight}
+      showLineNumbers={lineNumbers}
+      lineNumberStyle={{ minWidth: "2.75em", paddingRight: "1em", opacity: 0.45, userSelect: "none" }}
       customStyle={{
         margin: 0,
         maxHeight: "28rem",

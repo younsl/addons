@@ -4,6 +4,7 @@ import { PageDescription, PageHeader } from "@/components/app-ui/page";
 import { Switch } from "@/components/ui/switch";
 import { useTranslation } from "@/lib/i18n";
 import { ClusterPanel } from "@/routes/admin/-storage/components/cluster-panel";
+import { MigrationHistory } from "@/routes/admin/-storage/components/migration-history";
 import { StorageOverview } from "@/routes/admin/-storage/components/storage-overview";
 import { useStorageStatus } from "@/routes/admin/-storage/hooks/use-storage-status";
 import { formatTimestamp } from "@/utils/format-timestamp";
@@ -66,6 +67,8 @@ export function StoragePage() {
               {t("storage.fs-note")}
             </div>
           ) : null}
+
+          {storage.backend === "s3" && <MigrationHistory />}
         </div>
       )}
     </div>

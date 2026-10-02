@@ -8,16 +8,20 @@ Notable changes per release. Container image versions come from the
 
 Chart 0.14.0. forklift-mcp remains 0.3.2.
 
+The 0.14.0 image and chart were rebuilt on 2026-10-03 so the bundled SeaweedFS and the migration Job work under Argo CD: forklift and the migration Job create a missing bucket themselves, the migration Job is named by a hash of its settings instead of the Helm revision, every migration run is recorded and shown on the Storage page, and the bundled SeaweedFS no longer restarts on every Argo CD sync. The first 0.14.0 build lacks all four.
+
 ### Removed
 
 - The bundled MinIO subchart (`minio.*`). MinIO's images were removed from the public quay.io registry (`quay.io/minio/minio`), so the default install could no longer pull them. See [IBM's advisory](https://www.ibm.com/support/pages/node/7289585).
 
 ### Added
 
-- A bundled SeaweedFS 4.48 subchart in all-in-one mode (`seaweedfs.*`), enabled by default and auto-wired to the s3 backend, admin endpoint included.
+- A bundled SeaweedFS 4.48 subchart in all-in-one mode (`seaweedfs.*`), enabled by default and auto-wired to the s3 backend, admin endpoint included. The chart writes its S3 identities file (`forklift-seaweedfs-s3-config`, admin only) instead of the subchart's, whose random read-only key changed on every Argo CD render and restarted the SeaweedFS pod.
 - Admin metrics for MinIO, RustFS, SeaweedFS and Garage behind one provider registry (`FORKLIFT_STORAGE_S3_PROVIDER`, `_ADMIN_ENDPOINT`, `_ADMIN_TOKEN`). The Storage page shows the provider by name and leaves counts a store does not report as unknown.
 - `forklift migrate-storage` copies an object-storage deployment to another store: the blobs its metadata names, re-hashed on arrival, then the validated snapshot. Twelve preflight checks (PF01-PF12) run before the first write and are reported together with response times and a one-line summary. It holds the HA Lease while copying, refuses while a forklift pod exists, and has `--dry-run` and `--interactive`. See `docs/storage-migration.md`.
 - Postflight integrity checks (PV01-PV04) after the copy: the uploaded snapshot hash, every named blob's size, a re-hash of a sample (or all, `--verify=full`) of the blobs starting with the ones skipped as present, and the source snapshot ETag. A failure deletes the bad target blobs and the target snapshot so a rerun copies them again.
+- Migration history. Every `migrate-storage` run, succeeded, failed or dry, writes a record to `<prefix>/meta/migrations/` in the target. The Storage page lists them with provider logos, copy progress and per-check status, and opens a full report: the stage reached, failing checks and cleanup, timings, settings, every check with its latency, where the record is stored, and the raw JSON. The admin API serves them at `GET /api/v1/storage/migrations` and `GET /api/v1/storage/migrations/{id}`, and `GET /api/v1/storage` adds `last_migration`.
+- Hovering a role on the Users page shows its description and how many users hold it.
 - `storage.migration.*` runs that migration as a chart Job, keeping forklift at 0 replicas while enabled. The target is the chart's own storage, bundled SeaweedFS included.
 - A startup probe for S3 conditional writes. HA refuses to start on a store that accepts writes whose precondition failed (Garage), since metadata fencing depends on them. The result is on the Storage page.
 
@@ -25,6 +29,8 @@ Chart 0.14.0. forklift-mcp remains 0.3.2.
 
 - Boot waits up to 240s, with backoff, for an object store that is not reachable yet or whose bucket does not exist yet, instead of exiting into a restart loop. Credential errors still fail at once, and S3 errors now carry their root cause.
 - A deliberate Lease release (shutdown, or the end of a migration) logs `released leadership` at INFO rather than `lost leadership` at WARN.
+- The page itself no longer bounces at the scroll ends (`overscroll-behavior-y: none`), nor do the sidebar, dialogs, global search and select menus.
+- Outside Kubernetes, PF01 lease reports `no HA Lease outside Kubernetes` instead of `not run: an earlier check failed`.
 - Custom S3 endpoints no longer send aws-chunked checksum trailers, which Garage rejected as an invalid payload signature.
 - `GET /api/v1/storage` replaces `mode`, `minio` and `minio_error` with `provider`, `provider_name`, `cluster` and `cluster_error`, and adds `conditional_writes`.
 

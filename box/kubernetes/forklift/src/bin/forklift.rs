@@ -233,13 +233,29 @@ async fn run(cfg: Arc<config::Config>, cancel: CancellationToken) -> anyhow::Res
     // S3 by meta_sync, so the deployment needs no EBS/RWX volume.
     let mut meta_sync: Option<Arc<objstore::MetaSync>> = None;
     let mut conditional_writes: Option<objstore::ConditionalWrites> = None;
+    let mut s3_client: Option<aws_sdk_s3::Client> = None;
     let blobs: Arc<storage::InstrumentedStore> = if cfg.storage.backend == "s3" {
         let s3cfg = to_s3_config(&cfg.storage.s3);
         let s3blobs = storage::S3BlobStore::new(&s3cfg, data_dir.join("blob-tmp"))
             .await
             .context("open s3 blob store")?;
         let client = s3blobs.client();
+        s3_client = Some(client.clone());
         let blobs = Arc::new(storage::instrument(Arc::new(s3blobs), "s3", &reg));
+        if cfg.storage.s3.create_bucket {
+            let api = objstore::S3Api::new(client.clone());
+            let created = objstore::retry_transient(
+                "create bucket",
+                STORE_BOOT_BUDGET,
+                Duration::from_secs(1),
+                || api.ensure_bucket(&cfg.storage.s3.bucket),
+            )
+            .await
+            .context("create s3 bucket")?;
+            if created {
+                tracing::info!(bucket = %cfg.storage.s3.bucket, "created s3 bucket");
+            }
+        }
         let object_api: Arc<dyn objstore::ObjectApi> = Arc::new(objstore::S3Api::new(client));
         conditional_writes = Some(
             check_conditional_writes(object_api.as_ref(), &cfg)
@@ -791,6 +807,7 @@ async fn run(cfg: Arc<config::Config>, cancel: CancellationToken) -> anyhow::Res
                 } else {
                     ep.to_string()
                 },
+                region: s3.region.clone(),
                 bucket: s3.bucket.clone(),
                 prefix: s3.prefix.trim_start_matches('/').to_string(),
                 ..Default::default()
@@ -817,6 +834,13 @@ async fn run(cfg: Arc<config::Config>, cancel: CancellationToken) -> anyhow::Res
             }
         }
         api_handler.set_storage_backend(descriptor, cluster);
+        if let Some(client) = &s3_client {
+            api_handler.set_migration_history(forklift::migrate::record::S3History::new(
+                client.clone(),
+                &cfg.storage.s3.bucket,
+                &cfg.storage.s3.prefix,
+            ));
+        }
     }
 
     // PV-based replication: the leader serves token-gated snapshot/blob

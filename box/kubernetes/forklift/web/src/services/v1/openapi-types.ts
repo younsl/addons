@@ -96,13 +96,29 @@ export interface TokenScope { repo_pattern: string; actions: ("read" | "write" |
 
 export interface HAStatus { enabled: boolean; mode: string; backend: "fs" | "s3"; storage_endpoint?: string; identity: string; leader: string; is_leader: boolean; role: "leader" | "standby"; lease_name?: string; fencing_token?: number; started_at?: string; version?: string; runtime?: string; }
 
-export interface StorageStats { backend: "fs" | "s3"; provider?: string; provider_name?: string; endpoint?: string; bucket?: string; prefix?: string; blob_count: number; blob_bytes: number; cluster?: ClusterStats; cluster_error?: string; conditional_writes?: boolean; conditional_writes_detail?: string; fs_error?: string; fs?: DiskUsage; dangling: DanglingRef[]; }
+export interface StorageStats { backend: "fs" | "s3"; provider?: string; provider_name?: string; endpoint?: string; bucket?: string; prefix?: string; blob_count: number; blob_bytes: number; cluster?: ClusterStats; cluster_error?: string; conditional_writes?: boolean; conditional_writes_detail?: string; last_migration?: MigrationSummary; migration_history_error?: string; fs_error?: string; fs?: DiskUsage; dangling: DanglingRef[]; }
 
 export interface DiskUsage { path?: string; total_bytes: number; used_bytes: number; available_bytes: number; usage_ratio: number; }
 
 export interface DanglingRef { repository: string; repo_id: number; path: string; sha256: string; role?: string; first_seen: string; last_seen: string; hits: number; statuses: StatusCount[]; last_status?: number; }
 
 export interface StatusCount { code: number; count: number; }
+
+export interface MigrationList { items: MigrationSummary[]; }
+
+export interface MigrationLocation { provider?: string; endpoint: string; bucket: string; prefix?: string; }
+
+export interface MigrationCheck { id: string; name: string; status: "pass" | "warn" | "fail" | "skip"; detail: string; latency_us?: number; }
+
+export interface MigrationSettings { concurrency: number; dry_run: boolean; overwrite_meta: boolean; allow_missing_source_blobs: boolean; require_conditional_writes: boolean; verify: string; }
+
+export interface MigrationSummary { id: string; outcome: "succeeded" | "failed" | "dry_run"; failed_stage?: "preflight" | "copy" | "verify" | "upload" | "postflight"; started_at: string; finished_at: string; duration_ms: number; source: MigrationLocation; target: MigrationLocation; required: number; copied: number; skipped: number; bytes_copied: number; preflight_summary: string; postflight_summary?: string; preflight: MigrationCheckStatus[]; postflight: MigrationCheckStatus[]; }
+
+export interface MigrationCheckStatus { id: string; name: string; status: "pass" | "warn" | "fail" | "skip"; }
+
+export interface MigrationRecord { id: string; outcome: "succeeded" | "failed" | "dry_run"; failed_stage?: "preflight" | "copy" | "verify" | "upload" | "postflight"; error?: string; remediation?: string; started_at: string; finished_at: string; duration_ms: number; forklift_version: string; source: MigrationLocation; target: MigrationLocation; settings: MigrationSettings; required: number; copied: number; skipped: number; bytes_copied: number; verified_blobs: number; meta_copied: boolean; preflight_summary: string; postflight_summary?: string; preflight: MigrationCheck[]; postflight: MigrationCheck[]; stored_at?: MigrationStoredAt; }
+
+export interface MigrationStoredAt { provider: string; endpoint: string; region?: string; bucket: string; key: string; uri: string; }
 
 export interface ClusterStats { total_capacity_bytes: number; used_bytes: number; available_bytes: number; usage_ratio: number; logical_used_bytes?: number; object_count?: number; bucket_count?: number; online_drives: number; offline_drives: number; servers: number; version?: string; }
 

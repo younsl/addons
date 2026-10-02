@@ -108,6 +108,8 @@ storage:
     adminEndpoint: ""
     # -- (string) Garage admin token, without ".". Ignored with existingSecret.
     adminToken: ""
+    # -- (bool) Create the bucket at boot when missing. Forced on with bundled SeaweedFS.
+    createBucket: false
   # Copies data from another S3-compatible store into the configured one. While
   # enabled, forklift is scaled to 0 and a Job holds the HA Lease.
   migration:
@@ -126,6 +128,8 @@ storage:
       forcePathStyle: true
       # -- (string) Secret with the source access-key-id and secret-access-key. Empty uses IRSA/Pod Identity.
       existingSecret: ""
+    # -- (string) Change to rerun a Job whose settings are unchanged. The Job name hashes every setting.
+    runId: ""
     # -- (int) Blobs copied in parallel.
     concurrency: 8
     # -- (bool) Run preflight and report the plan without copying.
@@ -176,6 +180,8 @@ seaweedfs:
     s3:
       enabled: true
       enableAuth: true
+      # -- (string) Secret the chart writes the S3 identities file to, admin only, so every render (Argo CD included) is identical. Empty uses the subchart's generated one.
+      existingConfigSecret: forklift-seaweedfs-s3-config
       # -- (list) Buckets to create. The first is forklift's unless storage.s3.bucket is set.
       createBuckets:
         - name: forklift

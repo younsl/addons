@@ -105,6 +105,17 @@ us-east-1
 {{- end -}}
 {{- end -}}
 
+{{/*
+Migration Job name. Argo CD renders every sync as revision 1, so the name hashes
+the settings instead: a changed setting creates a new Job rather than editing an
+immutable one, and an unchanged one leaves the finished Job alone.
+*/}}
+{{- define "forklift.migrationJobName" -}}
+{{- $m := .Values.storage.migration -}}
+{{- $key := dict "migration" $m "image" (include "forklift.image" .) "target" (list (include "forklift.s3Endpoint" .) (include "forklift.s3Bucket" .) .Values.storage.s3.prefix (include "forklift.s3CredSecret" .)) "ha" (gt (int .Values.replicaCount) 1) "scheduling" (list .Values.nodeSelector .Values.tolerations .Values.podSecurityContext .Values.securityContext) -}}
+{{- printf "%s-migrate-%s" (include "forklift.fullname" . | trunc 45 | trimSuffix "-") (toJson $key | sha256sum | trunc 10) -}}
+{{- end -}}
+
 {{- define "forklift.replicas" -}}
 {{- if .Values.storage.migration.enabled }}0{{ else }}{{ .Values.replicaCount }}{{ end }}
 {{- end -}}
@@ -231,6 +242,8 @@ StatefulSet (PV-based replication mode).
 - name: FORKLIFT_STORAGE_S3_ADMIN_ENDPOINT
   value: {{ . | quote }}
 {{- end }}
+- name: FORKLIFT_STORAGE_S3_CREATE_BUCKET
+  value: {{ or .Values.storage.s3.createBucket .Values.seaweedfs.enabled | quote }}
 - name: FORKLIFT_STORAGE_META_SYNC_INTERVAL
   value: {{ .Values.storage.s3.metaSyncInterval | quote }}
 {{- /*

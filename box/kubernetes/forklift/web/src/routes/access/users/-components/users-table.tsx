@@ -1,17 +1,42 @@
+import { useMemo } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { KeyRound } from "lucide-react";
+import { KeyRound, Users } from "lucide-react";
 
 import { Badge } from "@/components/app-ui/badge";
 import { Button } from "@/components/ui/button";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { DataTable, type ColumnDef } from "@/components/app-ui/table";
 import { useDateTime, useTranslation } from "@/lib/i18n";
+import { useRolesList } from "@/routes/access/roles/-hooks/use-roles-list";
 
-import type { Me, User } from "@/services/v1/openapi-types";
+import type { Me, Role, User } from "@/services/v1/openapi-types";
+
+function RoleSummary({ role }: { role: Role }) {
+  const { t } = useTranslation();
+  return (
+    <div className="flex min-w-48 flex-col gap-1.5" data-testid={`role-summary-${role.id}`}>
+      <span className="font-semibold">{role.name}</span>
+      <span className={role.description ? "opacity-80" : "opacity-50"}>
+        {role.description || t("role.no-description")}
+      </span>
+      <span className="mt-0.5 flex items-center gap-1.5 border-t border-background/20 pt-1.5">
+        <Users className="size-3.5 opacity-80" aria-hidden="true" />
+        <span className="font-medium tabular-nums">{role.user_count.toLocaleString()}</span>
+        <span className="opacity-70">{t("role.user-count")}</span>
+      </span>
+    </div>
+  );
+}
 
 export function UsersTable({ me, users }: { me: Me; users: User[] }) {
   const { t } = useTranslation();
   const fmtDate = useDateTime();
   const navigate = useNavigate();
+  const rolesQuery = useRolesList();
+  const rolesById = useMemo(
+    () => new Map((rolesQuery.data ?? []).map((role) => [role.id, role])),
+    [rolesQuery.data],
+  );
 
   const columns: ColumnDef<User>[] = [
     {
@@ -52,18 +77,31 @@ export function UsersTable({ me, users }: { me: Me; users: User[] }) {
       accessorFn: (user) => user.roles.map((role) => role.name).join(","),
       cell: ({ row }) => (
         <div className="flex flex-wrap gap-1.5">
-          {row.original.roles.map((role) => (
-            <Button
-              key={role.id}
-              variant="outline"
-              size="xs"
-              onClick={() =>
-                navigate({ to: "/access/roles/$id", params: { id: String(role.id) } })
-              }
-            >
-              {role.name}
-            </Button>
-          ))}
+          {row.original.roles.map((role) => {
+            const open = () =>
+              navigate({ to: "/access/roles/$id", params: { id: String(role.id) } });
+            const detail = rolesById.get(role.id);
+            if (!detail) {
+              return (
+                <Button key={role.id} variant="outline" size="xs" onClick={open}>
+                  {role.name}
+                </Button>
+              );
+            }
+            return (
+              <Tooltip key={role.id}>
+                <TooltipTrigger
+                  render={<Button variant="outline" size="xs" onClick={open} />}
+                  data-testid={`role-chip-${role.id}`}
+                >
+                  {role.name}
+                </TooltipTrigger>
+                <TooltipContent side="bottom" className="items-start px-3 py-2">
+                  <RoleSummary role={detail} />
+                </TooltipContent>
+              </Tooltip>
+            );
+          })}
           {row.original.roles.length === 0 && (
             <span className="text-muted-foreground">{t("common.none")}</span>
           )}

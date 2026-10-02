@@ -35,8 +35,9 @@ All settings are environment variables (the Helm chart maps values to them).
 | `FORKLIFT_STORAGE_S3_PROVIDER` | `aws` without an endpoint, `minio` with one | `aws`, `minio`, `rustfs`, `seaweedfs`, `garage` or `generic`. Selects the admin API the Storage page reads |
 | `FORKLIFT_STORAGE_S3_ADMIN_ENDPOINT` | | Admin API base URL when it is not the S3 endpoint: SeaweedFS master (`http://master:9333`) or Garage admin (`http://garage:3903`) |
 | `FORKLIFT_STORAGE_S3_ADMIN_TOKEN` | | Garage admin bearer token |
+| `FORKLIFT_STORAGE_S3_CREATE_BUCKET` | `false` | Create the bucket at boot when it is missing. The chart turns it on for the bundled SeaweedFS |
 
-`forklift migrate-storage` additionally reads the target from `FORKLIFT_MIGRATE_TO_S3_BUCKET`, `_PREFIX`, `_REGION`, `_ENDPOINT`, `_FORCE_PATH_STYLE`, `_ACCESS_KEY_ID`, `_SECRET_ACCESS_KEY`, `_PROVIDER`, `_ADMIN_ENDPOINT` and `_ADMIN_TOKEN`. See [Storage migration](storage-migration.md).
+`forklift migrate-storage` additionally reads the target from `FORKLIFT_MIGRATE_TO_S3_BUCKET`, `_PREFIX`, `_REGION`, `_ENDPOINT`, `_FORCE_PATH_STYLE`, `_ACCESS_KEY_ID`, `_SECRET_ACCESS_KEY`, `_CREATE_BUCKET`, `_PROVIDER`, `_ADMIN_ENDPOINT` and `_ADMIN_TOKEN`. See [Storage migration](storage-migration.md).
 | `FORKLIFT_STORAGE_META_SYNC_INTERVAL` | `30s` | s3-mode metadata snapshot cadence (failover data-loss window); must stay shorter than the fixed 24h blob GC grace period |
 | `FORKLIFT_HTTP_ADDR` | `:8080` | API, UI and package endpoints |
 | `FORKLIFT_METRICS_ADDR` | `:8081` | Prometheus metrics |

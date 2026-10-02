@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use axum::extract::State;
+use axum::extract::{Path, State};
 use axum::response::Response;
 use chrono::{DateTime, Utc};
 use http::StatusCode;
@@ -10,7 +10,8 @@ use serde::Serialize;
 use crate::meta;
 use crate::storage;
 
-use super::{Handler, map_error, write_json};
+use super::{Handler, map_error, write_error, write_json};
+use crate::migrate::record::{MigrationStoredAt, MigrationSummary};
 
 /// The object-storage overview shown on the Storage admin page.
 #[derive(Debug, Clone, Default, Serialize)]
@@ -37,6 +38,11 @@ struct StorageStats {
     conditional_writes: Option<bool>,
     #[serde(skip_serializing_if = "String::is_empty")]
     conditional_writes_detail: String,
+    /// The newest migration run recorded in this store.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    last_migration: Option<MigrationSummary>,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    migration_history_error: String,
     /// Absent for S3: a bucket is not a disk that fills up.
     #[serde(skip_serializing_if = "Option::is_none")]
     fs: Option<storage::Disk>,
@@ -139,9 +145,13 @@ impl From<storage::ClusterInfo> for ClusterStats {
 
 /// Reports the object-storage overview. Admin-only.
 pub(super) async fn get_stats(State(h): State<Arc<Handler>>) -> Response {
-    let (descriptor, cluster) = {
+    let (descriptor, cluster, migrations) = {
         let injected = h.injected.read();
-        (injected.storage.clone(), injected.cluster.clone())
+        (
+            injected.storage.clone(),
+            injected.cluster.clone(),
+            injected.migrations.clone(),
+        )
     };
     let backend = if descriptor.backend.is_empty() {
         "fs".to_string()
@@ -182,8 +192,62 @@ pub(super) async fn get_stats(State(h): State<Arc<Handler>>) -> Response {
             Err(err) => out.cluster_error = err,
         }
     }
+    if let Some(history) = migrations {
+        match tokio::time::timeout(std::time::Duration::from_secs(5), history.list()).await {
+            Ok(Ok(list)) => out.last_migration = list.into_iter().next(),
+            Ok(Err(e)) => out.migration_history_error = e,
+            Err(_) => out.migration_history_error = "migration history: timed out".into(),
+        }
+    }
     out.dangling = dangling_refs(&h, 0).await;
     write_json(StatusCode::OK, out)
+}
+
+#[derive(Debug, Serialize)]
+struct MigrationListDTO {
+    items: Vec<MigrationSummary>,
+}
+
+/// Lists recorded migration runs, newest first. Admin-only. Empty for the fs
+/// backend, which has no object store to keep them in.
+pub(super) async fn list_migrations(State(h): State<Arc<Handler>>) -> Response {
+    let history = h.injected.read().migrations.clone();
+    let Some(history) = history else {
+        return write_json(StatusCode::OK, MigrationListDTO { items: Vec::new() });
+    };
+    match history.list().await {
+        Ok(items) => write_json(StatusCode::OK, MigrationListDTO { items }),
+        Err(e) => write_error(StatusCode::BAD_GATEWAY, &e),
+    }
+}
+
+/// Returns one migration run with every check. Admin-only.
+pub(super) async fn get_migration(
+    State(h): State<Arc<Handler>>,
+    Path(id): Path<String>,
+) -> Response {
+    let (history, store) = {
+        let injected = h.injected.read();
+        (injected.migrations.clone(), injected.storage.clone())
+    };
+    let Some(history) = history else {
+        return write_error(StatusCode::NOT_FOUND, "not found");
+    };
+    match history.get(&id).await {
+        Ok(Some(mut rec)) => {
+            rec.stored_at = Some(MigrationStoredAt::new(
+                &store.provider,
+                &store.endpoint,
+                &store.region,
+                &store.bucket,
+                &store.prefix,
+                &rec.id,
+            ));
+            write_json(StatusCode::OK, rec)
+        }
+        Ok(None) => write_error(StatusCode::NOT_FOUND, "not found"),
+        Err(e) => write_error(StatusCode::BAD_GATEWAY, &e),
+    }
 }
 
 /// Collects the tracked missing-blob references, for one repository when
@@ -279,6 +343,7 @@ pub(crate) mod tests {
             StorageBackend {
                 backend: backend.to_string(),
                 endpoint: endpoint.to_string(),
+                bucket: "forklift".into(),
                 ..Default::default()
             },
             None,
@@ -357,6 +422,88 @@ pub(crate) mod tests {
         );
         let stats = get_storage(&srv).await;
         assert_eq!(stats["cluster_error"], "admin api unavailable: token");
+    }
+
+    struct FakeHistory(Vec<crate::migrate::record::MigrationRecord>);
+
+    #[async_trait::async_trait]
+    impl crate::migrate::record::History for FakeHistory {
+        async fn list(&self) -> Result<Vec<crate::migrate::record::MigrationSummary>, String> {
+            Ok(self.0.iter().map(Into::into).collect())
+        }
+        async fn get(
+            &self,
+            id: &str,
+        ) -> Result<Option<crate::migrate::record::MigrationRecord>, String> {
+            Ok(self.0.iter().find(|r| r.id == id).cloned())
+        }
+    }
+
+    #[tokio::test]
+    async fn migration_history_is_listed_summarised_and_drilled_into() {
+        use crate::migrate::record::tests::sample;
+        let srv = storage_harness("s3", "http://seaweedfs:8333").await;
+        let newer = sample("20261003T010203Z-0123abcd", "failed");
+        let older = sample("20261001T000000Z-aaaaaaaa", "succeeded");
+        srv.handler
+            .set_migration_history(std::sync::Arc::new(FakeHistory(vec![newer.clone(), older])));
+
+        let stats = get_storage(&srv).await;
+        assert_eq!(stats["last_migration"]["id"], newer.id);
+        assert_eq!(stats["last_migration"]["outcome"], "failed");
+        assert_eq!(stats["last_migration"]["failed_stage"], "postflight");
+        let dot = &stats["last_migration"]["preflight"][0];
+        assert_eq!(dot["id"], "PF01");
+        assert_eq!(dot.get("detail"), None, "summary carries statuses only");
+
+        let resp = srv.admin_do(Method::GET, "/storage/migrations", "").await;
+        assert_eq!(resp.status, StatusCode::OK, "{}", resp.text());
+        let list: Value = resp.json();
+        assert_eq!(list["items"].as_array().unwrap().len(), 2);
+
+        let resp = srv
+            .admin_do(
+                Method::GET,
+                &format!("/storage/migrations/{}", newer.id),
+                "",
+            )
+            .await;
+        assert_eq!(resp.status, StatusCode::OK, "{}", resp.text());
+        let detail: Value = resp.json();
+        assert_eq!(detail["preflight"][0]["id"], "PF01");
+        assert_eq!(detail["settings"]["verify"], "sample 5%");
+        assert_eq!(
+            detail["stored_at"]["uri"],
+            format!("s3://forklift/meta/migrations/{}.json", newer.id)
+        );
+        assert_eq!(detail["stored_at"]["endpoint"], "http://seaweedfs:8333");
+
+        let resp = srv
+            .admin_do(
+                Method::GET,
+                "/storage/migrations/20990101T000000Z-ffffffff",
+                "",
+            )
+            .await;
+        assert_eq!(resp.status, StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn no_history_without_object_storage() {
+        let srv = storage_harness("fs", "/data").await;
+        let resp = srv.admin_do(Method::GET, "/storage/migrations", "").await;
+        assert_eq!(resp.status, StatusCode::OK);
+        let v: Value = resp.json();
+        assert_eq!(v["items"], serde_json::json!([]));
+        let resp = srv
+            .admin_do(
+                Method::GET,
+                "/storage/migrations/20261003T010203Z-0123abcd",
+                "",
+            )
+            .await;
+        assert_eq!(resp.status, StatusCode::NOT_FOUND);
+        assert_eq!(get_storage(&srv).await["last_migration"], Value::Null);
     }
 
     async fn get_storage(srv: &TestServer) -> Value {

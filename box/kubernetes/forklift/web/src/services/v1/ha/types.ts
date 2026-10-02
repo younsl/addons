@@ -4,6 +4,8 @@
 
 import type {
   HAStatus,
+  MigrationList,
+  MigrationRecord,
   StatusMessage,
   StorageStats
 } from "../openapi-types";
@@ -11,5 +13,10 @@ import type {
 export type GetHaResponse = HAStatus;
 
 export type GetStorageResponse = StorageStats;
+
+export type ListStorageMigrationsResponse = MigrationList;
+
+export type GetStorageMigrationRequest = { path: { id: string } };
+export type GetStorageMigrationResponse = MigrationRecord;
 
 export type PostStepDownHaResponse = StatusMessage;

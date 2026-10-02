@@ -43,7 +43,8 @@ pub const USAGE: &str = "Usage of forklift migrate-storage:
 
 The source is FORKLIFT_STORAGE_S3_*. The target is FORKLIFT_MIGRATE_TO_S3_BUCKET,
 _PREFIX, _REGION, _ENDPOINT, _FORCE_PATH_STYLE, _ACCESS_KEY_ID, _SECRET_ACCESS_KEY,
-and for the capacity check _PROVIDER, _ADMIN_ENDPOINT and _ADMIN_TOKEN.";
+_CREATE_BUCKET (create it when missing), and for the capacity check _PROVIDER,
+_ADMIN_ENDPOINT and _ADMIN_TOKEN.";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Args {
@@ -154,6 +155,7 @@ pub fn target_from_env() -> config::S3Config {
         provider: env("PROVIDER").to_ascii_lowercase(),
         admin_endpoint: env("ADMIN_ENDPOINT"),
         admin_token: env("ADMIN_TOKEN"),
+        create_bucket: matches!(env("CREATE_BUCKET").as_str(), "true" | "1"),
     }
 }
 
@@ -431,6 +433,18 @@ async fn open_pair(
     let dst = endpoint(target).await?;
     wait_reachable(&src.endpoint, wait).await?;
     wait_reachable(&dst.endpoint, wait).await?;
+    if target.create_bucket {
+        let api = S3Api::new(dst.client.clone());
+        let created =
+            objstore::retry_transient("create target bucket", wait, Duration::from_secs(1), || {
+                api.ensure_bucket(&target.bucket)
+            })
+            .await
+            .map_err(|e| format!("create target bucket {}: {e}", target.bucket))?;
+        if created {
+            tracing::info!(bucket = %target.bucket, "created target bucket");
+        }
+    }
     Ok((src, dst))
 }
 
@@ -533,8 +547,17 @@ fn describe_config(s3: &config::S3Config) -> String {
     }
 }
 
+fn provider_id(provider: &str, endpoint: &str) -> String {
+    match (provider, endpoint.trim()) {
+        ("", "") => "aws".into(),
+        ("", _) => "minio".into(),
+        (p, _) => p.into(),
+    }
+}
+
 pub struct OpenEndpoint {
     pub endpoint: Endpoint,
+    client: aws_sdk_s3::Client,
     _staging: tempfile::TempDir,
 }
 
@@ -593,13 +616,15 @@ async fn endpoint(s3: &config::S3Config) -> Result<OpenEndpoint, String> {
     Ok(OpenEndpoint {
         endpoint: Endpoint {
             blobs: Arc::new(blobs),
-            objects: Arc::new(S3Api::new(client)),
+            objects: Arc::new(S3Api::new(client.clone())),
             bucket: s3.bucket.clone(),
             prefix: s3.prefix.trim_matches('/').to_string(),
             meta_key: objstore::meta_key(&s3.prefix),
             endpoint: normalize_endpoint(&s3.endpoint),
+            provider: provider_id(&s3.provider, &s3.endpoint),
             admin,
         },
+        client,
         _staging: staging,
     })
 }
@@ -799,12 +824,27 @@ mod tests {
         );
     }
 
+    #[test]
+    fn provider_id_matches_the_server_default() {
+        assert_eq!(provider_id("", ""), "aws");
+        assert_eq!(provider_id("", "http://store:9000"), "minio");
+        assert_eq!(
+            provider_id("seaweedfs", "http://seaweedfs:8333"),
+            "seaweedfs"
+        );
+    }
+
     #[tokio::test]
     async fn no_lease_means_an_unverified_warning() {
         let (g, hold) = guard(&Args::default()).await;
         assert!(hold.is_none());
-        assert_eq!(g.checks.len(), 1);
-        assert_eq!(g.checks[0].status, crate::migrate::Status::Warn);
+        let status = |name| g.checks.iter().find(|c| c.name == name).map(|c| c.status);
+        assert_eq!(g.checks.len(), 2);
+        assert_eq!(status("lease"), Some(crate::migrate::Status::Skip));
+        assert_eq!(
+            status("writers-stopped"),
+            Some(crate::migrate::Status::Warn)
+        );
         assert!((g.held)());
     }
 
