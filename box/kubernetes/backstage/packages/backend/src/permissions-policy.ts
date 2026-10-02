@@ -15,8 +15,6 @@ import {
 
 const ADMIN_PERMISSIONS = [
   'argocd.appset.mute',
-  'gitlab.token.audit.view',
-  'gitlab.token.audit.manage',
 ];
 
 class AdminOnlyPolicy implements PermissionPolicy {
