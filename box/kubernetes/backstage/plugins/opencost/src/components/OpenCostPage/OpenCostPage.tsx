@@ -1505,8 +1505,10 @@ export const OpenCostPage = () => {
                       ))}
                       {yearlyData.map(row => {
                         const pct = row.totalDays > 0 ? Math.round((row.daysCovered / row.totalDays) * 100) : 0;
+                        const now = new Date();
+                        const collecting = selectedYear === now.getFullYear() && row.monthNum === now.getMonth() + 1;
                         return (
-                        <tr key={row.month} className="oc-clickable-row" onClick={() => goToMonth(row.monthNum)}>
+                        <tr key={row.month} className={`oc-clickable-row${collecting ? ' oc-collecting-row' : ''}`} onClick={() => goToMonth(row.monthNum)}>
                           <td>{row.month}{row.daysCovered < row.totalDays ? ' *' : ''}</td>
                           <td>{row.daysCovered}/{row.totalDays} <span style={{ opacity: 0.6 }}>({pct}%)</span></td>
                           <td className="oc-cost">{formatCost(row.cpuCost)}</td>

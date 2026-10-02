@@ -259,6 +259,27 @@
   background: var(--bui-color-surface-3, rgba(255, 255, 255, 0.06));
 }
 
+/* Month still being collected */
+.oc-collecting-row td {
+  animation: oc-collecting-glow 4s ease-in-out infinite;
+}
+
+.oc-collecting-row:hover td {
+  animation: none;
+}
+
+@keyframes oc-collecting-glow {
+  0%, 100% { background-color: transparent; }
+  50% { background-color: rgba(96, 165, 250, 0.08); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .oc-collecting-row td {
+    animation: none;
+    background-color: rgba(96, 165, 250, 0.05);
+  }
+}
+
 /* Disabled rows (missing/pending days) */
 .oc-row-disabled {
   opacity: 0.4;
