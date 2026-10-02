@@ -1,1 +1,0 @@
-export { RevokeTokenDialog } from './RevokeTokenDialog';

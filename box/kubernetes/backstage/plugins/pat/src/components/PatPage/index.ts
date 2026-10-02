@@ -1,1 +1,0 @@
-export { PatPage } from './PatPage';
