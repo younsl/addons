@@ -65,7 +65,7 @@ backend:
 
 **Plugins that accept a service principal on reads.** The in-house plugins used to accept only signed-in users (`allow: ['user']`), so an external token got 401 from every list endpoint. Since `1.54.6-1` their auth helpers also accept a service principal on GET requests, with admin visibility so list endpoints return every row, and reject it on any other method, so the token can never approve, mute, reserve or download anything even if it were pointed at those routes.
 
-The `pat` plugin shipped in `1.54.7-1` without that helper and refused every service principal. It gained it after that tag, so the `pat_*` tools need a Backstage image built from `plugins/pat-backend` at or after that change. Against `1.54.7-1` they answer 403. Dropping `- plugin: pat` from `accessRestrictions` keeps the plugin unreachable for deployments that would rather not put token metadata in an agent's context. A personal access token can never reach the tools' own plugin the other way round either: `pat` is refused as a scope target, so one token cannot enumerate or audit another.
+The `pat` plugin first shipped without that helper and refused every service principal, so the `pat_*` tools answered 403. Image `1.55.3-1` and later carry it. Dropping `- plugin: pat` from `accessRestrictions` keeps the plugin unreachable for deployments that would rather not put token metadata in an agent's context. A personal access token can never reach the tools' own plugin the other way round either: `pat` is refused as a scope target, so one token cannot enumerate or audit another.
 
 ## Configuration
 

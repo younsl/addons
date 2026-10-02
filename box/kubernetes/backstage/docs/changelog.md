@@ -10,6 +10,15 @@ Headings are image tags, not Backstage versions. A rebuild at the same Backstage
 
 Tags released before this file existed (`1.51.0-1` through `1.53.0-3`) are not recorded here.
 
+## 1.55.3-1
+
+Released 2026-10-02. Built on Backstage [v1.55.3](https://github.com/backstage/backstage/releases/tag/v1.55.3) as the base version, up from `1.54.7`.
+
+- Base version bumped through `backstage-cli versions:bump`. Notable moves are `@backstage/plugin-catalog-backend` `3.9.1` to `4.0.0`, `@backstage/backend-defaults` `0.17.8` to `0.18.0` and `@backstage/ui` `0.17.1` to `0.18.0`. The root `resolutions` pin on `@backstage/backend-defaults` moves to `^0.18.0` with it, since a `^0.17.0` pin would hold the backend on the old minor.
+- `@yarnpkg/core` is pinned to `4.9.1` in the root `resolutions`. `4.9.2`, pulled in through `@backstage/cli` > `@backstage/cli-defaults` > `@backstage/cli-module-package-manager-yarn`, was published with its `got` dependency pointing at a `patch:` file inside the Yarn repository, so `yarn install` fails with `ENOENT` on `.yarn/patches/got-npm-11.8.2-c1eb105458.patch`. Drop the pin once a fixed release is out.
+- Removed the `iam-user-audit`, `opensearch-account`, `opensearch-viewer`, `opensearch-scaling` and `s3-log-extract` plugins (frontend and backend). The IAM Audit, OpenSearch, Capacity and S3 Log Extract sidebar entries, the IAM Audit home quick link and its pending badge, the `/iam-user-audit`, `/opensearch*` and `/s3-log-extract` routes, the `iam.password-reset.review` permission, the `iamUserAudit`, `s3LogExtract`, `opensearchAccount`, `opensearchViewer` and `opensearchScaling` config blocks and `app.plugins` flags, their `backend.auth.externalAccess` entries and their entries in the default PAT scopable plugin list are gone. Deployments can drop those blocks from their values, the OpenSearch admin and IAM audit Slack bot Secret keys, and the IAM, S3 and OpenSearch Service permissions granted to the Backstage role for these plugins. ArgoCD AppSets stays.
+- The `backstage-mcp` image is rebuilt at `0.1.0` without its `iam_audit_*`, `opensearch_*`, `opensearch_scaling_*` and `s3_log_extract_*` tools, leaving 39.
+
 ## 1.54.7-1
 
 Released 2026-09-14. Built on Backstage [v1.54.7](https://github.com/backstage/backstage/releases/tag/v1.54.7) as the base version, up from `1.54.6`.
