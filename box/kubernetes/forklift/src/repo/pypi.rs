@@ -930,22 +930,23 @@ fn write_simple(parts: &Parts, json_body: &Bytes, project: &str) -> Response {
 
 /// Renders a PEP 691 JSON index as a PEP 503 HTML page for clients that do not
 /// accept the JSON media type.
-fn simple_html(json_body: &[u8], project: &str) -> String {
+pub(crate) fn simple_html(json_body: &[u8], project: &str) -> String {
     #[derive(serde::Deserialize, Default)]
     struct Doc {
         #[serde(default)]
         files: Vec<File>,
     }
     #[derive(serde::Deserialize)]
+    // PyPI sends null for absent values, so every member tolerates it.
     struct File {
         #[serde(default)]
-        filename: String,
+        filename: Option<String>,
         #[serde(default)]
-        url: String,
+        url: Option<String>,
         #[serde(default)]
-        hashes: BTreeMap<String, String>,
+        hashes: Option<BTreeMap<String, String>>,
         #[serde(default, rename = "requires-python")]
-        requires_python: String,
+        requires_python: Option<String>,
     }
     let doc: Doc = serde_json::from_slice(json_body).unwrap_or_default();
     let title = escape_html(&format!("Links for {project}"));
@@ -956,21 +957,21 @@ fn simple_html(json_body: &[u8], project: &str) -> String {
     b.push_str(&title);
     b.push_str("</h1>\n");
     for f in &doc.files {
-        let mut href = f.url.clone();
-        if let Some(sha) = f.hashes.get("sha256")
+        let mut href = f.url.clone().unwrap_or_default();
+        if let Some(sha) = f.hashes.as_ref().and_then(|h| h.get("sha256"))
             && !sha.is_empty()
         {
             href.push_str("#sha256=");
             href.push_str(sha);
         }
         b.push_str(&format!("<a href=\"{}\"", escape_html(&href)));
-        if !f.requires_python.is_empty() {
-            b.push_str(&format!(
-                " data-requires-python=\"{}\"",
-                escape_html(&f.requires_python)
-            ));
+        if let Some(rp) = f.requires_python.as_deref().filter(|rp| !rp.is_empty()) {
+            b.push_str(&format!(" data-requires-python=\"{}\"", escape_html(rp)));
         }
-        b.push_str(&format!(">{}</a><br/>\n", escape_html(&f.filename)));
+        b.push_str(&format!(
+            ">{}</a><br/>\n",
+            escape_html(f.filename.as_deref().unwrap_or_default())
+        ));
     }
     b.push_str("</body>\n</html>\n");
     b
@@ -1062,6 +1063,28 @@ pub(crate) mod tests {
     use crate::repo::pypi::{PYPI_JSON_TYPE, normalize_pypi, pypi_version};
     use crate::repo::uiupload::tests::{Part, multipart_body};
     use crate::testing::repo::{TestResponse, call, mk_format_repo, mux, new_test_manager, send};
+
+    /// pypi.org sends null for a file without `requires-python`, which must not
+    /// empty the HTML index.
+    #[test]
+    fn html_index_keeps_files_whose_fields_are_null() {
+        let json = br#"{"files":[
+            {"filename":"six-1.16.0-py2.py3-none-any.whl","url":"https://x/six.whl","hashes":{"sha256":"ab"},"requires-python":null,"provenance":null,"yanked":false},
+            {"filename":"six-1.17.0.tar.gz","url":"https://x/six.tgz","hashes":{"sha256":"cd"},"requires-python":">=3.8","yanked":"broken"}
+        ]}"#;
+        let html = crate::repo::pypi::simple_html(json, "six");
+        assert!(
+            html.contains(
+                r#"<a href="https://x/six.whl#sha256=ab">six-1.16.0-py2.py3-none-any.whl</a>"#
+            ),
+            "{html}"
+        );
+        assert!(
+            html.contains(r#"data-requires-python="&gt;=3.8""#),
+            "{html}"
+        );
+        assert_eq!(html.matches("<a ").count(), 2, "{html}");
+    }
 
     /// The PyPI upstream every proxy test runs against: a PEP 691 index with one old
     /// and one fresh file, plus the wheel and its PEP 658 metadata.

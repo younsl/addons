@@ -27,8 +27,9 @@ use super::oci::{
 };
 use super::router::Resolved;
 use super::{
-    FetchKind, FetchOutcome, FetchSpec, MAX_METADATA_BYTES, Manager, header_str, itoa,
-    parse_retry_after, retry_after_seconds, username_from_context,
+    FetchKind, FetchOutcome, FetchSpec, MAX_METADATA_BYTES, Manager, header_str, header_str_opt,
+    itoa, parse_retry_after, retry_after_seconds, strip_auth_on_cross_host_redirect,
+    username_from_context,
 };
 
 /// The upstream request could not be completed (transport error, or a token exchange that never
@@ -102,7 +103,8 @@ impl Manager {
     /// repository's static credentials (or nothing) at the realm and retry once.
     /// Static basic/bearer/header credentials configured on the repository are
     /// presented when no token flow is in play, preserving plain-registry
-    /// behavior.
+    /// behavior. Redirects are followed, without credentials once they leave
+    /// the registry's host: Docker Hub and ghcr serve blobs from a CDN.
     async fn oci_upstream_do(
         &self,
         res: &Resolved,
@@ -110,6 +112,7 @@ impl Manager {
         raw_url: &str,
         accept: &str,
     ) -> Result<reqwest::Response, UpstreamFailed> {
+        let custom = self.engine.new_upstream_request(&res.cfg.upstream_auth).1;
         let build = |token: &str| -> HeaderMap {
             let mut headers = HeaderMap::new();
             if let Ok(v) = HeaderValue::from_str(&self.engine.user_agent) {
@@ -140,17 +143,13 @@ impl Manager {
         // both outcomes, so OCI proxies appear in the shared latency histogram.
         let start = Instant::now();
         let resp = self
-            .engine
-            .client
-            .request(method.clone(), raw_url)
-            .headers(build(&token))
-            .send()
+            .oci_send(&method, raw_url, build(&token), custom.as_ref())
             .await;
         self.engine
             .upstream_dur
             .with_label_values(&[&res.repo.name])
             .observe(start.elapsed().as_secs_f64());
-        let resp = resp.map_err(|_| UpstreamFailed)?;
+        let resp = resp?;
         if resp.status() != StatusCode::UNAUTHORIZED {
             return Ok(resp);
         }
@@ -161,30 +160,55 @@ impl Manager {
             // Not a token registry (or bad credentials); surface the 401 as-is
             // by re-issuing without retry.
             return self
-                .engine
-                .client
-                .request(method, raw_url)
-                .headers(build(&token))
-                .send()
-                .await
-                .map_err(|_| UpstreamFailed);
+                .oci_send(&method, raw_url, build(&token), custom.as_ref())
+                .await;
         };
         let (fresh, expires) = self.oci_fetch_token(&res.cfg, &realm, &params).await?;
         self.oci_tokens
             .set(&oci_token_key(res.repo.id, raw_url), fresh.clone(), expires);
         let start = Instant::now();
         let resp = self
-            .engine
-            .client
-            .request(method, raw_url)
-            .headers(build(&fresh))
-            .send()
+            .oci_send(&method, raw_url, build(&fresh), custom.as_ref())
             .await;
         self.engine
             .upstream_dur
             .with_label_values(&[&res.repo.name])
             .observe(start.elapsed().as_secs_f64());
-        resp.map_err(|_| UpstreamFailed)
+        resp
+    }
+
+    /// Sends one request and follows its redirects by hand, dropping every
+    /// credential header when a hop leaves the current host.
+    async fn oci_send(
+        &self,
+        method: &Method,
+        raw_url: &str,
+        mut headers: HeaderMap,
+        custom: Option<&http::HeaderName>,
+    ) -> Result<reqwest::Response, UpstreamFailed> {
+        let mut next = Url::parse(raw_url).map_err(|_| UpstreamFailed)?;
+        let mut via: Vec<Url> = Vec::new();
+        loop {
+            let resp = self
+                .engine
+                .client
+                .request(method.clone(), next.clone())
+                .headers(headers.clone())
+                .send()
+                .await
+                .map_err(|_| UpstreamFailed)?;
+            if !resp.status().is_redirection() {
+                return Ok(resp);
+            }
+            let Some(location) = header_str_opt(resp.headers(), "Location") else {
+                return Ok(resp);
+            };
+            let target = next.join(location).map_err(|_| UpstreamFailed)?;
+            via.push(next);
+            strip_auth_on_cross_host_redirect(&target, &via, &mut headers, custom)
+                .map_err(|_| UpstreamFailed)?;
+            next = target;
+        }
     }
 
     /// Exchanges the challenge at the realm for a scoped token, using the

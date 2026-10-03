@@ -4,6 +4,15 @@ Notable changes per release. Container image versions come from the
 `org.opencontainers.image.version` label in the `Dockerfile`; chart versions from
 `charts/forklift/Chart.yaml`.
 
+## 0.14.1 (2026-10-03)
+
+Chart 0.14.1. forklift-mcp remains 0.3.2.
+
+### Fixed
+
+- OCI proxies follow the upstream's redirect for a blob, dropping the registry's credentials once it leaves the registry's host. Docker Hub and ghcr serve layers from a CDN behind a 307, so every uncached layer failed with `502 upstream error` and images could not be pulled through `docker.io-proxy` or `ghcr.io-proxy`. Manifests were unaffected.
+- The PyPI proxy's HTML index (`/simple/<project>/` without the PEP 691 JSON media type) lists every file again. pypi.org sends `"requires-python": null` for files without it, which failed the whole index and served an empty page. Clients that request JSON, such as pip 26, were unaffected.
+
 ## 0.14.0 (2026-10-03)
 
 Chart 0.14.0. forklift-mcp remains 0.3.2.

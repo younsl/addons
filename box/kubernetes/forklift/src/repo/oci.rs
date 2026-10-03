@@ -2152,6 +2152,107 @@ pub(crate) mod tests {
         assert!(resp.text().contains("\"v2\""), "body={}", resp.text());
     }
 
+    /// Docker Hub and ghcr answer a blob with a redirect to a CDN, which must
+    /// be followed without the registry's bearer token.
+    #[tokio::test]
+    async fn oci_proxy_blob_follows_a_cross_host_redirect() {
+        use axum::extract::Request as AxumRequest;
+        use axum::response::IntoResponse;
+        use std::sync::atomic::{AtomicBool, Ordering};
+
+        let layer = b"CDNLAYER".to_vec();
+        let digest = oci_digest_of(&layer);
+        let leaked = Arc::new(AtomicBool::new(false));
+        let cdn = spawn_upstream(Router::new().fallback({
+            let leaked = Arc::clone(&leaked);
+            let layer = layer.clone();
+            move |req: AxumRequest| {
+                let leaked = Arc::clone(&leaked);
+                let layer = layer.clone();
+                async move {
+                    if req.headers().contains_key("Authorization") {
+                        leaked.store(true, Ordering::SeqCst);
+                    }
+                    if req.uri().path() == "/cdn/layer" {
+                        ([("Content-Type", "application/octet-stream")], layer).into_response()
+                    } else {
+                        StatusCode::NOT_FOUND.into_response()
+                    }
+                }
+            }
+        }))
+        .await;
+        let realm: Arc<Mutex<String>> = Arc::new(Mutex::new(String::new()));
+        let registry = spawn_upstream(Router::new().fallback({
+            let realm = Arc::clone(&realm);
+            let cdn = cdn.clone();
+            move |req: AxumRequest| {
+                let realm = Arc::clone(&realm);
+                let cdn = cdn.clone();
+                async move {
+                    if req.uri().path() == "/token" {
+                        return (
+                            [("Content-Type", "application/json")],
+                            r#"{"token":"TESTTOKEN","expires_in":300}"#,
+                        )
+                            .into_response();
+                    }
+                    let authorized = req
+                        .headers()
+                        .get("Authorization")
+                        .and_then(|v| v.to_str().ok())
+                        == Some("Bearer TESTTOKEN");
+                    if !authorized {
+                        let realm = realm.lock().clone();
+                        return (
+                            StatusCode::UNAUTHORIZED,
+                            [(
+                                "WWW-Authenticate",
+                                format!("Bearer realm=\"{realm}/token\",service=\"test\""),
+                            )],
+                        )
+                            .into_response();
+                    }
+                    (
+                        StatusCode::TEMPORARY_REDIRECT,
+                        [("Location", format!("{cdn}/cdn/layer?signature=x"))],
+                    )
+                        .into_response()
+                }
+            }
+        }))
+        .await;
+        *realm.lock() = registry.clone();
+
+        let tm = new_test_manager().await;
+        let repo = mk_oci_repo(
+            &tm.store,
+            "oci-proxy",
+            meta::TYPE_PROXY,
+            &registry,
+            repoconfig::default(),
+        )
+        .await;
+        let h = mux(&tm.manager);
+        let resp = call(
+            &h,
+            Method::GET,
+            &format!("/v2/oci-proxy/app/blobs/{digest}"),
+            "",
+        )
+        .await;
+        assert_eq!(resp.status, StatusCode::OK, "blob behind a redirect");
+        assert_eq!(resp.body.as_ref(), layer.as_slice());
+        assert!(
+            !leaked.load(Ordering::SeqCst),
+            "the registry token reached the CDN"
+        );
+        tm.store
+            .get_artifact(repo.id, &oci_blob_path("app", &digest))
+            .await
+            .expect("blob cached");
+    }
+
     #[tokio::test]
     async fn oci_upstream_name_docker_hub_library_prefix() {
         let tm = new_test_manager().await;

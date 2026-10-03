@@ -3,8 +3,8 @@ name: forklift
 description: Lightweight Kubernetes-native artifact repository (Maven, npm, Cargo, Go, PyPI) with proxy caching and supply-chain controls (age policy, package approval, vulnerability scanning)
 type: application
 deprecated: false
-version: 0.14.0
-appVersion: "0.14.0"
+version: 0.14.1
+appVersion: "0.14.1"
 home: https://github.com/younsl/addons/tree/main/box/kubernetes/forklift
 sources:
   - https://github.com/younsl/addons/tree/main/box/kubernetes/forklift/charts/forklift
@@ -28,13 +28,7 @@ keywords:
   - nexus
 annotations:
   artifacthub.io/changes: |
-    - kind: removed
-      description: "Bundled MinIO subchart, whose images were removed from quay.io"
-    - kind: added
-      description: "Bundled SeaweedFS all-in-one subchart (seaweedfs.enabled, on by default) wired to the s3 backend"
-    - kind: added
-      description: "storage.s3.provider, adminEndpoint and adminToken for MinIO, RustFS, SeaweedFS and Garage admin metrics"
-    - kind: added
-      description: "storage.migration runs forklift migrate-storage as a Job with twelve preflight checks, keeping forklift at 0 replicas"
     - kind: fixed
-      description: "Bundled SeaweedFS and the migration Job work under Argo CD: the bucket is created without waiting for the PostSync hook, and the Job is named by a hash of its settings"
+      description: "OCI proxies follow the registry's blob redirect, so layers from Docker Hub and ghcr pull instead of failing with 502"
+    - kind: fixed
+      description: "The PyPI proxy's HTML index lists every file again when pypi.org sends null fields"
