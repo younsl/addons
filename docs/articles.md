@@ -9,6 +9,10 @@
 - [Benchmarking gRPC Load Balancing on Kubernetes: Linkerd vs Istio vs Cilium](https://buoyant.io/blog/benchmarking-grpc-load-balancing-on-kubernetes-linkerd-vs-istio-vs-cilium)
 - [Kubernetes CPU limits make your apps (very) slow and costly](https://github.com/inevolin/k8s-cpu-limits-analyzed)
 
+## Observability
+
+- [서버 모니터링 분석 가이드](https://kciter.so/posts/server-monitoring-analysis-guide/)
+
 ## Tech Culture
 
 - [Why Is Everyone In Tech So Sad?](https://www.noemamag.com/why-is-everyone-in-tech-so-sad/)
