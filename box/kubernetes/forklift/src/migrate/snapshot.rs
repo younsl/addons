@@ -45,6 +45,10 @@ pub async fn download(src: &Endpoint, staging: &Path) -> Result<StagedSnapshot> 
             "metadata snapshot download is truncated ({size} of {want} bytes)"
         )));
     }
+    tracing::info!(
+        size = %super::preflight::bytes(size),
+        "checking the metadata snapshot's integrity"
+    );
     let path = file.path().to_path_buf();
     let (blobs, unrecorded) = tokio::task::spawn_blocking(move || inspect(&path))
         .await

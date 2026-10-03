@@ -185,6 +185,8 @@ pub struct S3Config {
     /// the bundled store, whose own bucket hook may only run after forklift
     /// is up (Argo CD runs Helm post-install hooks as PostSync).
     pub create_bucket: bool,
+    /// Longest wait for an S3 response to start, upload body included.
+    pub read_timeout: Duration,
 }
 
 impl S3Config {
@@ -386,6 +388,7 @@ impl Config {
                     admin_endpoint: env("FORKLIFT_STORAGE_S3_ADMIN_ENDPOINT", ""),
                     admin_token: env("FORKLIFT_STORAGE_S3_ADMIN_TOKEN", ""),
                     create_bucket: env_bool("FORKLIFT_STORAGE_S3_CREATE_BUCKET", false),
+                    read_timeout: env_duration("FORKLIFT_STORAGE_S3_READ_TIMEOUT", 10 * MINUTE),
                 },
             },
             http_addr: env("FORKLIFT_HTTP_ADDR", ":8080"),

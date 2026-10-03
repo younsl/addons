@@ -43,8 +43,8 @@ pub const USAGE: &str = "Usage of forklift migrate-storage:
 
 The source is FORKLIFT_STORAGE_S3_*. The target is FORKLIFT_MIGRATE_TO_S3_BUCKET,
 _PREFIX, _REGION, _ENDPOINT, _FORCE_PATH_STYLE, _ACCESS_KEY_ID, _SECRET_ACCESS_KEY,
-_CREATE_BUCKET (create it when missing), and for the capacity check _PROVIDER,
-_ADMIN_ENDPOINT and _ADMIN_TOKEN.";
+_CREATE_BUCKET (create it when missing), _READ_TIMEOUT (default 10m), and for the
+capacity check _PROVIDER, _ADMIN_ENDPOINT and _ADMIN_TOKEN.";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Args {
@@ -156,6 +156,10 @@ pub fn target_from_env() -> config::S3Config {
         admin_endpoint: env("ADMIN_ENDPOINT"),
         admin_token: env("ADMIN_TOKEN"),
         create_bucket: matches!(env("CREATE_BUCKET").as_str(), "true" | "1"),
+        read_timeout: config::env_duration(
+            "FORKLIFT_MIGRATE_TO_S3_READ_TIMEOUT",
+            crate::storage::DEFAULT_READ_TIMEOUT,
+        ),
     }
 }
 
@@ -588,6 +592,7 @@ async fn endpoint(s3: &config::S3Config) -> Result<OpenEndpoint, String> {
         force_path_style: s3.force_path_style,
         access_key_id: s3.access_key_id.clone(),
         secret_access_key: s3.secret_access_key.clone(),
+        read_timeout: s3.read_timeout,
     };
     let staging = tempfile::tempdir().map_err(|e| format!("staging dir: {e}"))?;
     let blobs = storage::S3BlobStore::new(&cfg, staging.path())

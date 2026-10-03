@@ -23,7 +23,10 @@ pub mod s3;
 pub use admin::{AdminConfig, ClusterAdmin, ClusterInfo, ProviderSpec, cluster_admin};
 pub use diskusage::{Disk, disk_usage};
 pub use instrument::{InstrumentedStore, instrument};
-pub use s3::{S3BlobStore, S3Config, is_not_found, is_precondition_failed, new_s3_client};
+pub use s3::{
+    DEFAULT_READ_TIMEOUT, S3BlobStore, S3Config, is_not_found, is_precondition_failed,
+    new_s3_client,
+};
 
 /// Result alias used throughout the module.
 pub type Result<T> = std::result::Result<T, Error>;

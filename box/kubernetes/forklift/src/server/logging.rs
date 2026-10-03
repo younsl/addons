@@ -57,10 +57,12 @@ where
         event.record(&mut visitor);
         let time = crate::meta::time::now_rfc3339();
         let level = level_text(*event.metadata().level());
+        let target = bridged_target(&mut visitor.fields)
+            .unwrap_or_else(|| event.metadata().target().to_string());
         let head = Head {
             time: &time,
             level,
-            component: component(event.metadata().target()),
+            component: component(&target),
         };
         let line = match self {
             SlogFormat::Json => format_json(&head, &visitor.message, &visitor.fields),
@@ -87,6 +89,18 @@ pub(crate) fn component(target: &str) -> &str {
         "forklift" | "forklift_mcp" => parts.next().unwrap_or("main"),
         _ => krate,
     }
+}
+
+/// Events forwarded from the `log` crate all carry the target `log`, with the
+/// real one in a `log.target` field. Returns that target and drops the
+/// `log.*` bookkeeping fields, which only repeat where the event came from.
+fn bridged_target(fields: &mut Vec<(String, FieldValue)>) -> Option<String> {
+    let target = fields
+        .iter()
+        .find(|(name, _)| name == "log.target")
+        .map(|(_, v)| v.text.clone())?;
+    fields.retain(|(name, _)| !name.starts_with("log."));
+    Some(target)
 }
 
 /// slog's level names.
@@ -255,7 +269,7 @@ pub(crate) mod tests {
     /// A `MakeWriter` that appends into a shared buffer, so a formatted event can
     /// be read back in the test.
     #[derive(Clone, Default)]
-    struct BufWriter(Arc<Mutex<Vec<u8>>>);
+    pub(crate) struct BufWriter(pub(crate) Arc<Mutex<Vec<u8>>>);
 
     impl io::Write for BufWriter {
         fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
@@ -304,6 +318,37 @@ pub(crate) mod tests {
         assert_eq!(component("forklift_mcp::tools"), "tools");
         assert_eq!(component("kube_runtime::controller"), "kube_runtime");
         assert_eq!(component("aws_config"), "aws_config");
+    }
+
+    #[test]
+    fn log_crate_events_name_their_own_crate() {
+        let field = |name: &str, v: &str| {
+            (
+                name.to_string(),
+                FieldValue {
+                    json: quote_json(v),
+                    text: v.to_string(),
+                },
+            )
+        };
+        let mut fields = vec![
+            field("log.target", "rustls::client::hs"),
+            field("log.module_path", "rustls::client::hs"),
+            field("log.file", "hs.rs"),
+            field("peer", "auth.docker.io"),
+        ];
+        let target = bridged_target(&mut fields).expect("bridged event");
+        assert_eq!(component(&target), "rustls");
+        assert_eq!(fields.len(), 1, "log.* bookkeeping dropped");
+        assert_eq!(fields[0].0, "peer");
+
+        let mut plain = vec![field("peer", "x")];
+        assert_eq!(
+            bridged_target(&mut plain),
+            None,
+            "a native event keeps its target"
+        );
+        assert_eq!(plain.len(), 1);
     }
 
     #[test]

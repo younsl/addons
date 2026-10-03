@@ -5,6 +5,7 @@
 use std::io::{Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
+use std::time::Duration;
 
 use async_trait::async_trait;
 use aws_config::BehaviorVersion;
@@ -37,7 +38,16 @@ pub struct S3Config {
     /// Optional; empty uses the default credential chain.
     pub access_key_id: String,
     pub secret_access_key: String,
+    /// Longest wait for a response to start, upload body included. Zero uses
+    /// [`DEFAULT_READ_TIMEOUT`].
+    pub read_timeout: Duration,
 }
+
+/// Bounds a request whose store went away mid-flight, long enough for a
+/// multi-GiB metadata snapshot upload.
+pub const DEFAULT_READ_TIMEOUT: Duration = Duration::from_secs(600);
+
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Builds an S3 [`Client`] from `cfg`. The SDK's default credential chain
 /// resolves IRSA (web identity) and EKS Pod Identity (container credentials)
@@ -70,7 +80,19 @@ pub async fn new_s3_client(cfg: &S3Config) -> Result<Client> {
             .request_checksum_calculation(RequestChecksumCalculation::WhenRequired)
             .response_checksum_validation(ResponseChecksumValidation::WhenRequired);
     }
-    builder = builder.force_path_style(cfg.force_path_style);
+    let read_timeout = if cfg.read_timeout.is_zero() {
+        DEFAULT_READ_TIMEOUT
+    } else {
+        cfg.read_timeout
+    };
+    builder = builder
+        .force_path_style(cfg.force_path_style)
+        .timeout_config(
+            aws_smithy_types::timeout::TimeoutConfig::builder()
+                .connect_timeout(CONNECT_TIMEOUT)
+                .read_timeout(read_timeout)
+                .build(),
+        );
     Ok(Client::from_conf(builder.build()))
 }
 
@@ -559,6 +581,37 @@ pub(crate) mod tests {
         out
     }
 
+    /// A store that accepts the connection and never answers must fail the
+    /// request instead of hanging it.
+    #[tokio::test]
+    async fn a_store_that_never_answers_times_out() {
+        let server = MockServer::start().await;
+        Mock::given(any())
+            .respond_with(ResponseTemplate::new(200).set_delay(std::time::Duration::from_secs(30)))
+            .mount(&server)
+            .await;
+        let client = new_s3_client(&S3Config {
+            bucket: "b".into(),
+            region: "us-east-1".into(),
+            endpoint: server.uri(),
+            force_path_style: true,
+            access_key_id: "a".into(),
+            secret_access_key: "s".into(),
+            read_timeout: std::time::Duration::from_millis(300),
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+        let started = std::time::Instant::now();
+        let err = client.head_object().bucket("b").key("k").send().await;
+        assert!(err.is_err(), "a silent store must not succeed");
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(10),
+            "took {:?}",
+            started.elapsed()
+        );
+    }
+
     async fn new_test_s3_store(fake: FakeS3) -> (S3BlobStore, MockServer, tempfile::TempDir) {
         let server = MockServer::start().await;
         Mock::given(any()).respond_with(fake).mount(&server).await;
@@ -572,6 +625,7 @@ pub(crate) mod tests {
                 force_path_style: true,
                 access_key_id: "test".into(),
                 secret_access_key: "secret".into(),
+                ..Default::default()
             },
             tmp.path(),
         )

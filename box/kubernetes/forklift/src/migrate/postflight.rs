@@ -11,7 +11,7 @@ use futures_util::{StreamExt, stream};
 use sha2::{Digest, Sha256};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-use super::preflight::{Check, Status, bytes};
+use super::preflight::{Check, Status, bytes, push};
 use super::snapshot::{self, StagedSnapshot};
 use super::{Endpoint, Error, Options, Result};
 
@@ -72,7 +72,9 @@ pub async fn run(
     opts: &Options,
 ) -> Outcome {
     let (verify, concurrency, staging) = (opts.verify, opts.concurrency, opts.staging.as_path());
-    let mut checks = vec![metadata_hash(dst, snap, staging).await];
+    tracing::info!("postflight: downloading the target metadata snapshot");
+    let mut checks = Vec::new();
+    push(&mut checks, metadata_hash(dst, snap, staging).await);
     let named: BTreeMap<&String, Option<i64>> = snap
         .blobs
         .iter()
@@ -80,8 +82,12 @@ pub async fn run(
         .map(|(d, s)| (d, *s))
         .collect();
 
+    tracing::info!(
+        blobs = named.len(),
+        "postflight: checking blob sizes in the target"
+    );
     let (sizes, mut bad) = blob_sizes(dst, &named, concurrency).await;
-    checks.push(sizes);
+    push(&mut checks, sizes);
 
     let pool: Vec<&String> = named
         .keys()
@@ -89,12 +95,13 @@ pub async fn run(
         .filter(|d| !bad.contains(*d))
         .collect();
     let picked = pick(&pool, skipped, verify);
+    tracing::info!(blobs = picked.len(), verify = %verify, "postflight: re-hashing blobs in the target");
     let (content, wrong, verified) =
         blob_content(dst, &picked, named.len(), verify, concurrency).await;
-    checks.push(content);
+    push(&mut checks, content);
     bad.extend(wrong);
 
-    checks.push(source_unchanged(src, snap).await);
+    push(&mut checks, source_unchanged(src, snap).await);
     checks.sort_by_key(|c| c.id);
     Outcome {
         checks,

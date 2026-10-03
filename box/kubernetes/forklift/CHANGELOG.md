@@ -8,6 +8,14 @@ Notable changes per release. Container image versions come from the
 
 Chart 0.14.1. forklift-mcp remains 0.3.2.
 
+The 0.14.1 image was rebuilt on 2026-10-03 with the S3 timeouts, the migration progress logs and the log component of `log` crate events below. The first 0.14.1 build lacks them.
+
+### Changed
+
+- S3 requests time out: connecting after 10s and the response after `FORKLIFT_STORAGE_S3_READ_TIMEOUT` (default `10m`, upload body included), then retry. A request to a store that went away mid-flight used to wait forever, which stalled a migration Job whose target restarted during the snapshot upload. `migrate-storage` takes `FORKLIFT_MIGRATE_TO_S3_READ_TIMEOUT` for the target.
+- `migrate-storage` logs every preflight and postflight check the moment it finishes, and announces the slow steps (the snapshot download, its integrity check, the blob checks and the re-hash) before they start, so a run that spends minutes on one step shows where it is.
+- Events from dependencies that log through the `log` crate name their crate in `component` (for example `rustls`) instead of `log`, and drop the `log.target`, `log.module_path`, `log.file` and `log.line` fields.
+
 ### Fixed
 
 - OCI proxies follow the upstream's redirect for a blob, dropping the registry's credentials once it leaves the registry's host. Docker Hub and ghcr serve layers from a CDN behind a 307, so every uncached layer failed with `502 upstream error` and images could not be pulled through `docker.io-proxy` or `ghcr.io-proxy`. Manifests were unaffected.

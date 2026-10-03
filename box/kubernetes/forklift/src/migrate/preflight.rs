@@ -85,6 +85,40 @@ impl Check {
     }
 }
 
+impl Status {
+    pub(crate) fn tag(self) -> &'static str {
+        match self {
+            Status::Pass => "PASS",
+            Status::Warn => "WARN",
+            Status::Fail => "FAIL",
+            Status::Skip => "SKIP",
+        }
+    }
+}
+
+/// Logs a check the moment it finishes, so a run that spends minutes on one
+/// check shows where it is before the report prints.
+pub(crate) fn log(c: &Check) {
+    let took = c
+        .latency_us
+        .map(|us| duration(Duration::from_micros(us)))
+        .unwrap_or_default();
+    tracing::info!(
+        id = c.id,
+        check = c.name,
+        status = c.status.tag(),
+        took = %took,
+        detail = %c.detail,
+        "check finished"
+    );
+}
+
+/// Records a finished check and logs it.
+pub(crate) fn push(checks: &mut Vec<Check>, c: Check) {
+    log(&c);
+    checks.push(c);
+}
+
 /// One line per check in identifier order, then the one-line summary.
 pub fn render(checks: &[Check]) -> String {
     let mut sorted: Vec<&Check> = checks.iter().collect();
@@ -92,12 +126,7 @@ pub fn render(checks: &[Check]) -> String {
     let mut lines: Vec<String> = sorted
         .iter()
         .map(|c| {
-            let tag = match c.status {
-                Status::Pass => "PASS",
-                Status::Warn => "WARN",
-                Status::Fail => "FAIL",
-                Status::Skip => "SKIP",
-            };
+            let tag = c.status.tag();
             match c.latency_us {
                 Some(us) => format!(
                     "  [{tag}] {} {:<26} {} (took {})",
@@ -188,14 +217,17 @@ pub async fn run(
     opts: &Options,
     mut checks: Vec<Check>,
 ) -> Result<Plan> {
-    checks.push(locations(src, dst));
+    checks.iter().for_each(log);
+    push(&mut checks, locations(src, dst));
 
+    tracing::info!(key = %src.meta_key, "preflight: downloading the source metadata snapshot");
     let started = Instant::now();
     let downloaded = snapshot::download(src, &opts.staging).await;
     let took = started.elapsed();
     let snapshot = match downloaded {
         Ok(s) => {
-            checks.push(
+            push(
+                &mut checks,
                 Check::pass(
                     "source-snapshot",
                     format!("{} ({})", src.meta_key, bytes(s.size)),
@@ -211,11 +243,12 @@ pub async fn run(
                     String::new()
                 }
             );
-            checks.push(Check::pass("snapshot-integrity", detail));
+            push(&mut checks, Check::pass("snapshot-integrity", detail));
             Some(s)
         }
         Err(Error::Object(e)) if e.is_not_found() => {
-            checks.push(
+            push(
+                &mut checks,
                 Check::fail(
                     "source-snapshot",
                     format!("no metadata snapshot at {}", src.meta_key),
@@ -225,12 +258,18 @@ pub async fn run(
             None
         }
         Err(Error::Refused(msg)) => {
-            checks.push(Check::pass("source-snapshot", src.meta_key.clone()).took(took));
-            checks.push(Check::fail("snapshot-integrity", msg));
+            push(
+                &mut checks,
+                Check::pass("source-snapshot", src.meta_key.clone()).took(took),
+            );
+            push(&mut checks, Check::fail("snapshot-integrity", msg));
             None
         }
         Err(e) => {
-            checks.push(Check::fail("source-snapshot", e.to_string()).took(took));
+            push(
+                &mut checks,
+                Check::fail("source-snapshot", e.to_string()).took(took),
+            );
             None
         }
     };
@@ -243,9 +282,15 @@ pub async fn run(
             error: src_err,
             took: src_took,
             latencies: src_lat,
-        } = absent(src, &snap.blobs, opts.concurrency).await;
+        } = {
+            tracing::info!(
+                blobs = snap.blobs.len(),
+                "preflight: checking the named blobs in the source"
+            );
+            absent(src, &snap.blobs, opts.concurrency).await
+        };
         let src_rate = per_request(&src_lat);
-        checks.push(match (src_err, src_missing.len()) {
+        push(&mut checks, match (src_err, src_missing.len()) {
             (Some(e), _) => Check::fail("source-blobs", format!("cannot check the source: {e}")),
             (None, 0) => Check::pass(
                 "source-blobs",
@@ -280,9 +325,16 @@ pub async fn run(
             error: dst_err,
             took: dst_took,
             latencies: dst_lat,
-        } = absent(dst, &snap.blobs, opts.concurrency).await;
+        } = {
+            tracing::info!(
+                blobs = snap.blobs.len(),
+                "preflight: checking the named blobs in the target"
+            );
+            absent(dst, &snap.blobs, opts.concurrency).await
+        };
         let dst_rate = per_request(&dst_lat);
-        checks.push(
+        push(
+            &mut checks,
             match dst_err {
                 Some(e) => Check::fail("target-blobs", format!("cannot check the target: {e}")),
                 None => Check::pass(
@@ -303,21 +355,23 @@ pub async fn run(
         source_missing = src_missing.into_keys().collect();
     }
 
-    checks.push(target_write(dst).await);
-    checks.push(target_conditional_writes(dst, opts.require_conditional_writes).await);
-    checks.push(target_metadata(dst, opts.overwrite_meta).await);
+    push(&mut checks, target_write(dst).await);
+    push(
+        &mut checks,
+        target_conditional_writes(dst, opts.require_conditional_writes).await,
+    );
+    push(&mut checks, target_metadata(dst, opts.overwrite_meta).await);
 
     let need: u64 = missing.values().map(|s| s.unwrap_or(0).max(0) as u64).sum();
-    checks.push(target_capacity(dst, need).await);
-    checks.push(staging_space(opts, &missing));
+    push(&mut checks, target_capacity(dst, need).await);
+    push(&mut checks, staging_space(opts, &missing));
 
     for (id, name) in CHECKS {
         if !checks.iter().any(|c| c.id == *id) {
-            checks.push(Check::new(
-                name,
-                Status::Skip,
-                "not run: an earlier check failed",
-            ));
+            push(
+                &mut checks,
+                Check::new(name, Status::Skip, "not run: an earlier check failed"),
+            );
         }
     }
     checks.sort_by_key(|c| c.id);
@@ -677,6 +731,12 @@ mod tests {
             ],
             held: Box::new(|| true),
         };
+        let logs = crate::server::logging::tests::BufWriter::default();
+        let subscriber = tracing_subscriber::fmt()
+            .with_writer(logs.clone())
+            .event_format(crate::server::logging::SlogFormat::Json)
+            .finish();
+        let _log = tracing::subscriber::set_default(subscriber);
         let report = migrate(
             &endpoint(&src),
             &endpoint(&dst),
@@ -692,6 +752,33 @@ mod tests {
         got.sort_unstable();
         let want: Vec<&str> = CHECKS.iter().map(|(id, _)| *id).collect();
         assert_eq!(got, want);
+
+        // Each check is logged as it finishes, with the slow steps announced
+        // before they start, so a long run is never silent.
+        let text = String::from_utf8(logs.0.lock().unwrap().clone()).unwrap();
+        let lines: Vec<serde_json::Value> = text
+            .lines()
+            .map(|l| serde_json::from_str(l).unwrap())
+            .collect();
+        for id in &want {
+            assert!(
+                lines
+                    .iter()
+                    .any(|l| l["msg"] == "check finished" && l["id"] == *id),
+                "{id} not logged:\n{text}"
+            );
+        }
+        let pos = |msg: &str| {
+            lines
+                .iter()
+                .position(|l| l["msg"] == msg)
+                .unwrap_or_else(|| panic!("no {msg:?}:\n{text}"))
+        };
+        assert!(
+            pos("preflight: downloading the source metadata snapshot")
+                < pos("checking the metadata snapshot's integrity")
+        );
+        assert!(lines.iter().all(|l| l["component"] == "migrate"), "{text}");
     }
 
     #[test]

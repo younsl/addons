@@ -1224,6 +1224,7 @@ fn to_s3_config(c: &config::S3Config) -> storage::S3Config {
         force_path_style: c.force_path_style,
         access_key_id: c.access_key_id.clone(),
         secret_access_key: c.secret_access_key.clone(),
+        read_timeout: c.read_timeout,
     }
 }
 
