@@ -10,7 +10,6 @@ import {
   createApiFactory,
   createApiRef,
   discoveryApiRef,
-  fetchApiRef,
   identityApiRef,
   oauthRequestApiRef,
   OpenIdConnectApi,
@@ -24,8 +23,6 @@ import {
   visitsApiRef,
   VisitsStorageApi,
 } from '@backstage/plugin-home';
-import { sonarQubeApiRef } from '@backstage-community/plugin-sonarqube-react';
-import { SonarQubeClient } from '@backstage-community/plugin-sonarqube';
 
 export const keycloakOIDCAuthApiRef: ApiRef<
   OpenIdConnectApi & ProfileInfoApi & BackstageIdentityApi & SessionApi
@@ -69,14 +66,5 @@ export const apis: AnyApiFactory[] = [
     },
     factory: ({ storageApi, identityApi }) =>
       VisitsStorageApi.create({ storageApi, identityApi }),
-  }),
-  createApiFactory({
-    api: sonarQubeApiRef,
-    deps: {
-      discoveryApi: discoveryApiRef,
-      fetchApi: fetchApiRef,
-    },
-    factory: ({ discoveryApi, fetchApi }) =>
-      new SonarQubeClient({ discoveryApi, fetchApi }),
   }),
 ];

@@ -11,7 +11,7 @@ Inventory of plugins enabled in this Backstage instance, grouped by source. Use 
 | Type | Meaning | Upgrade policy |
 |------|---------|----------------|
 | **Native** | First-party packages under `@backstage/*`, maintained by Spotify alongside Backstage core. | Bumped together via `backstage-cli versions:bump`. |
-| **Community** | Third-party packages such as `@backstage-community/*` or `@immobiliarelabs/*`. Independent release cycles; may lag behind core. | Upgraded per package after reading the changelog. |
+| **Community** | Third-party packages such as `@backstage-community/*`. Independent release cycles, may lag behind core. | Upgraded per package after reading the changelog. |
 | **Custom** | In-house plugins under this repo's `plugins/*` workspace, referenced as `workspace:*`. | Modified by PRs in this repo. |
 
 ### Frontend design system
@@ -41,17 +41,13 @@ Most custom plugins ship as `<name>` (frontend) plus `<name>-backend` (backend).
 
 | Feature | Plugin | Description |
 |---------|--------|-------------|
-| GitLab CI/CD | [`@immobiliarelabs/backstage-plugin-gitlab`](https://www.npmjs.com/package/@immobiliarelabs/backstage-plugin-gitlab) | View pipelines, MRs, releases, README on Entity page |
 | Keycloak Catalog Sync | [`@backstage-community/plugin-catalog-backend-module-keycloak`](https://www.npmjs.com/package/@backstage-community/plugin-catalog-backend-module-keycloak) | Sync Keycloak users/groups into the Backstage catalog |
-| SonarQube | [`@backstage-community/plugin-sonarqube`](https://www.npmjs.com/package/@backstage-community/plugin-sonarqube) | Code quality metrics with auto annotation injection |
-| Simple Icons | [`@dweber019/backstage-plugin-simple-icons`](https://www.npmjs.com/package/@dweber019/backstage-plugin-simple-icons) | Brand icons from [simpleicons.org](https://simpleicons.org/) |
 
 ### Custom
 
 | Feature | Plugin | Description |
 |---------|--------|-------------|
 | Platforms | `platforms-backend` | Internal platform services link cards with search and tag filtering, plus popularity ranking and daily visitor counts |
-| OpenAPI Registry | `openapi-registry` | Register external OpenAPI specs by URL with search and filters |
 | ArgoCD AppSets | `argocd-appset` | View/manage ArgoCD ApplicationSets with mute/unmute, Slack alerts, audit log |
 | OpenCost | `opencost` | Multi-cluster Kubernetes cost visualization |
 | Build Info | - | Settings page showing build metadata, installed plugins, BUI migration progress |

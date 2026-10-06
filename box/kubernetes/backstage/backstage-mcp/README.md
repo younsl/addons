@@ -19,7 +19,7 @@ Serving is stateless: every MCP request is answered on its own, so replicas scal
 
 ## Tools
 
-29 tools, all annotated `readOnlyHint: true`. Names are prefixed by the Backstage page they read from.
+26 tools, all annotated `readOnlyHint: true`. Names are prefixed by the Backstage page they read from.
 
 | Page | Tools |
 | --- | --- |
@@ -27,7 +27,6 @@ Serving is stateless: every MCP request is answered on its own, so replicas scal
 | Search | `search_query` (software-catalog and techdocs indexes) |
 | Docs | `techdocs_get_metadata`, `techdocs_get_page` (HTML rendered to text with headings and fenced code) |
 | Platforms | `platforms_get_stats` |
-| API Registry | `openapi_registry_list_registrations`, `openapi_registry_get_registration`, `openapi_registry_get_entity_yaml` |
 | ArgoCD | `argocd_get_status`, `argocd_list_application_sets`, `argocd_get_application_set`, `argocd_list_upstream_charts`, `argocd_get_upstream_chart`, `argocd_get_upstream_scan_status`, `argocd_list_audit_logs`, `argocd_list_repo_branches` |
 | Cost Report | `opencost_get_config`, `opencost_list_filters`, `opencost_list_years`, `opencost_search_controllers`, `opencost_get_monthly_totals`, `opencost_get_daily_summary`, `opencost_list_monthly_pod_costs`, `opencost_list_daily_pod_costs`, `opencost_get_pod_daily_costs`, `opencost_list_collection_runs` |
 
@@ -54,7 +53,6 @@ backend:
           - plugin: search
           - plugin: techdocs
           - plugin: platforms
-          - plugin: openapi-registry
           - plugin: argocd-appset
           - plugin: opencost
 ```

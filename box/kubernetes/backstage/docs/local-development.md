@@ -38,8 +38,6 @@ KEYCLOAK_CLIENT_SECRET
 KEYCLOAK_METADATA_URL
 KEYCLOAK_CATALOG_CLIENT_SECRET
 AUTH_SESSION_SECRET
-SONARQUBE_BASE_URL
-SONARQUBE_API_KEY
 ```
 
 Missing keys disable the matching integration rather than crash the app, so a partial `.env` is fine for working on a single plugin.
@@ -152,7 +150,7 @@ yarn backstage-cli repo test
 A single workspace (faster while iterating on one plugin):
 
 ```bash
-yarn workspace @internal/plugin-openapi-registry-backend test
+yarn workspace @internal/plugin-argocd-appset-backend test
 ```
 
 Watch mode for the package you are editing:

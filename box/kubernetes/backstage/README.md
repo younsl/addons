@@ -9,7 +9,7 @@ Custom Backstage image with GitLab auto-discovery, [Keycloak](https://github.com
 
 ### Plugins moved to an internal platform (2026-10-03)
 
-Most in-house plugins are retired. Operational tooling such as access audits, account requests, log extraction and capacity reservations moved to a dedicated internal platform, so this image now leans on Backstage far less. What stays is the portal core (catalog, API docs, TechDocs, templates, platforms, OpenAPI registry, cost report) plus ArgoCD ApplicationSets until its move finishes. The [changelog](docs/changelog.md) lists the removed plugins.
+Most in-house plugins are retired. Operational tooling such as access audits, account requests, log extraction and capacity reservations moved to a dedicated internal platform, so this image now leans on Backstage far less. What stays is the portal core (catalog, API docs, TechDocs, templates, platforms, cost report) plus ArgoCD ApplicationSets until its move finishes. The [changelog](docs/changelog.md) lists the removed plugins.
 
 ## Quick Start
 
@@ -39,6 +39,5 @@ Authentication is [Keycloak](https://github.com/keycloak/keycloak) OIDC only. Gu
 - [Keycloak OIDC](docs/plugins/auth-backend-module-oidc-provider/overview.md)
 - [GitLab Discovery](docs/plugins/catalog-backend-module-gitlab/discovery.md)
 - [GitLab API Discovery](docs/plugins/catalog-backend-module-gitlab/api-discovery.md)
-- [GitLab CI/CD](docs/plugins/gitlab/overview.md)
 - [OpenCost](docs/plugins/opencost/overview.md)
 - [OpenCost ERD](docs/plugins/opencost/erd.md)

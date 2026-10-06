@@ -1,1 +1,0 @@
-export { OpenApiRegistryPage } from './OpenApiRegistryPage';

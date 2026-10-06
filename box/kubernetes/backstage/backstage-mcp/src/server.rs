@@ -49,7 +49,6 @@ impl BackstageMcp {
                 + Self::search_router()
                 + Self::techdocs_router()
                 + Self::platforms_router()
-                + Self::openapi_registry_router()
                 + Self::argocd_router()
                 + Self::opencost_router(),
         }

@@ -2,7 +2,6 @@ import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react'
 import {
   Alert,
   Box,
-  ButtonLink,
   Container,
   Flex,
   PluginHeader,
@@ -253,14 +252,9 @@ export const ApisPage = () => {
       <PluginHeader title="APIs" />
       <Container>
         <Flex direction="column" gap="3" p="3">
-          <Flex justify="between" align="center">
-            <Text variant="body-medium" color="secondary">
-              Browse and discover APIs registered in the Backstage Catalog
-            </Text>
-            <ButtonLink href="/openapi-registry" variant="secondary">
-              API Registry
-            </ButtonLink>
-          </Flex>
+          <Text variant="body-medium" color="secondary">
+            Browse and discover APIs registered in the Backstage Catalog
+          </Text>
 
           <Box
             mt="3"

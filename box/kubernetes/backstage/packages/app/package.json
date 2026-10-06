@@ -13,8 +13,6 @@
     "clean": "backstage-cli package clean"
   },
   "dependencies": {
-    "@backstage-community/plugin-sonarqube": "^0.23.0",
-    "@backstage-community/plugin-sonarqube-react": "^0.15.0",
     "@backstage/app-defaults": "^1.7.12",
     "@backstage/catalog-model": "^1.10.1",
     "@backstage/core-app-api": "^1.20.5",
@@ -36,10 +34,7 @@
     "@backstage/plugin-user-settings": "^0.9.7",
     "@backstage/theme": "^0.7.3",
     "@backstage/ui": "^0.18.0",
-    "@dweber019/backstage-plugin-simple-icons": "^0.1.2",
-    "@immobiliarelabs/backstage-plugin-gitlab": "^7.0.1",
     "@internal/plugin-argocd-appset": "workspace:*",
-    "@internal/plugin-openapi-registry": "workspace:*",
     "@internal/plugin-opencost": "workspace:*",
     "@material-ui/core": "^4.12.4",
     "@material-ui/icons": "^4.11.3",

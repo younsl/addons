@@ -1,9 +1,4 @@
 import { createBackend } from '@backstage/backend-defaults';
-import {
-  gitlabPlugin,
-  catalogPluginGitlabFillerProcessorModule,
-} from '@immobiliarelabs/backstage-plugin-gitlab-backend';
-import { catalogModuleSonarQubeAnnotationProcessor } from './processors';
 import { permissionModuleAdminPolicy } from './permissions-policy';
 
 const backend = createBackend();
@@ -26,13 +21,6 @@ if (!disableGitlab) {
   backend.add(import('@backstage/plugin-catalog-backend-module-gitlab-org'));
 }
 
-if (!disableGitlab) {
-  backend.add(gitlabPlugin);
-  backend.add(catalogPluginGitlabFillerProcessorModule);
-}
-
-backend.add(catalogModuleSonarQubeAnnotationProcessor);
-
 backend.add(import('@backstage/plugin-scaffolder-backend'));
 if (!disableGitlab) {
   backend.add(import('@backstage/plugin-scaffolder-backend-module-gitlab'));
@@ -45,13 +33,9 @@ backend.add(import('@backstage/plugin-search-backend-module-catalog'));
 
 backend.add(import('@internal/plugin-platforms-backend'));
 
-backend.add(import('@internal/plugin-openapi-registry-backend'));
-
 backend.add(import('@internal/plugin-argocd-appset-backend'));
 
 backend.add(import('@internal/plugin-opencost-backend'));
-
-backend.add(import('@backstage-community/plugin-sonarqube-backend'));
 
 backend.add(import('@backstage/plugin-permission-backend'));
 backend.add(permissionModuleAdminPolicy);

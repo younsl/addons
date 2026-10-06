@@ -6,7 +6,6 @@
 
 pub mod argocd;
 pub mod catalog;
-pub mod openapi_registry;
 pub mod opencost;
 pub mod platforms;
 pub mod search;

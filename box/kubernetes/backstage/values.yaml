@@ -10,7 +10,6 @@
 # Prerequisites:
 #   kubectl create secret generic backstage-secrets -n backstage \
 #     --from-literal=GITLAB_TOKEN=glpat-xxxxxxxxxxxx \
-#     --from-literal=SONARQUBE_TOKEN=squ_xxxxxxxxxxxx \
 #     --from-literal=POSTGRES_PASSWORD=your-password \
 #     --from-literal=KEYCLOAK_CATALOG_CLIENT_SECRET=your-client-secret
 # ==============================================================================
@@ -52,11 +51,6 @@ backstage:
         secretKeyRef:
           name: backstage-secrets
           key: POSTGRES_PASSWORD
-    - name: SONARQUBE_TOKEN
-      valueFrom:
-        secretKeyRef:
-          name: backstage-secrets
-          key: SONARQUBE_TOKEN
     # Shared with the backstage-mcp chart (backstage.token), which presents it
     # as a bearer token on every read.
     - name: BACKSTAGE_MCP_TOKEN
@@ -69,8 +63,6 @@ backstage:
     app:
       title: Backstage
       baseUrl: https://backstage.example.com
-      gitlab:
-        host: ${GITLAB_HOST}
       plugins:
         argocdAppSet: true
 
@@ -112,7 +104,6 @@ backstage:
               - plugin: search
               - plugin: techdocs
               - plugin: platforms
-              - plugin: openapi-registry
               - plugin: argocd-appset
               - plugin: opencost
       auditor:
@@ -134,10 +125,6 @@ backstage:
         pullRequestBranchName: backstage-integration
       rules:
         - allow: [Component, System, API, Resource, Location, Domain, Group, User, Template]
-      # Allow catalog to read entity YAML from openapi-registry plugin
-      reading:
-        allow:
-          - host: localhost:7007
       providers:
         gitlab:
           yourProviderId:
@@ -196,10 +183,6 @@ backstage:
         runIn: local
       publisher:
         type: local
-
-    sonarqube:
-      baseUrl: https://sonarqube.example.com
-      apiKey: ${SONARQUBE_TOKEN}
 
     proxy:
       endpoints: {}

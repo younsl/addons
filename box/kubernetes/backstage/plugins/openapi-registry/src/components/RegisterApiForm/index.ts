@@ -1,1 +1,0 @@
-export { RegisterApiForm } from './RegisterApiForm';

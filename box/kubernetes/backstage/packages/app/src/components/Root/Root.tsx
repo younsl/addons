@@ -5,17 +5,21 @@ import LibraryBooks from '@material-ui/icons/LibraryBooks';
 import SearchIcon from '@material-ui/icons/Search';
 import GroupIcon from '@material-ui/icons/Group';
 import BuildIcon from '@material-ui/icons/Build';
-import CloudUploadIcon from '@material-ui/icons/CloudUpload';
 import ExpandMoreIcon from '@material-ui/icons/ExpandMore';
 import ExpandLessIcon from '@material-ui/icons/ExpandLess';
 import StorageIcon from '@material-ui/icons/Storage';
 import AttachMoneyIcon from '@material-ui/icons/AttachMoney';
 import { Text } from '@backstage/ui';
-import { siArgo, siKubernetes } from 'simple-icons';
-import { createIcon } from '@dweber019/backstage-plugin-simple-icons';
+import { SvgIcon } from '@material-ui/core';
+import { siArgo, siKubernetes, type SimpleIcon } from 'simple-icons';
 
-const ArgocdIcon = createIcon(siArgo, false);
-const KubernetesIcon = createIcon(siKubernetes, false);
+const createIcon = (icon: SimpleIcon) => () => (
+  <SvgIcon titleAccess={icon.title}>
+    <path d={icon.path} />
+  </SvgIcon>
+);
+const ArgocdIcon = createIcon(siArgo);
+const KubernetesIcon = createIcon(siKubernetes);
 import {
   Settings as SidebarSettings,
   UserSettingsSignInAvatar,
@@ -187,7 +191,6 @@ export const Root = ({ children }: PropsWithChildren<{}>) => {
         <PlatformsSidebarItem />
         <SidebarItem icon={CategoryIcon} to="catalog" text="Catalog" />
         <SidebarItem icon={ExtensionIcon} to="api-docs" text="APIs" />
-        <SidebarItem icon={CloudUploadIcon} to="openapi-registry" text="API Registry" />
         <SidebarItem icon={LibraryBooks} to="docs" text="Docs" />
       </FoldableSection>
 

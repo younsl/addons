@@ -31,12 +31,6 @@
       "path": "plugins/argocd-appset-backend"
     },
     {
-      "path": "plugins/openapi-registry"
-    },
-    {
-      "path": "plugins/openapi-registry-backend"
-    },
-    {
       "path": "plugins/opencost"
     },
     {

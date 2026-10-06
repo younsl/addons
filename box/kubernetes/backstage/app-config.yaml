@@ -1,8 +1,6 @@
 app:
   title: Backstage
   baseUrl: http://localhost:3000
-  gitlab:
-    host: ${GITLAB_HOST}
   plugins:
     argocdAppSet: true
     opencost: true
@@ -86,12 +84,8 @@ backend:
     #       - plugin: search
     #       - plugin: techdocs
     #       - plugin: platforms
-    #       - plugin: openapi-registry
     #       - plugin: argocd-appset
     #       - plugin: opencost
-  reading:
-    allow:
-      - host: localhost:7007
 
 integrations:
   gitlab:
@@ -169,17 +163,6 @@ techdocs:
     runIn: 'local'
   publisher:
     type: 'local'
-
-gitlab:
-  defaultCodeOwnersPath: CODEOWNERS
-  defaultReadmePath: README.md
-  allowedKinds:
-    - Component
-    - Resource
-
-sonarqube:
-  baseUrl: ${SONARQUBE_BASE_URL}
-  apiKey: ${SONARQUBE_API_KEY}
 
 argocdApplicationSet:
   kubernetes:

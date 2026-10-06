@@ -34,29 +34,6 @@ import {
   EntityTechdocsContent,
   isTechDocsAvailable,
 } from '@backstage/plugin-techdocs';
-import {
-  isGitlabAvailable,
-  EntityGitlabContent,
-} from '@immobiliarelabs/backstage-plugin-gitlab';
-import { EntityGitlabReadmeCardWithStatus } from './EntityGitlabReadmeCardWithStatus';
-import { isSonarQubeAvailable } from '@backstage-community/plugin-sonarqube';
-import { EntitySonarQubeCardWithStatus } from './EntitySonarQubeCardWithStatus';
-import { siGitlab, siSonar } from 'simple-icons';
-
-const BrandTabIcon = ({ path, title }: { path: string; title: string }) => (
-  <svg
-    xmlns="http://www.w3.org/2000/svg"
-    viewBox="0 0 24 24"
-    fill="currentColor"
-    width="20"
-    height="20"
-    role="img"
-  >
-    <title>{title}</title>
-    <path d={path} />
-  </svg>
-);
-
 const techdocsContent = (
   <EntityTechdocsContent>
     <Grid.Root columns="12" gap="3">
@@ -102,21 +79,6 @@ const overviewContent = (
     <Grid.Item colSpan={{ initial: '12', md: '6' }}>
       <EntityHasSubcomponentsCard />
     </Grid.Item>
-    <EntitySwitch>
-      <EntitySwitch.Case if={isGitlabAvailable}>
-        <Grid.Item colSpan="12">
-          <EntityGitlabReadmeCardWithStatus />
-        </Grid.Item>
-      </EntitySwitch.Case>
-    </EntitySwitch>
-  </Grid.Root>
-);
-
-const sonarQubeContent = (
-  <Grid.Root columns="12" gap="3">
-    <Grid.Item colSpan="12">
-      <EntitySonarQubeCardWithStatus />
-    </Grid.Item>
   </Grid.Root>
 );
 
@@ -151,14 +113,6 @@ const serviceEntityPage = (
     <EntityLayout.Route if={isTechDocsAvailable} path="/docs" title="Docs">
       {techdocsContent}
     </EntityLayout.Route>
-
-    <EntityLayout.Route if={isGitlabAvailable} path="/gitlab" title="GitLab" tabProps={{ label: <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><BrandTabIcon path={siGitlab.path} title="GitLab" />GitLab</span> }}>
-      <EntityGitlabContent />
-    </EntityLayout.Route>
-
-    <EntityLayout.Route if={isSonarQubeAvailable} path="/sonarqube" title="SonarQube" tabProps={{ label: <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><BrandTabIcon path={siSonar.path} title="SonarQube" />SonarQube</span> }}>
-      {sonarQubeContent}
-    </EntityLayout.Route>
   </EntityLayout>
 );
 
@@ -182,14 +136,6 @@ const websiteEntityPage = (
     <EntityLayout.Route if={isTechDocsAvailable} path="/docs" title="Docs">
       {techdocsContent}
     </EntityLayout.Route>
-
-    <EntityLayout.Route if={isGitlabAvailable} path="/gitlab" title="GitLab" tabProps={{ label: <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><BrandTabIcon path={siGitlab.path} title="GitLab" />GitLab</span> }}>
-      <EntityGitlabContent />
-    </EntityLayout.Route>
-
-    <EntityLayout.Route if={isSonarQubeAvailable} path="/sonarqube" title="SonarQube" tabProps={{ label: <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><BrandTabIcon path={siSonar.path} title="SonarQube" />SonarQube</span> }}>
-      {sonarQubeContent}
-    </EntityLayout.Route>
   </EntityLayout>
 );
 
@@ -201,14 +147,6 @@ const defaultEntityPage = (
 
     <EntityLayout.Route if={isTechDocsAvailable} path="/docs" title="Docs">
       {techdocsContent}
-    </EntityLayout.Route>
-
-    <EntityLayout.Route if={isGitlabAvailable} path="/gitlab" title="GitLab" tabProps={{ label: <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><BrandTabIcon path={siGitlab.path} title="GitLab" />GitLab</span> }}>
-      <EntityGitlabContent />
-    </EntityLayout.Route>
-
-    <EntityLayout.Route if={isSonarQubeAvailable} path="/sonarqube" title="SonarQube" tabProps={{ label: <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><BrandTabIcon path={siSonar.path} title="SonarQube" />SonarQube</span> }}>
-      {sonarQubeContent}
     </EntityLayout.Route>
   </EntityLayout>
 );
