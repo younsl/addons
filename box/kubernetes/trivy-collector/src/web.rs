@@ -55,9 +55,9 @@ use crate::storage::{
 Multi-cluster Trivy report collector and viewer API.
 
 Every `/api/v1` route below is served by the server pod. When `auth_mode` is \
-`keycloak` they require a session cookie or a `tc_`-prefixed Bearer token, and \
-each one is additionally gated by an RBAC `(resource, action)` pair — see the \
-RBAC documentation for the mapping.
+`keycloak` they require a session cookie, a `tc_`-prefixed API token, or a Keycloak \
+JWT as a Bearer token. Most are additionally gated by an RBAC `(resource, action)` \
+pair, see the RBAC documentation for the mapping and its exceptions.
 
 Two endpoints this router serves are deliberately absent from this document: \
 `/mcp`, which speaks JSON-RPC over Streamable HTTP rather than REST, and the \

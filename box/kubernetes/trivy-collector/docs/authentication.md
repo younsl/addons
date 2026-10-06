@@ -95,7 +95,7 @@ API tokens allow programmatic access to the trivy-collector API without browser-
 | Property | Detail |
 |----------|--------|
 | Format | `tc_` prefix + 64 hex characters (67 chars total) |
-| Storage | SHA-256 hashed (plaintext never stored) |
+| Storage | SHA-256 hash in the `{release}-api-tokens` Secret (plaintext never stored) |
 | Expiration | 1, 7, 30, 90, 180, or 365 days |
 | Limit | 5 tokens per user |
 | Name rules | 4-64 characters, letters/digits/hyphens/underscores only |
@@ -119,7 +119,7 @@ wget -qO- --header="Authorization: Bearer tc_<your_token>" https://trivy.example
 When a request contains authentication credentials, the server validates in this order:
 
 1. **Session cookie** (`trivy_session`): browser-based SSO
-2. **Bearer token** with `tc_` prefix, self-issued API token (validated against SQLite)
+2. **Bearer token** with `tc_` prefix, self-issued API token (validated against the `{release}-api-tokens` Secret, watched into memory)
 3. **Bearer token** without `tc_` prefix, Keycloak JWT (validated against JWKS endpoint)
 
 ### Security Best Practices
@@ -135,7 +135,9 @@ When a request contains authentication credentials, the server validates in this
 |--------|----------|-------------|
 | `GET` | `/api/v1/auth/tokens` | List current user's tokens |
 | `POST` | `/api/v1/auth/tokens` | Create a new token |
-| `DELETE` | `/api/v1/auth/tokens/{id}` | Delete a token |
+| `DELETE` | `/api/v1/auth/tokens/{prefix}` | Delete a token by its `token_prefix` |
+
+These endpoints require a browser session. A Bearer token cannot list, create, or delete tokens.
 
 ### Create Token Request
 
@@ -153,7 +155,6 @@ When a request contains authentication credentials, the server validates in this
 {
   "token": "tc_a1b2c3d4...",
   "info": {
-    "id": 1,
     "name": "my-ci-token",
     "description": "CI/CD pipeline token",
     "token_prefix": "tc_a1b2c3d4",

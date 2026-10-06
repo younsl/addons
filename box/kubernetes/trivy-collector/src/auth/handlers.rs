@@ -442,7 +442,7 @@ const TOKEN_EXPIRY_CHOICES: [u32; 6] = [1, 7, 30, 90, 180, 365];
     tag = "Auth",
     responses(
         (status = 200, description = "List of user's API tokens"),
-        (status = 401, description = "Authentication required"),
+        (status = 401, description = "Browser session required, Bearer tokens are not accepted"),
         (status = 503, description = "Token store unavailable"),
     )
 )]
@@ -469,7 +469,7 @@ pub async fn list_tokens(
     responses(
         (status = 200, description = "Token created. The plaintext token is returned once and never again"),
         (status = 400, description = "Invalid token name or expiry"),
-        (status = 401, description = "Authentication required"),
+        (status = 401, description = "Browser session required, Bearer tokens are not accepted"),
         (status = 409, description = "Token name already exists"),
         (status = 500, description = "Writing the token Secret failed"),
         (status = 503, description = "Token store unavailable"),
@@ -555,7 +555,7 @@ fn bad_request(message: &str) -> axum::response::Response {
     ),
     responses(
         (status = 204, description = "Token deleted"),
-        (status = 401, description = "Authentication required"),
+        (status = 401, description = "Browser session required, Bearer tokens are not accepted"),
         (status = 404, description = "Token not found, or owned by another user"),
         (status = 500, description = "Writing the token Secret failed"),
         (status = 503, description = "Token store unavailable"),

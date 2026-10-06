@@ -188,8 +188,8 @@ pub struct Config {
     #[arg(long, env = env::API_TOKENS_SECRET, default_value = "trivy-collector-api-tokens")]
     pub api_tokens_secret: String,
 
-    /// Namespace where cluster-registration Secrets live. Empty = auto-detect from
-    /// the in-cluster ServiceAccount mount. Hub-pull mode is always active in server mode.
+    /// Namespace where cluster-registration Secrets live, injected through the Downward
+    /// API. Empty disables the Edge cluster watcher.
     #[arg(long, env = env::HUB_SECRET_NAMESPACE, default_value = "")]
     pub hub_secret_namespace: String,
 
