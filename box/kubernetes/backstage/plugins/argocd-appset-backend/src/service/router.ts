@@ -8,6 +8,7 @@ import { Config } from '@backstage/config';
 import { ApplicationSetService } from './ApplicationSetService';
 import { AppSetCache } from './AppSetCache';
 import { AuditStore } from './AuditStore';
+import { MergeRequestStore } from './MergeRequestStore';
 import { UpstreamChartStore } from './UpstreamChartStore';
 import { UpstreamScanner } from './UpstreamScanner';
 import { UpstreamVersionStore } from './UpstreamVersionStore';
@@ -19,6 +20,7 @@ export interface RouterOptions {
   config: Config;
   httpAuth: HttpAuthService;
   auditStore: AuditStore;
+  mergeRequests: MergeRequestStore;
   upstreamCharts: UpstreamChartStore;
   upstreamVersions: UpstreamVersionStore;
   upstreamScanner: UpstreamScanner;
@@ -86,6 +88,7 @@ export async function createRouter(options: RouterOptions): Promise<Router> {
     config,
     httpAuth,
     auditStore,
+    mergeRequests,
     upstreamCharts,
     upstreamVersions,
     upstreamScanner,
@@ -152,6 +155,62 @@ export async function createRouter(options: RouterOptions): Promise<Router> {
       res.status(500).json({
         error: error instanceof Error ? error.message : 'Unknown error',
       });
+    }
+  });
+
+  /*
+   * Kept outside `/application-sets/*`, which is unauthenticated: merge request
+   * titles and authors come from GitLab and are not for anonymous readers.
+   */
+  router.get('/merge-requests', async (req, res) => {
+    const namespace = singleQueryValue(req.query.namespace);
+    const name = singleQueryValue(req.query.name);
+    if (!namespace || !name) {
+      res.status(400).json({ error: 'namespace and name query parameters are required' });
+      return;
+    }
+
+    // The repository and paths come from the cluster, never from the request.
+    const appSet = cache.getAppSets().find(a => a.namespace === namespace && a.name === name);
+    if (!appSet) {
+      res.status(404).json({ error: 'ApplicationSet not found' });
+      return;
+    }
+    if (!appSet.repoUrl) {
+      res.status(400).json({ error: 'ApplicationSet has no repository' });
+      return;
+    }
+
+    const sourcePaths = appSet.sourcePaths ?? [];
+    try {
+      res.json({
+        repoUrl: appSet.repoUrl,
+        sourcePaths,
+        mergeRequests: await mergeRequests.listForPaths(appSet.repoUrl, sourcePaths),
+      });
+    } catch (error) {
+      logger.error(`Failed to list merge requests for ${namespace}/${name}: ${error}`);
+      res.status(500).json({
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
+  });
+
+  router.get('/merge-request-counts', async (_, res) => {
+    try {
+      res.json(
+        await mergeRequests.countByAppSet(
+          cache.getAppSets().map(appSet => ({
+            namespace: appSet.namespace,
+            name: appSet.name,
+            repoUrl: appSet.repoUrl,
+            sourcePaths: appSet.sourcePaths ?? [],
+          })),
+        ),
+      );
+    } catch (error) {
+      logger.error(`Failed to count merge requests: ${error}`);
+      res.status(500).json({ error: 'Failed to count merge requests' });
     }
   });
 

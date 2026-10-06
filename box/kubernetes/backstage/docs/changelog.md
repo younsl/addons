@@ -10,6 +10,15 @@ Headings are image tags, not Backstage versions. A rebuild at the same Backstage
 
 Tags released before this file existed (`1.51.0-1` through `1.53.0-3`) are not recorded here.
 
+## 1.55.3-2
+
+Released 2026-10-06. Built on Backstage [v1.55.3](https://github.com/backstage/backstage/releases/tag/v1.55.3) as the base version, unchanged from `1.55.3-1`.
+
+- ArgoCD AppSets lists the open GitLab merge requests related to each ApplicationSet. A merge request is related when any file it changes sits under a directory the ApplicationSet deploys from, taken from the `source.path` of its generated Applications, or from the static prefix of its template and git generator paths when no Application can be read. Each card footer shows the count next to a merge request icon, faded at zero, and clicking the card or the icon opens a dialog with the repository and matched path (both copyable on hover) and, per merge request, its number, title, source branch, lines added and removed, and how long ago it was opened, with the exact time on hover. Each entry links to the merge request in GitLab.
+- The backend adds `GET /merge-requests` and `GET /merge-request-counts`. Open merge requests are listed once per repository and reused for 30 seconds, and each one's changed files are read from its diff and cached against its head commit, so only a merge request pushed to since the last read costs another request. Requests use the same `integrations.gitlab` token as the branch listing.
+- `/application-sets` responses carry a new `sourcePaths` field per ApplicationSet and `gitSources` per Application.
+- Card footers show the ApplicationSet age in `kubectl get` style (`190d`) instead of the creation timestamp, and the footer actions take equal width.
+
 ## 1.55.3-1
 
 Released 2026-10-02. Built on Backstage [v1.55.3](https://github.com/backstage/backstage/releases/tag/v1.55.3) as the base version, up from `1.54.7`.

@@ -1,0 +1,210 @@
+.appset-mr-dialog {
+  width: min(640px, 92vw) !important;
+  max-width: min(640px, 92vw) !important;
+}
+
+.appset-mr-scope {
+  display: flex;
+  flex-direction: column;
+  margin: 0 calc(-1 * var(--bui-space-2));
+  font-size: var(--bui-font-size-2);
+}
+
+.appset-mr-scope-row {
+  display: grid;
+  grid-template-columns: 80px minmax(0, 1fr);
+  align-items: center;
+  min-height: 24px;
+  padding: 0 var(--bui-space-2);
+  border-radius: var(--bui-radius-2);
+}
+
+.appset-mr-scope-row:hover {
+  background-color: var(--bui-bg-neutral-2);
+}
+
+.appset-mr-scope dt {
+  color: var(--bui-color-text-secondary);
+}
+
+.appset-mr-scope dd {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  margin: 0;
+}
+
+.appset-mr-scope-value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.appset-mr-scope-path {
+  font-family: var(--bui-font-monospace, monospace);
+}
+
+.appset-mr-scope-more {
+  flex-shrink: 0;
+  color: var(--bui-color-text-secondary);
+}
+
+.appset-mr-scope-copy {
+  width: 18px;
+  height: 18px;
+  min-width: 18px;
+  min-height: 18px;
+  padding: 0 !important;
+  flex-shrink: 0;
+  opacity: 0;
+}
+
+.appset-mr-scope-row:hover .appset-mr-scope-copy,
+.appset-mr-scope-copy:focus-visible {
+  opacity: 1;
+}
+
+.appset-mr-empty {
+  padding: var(--bui-space-5);
+  text-align: center;
+  border: 1px dashed var(--bui-border-1);
+  border-radius: var(--bui-radius-2);
+}
+
+.appset-mr-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.appset-mr-row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--bui-space-3);
+  padding: var(--bui-space-2);
+  border-radius: var(--bui-radius-2);
+}
+
+.appset-mr-row:hover,
+.appset-mr-row:focus-within {
+  background-color: var(--bui-bg-neutral-2);
+}
+
+.appset-mr-row.is-draft {
+  opacity: 0.6;
+}
+
+.appset-mr-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  color: inherit;
+  text-decoration: none;
+  outline: none;
+}
+
+.appset-mr-main:hover .appset-mr-title {
+  text-decoration: underline;
+}
+
+.appset-mr-title-row {
+  display: flex;
+  align-items: baseline;
+  gap: var(--bui-space-2);
+  min-width: 0;
+  font-size: var(--bui-font-size-3);
+}
+
+.appset-mr-iid {
+  flex-shrink: 0;
+  font-family: var(--bui-font-monospace, monospace);
+  font-weight: 700;
+}
+
+.appset-mr-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.appset-mr-draft {
+  margin-right: 6px;
+  font-size: 10px;
+  padding: 0 5px;
+  border-radius: 6px;
+  vertical-align: 1px;
+  background-color: rgba(128, 128, 128, 0.25);
+}
+
+.appset-mr-branch {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--bui-font-monospace, monospace);
+  font-size: var(--bui-font-size-2);
+  color: var(--bui-color-text-secondary);
+}
+
+.appset-mr-when {
+  flex-shrink: 0;
+  font-size: var(--bui-font-size-2);
+  color: var(--bui-color-text-secondary) !important;
+  text-decoration: none !important;
+}
+
+.appset-mr-when:hover {
+  color: var(--bui-fg-primary) !important;
+}
+
+.appset-mr-side {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+
+.appset-mr-diffstat {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--bui-font-monospace, monospace);
+  font-size: var(--bui-font-size-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.appset-mr-diffstat-add {
+  color: #22c55e;
+}
+
+.appset-mr-diffstat-del {
+  color: #ef4444;
+}
+
+.appset-mr-diffstat-blocks {
+  display: inline-flex;
+  gap: 1px;
+  margin-left: 2px;
+}
+
+.appset-mr-diffstat-block {
+  width: 7px;
+  height: 7px;
+  border-radius: 1px;
+  background: rgba(128, 128, 128, 0.35);
+}
+
+.appset-mr-diffstat-block.is-added {
+  background: #22c55e;
+}
+
+.appset-mr-diffstat-block.is-removed {
+  background: #ef4444;
+}

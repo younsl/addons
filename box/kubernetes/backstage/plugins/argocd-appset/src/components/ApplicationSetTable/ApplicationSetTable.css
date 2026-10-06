@@ -185,6 +185,10 @@
   row-gap: var(--bui-space-3);
 }
 
+.appset-card-body-clickable {
+  cursor: pointer;
+}
+
 .appset-card-warning {
   border-left: 4px solid var(--bui-border-warning);
 }
@@ -529,6 +533,32 @@
 }
 
 /* Card footer — Card already has gap between CardBody/CardFooter, so only add the border-top */
+.appset-card-actions {
+  flex-shrink: 0;
+}
+
+/* Equal slots, so the count beside the merge request icon does not crowd its neighbours. */
+.appset-card-actions button {
+  width: 38px;
+  min-width: 38px;
+  padding: 0 !important;
+  justify-content: center;
+}
+
+.appset-mr-btn {
+  gap: 2px;
+  font-variant-numeric: tabular-nums;
+}
+
+.appset-mr-btn-none {
+  opacity: 0.45;
+}
+
+.appset-mr-btn-none:hover,
+.appset-mr-btn-none:focus-visible {
+  opacity: 1;
+}
+
 .appset-card-footer {
   display: flex;
   justify-content: space-between;

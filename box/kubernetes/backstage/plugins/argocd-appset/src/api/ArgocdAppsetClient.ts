@@ -5,6 +5,7 @@ import {
   ApplicationSetResponse,
   AuditLogEntry,
   BranchListResponse,
+  MergeRequestListResponse,
   PluginStatus,
   ScanStatus,
   UpstreamChart,
@@ -92,6 +93,30 @@ export class ArgocdAppsetClient implements ArgocdAppsetApi {
     const response = await this.fetchApi.fetch(
       `${baseUrl}/branches?repoUrl=${encodeURIComponent(repoUrl)}`,
     );
+
+    if (!response.ok) {
+      throw await ResponseError.fromResponse(response as any);
+    }
+
+    return response.json();
+  }
+
+  async listMergeRequests(namespace: string, name: string): Promise<MergeRequestListResponse> {
+    const baseUrl = await this.getBaseUrl();
+    const response = await this.fetchApi.fetch(
+      `${baseUrl}/merge-requests?namespace=${encodeURIComponent(namespace)}&name=${encodeURIComponent(name)}`,
+    );
+
+    if (!response.ok) {
+      throw await ResponseError.fromResponse(response as any);
+    }
+
+    return response.json();
+  }
+
+  async getMergeRequestCounts(): Promise<Record<string, number>> {
+    const baseUrl = await this.getBaseUrl();
+    const response = await this.fetchApi.fetch(`${baseUrl}/merge-request-counts`);
 
     if (!response.ok) {
       throw await ResponseError.fromResponse(response as any);

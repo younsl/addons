@@ -64,6 +64,8 @@ export interface ApplicationSetResponse {
   isHeadRevision: boolean;
   muted: boolean;
   createdAt: string;
+  /** Directories in `repoUrl` this ApplicationSet deploys from */
+  sourcePaths: string[];
 }
 
 export interface PluginStatus {
@@ -97,6 +99,29 @@ export interface BranchInfo {
 export interface BranchListResponse {
   branches: BranchInfo[];
   defaultBranch: string | null;
+}
+
+export interface MergeRequestSummary {
+  iid: number;
+  title: string;
+  authorName: string;
+  authorUsername: string;
+  createdAt: string;
+  webUrl: string;
+  sourceBranch: string;
+  targetBranch: string;
+  draft: boolean;
+  /** Lines added and removed across the whole merge request, a lower bound for collapsed diffs */
+  additions: number;
+  deletions: number;
+  /** Changed files that fall under one of the ApplicationSet's source paths */
+  matchedFiles: string[];
+}
+
+export interface MergeRequestListResponse {
+  repoUrl: string;
+  sourcePaths: string[];
+  mergeRequests: MergeRequestSummary[];
 }
 
 export interface AuditLogEntry {

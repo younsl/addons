@@ -6,6 +6,7 @@ import {
   ApplicationSetResponse,
   BranchCommit,
   BranchListResponse,
+  GitSource,
   MUTE_ANNOTATION,
   VersionOrigin,
 } from './types';
@@ -106,6 +107,83 @@ export function deriveAppVersion(
   }
 
   return parsed.length === 1 ? parsed[0].tag : null;
+}
+
+/** `./a/b/` and `a/b` name the same directory. `.` and `/` are the root, `''`. */
+export function normalizeSourcePath(path: string): string {
+  return path
+    .replace(/^(\.?\/)+/, '')
+    .replace(/\/+$/, '')
+    .replace(/^\.$/, '');
+}
+
+/** Compares git remotes ignoring a `.git` suffix, trailing slash, and host case. */
+export function normalizeRepoUrl(repoUrl: string): string {
+  const trimmed = repoUrl.trim().replace(/\/+$/, '').replace(/\.git$/, '');
+  try {
+    const url = new URL(trimmed);
+    return `${url.protocol}//${url.host.toLowerCase()}${url.pathname}`;
+  } catch {
+    return trimmed;
+  }
+}
+
+/**
+ * The leading segments of a path before any templating or glob, which is the
+ * narrowest directory every expansion of it is guaranteed to sit under. Null
+ * when nothing static is left, since the repository root would match every
+ * merge request.
+ */
+export function staticPathPrefix(path: string): string | null {
+  const segments = normalizeSourcePath(path).split('/');
+  const dynamic = segments.findIndex(segment => /\{\{|[*?[]/.test(segment));
+  const prefix = (dynamic === -1 ? segments : segments.slice(0, dynamic)).join('/');
+  return prefix === '' ? null : prefix;
+}
+
+/**
+ * Directories an ApplicationSet's template and git generators name, reduced to
+ * their static prefixes. Used only when no generated Application could be read,
+ * since a prefix is broader than the concrete paths the Applications carry.
+ */
+export function templateSourcePaths(spec: any, repoUrl: string): string[] {
+  const target = normalizeRepoUrl(repoUrl);
+  const inRepo = (url: unknown) =>
+    typeof url !== 'string' || url === '' || normalizeRepoUrl(url) === target;
+  const paths: string[] = [];
+
+  const templateSources = [
+    spec?.template?.spec?.source,
+    ...(spec?.template?.spec?.sources ?? []),
+  ].filter(Boolean);
+  for (const source of templateSources) {
+    if (typeof source.path === 'string' && !source.chart && inRepo(source.repoURL)) {
+      paths.push(source.path);
+    }
+  }
+
+  const visit = (generators: any[]) => {
+    for (const generator of generators ?? []) {
+      const git = generator?.git;
+      if (git && inRepo(git.repoURL)) {
+        for (const dir of git.directories ?? []) {
+          if (typeof dir?.path === 'string' && !dir.exclude) paths.push(dir.path);
+        }
+        for (const file of git.files ?? []) {
+          if (typeof file?.path === 'string') paths.push(file.path);
+        }
+      }
+      visit(generator?.matrix?.generators);
+      visit(generator?.merge?.generators);
+    }
+  };
+  visit(spec?.generators);
+
+  return [
+    ...new Set(
+      paths.map(staticPathPrefix).filter((prefix): prefix is string => prefix !== null),
+    ),
+  ].sort();
 }
 
 export class ApplicationSetService {
@@ -387,6 +465,7 @@ export class ApplicationSetService {
       syncStatus: status.sync?.status ?? 'Unknown',
       healthStatus: status.health?.status ?? 'Unknown',
       revision: status.sync?.revision ?? null,
+      gitSources: this.findGitSources(spec),
     };
 
     // Only a git path can hold a Chart.yaml. A chart named in `chart` already
@@ -417,6 +496,22 @@ export class ApplicationSetService {
       candidates.find(source => source.helm) ??
       null
     );
+  }
+
+  /** Sources rendering a directory of a git repository, as opposed to a Helm chart or a `ref`-only values source. */
+  private findGitSources(spec: any): GitSource[] {
+    return [spec.source, ...(spec.sources ?? [])]
+      .filter(
+        source =>
+          source &&
+          !source.chart &&
+          typeof source.repoURL === 'string' &&
+          typeof source.path === 'string',
+      )
+      .map(source => ({
+        repoUrl: source.repoURL,
+        path: normalizeSourcePath(source.path),
+      }));
   }
 
   async setMuted(namespace: string, name: string, muted: boolean): Promise<void> {
@@ -566,6 +661,19 @@ export class ApplicationSetService {
       ...new Set(apps.map(a => a.chartVersion).filter((v): v is string => !!v)),
     ].sort();
 
+    const normalizedRepoUrl = normalizeRepoUrl(repoUrl);
+    const appPaths = [
+      ...new Set(
+        apps.flatMap(app =>
+          (app.gitSources ?? [])
+            .filter(source => normalizeRepoUrl(source.repoUrl) === normalizedRepoUrl)
+            .map(source => source.path),
+        ),
+      ),
+    ].sort();
+    const sourcePaths =
+      appPaths.length > 0 || !repoUrl ? appPaths : templateSourcePaths(spec, repoUrl);
+
     return {
       name: metadata.name ?? '',
       namespace: metadata.namespace ?? '',
@@ -584,6 +692,7 @@ export class ApplicationSetService {
       isHeadRevision,
       muted,
       createdAt: metadata.creationTimestamp ?? '',
+      sourcePaths,
     };
   }
 

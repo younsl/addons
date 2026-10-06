@@ -29,6 +29,7 @@ import {
   RiAlertLine,
   RiArrowUpCircleLine,
   RiEditLine,
+  RiGitPullRequestLine,
   RiHistoryLine,
   RiInformationLine,
   RiNotificationLine,
@@ -48,6 +49,7 @@ import {
 import { CopyButton } from '../CopyButton';
 import { HighlightText } from '../HighlightText';
 import { YamlBlock } from '../YamlBlock';
+import { MergeRequestDialog } from '../MergeRequestDialog';
 import './ApplicationSetTable.css';
 
 const appInfoList = (appSet: ApplicationSetResponse) =>
@@ -385,6 +387,28 @@ const appVersionGroups = (
 
 const RETRY_INTERVAL_MS = 3000;
 
+/** The AGE column of `kubectl get`, so the card reads like the CLI does. */
+export const kubernetesAge = (isoDate: string, now: Date = new Date()): string => {
+  const then = new Date(isoDate).getTime();
+  if (!isoDate || Number.isNaN(then)) return '-';
+
+  const seconds = Math.max(0, Math.floor((now.getTime() - then) / 1000));
+  const minutes = Math.floor(seconds / 60);
+  const hours = Math.floor(minutes / 60);
+  const days = Math.floor(hours / 24);
+  const years = Math.floor(days / 365);
+
+  if (seconds < 120) return `${seconds}s`;
+  if (minutes < 10) return seconds % 60 ? `${minutes}m${seconds % 60}s` : `${minutes}m`;
+  if (minutes < 180) return `${minutes}m`;
+  if (hours < 8) return minutes % 60 ? `${hours}h${minutes % 60}m` : `${hours}h`;
+  if (hours < 48) return `${hours}h`;
+  if (days < 8) return hours % 24 ? `${days}d${hours % 24}h` : `${days}d`;
+  if (days < 730) return `${days}d`;
+  if (years < 8) return days % 365 ? `${years}y${days % 365}d` : `${years}y`;
+  return `${years}y`;
+};
+
 const TIME_UNITS: { limit: number; seconds: number; name: string }[] = [
   { limit: 60, seconds: 1, name: 'second' },
   { limit: 3600, seconds: 60, name: 'minute' },
@@ -405,6 +429,26 @@ export const relativeTime = (isoDate: string, now: Date = new Date()): string =>
   const unit = TIME_UNITS.find(candidate => elapsed < candidate.limit) ?? TIME_UNITS[5];
   const count = Math.round(elapsed / unit.seconds);
   return `${count} ${unit.name}${count === 1 ? '' : 's'} ago`;
+};
+
+const CARD_CONTROL_SELECTOR =
+  'a[href],button,input,select,textarea,[role="button"],[role="link"],[role="dialog"],[tabindex]:not([tabindex="-1"])';
+
+/**
+ * A click on the card's own surface rather than on a control inside it. Dialogs
+ * opened from the card render in a portal but still bubble through it in React,
+ * so containment is checked against the DOM.
+ */
+export const isCardSurfaceClick = (event: React.MouseEvent<HTMLElement>): boolean => {
+  const node = event.target as Node | null;
+  const target = node instanceof Element ? node : node?.parentElement;
+  if (!target || !event.currentTarget.contains(target)) return false;
+
+  const control = target.closest(CARD_CONTROL_SELECTOR);
+  if (control && event.currentTarget.contains(control)) return false;
+
+  // Selecting a name or version to copy it is not a request to open anything.
+  return !window.getSelection()?.toString();
 };
 
 /**
@@ -471,6 +515,13 @@ export const ApplicationSetTable = () => {
   // Keys already requested, so reopening the dialog does not refetch.
   const requestedUpstream = useRef<Set<string>>(new Set());
   const [mutingKey, setMutingKey] = useState<string | null>(null);
+  const [mergeRequestKey, setMergeRequestKey] = useState<string | null>(null);
+
+  // Counts are a hint on the card, so a failure only leaves the icon bare.
+  const { value: mergeRequestCounts } = useAsyncRetry(
+    () => api.getMergeRequestCounts().catch(() => ({}) as Record<string, number>),
+    [api],
+  );
   const [localAppSets, setLocalAppSets] = useState<ApplicationSetResponse[] | undefined>(undefined);
 
   const {
@@ -560,11 +611,6 @@ export const ApplicationSetTable = () => {
     if (!appSets) return 0;
     return appSets.filter(a => appSetUpgrades(a, upstreamState).length > 0).length;
   }, [appSets, upstreamState]);
-
-  const formatDate = (dateString: string) => {
-    if (!dateString) return '-';
-    return new Date(dateString).toLocaleString();
-  };
 
   const handleToggleMute = useCallback(async (namespace: string, name: string, muted: boolean) => {
     const key = `${namespace}/${name}`;
@@ -1058,6 +1104,7 @@ export const ApplicationSetTable = () => {
             {filteredAppSets.map(appSet => {
               const cardKey = `${appSet.namespace}/${appSet.name}`;
               const isMuting = mutingKey === cardKey;
+              const mergeRequestCount = mergeRequestCounts?.[cardKey];
               const chartVersions = appSet.chartVersions ?? [];
               const chartOrigins = chartVersionOrigins(appSet);
               const upgrades = appSetUpgrades(appSet, upstreamState);
@@ -1069,7 +1116,12 @@ export const ApplicationSetTable = () => {
               return (
                 <Grid.Item key={cardKey} className="appset-grid-item">
                   <Card className={`${appSet.isHeadRevision ? 'appset-card' : 'appset-card-warning'}${appSet.muted ? ' appset-card-muted' : ''}${deprecated ? ' appset-card-deprecated' : ''}`}>
-                    <CardBody className="appset-card-body">
+                    <CardBody
+                      className="appset-card-body appset-card-body-clickable"
+                      onClick={event => {
+                        if (isCardSurfaceClick(event)) setMergeRequestKey(cardKey);
+                      }}
+                    >
                       {/*
                         Corner marker rather than a badge beside the version:
                         the card is narrow, and the fact belongs to the whole
@@ -1855,9 +1907,26 @@ export const ApplicationSetTable = () => {
 
                     <CardFooter className="appset-card-footer">
                       <Text variant="body-x-small" color="secondary">
-                        Created {formatDate(appSet.createdAt)}
+                        Age {kubernetesAge(appSet.createdAt)}
                       </Text>
-                      <Flex align="center" gap="0">
+                      <Flex align="center" gap="0" className="appset-card-actions">
+                        <TooltipTrigger>
+                          <Button
+                            size="small"
+                            variant="tertiary"
+                            iconStart={<RiGitPullRequestLine size={18} />}
+                            onPress={() => setMergeRequestKey(cardKey)}
+                            aria-label={
+                              mergeRequestCount === undefined
+                                ? 'View open merge requests'
+                                : `View ${mergeRequestCount} open merge requests`
+                            }
+                            className={`appset-mr-btn${mergeRequestCount === 0 ? ' appset-mr-btn-none' : ''}`}
+                          >
+                            {mergeRequestCount}
+                          </Button>
+                          <Tooltip>View open merge requests</Tooltip>
+                        </TooltipTrigger>
                         <TooltipTrigger>
                           <Link href={`/argocd-appset/audit-logs/${encodeURIComponent(appSet.namespace)}/${encodeURIComponent(appSet.name)}`}>
                             <ButtonIcon
@@ -1897,6 +1966,15 @@ export const ApplicationSetTable = () => {
           </Grid.Root>
         )}
       </Box>
+
+      <MergeRequestDialog
+        appSet={
+          mergeRequestKey
+            ? appSets.find(a => `${a.namespace}/${a.name}` === mergeRequestKey) ?? null
+            : null
+        }
+        onClose={() => setMergeRequestKey(null)}
+      />
 
     </>
   );

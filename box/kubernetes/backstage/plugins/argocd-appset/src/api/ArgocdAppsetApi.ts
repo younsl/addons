@@ -3,6 +3,7 @@ import {
   ApplicationSetResponse,
   AuditLogEntry,
   BranchListResponse,
+  MergeRequestListResponse,
   PluginStatus,
   ScanStatus,
   UpstreamChart,
@@ -16,6 +17,10 @@ export interface ArgocdAppsetApi {
   setTargetRevision(namespace: string, name: string, targetRevision: string): Promise<void>;
   getAdminStatus(): Promise<{ isAdmin: boolean }>;
   listBranches(repoUrl: string): Promise<BranchListResponse>;
+  /** Open merge requests changing a file the ApplicationSet deploys from */
+  listMergeRequests(namespace: string, name: string): Promise<MergeRequestListResponse>;
+  /** Open merge request count keyed by `namespace/name`, absent when unknown */
+  getMergeRequestCounts(): Promise<Record<string, number>>;
   /** Newest version the chart's upstream repository offers */
   getUpstreamChart(repository: string, chart: string): Promise<UpstreamChart>;
   /** What the last scan recorded, whoever ran it */

@@ -4,7 +4,11 @@ import {
   deriveAppVersion,
   lastPathSegment,
   mapBranchCommit,
+  normalizeRepoUrl,
+  normalizeSourcePath,
   parseImageRef,
+  staticPathPrefix,
+  templateSourcePaths,
 } from './ApplicationSetService';
 import { MUTE_ANNOTATION } from './types';
 
@@ -866,4 +870,137 @@ dependencies:
     });
   });
 
+  describe('normalizeSourcePath', () => {
+    it.each([
+      ['shared/chart-repo/redis', 'shared/chart-repo/redis'],
+      ['./shared/chart-repo/redis/', 'shared/chart-repo/redis'],
+      ['/apps', 'apps'],
+      ['.', ''],
+      ['./', ''],
+      ['', ''],
+    ])('normalizes %p to %p', (input, expected) => {
+      expect(normalizeSourcePath(input)).toBe(expected);
+    });
+  });
+
+  describe('normalizeRepoUrl', () => {
+    it('treats .git suffix, trailing slash and host case as the same remote', () => {
+      expect(normalizeRepoUrl('https://GitLab.example.com/devops/k8s.git')).toBe(
+        normalizeRepoUrl('https://gitlab.example.com/devops/k8s/'),
+      );
+    });
+
+    it('returns an SSH remote trimmed but otherwise as given', () => {
+      expect(normalizeRepoUrl('git@gitlab.example.com:devops/k8s.git')).toBe(
+        'git@gitlab.example.com:devops/k8s',
+      );
+    });
+  });
+
+  describe('staticPathPrefix', () => {
+    it.each([
+      ['shared/chart-repo/{{.path.basename}}', 'shared/chart-repo'],
+      ['shared/chart-repo/*', 'shared/chart-repo'],
+      ['apps/*/config.json', 'apps'],
+      ['shared/chart-repo/redis', 'shared/chart-repo/redis'],
+    ])('reduces %p to %p', (input, expected) => {
+      expect(staticPathPrefix(input)).toBe(expected);
+    });
+
+    // The root would match every merge request in the repository.
+    it.each(['{{.path.path}}', '*', '.', ''])('returns null for %p', input => {
+      expect(staticPathPrefix(input)).toBeNull();
+    });
+  });
+
+  describe('templateSourcePaths', () => {
+    const REPO = 'https://gitlab.example.com/devops/k8s.git';
+
+    it('collects template and git generator paths in the repository', () => {
+      const spec = {
+        generators: [
+          {
+            matrix: {
+              generators: [
+                {
+                  git: {
+                    repoURL: REPO,
+                    directories: [
+                      { path: 'shared/chart-repo/*' },
+                      { path: 'shared/chart-repo/legacy', exclude: true },
+                    ],
+                  },
+                },
+                { list: { elements: [] } },
+              ],
+            },
+          },
+          { git: { repoURL: REPO, files: [{ path: 'clusters/*/config.json' }] } },
+        ],
+        template: { spec: { source: { repoURL: REPO, path: '{{.path.path}}' } } },
+      };
+
+      expect(templateSourcePaths(spec, REPO)).toEqual(['clusters', 'shared/chart-repo']);
+    });
+
+    it('ignores generators and sources pointing at another repository', () => {
+      const spec = {
+        generators: [
+          { git: { repoURL: 'https://gitlab.example.com/other/repo.git', directories: [{ path: 'apps/*' }] } },
+        ],
+        template: {
+          spec: {
+            sources: [
+              { repoURL: 'https://charts.example.com', chart: 'redis' },
+              { repoURL: 'https://gitlab.example.com/other/repo.git', path: 'values' },
+            ],
+          },
+        },
+      };
+
+      expect(templateSourcePaths(spec, REPO)).toEqual([]);
+    });
+  });
+
+  describe('sourcePaths', () => {
+    const REPO = 'https://gitlab.example.com/devops/k8s.git';
+
+    it('uses the concrete paths of the generated Applications in the repository', async () => {
+      const result = await listOne(
+        makeItem({
+          source: { repoURL: REPO, path: 'shared/chart-repo/{{.path.basename}}' },
+          resources: [{ name: 'a' }, { name: 'b' }],
+        }),
+        [
+          makeApp({ name: 'a', source: { repoURL: REPO, path: './shared/chart-repo/redis/' } }),
+          makeApp({
+            name: 'b',
+            sources: [
+              { repoURL: 'https://gitlab.example.com/devops/k8s', path: 'shared/chart-repo/kafka' },
+              { repoURL: 'https://gitlab.example.com/other/values.git', path: 'kafka' },
+              { repoURL: REPO, ref: 'values' },
+              { repoURL: 'https://charts.example.com', chart: 'kafka' },
+            ],
+          }),
+        ],
+      );
+
+      expect(result.sourcePaths).toEqual(['shared/chart-repo/kafka', 'shared/chart-repo/redis']);
+      expect(result.applicationInfos.b.gitSources).toHaveLength(2);
+    });
+
+    it('falls back to the template prefix when no Application can be read', async () => {
+      const result = await listOne(
+        makeItem({ source: { repoURL: REPO, path: 'shared/chart-repo/{{.path.basename}}' } }),
+      );
+
+      expect(result.sourcePaths).toEqual(['shared/chart-repo']);
+    });
+
+    it('is empty for an ApplicationSet with no repository', async () => {
+      const result = await listOne(makeItem({ source: { path: 'apps' } }));
+
+      expect(result.sourcePaths).toEqual([]);
+    });
+  });
 });

@@ -64,6 +64,14 @@ export interface ApplicationInfo {
   healthStatus: string;
   /** Git SHA of the last synced revision */
   revision: string | null;
+  /** Repository directories the Application renders, one per git source */
+  gitSources: GitSource[];
+}
+
+export interface GitSource {
+  repoUrl: string;
+  /** Normalized without leading `./` or trailing slash, empty for the root */
+  path: string;
 }
 
 export interface ApplicationSetResponse {
@@ -87,6 +95,11 @@ export interface ApplicationSetResponse {
   isHeadRevision: boolean;
   muted: boolean;
   createdAt: string;
+  /**
+   * Directories in `repoUrl` this ApplicationSet deploys from. A merge request
+   * touching a file under one of them is related to this ApplicationSet.
+   */
+  sourcePaths: string[];
 }
 
 /** Tip commit of a branch, as the branch listing reports it */
@@ -111,6 +124,30 @@ export interface BranchInfo {
 export interface BranchListResponse {
   branches: BranchInfo[];
   defaultBranch: string | null;
+}
+
+export interface MergeRequestSummary {
+  iid: number;
+  title: string;
+  authorName: string;
+  authorUsername: string;
+  /** ISO timestamp of when the merge request was opened */
+  createdAt: string;
+  webUrl: string;
+  sourceBranch: string;
+  targetBranch: string;
+  draft: boolean;
+  /** Lines added and removed across the whole merge request, a lower bound for collapsed diffs */
+  additions: number;
+  deletions: number;
+  /** Changed files that fall under one of the ApplicationSet's source paths */
+  matchedFiles: string[];
+}
+
+export interface MergeRequestListResponse {
+  repoUrl: string;
+  sourcePaths: string[];
+  mergeRequests: MergeRequestSummary[];
 }
 
 export interface AuditLogEntry {

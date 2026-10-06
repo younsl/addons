@@ -8,6 +8,7 @@ import { SlackNotifier } from './service/SlackNotifier';
 import { AppSetCache } from './service/AppSetCache';
 import { AuditStore } from './service/AuditStore';
 import { ChartMetadataStore } from './service/ChartMetadataStore';
+import { MergeRequestStore } from './service/MergeRequestStore';
 import { UpstreamChartStore } from './service/UpstreamChartStore';
 import { UpstreamScanner } from './service/UpstreamScanner';
 import { UpstreamVersionStore } from './service/UpstreamVersionStore';
@@ -45,6 +46,7 @@ export const argocdAppsetPlugin = createBackendPlugin({
         const cache = new AppSetCache();
         const knex = await database.getClient();
         const auditStore = await AuditStore.create({ database: knex });
+        const mergeRequests = new MergeRequestStore({ config, logger });
 
         const upstreamCharts = new UpstreamChartStore({ config, logger });
         const upstreamVersions = await UpstreamVersionStore.create({ database: knex });
@@ -62,6 +64,7 @@ export const argocdAppsetPlugin = createBackendPlugin({
           config,
           httpAuth,
           auditStore,
+          mergeRequests,
           upstreamCharts,
           upstreamVersions,
           upstreamScanner,
