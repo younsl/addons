@@ -29,7 +29,15 @@ Alert rules become Kubernetes objects.
 - Audit fields (`createdBy`, `updatedAt`, `updatedBy`) live on the status subresource. An annotation is part of the spec object, so recording an edit there would read as drift to whatever GitOps controller owns the manifest. `created_at` comes from `metadata.creationTimestamp`, which the API server owns, so it cannot be backdated by replaying an old payload.
 - `GET /api/v1/alerts` replaced the `configmap` field with `api_version` and `resource`. `items` is unchanged: the HTTP API stays snake_case while the stored object is camelCase, converted in one place.
 - Alert responses carry real OpenAPI schemas (`AlertListResponse`, `AlertTestResponse`, `AlertRule`) instead of an untyped `200`.
+- `/api/v1/hub/clusters` endpoints are gated on the `admin` resource: `admin:get` lists, `admin:create` registers and validates, `admin:delete` unregisters. They had no RBAC mapping, so any authenticated user, `role:readonly` included, could register or delete a cluster, and `validate` could make the hub pod request an arbitrary URL.
+- An `/api/` request with no `(resource, action)` mapping is denied with `403` instead of passed through, so a new endpoint cannot ship without a permission.
+- `GET /api/v1/hydration` is gated on `stats:get`.
 - The chart `Role` gained `trivy-collector.security.io` `alertrules` and, as a separate rule, `alertrules/status`.
+
+### Removed
+
+- `POST /api/v1/reports`. The push ingest route was public, so anyone who could reach the server could write or delete reports and trigger alert deliveries. Hub-pull replaced pushing, and nothing in the repository called it.
+- The `trivy_collector_reports_received_total` metric, which only counted that route.
 
 ### Fixed
 

@@ -121,7 +121,16 @@ pub async fn require_rbac(
     // Map endpoint to (resource, action)
     let (resource, action) = match super::rbac::resolve_endpoint(&method, &path) {
         Some(ra) => ra,
-        None => return next.run(request).await, // Unmapped endpoints pass through
+        None if super::rbac::is_api_path(&path) => {
+            debug!(method = %method, path = %path, "RBAC denied unmapped API endpoint");
+            return (
+                StatusCode::FORBIDDEN,
+                axum::Json(serde_json::json!({"error": "Access denied"})),
+            )
+                .into_response();
+        }
+        // UI routes and the API reference need authentication only
+        None => return next.run(request).await,
     };
 
     // Extract user groups from AuthSession in extensions

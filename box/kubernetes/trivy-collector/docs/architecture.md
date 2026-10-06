@@ -256,8 +256,9 @@ The scraper's Secret watcher picks it up within one watch event (typically
 | POST | `/api/v1/hub/clusters/validate` | Test credentials without saving |
 | DELETE | `/api/v1/hub/clusters/{name}` | Unregister a cluster (purges its reports) |
 
-All endpoints are protected by the standard auth/RBAC layer when
-`AUTH_MODE=keycloak`.
+When `AUTH_MODE=keycloak`, all endpoints require the `admin` resource:
+`admin:get` to list, `admin:create` to register or validate, and
+`admin:delete` to unregister. See [RBAC](rbac.md).
 
 ## Configuration
 

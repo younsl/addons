@@ -38,8 +38,10 @@ g, platform-team, role:admin
 | `reports` | `delete` | `DELETE /api/v1/reports/{cluster}/{type}/{namespace}/{name}` |
 | `reports` | `update` | `PUT /api/v1/reports/{...}/notes` |
 | `clusters` | `get` | `GET /api/v1/clusters`, `GET /api/v1/namespaces` |
-| `stats` | `get` | `GET /api/v1/stats`, `GET /api/v1/dashboard/trends`, `GET /api/v1/watcher/status`, `GET /api/v1/version`, `GET /api/v1/status`, `GET /api/v1/config` |
-| `admin` | `get` | `GET /api/v1/admin/info` |
+| `stats` | `get` | `GET /api/v1/stats`, `GET /api/v1/dashboard/trends`, `GET /api/v1/watcher/status`, `GET /api/v1/hydration`, `GET /api/v1/version`, `GET /api/v1/status`, `GET /api/v1/config` |
+| `admin` | `get` | `GET /api/v1/admin/info`, `GET /api/v1/hub/clusters` |
+| `admin` | `create` | `POST /api/v1/hub/clusters`, `POST /api/v1/hub/clusters/validate` |
+| `admin` | `delete` | `DELETE /api/v1/hub/clusters/{name}` |
 | `tokens` | `get` | `GET /api/v1/auth/tokens` |
 | `tokens` | `create` | `POST /api/v1/auth/tokens` |
 | `tokens` | `delete` | `DELETE /api/v1/auth/tokens/{prefix}` |
@@ -50,7 +52,7 @@ g, platform-team, role:admin
 
 Alert rules are `AlertRule` custom resources, so these actions gate the HTTP API only. Anyone with Kubernetes `alertrules` permission in the release namespace can bypass them with `kubectl`, and the collector reads whatever is there. Treat the two as separate grants. See [Alerts](alerts.md).
 
-Endpoints with no `(resource, action)` mapping require authentication only: `GET /api/v1/hydration`, `/api-docs`, and `/api-docs/openapi.json`. `GET /api/v1/auth/me` and `/healthz` are public.
+Any `/api/` request with no `(resource, action)` mapping is denied with `403`, so a new endpoint cannot ship without a permission. UI routes, `/api-docs`, and `/api-docs/openapi.json` need authentication only. `GET /api/v1/auth/me` and `/healthz` are public.
 
 ## Default Policy
 

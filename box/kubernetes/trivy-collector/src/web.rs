@@ -27,9 +27,8 @@ mod types;
 pub use handlers::{
     delete_report, get_config, get_dashboard_trends, get_hydration, get_sbom_report, get_stats,
     get_status, get_version, get_vulnerability_report, get_watcher_status, healthz, list_clusters,
-    list_namespaces, list_sbom_reports, list_vulnerability_reports, receive_report,
-    search_sbom_components, search_vulnerabilities, suggest_sbom_components,
-    suggest_vulnerabilities, update_notes,
+    list_namespaces, list_sbom_reports, list_vulnerability_reports, search_sbom_components,
+    search_vulnerabilities, suggest_sbom_components, suggest_vulnerabilities, update_notes,
 };
 pub use state::{AppState, RuntimeInfo};
 pub use types::{
@@ -40,7 +39,7 @@ pub use types::{
 
 use utoipa::OpenApi;
 
-use crate::collector::types::{ReportEvent, ReportEventType, ReportPayload};
+use crate::collector::types::ReportPayload;
 use crate::storage::{
     ClusterInfo, ComponentSearchResult, FullReport, ReportMeta, Stats, TrendDataPoint, TrendMeta,
     TrendResponse, VulnSearchResult, VulnSummary,
@@ -68,7 +67,6 @@ port by the health server, not here.",
     ),
     paths(
         handlers::healthz,
-        handlers::receive_report,
         handlers::list_vulnerability_reports,
         handlers::search_vulnerabilities,
         handlers::suggest_vulnerabilities,
@@ -125,8 +123,6 @@ port by the health server, not here.",
         ClusterInfo,
         Stats,
         VulnSummary,
-        ReportEvent,
-        ReportEventType,
         ReportPayload,
         TrendResponse,
         TrendMeta,
@@ -516,7 +512,6 @@ pub(crate) fn build_router(
     // Public routes (never require auth)
     let public_routes = Router::new()
         .route("/healthz", get(healthz))
-        .route("/api/v1/reports", post(receive_report))
         .route("/api/v1/auth/me", get(auth::handlers::auth_me))
         .route("/assets/{*path}", get(serve_asset))
         .route("/static/{*path}", get(serve_static));
@@ -1180,18 +1175,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn the_push_ingest_route_forwards_to_the_store() {
-        let body = serde_json::json!({
-            "event_type": "Apply",
-            "payload": {
-                "cluster": "test",
-                "report_type": "vulnerabilityreport",
-                "namespace": "default",
-                "name": "test-report",
-                "data_json": "{}",
-                "received_at": "2024-01-01T00:00:00Z"
-            }
-        });
+    async fn the_push_ingest_route_is_gone() {
         let resp = router_without_auth()
             .await
             .oneshot(
@@ -1199,12 +1183,12 @@ mod tests {
                     .method(Method::POST)
                     .uri("/api/v1/reports")
                     .header("content-type", "application/json")
-                    .body(Body::from(serde_json::to_vec(&body).unwrap()))
+                    .body(Body::from("{}"))
                     .unwrap(),
             )
             .await
             .unwrap();
-        assert_eq!(resp.status(), StatusCode::OK);
+        assert_eq!(resp.status(), StatusCode::METHOD_NOT_ALLOWED);
     }
 
     #[tokio::test]

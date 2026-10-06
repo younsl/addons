@@ -271,6 +271,16 @@ fn is_mcp_path(path: &str) -> bool {
     path == crate::mcp::MCP_PATH || path.starts_with(&format!("{}/", crate::mcp::MCP_PATH))
 }
 
+/// API paths without a `(resource, action)` mapping are denied rather than
+/// passed through, so a new route cannot ship without a permission.
+pub fn is_api_path(path: &str) -> bool {
+    path.starts_with("/api/")
+}
+
+fn is_hub_clusters_path(path: &str) -> bool {
+    path == "/api/v1/hub/clusters" || path.starts_with("/api/v1/hub/clusters/")
+}
+
 fn resolve_get(path: &str) -> Option<(&'static str, &'static str)> {
     if is_mcp_path(path) {
         return Some(("reports", "get"));
@@ -287,6 +297,7 @@ fn resolve_get(path: &str) -> Option<(&'static str, &'static str)> {
     if path == "/api/v1/stats"
         || path.starts_with("/api/v1/dashboard/trends")
         || path == "/api/v1/watcher/status"
+        || path == "/api/v1/hydration"
         || path == "/api/v1/version"
         || path == "/api/v1/status"
         || path == "/api/v1/config"
@@ -294,7 +305,7 @@ fn resolve_get(path: &str) -> Option<(&'static str, &'static str)> {
         return Some(("stats", "get"));
     }
     // Admin
-    if path.starts_with("/api/v1/admin/") {
+    if path.starts_with("/api/v1/admin/") || is_hub_clusters_path(path) {
         return Some(("admin", "get"));
     }
     // Tokens
@@ -326,6 +337,9 @@ fn resolve_post(path: &str) -> Option<(&'static str, &'static str)> {
     if path == "/api/v1/alerts" {
         return Some(("alerts", "create"));
     }
+    if is_hub_clusters_path(path) {
+        return Some(("admin", "create"));
+    }
     None
 }
 
@@ -347,7 +361,7 @@ fn resolve_delete(path: &str) -> Option<(&'static str, &'static str)> {
     if path.starts_with("/api/v1/reports/") {
         return Some(("reports", "delete"));
     }
-    if path.starts_with("/api/v1/admin/") {
+    if path.starts_with("/api/v1/admin/") || is_hub_clusters_path(path) {
         return Some(("admin", "delete"));
     }
     if path.starts_with("/api/v1/auth/tokens/") {
@@ -766,6 +780,45 @@ g, team-b, role:readonly
         assert_eq!(resolve_endpoint("POST", "/mcp/"), Some(("reports", "get")));
         assert_eq!(resolve_endpoint("PUT", "/mcp"), None);
         assert_eq!(resolve_endpoint("GET", "/mcpx"), None);
+    }
+
+    #[test]
+    fn test_resolve_hub_clusters() {
+        assert_eq!(
+            resolve_endpoint("GET", "/api/v1/hub/clusters"),
+            Some(("admin", "get"))
+        );
+        assert_eq!(
+            resolve_endpoint("POST", "/api/v1/hub/clusters"),
+            Some(("admin", "create"))
+        );
+        assert_eq!(
+            resolve_endpoint("POST", "/api/v1/hub/clusters/validate"),
+            Some(("admin", "create"))
+        );
+        assert_eq!(
+            resolve_endpoint("DELETE", "/api/v1/hub/clusters/edge-a"),
+            Some(("admin", "delete"))
+        );
+        assert_eq!(resolve_endpoint("GET", "/api/v1/hub/clustersx"), None);
+    }
+
+    #[test]
+    fn test_resolve_hydration() {
+        assert_eq!(
+            resolve_endpoint("GET", "/api/v1/hydration"),
+            Some(("stats", "get"))
+        );
+    }
+
+    #[test]
+    fn test_is_api_path() {
+        assert!(is_api_path("/api/v1/stats"));
+        assert!(is_api_path("/api/v2/anything"));
+        assert!(!is_api_path("/api-docs"));
+        assert!(!is_api_path("/api-docs/openapi.json"));
+        assert!(!is_api_path("/admin/clusters"));
+        assert!(!is_api_path("/mcp"));
     }
 
     #[test]

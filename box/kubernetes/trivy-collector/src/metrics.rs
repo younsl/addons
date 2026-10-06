@@ -39,12 +39,6 @@ pub struct HttpDurationLabels {
 }
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq, EncodeLabelSet)]
-pub struct ReportReceivedLabels {
-    pub cluster: String,
-    pub report_type: String,
-}
-
-#[derive(Clone, Debug, Hash, PartialEq, Eq, EncodeLabelSet)]
 pub struct ReportTypeLabels {
     pub report_type: String,
 }
@@ -88,7 +82,6 @@ pub struct Metrics {
     // -- Server mode --
     pub http_requests_total: Option<Family<HttpLabels, Counter>>,
     pub http_request_duration_seconds: Option<Family<HttpDurationLabels, Histogram>>,
-    pub reports_received_total: Option<Family<ReportReceivedLabels, Counter>>,
     /// Serialized size of the notes ConfigMap. A ConfigMap caps at roughly
     /// 1MiB, so its headroom is worth watching rather than discovering.
     pub notes_configmap_bytes: Option<Gauge>,
@@ -125,7 +118,6 @@ impl Metrics {
             info,
             http_requests_total: None,
             http_request_duration_seconds: None,
-            reports_received_total: None,
             notes_configmap_bytes: None,
             api_tokens_total: None,
             mcp_tool_calls_total: None,
@@ -175,14 +167,6 @@ impl Metrics {
         );
         self.http_request_duration_seconds = Some(http_request_duration_seconds);
 
-        let reports_received_total = Family::<ReportReceivedLabels, Counter>::default();
-        registry.register(
-            "trivy_collector_reports_received",
-            "Total reports received on the push ingest route",
-            reports_received_total.clone(),
-        );
-        self.reports_received_total = Some(reports_received_total);
-
         let notes_configmap_bytes = Gauge::default();
         registry.register(
             "trivy_collector_notes_configmap_bytes",
@@ -226,7 +210,7 @@ impl Metrics {
         );
         self.mcp_tool_calls_in_flight = Some(mcp_tool_calls_in_flight);
 
-        8
+        7
     }
 
     fn register_scraper(&mut self, registry: &mut Registry) -> usize {
@@ -275,15 +259,6 @@ impl Metrics {
                         status: status.to_string(),
                     });
                 }
-            }
-        }
-
-        if let Some(ref received) = self.reports_received_total {
-            for rt in REPORT_TYPES {
-                let _ = received.get_or_create(&ReportReceivedLabels {
-                    cluster: String::new(),
-                    report_type: rt.to_string(),
-                });
             }
         }
     }
@@ -347,7 +322,6 @@ mod tests {
         let metrics = Metrics::new(&mut registry, Mode::Server);
 
         assert!(metrics.http_requests_total.is_some());
-        assert!(metrics.reports_received_total.is_some());
         assert!(metrics.notes_configmap_bytes.is_some());
         assert!(metrics.api_tokens_total.is_some());
         assert!(metrics.mcp_tool_calls_total.is_some());
@@ -376,7 +350,7 @@ mod tests {
     #[test]
     fn count_matches_what_was_registered() {
         let mut registry = Registry::default();
-        assert_eq!(Metrics::new(&mut registry, Mode::Server).count(), 9);
+        assert_eq!(Metrics::new(&mut registry, Mode::Server).count(), 8);
 
         let mut registry = Registry::default();
         assert_eq!(Metrics::new(&mut registry, Mode::Scraper).count(), 5);
@@ -400,9 +374,6 @@ mod tests {
         assert!(
             out.contains(r#"trivy_collector_http_requests_total{method="GET",status="200"} 0"#)
         );
-        assert!(out.contains(
-            r#"trivy_collector_reports_received_total{cluster="",report_type="sbomreport"} 0"#
-        ));
         assert!(out.contains("trivy_collector_notes_configmap_bytes 0"));
     }
 

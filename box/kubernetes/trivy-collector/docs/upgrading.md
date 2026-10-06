@@ -45,6 +45,24 @@ They had to move: a static path segment beats a `{name}` parameter, so a rule ac
 
 Status codes the alerts, hub, notes, and token endpoints actually return are documented, and the alerts responses carry real schemas rather than an untyped 200. If you generate a client from `/api-docs/openapi.json`, regenerate it: previously undocumented `400`, `422`, `500`, `502`, and `503` cases now appear, and a stale `400` on the SBOM component suggest endpoint is gone.
 
+### The push ingest route is gone
+
+`POST /api/v1/reports` is no longer served. Anything still pushing reports must stop, since the hub pulls every registered cluster itself. Register the cluster instead, see [Architecture](architecture.md). Drop `trivy_collector_reports_received_total` from dashboards and alerts.
+
+### Cluster registration needs the `admin` resource
+
+The `/api/v1/hub/clusters` endpoints used to accept any authenticated user. They now require `admin:get`, `admin:create`, or `admin:delete`. The built-in `role:admin` already holds them. A custom role that registers clusters needs the matching `admin` rules:
+
+```csv
+p, role:cluster-operator, admin, get, allow
+p, role:cluster-operator, admin, create, allow
+p, role:cluster-operator, admin, delete, allow
+```
+
+### Unmapped API paths are denied
+
+A request to an `/api/` path with no RBAC mapping returns `403` instead of reaching the handler. A custom policy that never granted `stats:get` now loses `GET /api/v1/hydration`, which the UI polls for its rebuilding banner.
+
 ## To app 1.7.0 / chart 0.12.0
 
 This release removes the PersistentVolume and reworks the UI. The scraper now owns SQLite on its own `emptyDir` and serves it back to the server pods over an internal API, so the server holds no database and no volume. See [Architecture](architecture.md) for why.

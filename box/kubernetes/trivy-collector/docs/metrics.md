@@ -39,7 +39,6 @@ Excluded paths (not counted): `/healthz`, `/readyz`, `/metrics`, `/assets/*`, `/
 
 | Metric | Type | Labels | Description |
 |--------|------|--------|-------------|
-| `trivy_collector_reports_received_total` | Counter | `cluster`, `report_type` | Reports accepted on the push ingest route and forwarded to the scraper |
 
 ### Authored state
 

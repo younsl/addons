@@ -8,9 +8,7 @@ use axum::{
 };
 use tracing::{debug, error, info};
 
-use crate::collector::types::{ReportEvent, ReportEventType};
 use crate::config::env;
-use crate::metrics::ReportReceivedLabels;
 use crate::storage::{
     ClusterInfo, ComponentSearchResult, FullReport, NotesError, ReportMeta, Stats, TrendResponse,
     VulnSearchResult,
@@ -59,76 +57,6 @@ pub async fn healthz(
             memory_mb,
         }),
     )
-}
-
-/// Receive a pushed report and forward it to the scraper.
-///
-/// The server holds no database, so this route is a thin proxy onto the
-/// internal ingest endpoint. Any remaining pusher keeps working, and its
-/// writes go through the same alert-evaluating path as a watch event.
-#[utoipa::path(
-    post,
-    path = "/api/v1/reports",
-    tag = "Reports",
-    request_body = ReportEvent,
-    responses(
-        (status = 200, description = "Report forwarded to the scraper"),
-        (status = 404, description = "Unknown event type", body = ErrorResponse),
-        (status = 500, description = "The scraper rejected the report", body = ErrorResponse),
-        (status = 502, description = "Scraper unreachable", body = ErrorResponse)
-    )
-)]
-pub async fn receive_report(
-    State(state): State<AppState>,
-    Json(event): Json<ReportEvent>,
-) -> impl IntoResponse {
-    let payload = &event.payload;
-    debug!(
-        cluster = %payload.cluster,
-        report_type = %payload.report_type,
-        namespace = %payload.namespace,
-        name = %payload.name,
-        event = ?event.event_type,
-        "Forwarding report event to the scraper"
-    );
-
-    if let Some(ref counter) = state.metrics.reports_received_total {
-        counter
-            .get_or_create(&ReportReceivedLabels {
-                cluster: payload.cluster.clone(),
-                report_type: payload.report_type.clone(),
-            })
-            .inc();
-    }
-
-    let result = match event.event_type {
-        ReportEventType::Apply => state.store.upsert_report(payload).await.map(|()| true),
-        ReportEventType::Delete => {
-            state
-                .store
-                .delete_report(
-                    &payload.cluster,
-                    &payload.namespace,
-                    &payload.name,
-                    &payload.report_type,
-                )
-                .await
-        }
-    };
-
-    match result {
-        Ok(applied) => (
-            StatusCode::OK,
-            Json(serde_json::json!({"status": "ok", "applied": applied})),
-        ),
-        Err(e) => {
-            error!(error = %e, "Failed to forward report to the scraper");
-            (
-                StatusCode::BAD_GATEWAY,
-                Json(serde_json::json!({"error": e.to_string()})),
-            )
-        }
-    }
 }
 
 /// `report_type` values the storage layer stores reports under.
@@ -918,11 +846,11 @@ pub async fn get_dashboard_trends(
 mod tests {
     use super::*;
     use axum::Router;
-    use axum::routing::{delete, get, post, put};
+    use axum::routing::{delete, get, put};
     use http_body_util::BodyExt;
     use tower::ServiceExt;
 
-    use crate::collector::types::{ReportEvent, ReportEventType, ReportPayload};
+    use crate::collector::types::ReportPayload;
     use crate::web::test_support;
 
     async fn create_test_state() -> AppState {
@@ -931,7 +859,6 @@ mod tests {
 
     fn create_test_router(state: AppState) -> Router {
         Router::new()
-            .route("/api/v1/reports", post(receive_report))
             .route(
                 "/api/v1/vulnerabilityreports",
                 get(list_vulnerability_reports),
@@ -1051,112 +978,6 @@ mod tests {
     async fn response_json(response: axum::http::Response<axum::body::Body>) -> serde_json::Value {
         let body = response.into_body().collect().await.unwrap().to_bytes();
         serde_json::from_slice(&body).unwrap()
-    }
-
-    // ===== receive_report =====
-
-    #[tokio::test]
-    async fn test_receive_report_apply() {
-        let state = create_test_state().await;
-        let app = create_test_router(state.clone());
-
-        let event = ReportEvent {
-            event_type: ReportEventType::Apply,
-            payload: create_test_payload("prod", "default", "app1", "vulnerabilityreport"),
-        };
-
-        let response = app
-            .oneshot(
-                axum::http::Request::builder()
-                    .method("POST")
-                    .uri("/api/v1/reports")
-                    .header("content-type", "application/json")
-                    .body(axum::body::Body::from(
-                        serde_json::to_string(&event).unwrap(),
-                    ))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-
-        assert_eq!(response.status(), StatusCode::OK);
-        let json = response_json(response).await;
-        assert_eq!(json["status"], "ok");
-
-        let report = state
-            .store
-            .get_report("prod", "default", "app1", "vulnerabilityreport")
-            .await
-            .unwrap();
-        assert!(report.is_some());
-    }
-
-    #[tokio::test]
-    async fn test_receive_report_delete() {
-        let state = create_test_state().await;
-        state
-            .store
-            .upsert_report(&create_test_payload(
-                "prod",
-                "default",
-                "app1",
-                "vulnerabilityreport",
-            ))
-            .await
-            .unwrap();
-        let app = create_test_router(state);
-
-        let event = ReportEvent {
-            event_type: ReportEventType::Delete,
-            payload: create_test_payload("prod", "default", "app1", "vulnerabilityreport"),
-        };
-
-        let response = app
-            .oneshot(
-                axum::http::Request::builder()
-                    .method("POST")
-                    .uri("/api/v1/reports")
-                    .header("content-type", "application/json")
-                    .body(axum::body::Body::from(
-                        serde_json::to_string(&event).unwrap(),
-                    ))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-
-        assert_eq!(response.status(), StatusCode::OK);
-        let json = response_json(response).await;
-        assert_eq!(json["applied"], true);
-    }
-
-    #[tokio::test]
-    async fn test_receive_report_delete_nonexistent() {
-        let state = create_test_state().await;
-        let app = create_test_router(state);
-
-        let event = ReportEvent {
-            event_type: ReportEventType::Delete,
-            payload: create_test_payload("prod", "default", "nonexistent", "vulnerabilityreport"),
-        };
-
-        let response = app
-            .oneshot(
-                axum::http::Request::builder()
-                    .method("POST")
-                    .uri("/api/v1/reports")
-                    .header("content-type", "application/json")
-                    .body(axum::body::Body::from(
-                        serde_json::to_string(&event).unwrap(),
-                    ))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-
-        assert_eq!(response.status(), StatusCode::OK);
-        let json = response_json(response).await;
-        assert_eq!(json["applied"], false);
     }
 
     // ===== list_vulnerability_reports =====
