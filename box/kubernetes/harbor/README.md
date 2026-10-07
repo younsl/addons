@@ -60,6 +60,10 @@ Each patch fails the build if its target text is missing, so an upstream change 
 
 Before anything is pushed, the build checks that every image reports `arm64` and reads the ELF header of each compiled or downloaded binary (core, jobservice, registryctl, registry, trivy, scanner-trivy, exporter) to confirm it targets aarch64. Image metadata alone would pass an amd64 binary copied into an arm64 base.
 
+## Test results
+
+Verified in production on [Amazon EKS 1.36](https://docs.aws.amazon.com/eks/latest/userguide/kubernetes-versions-standard.html#kubernetes-1-36) with Graviton `m7g.2xlarge` nodes, running v2.15.3 through harbor-helm 1.19.2 with an external PostgreSQL and S3 registry storage. Every component reported healthy, the 2.15.3 schema migration applied cleanly, and image pulls through the registry succeeded with no errors.
+
 ## Building
 
 Requirements: a native arm64 Docker host (Linux on Graviton, or Docker Desktop on Apple Silicon), `git`, `make`, and Rust 1.99.0.
