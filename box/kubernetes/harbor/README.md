@@ -6,6 +6,8 @@
 [![Rust](https://img.shields.io/badge/rust-1.99.0-black?style=flat-square&logo=rust&logoColor=white)](https://www.rust-lang.org/)
 [![GitHub license](https://img.shields.io/github/license/younsl/addons?style=flat-square&color=black)](https://github.com/younsl/addons/blob/main/LICENSE)
 
+<img src="docs/assets/harbor-logo.svg" alt="Harbor logo" width="320">
+
 A bundle of custom-built [Harbor](https://goharbor.io/) v2.15.3 images for [AWS Graviton](https://aws.amazon.com/ec2/graviton/) (`linux/arm64`). Upstream publishes the v2.15.x images for amd64 only, so this component rebuilds every image the [harbor-helm](https://github.com/goharbor/harbor-helm) chart deploys from the unmodified upstream source, driven by `harbor-arm64`, a small Rust CLI.
 
 This is a stopgap. Harbor v2.16.0 officially supports `linux/arm64`: multi-arch support was merged to `main` in [goharbor/harbor#22311](https://github.com/goharbor/harbor/pull/22311), and the maintainers confirmed it ships with v2.16.0 in [goharbor/harbor#23558](https://github.com/goharbor/harbor/issues/23558). The [v2.16.0 release plan](https://github.com/goharbor/harbor/issues/24016) targets the end of October 2026. Once you upgrade to v2.16.0, switch back to the upstream images and delete this component.
@@ -102,4 +104,4 @@ make lint       # rustfmt check + clippy with warnings denied
 
 ## License
 
-Apache License 2.0. See [LICENSE](../../../LICENSE). Harbor itself is licensed under Apache License 2.0 by the Harbor authors.
+Apache License 2.0. See [LICENSE](../../../LICENSE). Harbor itself is licensed under Apache License 2.0 by the Harbor authors. The Harbor logo comes from [cncf/artwork](https://github.com/cncf/artwork/tree/main/projects/harbor) and is a trademark of The Linux Foundation.
