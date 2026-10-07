@@ -1,31 +1,31 @@
 # harbor
 
 [![GitHub Container Registry](https://img.shields.io/badge/ghcr.io-harbor%2F*-black?style=flat-square&logo=docker&logoColor=white)](https://github.com/younsl?tab=packages&repo_name=addons&q=harbor)
-[![Harbor](https://img.shields.io/badge/harbor-v2.15.2-black?style=flat-square&logo=harbor&logoColor=white)](https://github.com/goharbor/harbor/releases/tag/v2.15.2)
+[![Harbor](https://img.shields.io/badge/harbor-v2.15.3-black?style=flat-square&logo=harbor&logoColor=white)](https://github.com/goharbor/harbor/releases/tag/v2.15.3)
 [![Platform](https://img.shields.io/badge/platform-linux%2Farm64-black?style=flat-square&logo=linux&logoColor=white)](https://aws.amazon.com/ec2/graviton/)
 [![Rust](https://img.shields.io/badge/rust-1.99.0-black?style=flat-square&logo=rust&logoColor=white)](https://www.rust-lang.org/)
 [![GitHub license](https://img.shields.io/github/license/younsl/addons?style=flat-square&color=black)](https://github.com/younsl/addons/blob/main/LICENSE)
 
-A bundle of custom-built [Harbor](https://goharbor.io/) v2.15.2 images for [AWS Graviton](https://aws.amazon.com/ec2/graviton/) (`linux/arm64`). Upstream publishes the v2.15.x images for amd64 only, so this component rebuilds every image the [harbor-helm](https://github.com/goharbor/harbor-helm) chart deploys from the unmodified upstream source, driven by `harbor-arm64`, a small Rust CLI.
+A bundle of custom-built [Harbor](https://goharbor.io/) v2.15.3 images for [AWS Graviton](https://aws.amazon.com/ec2/graviton/) (`linux/arm64`). Upstream publishes the v2.15.x images for amd64 only, so this component rebuilds every image the [harbor-helm](https://github.com/goharbor/harbor-helm) chart deploys from the unmodified upstream source, driven by `harbor-arm64`, a small Rust CLI.
 
 This is a stopgap. Harbor v2.16.0 officially supports `linux/arm64`: multi-arch support was merged to `main` in [goharbor/harbor#22311](https://github.com/goharbor/harbor/pull/22311), and the maintainers confirmed it ships with v2.16.0 in [goharbor/harbor#23558](https://github.com/goharbor/harbor/issues/23558). The [v2.16.0 release plan](https://github.com/goharbor/harbor/issues/24016) targets the end of October 2026. Once you upgrade to v2.16.0, switch back to the upstream images and delete this component.
 
 ## Images
 
-Every image is single-architecture `linux/arm64`, built for [harbor-helm 1.19.2](https://github.com/goharbor/harbor-helm/releases/tag/v1.19.2) whose app version is Harbor 2.15.2, and tagged v2.15.2 to match.
+Every image is single-architecture `linux/arm64`, tagged v2.15.3. harbor-helm has no 2.15.3 release yet, so deploy with [harbor-helm 1.19.2](https://github.com/goharbor/harbor-helm/releases/tag/v1.19.2) (app version 2.15.2) and let `harbor-arm64 values` override every image tag.
 
 | Image | Chart value ([harbor-helm 1.19.2](https://github.com/goharbor/harbor-helm/releases/tag/v1.19.2)) |
 | --- | --- |
-| `ghcr.io/younsl/harbor/nginx-photon:v2.15.2` | `nginx.image` |
-| `ghcr.io/younsl/harbor/harbor-portal:v2.15.2` | `portal.image` |
-| `ghcr.io/younsl/harbor/harbor-core:v2.15.2` | `core.image` |
-| `ghcr.io/younsl/harbor/harbor-jobservice:v2.15.2` | `jobservice.image` |
-| `ghcr.io/younsl/harbor/registry-photon:v2.15.2` | `registry.registry.image` |
-| `ghcr.io/younsl/harbor/harbor-registryctl:v2.15.2` | `registry.controller.image` |
-| `ghcr.io/younsl/harbor/trivy-adapter-photon:v2.15.2` | `trivy.image` |
-| `ghcr.io/younsl/harbor/harbor-db:v2.15.2` | `database.internal.image` |
-| `ghcr.io/younsl/harbor/valkey-photon:v2.15.2` | `redis.internal.image` |
-| `ghcr.io/younsl/harbor/harbor-exporter:v2.15.2` | `exporter.image` |
+| `ghcr.io/younsl/harbor/nginx-photon:v2.15.3` | `nginx.image` |
+| `ghcr.io/younsl/harbor/harbor-portal:v2.15.3` | `portal.image` |
+| `ghcr.io/younsl/harbor/harbor-core:v2.15.3` | `core.image` |
+| `ghcr.io/younsl/harbor/harbor-jobservice:v2.15.3` | `jobservice.image` |
+| `ghcr.io/younsl/harbor/registry-photon:v2.15.3` | `registry.registry.image` |
+| `ghcr.io/younsl/harbor/harbor-registryctl:v2.15.3` | `registry.controller.image` |
+| `ghcr.io/younsl/harbor/trivy-adapter-photon:v2.15.3` | `trivy.image` |
+| `ghcr.io/younsl/harbor/harbor-db:v2.15.3` | `database.internal.image` |
+| `ghcr.io/younsl/harbor/valkey-photon:v2.15.3` | `redis.internal.image` |
+| `ghcr.io/younsl/harbor/harbor-exporter:v2.15.3` | `exporter.image` |
 
 `prepare` and `harbor-log` are not built. Only the docker-compose installer uses them.
 
