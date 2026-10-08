@@ -25,6 +25,10 @@ Chart 0.15.0. forklift-mcp remains 0.3.2.
 
 - The Checks column of the migration history no longer runs into the row's arrow when two or more checks failed. The failing IDs wrap below the dots.
 
+### Security
+
+- The web UI bundles seroval 1.6.8, patching GHSA-p6vx-979v-rg4c (critical) and its TypedArray memory exhaustion advisory. Dev-only dependencies are pinned to patched releases as well (proxy-addr, shell-quote, source-map-js, `@modelcontextprotocol/sdk`, joi, postcss-selector-parser). braces and sprintf-js have no patched release yet and are ignored in `pnpm audit` until one ships. Neither is bundled.
+
 ## 0.14.1 (2026-10-03)
 
 Chart 0.14.1. forklift-mcp remains 0.3.2.

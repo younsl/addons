@@ -7,7 +7,7 @@ allowBuilds:
 # Drop an entry once every dependent resolves to a patched version on its own.
 overrides:
   brace-expansion@2: '>=5.0.12'
-  shell-quote: '>=1.9.0'
+  shell-quote: '>=1.11.0'
   nanoid@<3.3.18: 3.3.18
   brace-expansion@<1.1.21: 1.1.21
   brace-expansion@>=3.0.0 <5.0.12: 5.0.12
@@ -21,3 +21,16 @@ overrides:
   '@hono/node-server@<1.19.15': 1.19.15
   uuid@<11.1.1: 11.1.1
   axios@>=1.0.0 <1.20.0: 1.20.0
+  seroval@<1.6.3: 1.6.8
+  seroval-plugins@<1.6.3: 1.6.8
+  proxy-addr@<2.0.8: 2.0.8
+  source-map-js@>=1.0.0 <1.2.2: 1.2.2
+  '@modelcontextprotocol/sdk@>=1.12.0 <1.31.0': 1.31.0
+  joi@<17.13.8: 17.13.8
+  joi@>=18.0.0 <18.2.9: 18.2.9
+  postcss-selector-parser@<7.1.6: 7.1.6
+# No patched release is published yet. Both are dev-only (shadcn, eslint), never bundled.
+auditConfig:
+  ignoreGhsas:
+    - GHSA-vfj7-8cjw-p6xm
+    - GHSA-hp3w-g68c-fv3c
