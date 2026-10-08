@@ -137,8 +137,9 @@ seaweedfs
 {{- end -}}
 
 {{/*
-Effective S3 bucket: an explicit storage.s3.bucket wins; otherwise the first
-bucket the SeaweedFS subchart provisions. Fails when neither is available.
+Effective S3 bucket: an explicit storage.s3.bucket wins. With the bundled
+SeaweedFS it falls back to the first createBuckets entry, then to "forklift",
+which forklift creates at boot. Fails when none applies.
 */}}
 {{- define "forklift.s3Bucket" -}}
 {{- $buckets := ((.Values.seaweedfs.allInOne).s3).createBuckets -}}
@@ -146,8 +147,10 @@ bucket the SeaweedFS subchart provisions. Fails when neither is available.
 {{- .Values.storage.s3.bucket -}}
 {{- else if and .Values.seaweedfs.enabled $buckets -}}
 {{- (first $buckets).name -}}
+{{- else if .Values.seaweedfs.enabled -}}
+forklift
 {{- else -}}
-{{- fail "storage.s3.bucket is required when storage.backend is s3 (or define seaweedfs.allInOne.s3.createBuckets when using the bundled SeaweedFS)" -}}
+{{- fail "storage.s3.bucket is required when storage.backend is s3 without the bundled SeaweedFS" -}}
 {{- end -}}
 {{- end -}}
 

@@ -88,7 +88,7 @@ storage:
   # -- (string) Storage backend: "fs" or "s3". Bundled SeaweedFS (seaweedfs.enabled) forces s3.
   backend: fs
   s3:
-    # -- (string) S3 bucket. Defaults to the first bundled SeaweedFS bucket.
+    # -- (string) S3 bucket. With bundled SeaweedFS, defaults to the first createBuckets entry, else "forklift".
     bucket: ""
     # -- (string) Key prefix within the bucket.
     prefix: ""
@@ -182,9 +182,8 @@ seaweedfs:
       enableAuth: true
       # -- (string) Secret the chart writes the S3 identities file to, admin only, so every render (Argo CD included) is identical. Empty uses the subchart's generated one.
       existingConfigSecret: forklift-seaweedfs-s3-config
-      # -- (list) Buckets to create. The first is forklift's unless storage.s3.bucket is set.
-      createBuckets:
-        - name: forklift
+      # -- (list) Buckets the subchart's post-install hook Job creates, for lock, versioning, TTL or anonymous read. Empty skips the Job, since forklift creates its own bucket at boot.
+      createBuckets: []
     data:
       # -- (string) Data volume type.
       type: persistentVolumeClaim

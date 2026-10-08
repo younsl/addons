@@ -1,6 +1,6 @@
 # forklift
 
-![Version: 0.15.0](https://img.shields.io/badge/Version-0.15.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.15.0](https://img.shields.io/badge/AppVersion-0.15.0-informational?style=flat-square)
+![Version: 0.15.1](https://img.shields.io/badge/Version-0.15.1-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.15.0](https://img.shields.io/badge/AppVersion-0.15.0-informational?style=flat-square)
 
 Lightweight Kubernetes-native artifact repository (Maven, npm, Cargo, Go, PyPI) with proxy caching and supply-chain controls (age policy, package approval, vulnerability scanning)
 
@@ -45,7 +45,7 @@ helm install forklift oci://ghcr.io/younsl/charts/forklift -f values.yaml
 Install a specific version:
 
 ```console
-helm install forklift oci://ghcr.io/younsl/charts/forklift --version 0.15.0
+helm install forklift oci://ghcr.io/younsl/charts/forklift --version 0.15.1
 ```
 
 ### Install from local chart
@@ -53,7 +53,7 @@ helm install forklift oci://ghcr.io/younsl/charts/forklift --version 0.15.0
 Download forklift chart and install from local directory:
 
 ```console
-helm pull oci://ghcr.io/younsl/charts/forklift --untar --version 0.15.0
+helm pull oci://ghcr.io/younsl/charts/forklift --untar --version 0.15.1
 helm install forklift ./forklift
 ```
 
@@ -104,7 +104,7 @@ The following table lists the configurable parameters and their default values.
 | persistence.size | string | `"20Gi"` | PVC storage size. |
 | persistence.annotations | object | `{}` | Annotations to add to the PVC. |
 | storage.backend | string | `"fs"` | Storage backend: "fs" or "s3". Bundled SeaweedFS (seaweedfs.enabled) forces s3. |
-| storage.s3.bucket | string | `""` | S3 bucket. Defaults to the first bundled SeaweedFS bucket. |
+| storage.s3.bucket | string | `""` | S3 bucket. With bundled SeaweedFS, defaults to the first createBuckets entry, else "forklift". |
 | storage.s3.prefix | string | `""` | Key prefix within the bucket. |
 | storage.s3.region | string | `""` | AWS region. Empty uses the AWS default chain. |
 | storage.s3.endpoint | string | `""` | S3-compatible endpoint. Defaults to the bundled SeaweedFS. |
@@ -145,7 +145,7 @@ The following table lists the configurable parameters and their default values.
 | seaweedfs.allInOne.s3.enabled | bool | `true` |  |
 | seaweedfs.allInOne.s3.enableAuth | bool | `true` |  |
 | seaweedfs.allInOne.s3.existingConfigSecret | string | `"forklift-seaweedfs-s3-config"` | Secret the chart writes the S3 identities file to, admin only, so every render (Argo CD included) is identical. Empty uses the subchart's generated one. |
-| seaweedfs.allInOne.s3.createBuckets | list | `[{"name":"forklift"}]` | Buckets to create. The first is forklift's unless storage.s3.bucket is set. |
+| seaweedfs.allInOne.s3.createBuckets | list | `[]` | Buckets the subchart's post-install hook Job creates, for lock, versioning, TTL or anonymous read. Empty skips the Job, since forklift creates its own bucket at boot. |
 | seaweedfs.allInOne.data.type | string | `"persistentVolumeClaim"` | Data volume type. |
 | seaweedfs.allInOne.data.size | string | `"10Gi"` | Data volume size. |
 | seaweedfs.allInOne.data.storageClass | string | `nil` | Data PVC storage class. Null uses the cluster default. |
