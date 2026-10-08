@@ -204,6 +204,25 @@ pub(super) async fn get_stats(State(h): State<Arc<Handler>>) -> Response {
 }
 
 #[derive(Debug, Serialize)]
+struct StorageHealthDTO {
+    interval_seconds: u64,
+    checks: Vec<storage::health::HealthCheck>,
+}
+
+/// Reports this pod's recent object-store checks, oldest first. Admin-only.
+/// Empty for the fs backend, which has no object store to check.
+pub(super) async fn get_health(State(h): State<Arc<Handler>>) -> Response {
+    let monitor = h.injected.read().storage_health.clone();
+    write_json(
+        StatusCode::OK,
+        StorageHealthDTO {
+            interval_seconds: storage::health::CHECK_INTERVAL.as_secs(),
+            checks: monitor.map(|m| m.history()).unwrap_or_default(),
+        },
+    )
+}
+
+#[derive(Debug, Serialize)]
 struct MigrationListDTO {
     items: Vec<MigrationSummary>,
 }
@@ -235,14 +254,16 @@ pub(super) async fn get_migration(
     };
     match history.get(&id).await {
         Ok(Some(mut rec)) => {
-            rec.stored_at = Some(MigrationStoredAt::new(
+            let mut at = MigrationStoredAt::new(
                 &store.provider,
                 &store.endpoint,
                 &store.region,
                 &store.bucket,
                 &store.prefix,
                 &rec.id,
-            ));
+            );
+            at.size_bytes = rec.stored_bytes;
+            rec.stored_at = Some(at);
             write_json(StatusCode::OK, rec)
         }
         Ok(None) => write_error(StatusCode::NOT_FOUND, "not found"),
@@ -443,7 +464,8 @@ pub(crate) mod tests {
     async fn migration_history_is_listed_summarised_and_drilled_into() {
         use crate::migrate::record::tests::sample;
         let srv = storage_harness("s3", "http://seaweedfs:8333").await;
-        let newer = sample("20261003T010203Z-0123abcd", "failed");
+        let mut newer = sample("20261003T010203Z-0123abcd", "failed");
+        newer.stored_bytes = Some(2048);
         let older = sample("20261001T000000Z-aaaaaaaa", "succeeded");
         srv.handler
             .set_migration_history(std::sync::Arc::new(FakeHistory(vec![newer.clone(), older])));
@@ -477,6 +499,8 @@ pub(crate) mod tests {
             format!("s3://forklift/meta/migrations/{}.json", newer.id)
         );
         assert_eq!(detail["stored_at"]["endpoint"], "http://seaweedfs:8333");
+        assert_eq!(detail["stored_at"]["size_bytes"], 2048);
+        assert_eq!(detail.get("stored_bytes"), None);
 
         let resp = srv
             .admin_do(
@@ -504,6 +528,35 @@ pub(crate) mod tests {
             .await;
         assert_eq!(resp.status, StatusCode::NOT_FOUND);
         assert_eq!(get_storage(&srv).await["last_migration"], Value::Null);
+    }
+
+    #[tokio::test]
+    async fn storage_health_lists_checks_or_nothing() {
+        struct Fails;
+        #[async_trait::async_trait]
+        impl crate::storage::health::Probe for Fails {
+            async fn check(&self) -> Result<(), String> {
+                Err("down".into())
+            }
+        }
+
+        let srv = new_test_server().await;
+        let resp = srv.admin_do(Method::GET, "/storage/health", "").await;
+        assert_eq!(resp.status, StatusCode::OK, "{}", resp.text());
+        let body: Value = resp.json();
+        assert_eq!(body["interval_seconds"], 60);
+        assert_eq!(body["checks"], serde_json::json!([]));
+
+        let monitor = crate::storage::health::HealthMonitor::new(std::sync::Arc::new(Fails));
+        monitor.check_once().await;
+        srv.handler.set_storage_health(monitor);
+        let body: Value = srv
+            .admin_do(Method::GET, "/storage/health", "")
+            .await
+            .json();
+        assert_eq!(body["checks"][0]["ok"], false);
+        assert_eq!(body["checks"][0]["error"], "down");
+        assert!(body["checks"][0]["at"].is_string());
     }
 
     async fn get_storage(srv: &TestServer) -> Value {

@@ -1,3 +1,5 @@
+import type { ReactNode } from "react";
+
 import { useTranslation } from "@/lib/i18n";
 import { StatTile } from "@/routes/admin/-storage/components/stat-tile";
 import { StorageUsageBar } from "@/routes/admin/-storage/components/storage-usage-bar";
@@ -7,7 +9,15 @@ import type { ClusterStats } from "@/services/v1/openapi-types";
 
 const count = (n: number | undefined) => (n === undefined ? "-" : n.toLocaleString());
 
-export function ClusterPanel({ cluster, providerName }: { cluster: ClusterStats; providerName?: string }) {
+export function ClusterPanel({
+  cluster,
+  providerName,
+  health,
+}: {
+  cluster: ClusterStats;
+  providerName?: string;
+  health?: ReactNode;
+}) {
   const { t } = useTranslation();
   // A cluster reporting no capacity has nothing to show a proportion of; the
   // ratio would be meaningless rather than zero.
@@ -19,12 +29,17 @@ export function ClusterPanel({ cluster, providerName }: { cluster: ClusterStats;
         {providerName ? `${providerName} ${t("storage.cluster")}` : t("storage.cluster")}
       </h2>
 
-      {usagePct !== null && (
-        <StorageUsageBar
-          usedBytes={cluster.used_bytes}
-          totalBytes={cluster.total_capacity_bytes}
-          usagePct={usagePct}
-        />
+      {(health || usagePct !== null) && (
+        <div className="mb-3 grid gap-3 lg:grid-cols-2">
+          {health}
+          {usagePct !== null && (
+            <StorageUsageBar
+              usedBytes={cluster.used_bytes}
+              totalBytes={cluster.total_capacity_bytes}
+              usagePct={usagePct}
+            />
+          )}
+        </div>
       )}
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">

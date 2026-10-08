@@ -22,7 +22,7 @@ All forklift metric names share the prefix `forklift_`. The endpoint also
 exposes the standard process collector (`process_*`), which is not documented
 here.
 
-Three kinds of metrics need a note on how they are computed:
+Four kinds of metrics need a note on how they are computed:
 
 - The inventory and storage gauges (`forklift_repositories`,
   `forklift_artifacts`, `forklift_blobs`, `forklift_storage_bytes`) and
@@ -32,6 +32,7 @@ Three kinds of metrics need a note on how they are computed:
 - `forklift_upstream_up` is refreshed by a background prober that checks every
   proxy repository's upstream once a minute. It runs on every pod, so in HA
   each pod reports its own network view of the upstreams.
+- `forklift_storage_up` and `forklift_storage_check_duration_seconds` report the latest result of the per-pod object-store check that runs once a minute (S3 backend only).
 - The traffic, cache, policy, and replication metrics are counters, gauges, and
   histograms updated as requests flow through the process.
 
@@ -289,6 +290,15 @@ speed; the read paths (`open`, `exists`) are the cleaner backend health signal.
 This metric matters most with the S3 backend, where a bucket outage, throttling
 or IAM regression would otherwise be invisible until downloads start failing.
 On `fs` it surfaces a degraded volume (for example an exhausted burst balance).
+
+### forklift_storage_up / forklift_storage_check_duration_seconds
+
+- Type: Gauge
+- Labels: none
+
+`forklift_storage_up` is `1` if the object store answered the most recent `HeadBucket` on the configured bucket, `0` if it failed (transport error, 5 second timeout, or an error status such as `403` from revoked credentials). `forklift_storage_check_duration_seconds` is how long that check took, failed checks included. Checks run once a minute on every pod and only with the S3 backend, and both series stay absent until the first check finishes, so a fresh pod never reads as down.
+
+Unlike `forklift_blobstore_operation_duration_seconds`, which only moves when artifacts are read or written, this detects an unreachable or misconfigured bucket on an idle deployment. The Storage admin page draws the last hour of the same checks, but keeps them in memory per pod; Prometheus is where the history survives restarts and rollouts.
 
 ### forklift_bytes_transferred_total
 
@@ -707,6 +717,18 @@ histogram_quantile(0.99,
   sum by (le, repo) (rate(forklift_upstream_request_duration_seconds_bucket[5m])))
 ```
 
+Object store unreachable from any pod (fires even with no traffic):
+
+```promql
+min(forklift_storage_up) == 0
+```
+
+Object store availability over the last 24 hours:
+
+```promql
+avg_over_time(min(forklift_storage_up)[24h:1m])
+```
+
 Blob store backend error ratio (S3 outage, throttling, or IAM regression):
 
 ```promql
@@ -742,7 +764,8 @@ The metrics answer a few core questions about a forklift deployment:
   `bytes_transferred_total`
 - How big is the repository, and how well does dedup work? `repositories`,
   `artifacts`, `blobs`, `storage_bytes`
-- Is the blob store backend healthy? `blobstore_operation_duration_seconds`
+- Is the blob store backend healthy? `blobstore_operation_duration_seconds`,
+  `storage_up`, `storage_check_duration_seconds`
 - Are proxies caching and reaching upstreams? `cache_*`,
   `upstream_errors_total`, `upstream_request_duration_seconds`, `upstream_up`
 - Are the supply-chain gates doing their job? `age_policy_violations_total`,
@@ -754,6 +777,6 @@ The metrics answer a few core questions about a forklift deployment:
 
 A good starting point is one dashboard row per group above, plus alerts on
 `sum(forklift_leader) != 1`, leadership flapping via
-`leader_transitions_total`, any `forklift_upstream_up == 0`, a rising HTTP 5xx
+`leader_transitions_total`, any `forklift_upstream_up == 0` or `forklift_storage_up == 0`, a rising HTTP 5xx
 ratio, a rising blob store error ratio, any `audit_events_dropped_total`
 growth, and a stalled `replication_last_sync_timestamp_seconds`.

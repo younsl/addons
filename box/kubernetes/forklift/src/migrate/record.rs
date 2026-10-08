@@ -91,6 +91,8 @@ pub struct MigrationStoredAt {
     pub bucket: String,
     pub key: String,
     pub uri: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub size_bytes: Option<u64>,
 }
 
 impl MigrationStoredAt {
@@ -110,6 +112,7 @@ impl MigrationStoredAt {
             bucket: bucket.to_string(),
             uri: format!("s3://{bucket}/{key}"),
             key,
+            size_bytes: None,
         }
     }
 }
@@ -147,6 +150,9 @@ pub struct MigrationRecord {
     pub postflight: Vec<MigrationCheck>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stored_at: Option<MigrationStoredAt>,
+    /// Size of the record object as read, so the API can report it.
+    #[serde(skip)]
+    pub stored_bytes: Option<u64>,
 }
 
 /// The fields the history table shows, without the per-check detail.
@@ -295,6 +301,7 @@ pub(crate) fn build(
         preflight: r.preflight.iter().map(Into::into).collect(),
         postflight: r.postflight.iter().map(Into::into).collect(),
         stored_at: None,
+        stored_bytes: None,
     }
 }
 
@@ -408,9 +415,10 @@ impl S3History {
             .read_to_end(&mut body)
             .await
             .map_err(|e| format!("read {key}: {e}"))?;
-        serde_json::from_slice(&body)
-            .map(Some)
-            .map_err(|e| format!("parse {key}: {e}"))
+        let mut rec: MigrationRecord =
+            serde_json::from_slice(&body).map_err(|e| format!("parse {key}: {e}"))?;
+        rec.stored_bytes = Some(body.len() as u64);
+        Ok(Some(rec))
     }
 }
 
@@ -493,6 +501,7 @@ pub(crate) mod tests {
             }],
             postflight: Vec::new(),
             stored_at: None,
+            stored_bytes: None,
         }
     }
 
@@ -587,7 +596,18 @@ pub(crate) mod tests {
             ids,
             ["20261003T010203Z-0123abcd", "20261001T000000Z-aaaaaaaa"]
         );
-        assert_eq!(history.get(&newer.id).await.unwrap(), Some(newer));
+        let got = history.get(&newer.id).await.unwrap().unwrap();
+        assert_eq!(
+            got.stored_bytes,
+            Some(serde_json::to_vec(&newer).unwrap().len() as u64)
+        );
+        assert_eq!(
+            MigrationRecord {
+                stored_bytes: None,
+                ..got
+            },
+            newer
+        );
         assert_eq!(
             history.get("20261002T000000Z-bbbbbbbb").await.unwrap(),
             None

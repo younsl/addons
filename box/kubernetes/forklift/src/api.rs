@@ -77,6 +77,7 @@ struct Injected {
     storage: StorageBackend,
     cluster: Option<ClusterInfoFn>,
     migrations: Option<Arc<dyn crate::migrate::record::History>>,
+    storage_health: Option<Arc<storage_backend::health::HealthMonitor>>,
     upload_enabled: bool,
     uploader: Option<Arc<repo::Uploader>>,
     external_url: String,
@@ -167,6 +168,11 @@ impl Handler {
     /// Injects the migration history the Storage page reads (object storage only).
     pub fn set_migration_history(&self, history: Arc<dyn crate::migrate::record::History>) {
         self.injected.write().migrations = Some(history);
+    }
+
+    /// Injects the object-store health history the Storage page reads.
+    pub fn set_storage_health(&self, monitor: Arc<storage_backend::health::HealthMonitor>) {
+        self.injected.write().storage_health = Some(monitor);
     }
 
     pub(crate) fn uploader(&self) -> Option<Arc<repo::Uploader>> {
@@ -425,6 +431,7 @@ pub fn routes(h: Arc<Handler>) -> Router {
         .route("/ha", axum::routing::get(ha::get_status))
         .route("/ha/step-down", axum::routing::post(ha::step_down))
         .route("/storage", axum::routing::get(storage::get_stats))
+        .route("/storage/health", axum::routing::get(storage::get_health))
         .route(
             "/storage/migrations",
             axum::routing::get(storage::list_migrations),

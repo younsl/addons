@@ -1,11 +1,13 @@
-import { useEffect, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowRight, Check, Minus, X } from "lucide-react";
+import { Link } from "@tanstack/react-router";
+import { ArrowLeft, ArrowRight, Check, Minus, X } from "lucide-react";
 
 import { Alert } from "@/components/app-ui/alert";
 import { Badge } from "@/components/app-ui/badge";
 import { CodeView } from "@/components/app-ui/code-view";
 import { CopyIconButton, CopyOnHover } from "@/components/app-ui/copy-button";
+import { PageHeader } from "@/components/app-ui/page";
 import {
   Table,
   TableBody,
@@ -15,7 +17,6 @@ import {
   TableRow,
   TableWrap,
 } from "@/components/app-ui/table";
-import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { getErrorMessageIfAny } from "@/lib/http/error/api-error";
 import { useTranslation, type MessageKey } from "@/lib/i18n";
@@ -176,6 +177,7 @@ function StoredAt({ at }: { at: MigrationStoredAt }) {
     ["storage.migration-region", at.region ?? ""],
     ["storage.migration-bucket", at.bucket],
     ["storage.migration-key", at.key],
+    ["storage.migration-size", at.size_bytes === undefined ? "" : formatFileSize(at.size_bytes)],
   ];
   return (
     <section className="mt-5" data-testid="migration-stored-at">
@@ -320,13 +322,17 @@ function Report({ m }: { m: MigrationRecord }) {
 
 function RawJson({ m }: { m: MigrationRecord }) {
   const { t } = useTranslation();
-  const { stored_at: _, ...stored } = m;
-  const json = JSON.stringify(stored, null, 2);
+  const json = JSON.stringify(m, null, 2);
   return (
     <div data-testid="migration-json">
-      <p className="m-0 mb-2 truncate text-xs text-muted-foreground">
-        {t("storage.migration-json-hint")} {m.stored_at && <span className="font-mono">{m.stored_at.uri}</span>}
-      </p>
+      <p className={cn("m-0 text-xs text-muted-foreground", !m.stored_at && "mb-2")}>{t("storage.migration-json-hint")}</p>
+      {m.stored_at && (
+        <div className="mt-1 mb-2 flex min-w-0 items-center text-xs" data-testid="migration-json-path">
+          <CopyOnHover value={m.stored_at.uri} className="max-w-full">
+            <span className="truncate font-mono">{m.stored_at.uri}</span>
+          </CopyOnHover>
+        </div>
+      )}
       <div className="relative">
         <CodeView code={json} language="json" lineNumbers />
         <CopyIconButton
@@ -340,8 +346,8 @@ function RawJson({ m }: { m: MigrationRecord }) {
 
 // The full report of one migration run: how far it got, what was copied and
 // verified, why it failed and what was undone, every check, and where the
-// record itself is stored. The JSON tab shows the stored object as is.
-export function MigrationDetail({ id, onClose }: { id: string; onClose: () => void }) {
+// record itself is stored. The JSON tab shows the same record, location included.
+export function MigrationDetailPage({ id }: { id: string }) {
   const { t } = useTranslation();
   const query = useQuery({
     ...openApiQueryOptions.getStorageMigration({ path: { id } }),
@@ -349,64 +355,55 @@ export function MigrationDetail({ id, onClose }: { id: string; onClose: () => vo
   });
   const m = query.data;
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
-
   return (
-    <div
-      className="fixed inset-0 z-100 flex items-start justify-center overflow-y-auto overscroll-y-none bg-black/70 py-10 backdrop-blur-[3px]"
-      onClick={onClose}
-    >
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-label={t("storage.migration-report")}
-        data-testid="migration-detail"
-        className="w-[960px] max-w-[94vw] rounded-lg border border-border bg-card p-5 shadow-[var(--fx-overlay-shadow)]"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <Tabs defaultValue="report">
-          <div className="mb-4 flex items-center justify-between gap-3">
-            <div className="min-w-0">
-              <h2 className="m-0 flex flex-wrap items-center gap-2 text-base leading-6 font-semibold">
-                {t("storage.migration-report")}
-                {m && <OutcomeBadge outcome={m.outcome} />}
-              </h2>
-              <CopyOnHover value={id}>
-                <span className="font-mono text-xs leading-5 text-muted-foreground">{id}</span>
-              </CopyOnHover>
-            </div>
-            <div className="flex shrink-0 items-center gap-1.5">
-              <TabsList className="h-8">
-                <TabsTrigger value="report">{t("storage.migration-view-report")}</TabsTrigger>
-                <TabsTrigger value="json" data-testid="migration-view-json">
-                  {t("storage.migration-view-json")}
-                </TabsTrigger>
-              </TabsList>
-              <Button variant="ghost" size="icon-sm" onClick={onClose} aria-label={t("common.close")}>
-                <X />
-              </Button>
-            </div>
-          </div>
+    <div data-testid="migration-detail">
+      <p className="mb-3">
+        <Link
+          to="/admin/storage"
+          className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground hover:no-underline"
+        >
+          <ArrowLeft className="size-4" aria-hidden="true" />
+          {t("storage.back")}
+        </Link>
+      </p>
+      <Tabs defaultValue="report">
+        <PageHeader
+          className="mb-1"
+          title={
+            <span className="flex flex-wrap items-center gap-2">
+              {t("storage.migration-report")}
+              {m && <OutcomeBadge outcome={m.outcome} />}
+            </span>
+          }
+          actions={
+            <TabsList className="h-8">
+              <TabsTrigger value="report">{t("storage.migration-view-report")}</TabsTrigger>
+              <TabsTrigger value="json" data-testid="migration-view-json">
+                {t("storage.migration-view-json")}
+              </TabsTrigger>
+            </TabsList>
+          }
+        />
+        <div className="mb-5">
+          <CopyOnHover value={id}>
+            <span className="font-mono text-xs leading-5 text-muted-foreground">{id}</span>
+          </CopyOnHover>
+        </div>
 
-          {query.error && <Alert>{getErrorMessageIfAny(query.error)}</Alert>}
-          {!m ? (
-            !query.error && <div className="text-sm text-muted-foreground">{t("common.loading")}</div>
-          ) : (
-            <>
-              <TabsContent value="report">
-                <Report m={m} />
-              </TabsContent>
-              <TabsContent value="json">
-                <RawJson m={m} />
-              </TabsContent>
-            </>
-          )}
-        </Tabs>
-      </div>
+        {query.error && <Alert>{getErrorMessageIfAny(query.error)}</Alert>}
+        {!m ? (
+          !query.error && <div className="text-sm text-muted-foreground">{t("common.loading")}</div>
+        ) : (
+          <>
+            <TabsContent value="report">
+              <Report m={m} />
+            </TabsContent>
+            <TabsContent value="json">
+              <RawJson m={m} />
+            </TabsContent>
+          </>
+        )}
+      </Tabs>
     </div>
   );
 }

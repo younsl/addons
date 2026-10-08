@@ -3,8 +3,8 @@ name: forklift
 description: Lightweight Kubernetes-native artifact repository (Maven, npm, Cargo, Go, PyPI) with proxy caching and supply-chain controls (age policy, package approval, vulnerability scanning)
 type: application
 deprecated: false
-version: 0.14.1
-appVersion: "0.14.1"
+version: 0.15.0
+appVersion: "0.15.0"
 home: https://github.com/younsl/addons/tree/main/box/kubernetes/forklift
 sources:
   - https://github.com/younsl/addons/tree/main/box/kubernetes/forklift/charts/forklift
@@ -28,7 +28,13 @@ keywords:
   - nexus
 annotations:
   artifacthub.io/changes: |
+    - kind: added
+      description: "Storage page shows a live one-hour object-store health timeline from a HeadBucket check every minute"
+    - kind: added
+      description: "forklift_storage_up and forklift_storage_check_duration_seconds metrics for object-store availability"
+    - kind: added
+      description: "Storage overview shows the provider logo, server version and a copyable endpoint"
+    - kind: changed
+      description: "Migration reports open as a linkable page and their JSON includes the report location and size"
     - kind: fixed
-      description: "OCI proxies follow the registry's blob redirect, so layers from Docker Hub and ghcr pull instead of failing with 502"
-    - kind: fixed
-      description: "The PyPI proxy's HTML index lists every file again when pypi.org sends null fields"
+      description: "Failing check IDs in the migration history no longer overlap the row arrow"

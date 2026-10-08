@@ -17,6 +17,7 @@ use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt};
 
 pub mod admin;
 pub mod diskusage;
+pub mod health;
 pub mod instrument;
 pub mod s3;
 

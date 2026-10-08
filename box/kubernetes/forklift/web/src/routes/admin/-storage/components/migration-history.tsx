@@ -1,5 +1,6 @@
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { Link, useNavigate } from "@tanstack/react-router";
 import { ArrowRight, ChevronRight } from "lucide-react";
 
 import { Badge } from "@/components/app-ui/badge";
@@ -18,7 +19,6 @@ import { getErrorMessageIfAny } from "@/lib/http/error/api-error";
 import { useTranslation, type MessageKey } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import { openApiQueryOptions } from "@/query/v1/openapi-query-options";
-import { MigrationDetail } from "@/routes/admin/-storage/components/migration-detail";
 import { Location } from "@/routes/admin/-storage/components/provider-logo";
 import { formatMilliseconds } from "@/utils/format-duration";
 import { formatFileSize } from "@/utils/format-file-size";
@@ -71,30 +71,35 @@ export function formatters(language: string) {
   };
 }
 
-function CheckDots({ label, checks }: { label: string; checks: MigrationCheckStatus[] }) {
+function CheckDots({ label, title, checks }: { label: string; title: string; checks: MigrationCheckStatus[] }) {
   const failed = checks.filter((c) => c.status === "fail").map((c) => c.id);
   return (
-    <div className="flex items-center gap-2 whitespace-nowrap">
-      <span className="w-4 font-mono text-[11px] text-muted-foreground">{label}</span>
-      <Tooltip>
-        <TooltipTrigger render={<span className="flex gap-[2px] py-1" />}>
-          {checks.map((c) => (
-            <span key={c.id} className={cn("size-[7px] rounded-[1.5px]", statusDot[c.status])} />
-          ))}
-        </TooltipTrigger>
-        <TooltipContent side="bottom" className="items-start px-3 py-2">
-          <ul className="m-0 grid list-none grid-cols-[auto_auto_minmax(0,1fr)] items-center gap-x-2 gap-y-1 p-0">
+    <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+      <span className="flex items-center gap-2 whitespace-nowrap">
+        <span className="w-4 font-mono text-[11px] text-muted-foreground">{label}</span>
+        <Tooltip>
+          <TooltipTrigger render={<span className="flex gap-[2px] py-1" />}>
             {checks.map((c) => (
-              <li key={c.id} className="contents">
-                <span className={cn("size-[7px] rounded-[1.5px]", statusDot[c.status])} />
-                <span className="font-mono">{c.id}</span>
-                <span className="opacity-80">{c.name}</span>
-              </li>
+              <span key={c.id} className={cn("size-[7px] rounded-[1.5px]", statusDot[c.status])} />
             ))}
-          </ul>
-        </TooltipContent>
-      </Tooltip>
-      {failed.length > 0 && <span className="font-mono text-[11px] text-destructive">{failed.join(" ")}</span>}
+          </TooltipTrigger>
+          <TooltipContent side="bottom" className="flex-col items-start gap-1.5 px-3 py-2">
+            <span className="font-semibold">
+              <span className="font-mono">{label}</span> {title}
+            </span>
+            <ul className="m-0 grid list-none grid-cols-[auto_auto_minmax(0,1fr)] items-center gap-x-2 gap-y-1 p-0">
+              {checks.map((c) => (
+                <li key={c.id} className="contents">
+                  <span className={cn("size-[7px] rounded-[1.5px]", statusDot[c.status])} />
+                  <span className="font-mono">{c.id}</span>
+                  <span className="opacity-80">{c.name}</span>
+                </li>
+              ))}
+            </ul>
+          </TooltipContent>
+        </Tooltip>
+      </span>
+      {failed.length > 0 && <span className="min-w-0 font-mono text-[11px] text-destructive">{failed.join(" ")}</span>}
     </div>
   );
 }
@@ -115,7 +120,7 @@ export function CopyBar({ required, copied, skipped, planned }: { required: numb
 export function MigrationHistory() {
   const { t, language } = useTranslation();
   const { date, time } = useMemo(() => formatters(language), [language]);
-  const [openId, setOpenId] = useState<string | null>(null);
+  const navigate = useNavigate();
   const query = useQuery({
     ...openApiQueryOptions.listStorageMigrations(),
     meta: { suppressGlobalErrorToast: true },
@@ -156,7 +161,7 @@ export function MigrationHistory() {
                     key={m.id}
                     className="cursor-pointer"
                     data-testid={`migration-row-${m.id}`}
-                    onClick={() => setOpenId(m.id)}
+                    onClick={() => navigate({ to: "/admin/storage/migrations/$id", params: { id: m.id } })}
                   >
                     <TableCell className="tabular-nums">
                       <div className="whitespace-nowrap">{date.format(finished)}</div>
@@ -197,11 +202,21 @@ export function MigrationHistory() {
                     </TableCell>
                     <TableCell className="text-right tabular-nums">{formatMilliseconds(m.duration_ms)}</TableCell>
                     <TableCell className="space-y-1">
-                      <CheckDots label="PF" checks={m.preflight} />
-                      {m.postflight.length > 0 && <CheckDots label="PV" checks={m.postflight} />}
+                      <CheckDots label="PF" title={t("storage.migration-stage-preflight")} checks={m.preflight} />
+                      {m.postflight.length > 0 && (
+                        <CheckDots label="PV" title={t("storage.migration-stage-postflight")} checks={m.postflight} />
+                      )}
                     </TableCell>
                     <TableCell className="px-0 text-muted-foreground">
-                      <ChevronRight className="size-4" />
+                      <Link
+                        to="/admin/storage/migrations/$id"
+                        params={{ id: m.id }}
+                        aria-label={t("storage.migration-report")}
+                        onClick={(e) => e.stopPropagation()}
+                        className="flex text-muted-foreground hover:text-foreground"
+                      >
+                        <ChevronRight className="size-4" />
+                      </Link>
                     </TableCell>
                   </TableRow>
                 );
@@ -210,7 +225,6 @@ export function MigrationHistory() {
           </Table>
         </TableWrap>
       )}
-      {openId && <MigrationDetail id={openId} onClose={() => setOpenId(null)} />}
     </section>
   );
 }

@@ -4,6 +4,27 @@ Notable changes per release. Container image versions come from the
 `org.opencontainers.image.version` label in the `Dockerfile`; chart versions from
 `charts/forklift/Chart.yaml`.
 
+## 0.15.0 (2026-10-08)
+
+Chart 0.15.0. forklift-mcp remains 0.3.2.
+
+### Added
+
+- Object-store health checks. Every pod sends a `HeadBucket` to the configured bucket once a minute (5s timeout) and keeps the last 60 results in memory. The Storage page draws them as a one-hour timeline with a time axis, uptime and average latency next to the cluster usage bar, and polls every 5 seconds regardless of the auto-refresh toggle. The admin API serves them at `GET /api/v1/storage/health`. The history is per pod and starts empty after a restart.
+- `forklift_storage_up` and `forklift_storage_check_duration_seconds` gauges report the latest check, so availability history and alerting live in Prometheus. Both stay absent until the first check finishes. See `docs/metrics.md`.
+- The Storage overview splits the backend into a Storage info card (official provider logo when one is bundled, name and server version from the admin API) and a Storage endpoint card with a copy button.
+- The migration report records its own size: `stored_at.size_bytes` in `GET /api/v1/storage/migrations/{id}`, shown as Size under Report location.
+
+### Changed
+
+- A migration report opens as its own page at `/admin/storage/migrations/{id}` instead of a modal, so it can be linked, reloaded and opened in a new tab.
+- The report's JSON tab shows the full record including `stored_at`, and the record path copies on hover.
+- Hovering a run's check dots names the stage (PF Preflight, PV Postflight) above the per-check list.
+
+### Fixed
+
+- The Checks column of the migration history no longer runs into the row's arrow when two or more checks failed. The failing IDs wrap below the dots.
+
 ## 0.14.1 (2026-10-03)
 
 Chart 0.14.1. forklift-mcp remains 0.3.2.

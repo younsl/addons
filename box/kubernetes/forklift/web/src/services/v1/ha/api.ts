@@ -12,6 +12,7 @@ import { API_PREFIX } from "@/services/paths";
 
 import type {
   GetHaResponse,
+  GetStorageHealthResponse,
   GetStorageMigrationRequest,
   GetStorageMigrationResponse,
   GetStorageResponse,
@@ -33,6 +34,15 @@ export function getStorage(options?: OpenApiRequestOptions) {
 
   return client.get<GetStorageResponse>(
     `${API_PREFIX}/storage`,
+    requestOptions,
+  );
+}
+
+export function getStorageHealth(options?: OpenApiRequestOptions) {
+  const { client, requestOptions } = resolveOpenApiRequestOptions(options);
+
+  return client.get<GetStorageHealthResponse>(
+    `${API_PREFIX}/storage/health`,
     requestOptions,
   );
 }

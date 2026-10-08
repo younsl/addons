@@ -9,6 +9,7 @@ import { openApiQueryKeys } from "@/query/v1/openapi-query-keys";
 import {
   getHa,
   getStorage,
+  getStorageHealth,
   getStorageMigration,
   listStorageMigrations,
 } from "@/services/v1/ha/api";
@@ -28,6 +29,12 @@ export function createHaOpenApiQueryOptions(client: HttpClient) {
         queryKey: openApiQueryKeys.getStorage(),
         queryFn: ({ signal }) =>
           getStorage({ signal, client }),
+      }),
+    getStorageHealth: () =>
+      queryOptions({
+        queryKey: openApiQueryKeys.getStorageHealth(),
+        queryFn: ({ signal }) =>
+          getStorageHealth({ signal, client }),
       }),
     listStorageMigrations: () =>
       queryOptions({

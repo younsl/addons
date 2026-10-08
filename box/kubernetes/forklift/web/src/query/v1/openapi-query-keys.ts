@@ -98,6 +98,7 @@ export const openApiQueryKeys = {
   listGroupMappings: () => key("GET", "/api/v1/group-mappings"),
   getHa: () => key("GET", "/api/v1/ha"),
   getStorage: () => key("GET", "/api/v1/storage"),
+  getStorageHealth: () => key("GET", "/api/v1/storage/health"),
   listStorageMigrations: () => key("GET", "/api/v1/storage/migrations"),
   getStorageMigration: (params: GetStorageMigrationRequest) =>
     key("GET", "/api/v1/storage/migrations/{id}", params),

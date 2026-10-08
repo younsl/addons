@@ -835,6 +835,15 @@ async fn run(cfg: Arc<config::Config>, cancel: CancellationToken) -> anyhow::Res
         }
         api_handler.set_storage_backend(descriptor, cluster);
         if let Some(client) = &s3_client {
+            let monitor = storage::health::HealthMonitor::new(Arc::new(
+                storage::health::HeadBucketProbe::new(client.clone(), &cfg.storage.s3.bucket),
+            ));
+            tokio::spawn(Arc::clone(&monitor).run(shutdown.clone()));
+            reg.register(Box::new(metrics::StorageHealthCollector::new(Arc::clone(
+                &monitor,
+            ))))
+            .expect("register forklift_storage_up");
+            api_handler.set_storage_health(monitor);
             api_handler.set_migration_history(forklift::migrate::record::S3History::new(
                 client.clone(),
                 &cfg.storage.s3.bucket,

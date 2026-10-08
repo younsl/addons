@@ -1401,6 +1401,22 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/StorageStats" }
+  /api/v1/storage/health:
+    get:
+      operationId: getStorageHealth
+      tags: [ha]
+      summary: Object-store reachability checks from the last hour (admin)
+      description: >
+        A HeadBucket check runs on every pod once a minute and the pod keeps the
+        last 60 results in memory, so the history describes the pod that served
+        the request and restarts empty. Empty for the fs backend.
+      security: [{ basicAuth: [] }, { bearerAuth: [] }]
+      responses:
+        "200":
+          description: Check history, oldest first
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/StorageHealth" }
   /api/v1/storage/migrations:
     get:
       operationId: listStorageMigrations
@@ -2974,6 +2990,23 @@ components:
             re-checked against its artifact row before it is reported, and
             the list is capped at 100.
           items: { $ref: "#/components/schemas/DanglingRef" }
+    StorageHealth:
+      type: object
+      required: [interval_seconds, checks]
+      properties:
+        interval_seconds: { type: integer, description: Seconds between checks. }
+        checks:
+          type: array
+          description: Oldest first, at most 60.
+          items: { $ref: "#/components/schemas/StorageHealthCheck" }
+    StorageHealthCheck:
+      type: object
+      required: [at, ok, latency_ms]
+      properties:
+        at: { type: string, format: date-time }
+        ok: { type: boolean }
+        latency_ms: { type: integer }
+        error: { type: string, description: Why the check failed. Absent on success. }
     DiskUsage:
       type: object
       description: >
@@ -3124,6 +3157,7 @@ components:
         bucket: { type: string }
         key: { type: string }
         uri: { type: string }
+        size_bytes: { type: integer, description: Size of the record object. }
     ClusterStats:
       type: object
       description: Live cluster capacity and health from the provider's admin API. Counts the provider does not report are absent.

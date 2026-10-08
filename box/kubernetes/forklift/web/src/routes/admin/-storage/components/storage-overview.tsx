@@ -1,5 +1,6 @@
-import { Badge } from "@/components/app-ui/badge";
+import { CopyIconButton } from "@/components/app-ui/copy-button";
 import { useTranslation } from "@/lib/i18n";
+import { hasProviderLogo, ProviderLogo } from "@/routes/admin/-storage/components/provider-logo";
 import { StatTile } from "@/routes/admin/-storage/components/stat-tile";
 import { formatFileSize } from "@/utils/format-file-size";
 
@@ -21,16 +22,41 @@ export function StorageOverview({ storage }: { storage: StorageStats }) {
       <h2 className="mb-3 text-base font-semibold">{t("storage.overview")}</h2>
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <StatTile
-          label={t("storage.mode")}
+          label={t("storage.info")}
           value={
-            <Badge>
-              {storage.backend === "s3"
-                ? storage.provider_name || t("storage.mode-s3")
-                : t("storage.mode-filesystem")}
-            </Badge>
+            <div className="flex flex-wrap items-center gap-2">
+              {storage.backend === "s3" && hasProviderLogo(storage.provider) && (
+                <ProviderLogo id={storage.provider} className="size-7" />
+              )}
+              <span className="text-base">
+                {storage.backend === "s3"
+                  ? storage.provider_name || t("storage.mode-s3")
+                  : t("storage.mode-filesystem")}
+              </span>
+              {storage.cluster?.version && (
+                <span
+                  className="break-all text-base text-muted-foreground"
+                  data-testid="storage-provider-version"
+                >
+                  {storage.cluster.version}
+                </span>
+              )}
+            </div>
           }
-          hint={storage.endpoint}
         />
+        {storage.backend === "s3" && (
+          <StatTile
+            label={t("storage.endpoint")}
+            value={
+              <span className="flex min-w-0 items-center gap-1">
+                <span className="break-all text-sm font-normal">
+                  {storage.endpoint || "s3.amazonaws.com"}
+                </span>
+                <CopyIconButton value={storage.endpoint || "s3.amazonaws.com"} />
+              </span>
+            }
+          />
+        )}
         {storage.backend === "s3" && (
           <StatTile
             label={t("storage.bucket")}

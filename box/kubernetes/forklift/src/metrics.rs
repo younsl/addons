@@ -13,10 +13,12 @@ use prometheus::proto::{Gauge, LabelPair, Metric, MetricFamily, MetricType};
 
 pub mod coverage;
 pub mod db;
+pub mod storage_health;
 pub mod upstream;
 
 pub use coverage::{CoverageCollector, CoverageStats};
 pub use db::{DbPoolCollector, PoolStatser};
+pub use storage_health::StorageHealthCollector;
 pub use upstream::{RepoLister, UpstreamProber};
 
 /// The subset of the metadata store the collector queries on scrape.

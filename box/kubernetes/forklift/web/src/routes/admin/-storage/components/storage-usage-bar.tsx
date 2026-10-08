@@ -39,7 +39,7 @@ export function StorageUsageBar({
   ];
 
   return (
-    <Card className="mb-3">
+    <Card className="h-full">
       <CardContent className="p-4">
         <div className="mb-2 flex items-center justify-between text-sm">
           <span className="text-muted-foreground">{t("storage.usage")}</span>

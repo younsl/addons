@@ -7,12 +7,15 @@ import type {
   MigrationList,
   MigrationRecord,
   StatusMessage,
+  StorageHealth,
   StorageStats
 } from "../openapi-types";
 
 export type GetHaResponse = HAStatus;
 
 export type GetStorageResponse = StorageStats;
+
+export type GetStorageHealthResponse = StorageHealth;
 
 export type ListStorageMigrationsResponse = MigrationList;
 

@@ -28,6 +28,7 @@ import { Route as WorkspaceTokensIndexRouteImport } from './../routes/workspace/
 import { Route as WorkspaceRepositoriesIndexRouteImport } from './../routes/workspace/repositories/index'
 import { Route as WorkspaceCoverageIndexRouteImport } from './../routes/workspace/coverage/index'
 import { Route as WorkspaceApprovalsIndexRouteImport } from './../routes/workspace/approvals/index'
+import { Route as AdminStorageIndexRouteImport } from './../routes/admin/storage/index'
 import { Route as AdminNotificationsIndexRouteImport } from './../routes/admin/notifications/index'
 import { Route as AccessUsersIndexRouteImport } from './../routes/access/users/index'
 import { Route as AccessRolesIndexRouteImport } from './../routes/access/roles/index'
@@ -50,6 +51,7 @@ import { Route as AccessUsersIdIndexRouteImport } from './../routes/access/users
 import { Route as WorkspaceRepositoriesIdUploadRouteImport } from './../routes/workspace/repositories/$id/upload'
 import { Route as WorkspaceRepositoriesIdOciArtifactRouteImport } from './../routes/workspace/repositories/$id/oci-artifact'
 import { Route as WorkspaceRepositoriesIdTabRouteImport } from './../routes/workspace/repositories/$id/$tab'
+import { Route as AdminStorageMigrationsIdRouteImport } from './../routes/admin/storage/migrations/$id'
 import { Route as AccessUsersIdTokensNewRouteImport } from './../routes/access/users/$id/tokens/new'
 
 const WorkspaceRoute = WorkspaceRouteImport.update({
@@ -147,6 +149,11 @@ const WorkspaceApprovalsIndexRoute = WorkspaceApprovalsIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => WorkspaceApprovalsRoute,
+} as any)
+const AdminStorageIndexRoute = AdminStorageIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AdminStorageRoute,
 } as any)
 const AdminNotificationsIndexRoute = AdminNotificationsIndexRouteImport.update({
   id: '/',
@@ -265,6 +272,12 @@ const WorkspaceRepositoriesIdTabRoute =
     path: '/$tab',
     getParentRoute: () => WorkspaceRepositoriesIdRoute,
   } as any)
+const AdminStorageMigrationsIdRoute =
+  AdminStorageMigrationsIdRouteImport.update({
+    id: '/migrations/$id',
+    path: '/migrations/$id',
+    getParentRoute: () => AdminStorageRoute,
+  } as any)
 const AccessUsersIdTokensNewRoute = AccessUsersIdTokensNewRouteImport.update({
   id: '/tokens/new',
   path: '/tokens/new',
@@ -280,7 +293,7 @@ export interface FileRoutesByFullPath {
   '/access/users': typeof AccessUsersRouteWithChildren
   '/admin/ha': typeof AdminHaRoute
   '/admin/notifications': typeof AdminNotificationsRouteWithChildren
-  '/admin/storage': typeof AdminStorageRoute
+  '/admin/storage': typeof AdminStorageRouteWithChildren
   '/workspace/approvals': typeof WorkspaceApprovalsRouteWithChildren
   '/workspace/repositories': typeof WorkspaceRepositoriesRouteWithChildren
   '/workspace/tokens': typeof WorkspaceTokensRouteWithChildren
@@ -304,10 +317,12 @@ export interface FileRoutesByFullPath {
   '/access/roles/': typeof AccessRolesIndexRoute
   '/access/users/': typeof AccessUsersIndexRoute
   '/admin/notifications/': typeof AdminNotificationsIndexRoute
+  '/admin/storage/': typeof AdminStorageIndexRoute
   '/workspace/approvals/': typeof WorkspaceApprovalsIndexRoute
   '/workspace/coverage/': typeof WorkspaceCoverageIndexRoute
   '/workspace/repositories/': typeof WorkspaceRepositoriesIndexRoute
   '/workspace/tokens/': typeof WorkspaceTokensIndexRoute
+  '/admin/storage/migrations/$id': typeof AdminStorageMigrationsIdRoute
   '/workspace/repositories/$id/$tab': typeof WorkspaceRepositoriesIdTabRoute
   '/workspace/repositories/$id/oci-artifact': typeof WorkspaceRepositoriesIdOciArtifactRoute
   '/workspace/repositories/$id/upload': typeof WorkspaceRepositoriesIdUploadRoute
@@ -320,7 +335,6 @@ export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/settings': typeof SettingsRoute
   '/admin/ha': typeof AdminHaRoute
-  '/admin/storage': typeof AdminStorageRoute
   '/access': typeof AccessIndexRoute
   '/admin': typeof AdminIndexRoute
   '/workspace': typeof WorkspaceIndexRoute
@@ -339,10 +353,12 @@ export interface FileRoutesByTo {
   '/access/roles': typeof AccessRolesIndexRoute
   '/access/users': typeof AccessUsersIndexRoute
   '/admin/notifications': typeof AdminNotificationsIndexRoute
+  '/admin/storage': typeof AdminStorageIndexRoute
   '/workspace/approvals': typeof WorkspaceApprovalsIndexRoute
   '/workspace/coverage': typeof WorkspaceCoverageIndexRoute
   '/workspace/repositories': typeof WorkspaceRepositoriesIndexRoute
   '/workspace/tokens': typeof WorkspaceTokensIndexRoute
+  '/admin/storage/migrations/$id': typeof AdminStorageMigrationsIdRoute
   '/workspace/repositories/$id/$tab': typeof WorkspaceRepositoriesIdTabRoute
   '/workspace/repositories/$id/oci-artifact': typeof WorkspaceRepositoriesIdOciArtifactRoute
   '/workspace/repositories/$id/upload': typeof WorkspaceRepositoriesIdUploadRoute
@@ -360,7 +376,7 @@ export interface FileRoutesById {
   '/access/users': typeof AccessUsersRouteWithChildren
   '/admin/ha': typeof AdminHaRoute
   '/admin/notifications': typeof AdminNotificationsRouteWithChildren
-  '/admin/storage': typeof AdminStorageRoute
+  '/admin/storage': typeof AdminStorageRouteWithChildren
   '/workspace/approvals': typeof WorkspaceApprovalsRouteWithChildren
   '/workspace/repositories': typeof WorkspaceRepositoriesRouteWithChildren
   '/workspace/tokens': typeof WorkspaceTokensRouteWithChildren
@@ -384,10 +400,12 @@ export interface FileRoutesById {
   '/access/roles/': typeof AccessRolesIndexRoute
   '/access/users/': typeof AccessUsersIndexRoute
   '/admin/notifications/': typeof AdminNotificationsIndexRoute
+  '/admin/storage/': typeof AdminStorageIndexRoute
   '/workspace/approvals/': typeof WorkspaceApprovalsIndexRoute
   '/workspace/coverage/': typeof WorkspaceCoverageIndexRoute
   '/workspace/repositories/': typeof WorkspaceRepositoriesIndexRoute
   '/workspace/tokens/': typeof WorkspaceTokensIndexRoute
+  '/admin/storage/migrations/$id': typeof AdminStorageMigrationsIdRoute
   '/workspace/repositories/$id/$tab': typeof WorkspaceRepositoriesIdTabRoute
   '/workspace/repositories/$id/oci-artifact': typeof WorkspaceRepositoriesIdOciArtifactRoute
   '/workspace/repositories/$id/upload': typeof WorkspaceRepositoriesIdUploadRoute
@@ -430,10 +448,12 @@ export interface FileRouteTypes {
     | '/access/roles/'
     | '/access/users/'
     | '/admin/notifications/'
+    | '/admin/storage/'
     | '/workspace/approvals/'
     | '/workspace/coverage/'
     | '/workspace/repositories/'
     | '/workspace/tokens/'
+    | '/admin/storage/migrations/$id'
     | '/workspace/repositories/$id/$tab'
     | '/workspace/repositories/$id/oci-artifact'
     | '/workspace/repositories/$id/upload'
@@ -446,7 +466,6 @@ export interface FileRouteTypes {
     | '/login'
     | '/settings'
     | '/admin/ha'
-    | '/admin/storage'
     | '/access'
     | '/admin'
     | '/workspace'
@@ -465,10 +484,12 @@ export interface FileRouteTypes {
     | '/access/roles'
     | '/access/users'
     | '/admin/notifications'
+    | '/admin/storage'
     | '/workspace/approvals'
     | '/workspace/coverage'
     | '/workspace/repositories'
     | '/workspace/tokens'
+    | '/admin/storage/migrations/$id'
     | '/workspace/repositories/$id/$tab'
     | '/workspace/repositories/$id/oci-artifact'
     | '/workspace/repositories/$id/upload'
@@ -509,10 +530,12 @@ export interface FileRouteTypes {
     | '/access/roles/'
     | '/access/users/'
     | '/admin/notifications/'
+    | '/admin/storage/'
     | '/workspace/approvals/'
     | '/workspace/coverage/'
     | '/workspace/repositories/'
     | '/workspace/tokens/'
+    | '/admin/storage/migrations/$id'
     | '/workspace/repositories/$id/$tab'
     | '/workspace/repositories/$id/oci-artifact'
     | '/workspace/repositories/$id/upload'
@@ -530,7 +553,7 @@ export interface RootRouteChildren {
   AccessUsersRoute: typeof AccessUsersRouteWithChildren
   AdminHaRoute: typeof AdminHaRoute
   AdminNotificationsRoute: typeof AdminNotificationsRouteWithChildren
-  AdminStorageRoute: typeof AdminStorageRoute
+  AdminStorageRoute: typeof AdminStorageRouteWithChildren
   AccessIndexRoute: typeof AccessIndexRoute
   AdminIndexRoute: typeof AdminIndexRoute
 }
@@ -669,6 +692,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/workspace/approvals/'
       preLoaderRoute: typeof WorkspaceApprovalsIndexRouteImport
       parentRoute: typeof WorkspaceApprovalsRoute
+    }
+    '/admin/storage/': {
+      id: '/admin/storage/'
+      path: '/'
+      fullPath: '/admin/storage/'
+      preLoaderRoute: typeof AdminStorageIndexRouteImport
+      parentRoute: typeof AdminStorageRoute
     }
     '/admin/notifications/': {
       id: '/admin/notifications/'
@@ -823,6 +853,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/workspace/repositories/$id/$tab'
       preLoaderRoute: typeof WorkspaceRepositoriesIdTabRouteImport
       parentRoute: typeof WorkspaceRepositoriesIdRoute
+    }
+    '/admin/storage/migrations/$id': {
+      id: '/admin/storage/migrations/$id'
+      path: '/migrations/$id'
+      fullPath: '/admin/storage/migrations/$id'
+      preLoaderRoute: typeof AdminStorageMigrationsIdRouteImport
+      parentRoute: typeof AdminStorageRoute
     }
     '/access/users/$id/tokens/new': {
       id: '/access/users/$id/tokens/new'
@@ -988,6 +1025,20 @@ const AdminNotificationsRouteChildren: AdminNotificationsRouteChildren = {
 const AdminNotificationsRouteWithChildren =
   AdminNotificationsRoute._addFileChildren(AdminNotificationsRouteChildren)
 
+interface AdminStorageRouteChildren {
+  AdminStorageIndexRoute: typeof AdminStorageIndexRoute
+  AdminStorageMigrationsIdRoute: typeof AdminStorageMigrationsIdRoute
+}
+
+const AdminStorageRouteChildren: AdminStorageRouteChildren = {
+  AdminStorageIndexRoute: AdminStorageIndexRoute,
+  AdminStorageMigrationsIdRoute: AdminStorageMigrationsIdRoute,
+}
+
+const AdminStorageRouteWithChildren = AdminStorageRoute._addFileChildren(
+  AdminStorageRouteChildren,
+)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   LoginRoute: LoginRoute,
@@ -997,7 +1048,7 @@ const rootRouteChildren: RootRouteChildren = {
   AccessUsersRoute: AccessUsersRouteWithChildren,
   AdminHaRoute: AdminHaRoute,
   AdminNotificationsRoute: AdminNotificationsRouteWithChildren,
-  AdminStorageRoute: AdminStorageRoute,
+  AdminStorageRoute: AdminStorageRouteWithChildren,
   AccessIndexRoute: AccessIndexRoute,
   AdminIndexRoute: AdminIndexRoute,
 }

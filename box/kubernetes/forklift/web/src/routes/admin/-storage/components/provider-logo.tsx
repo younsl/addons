@@ -24,6 +24,10 @@ export function providerName(id?: string) {
   return (id && providers[id]?.name) || "S3";
 }
 
+export function hasProviderLogo(id?: string) {
+  return Boolean(id && providers[id]?.logo);
+}
+
 export function ProviderLogo({ id, className }: { id?: string; className?: string }) {
   const p = id ? providers[id] : undefined;
   if (!p?.logo) {

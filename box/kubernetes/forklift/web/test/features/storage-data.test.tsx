@@ -7,6 +7,7 @@ import { ApiError } from "@/lib/http/error/api-error";
 // The generator groups GET /storage into the ha module alongside GET /ha;
 // both are single-segment system endpoints. Mock where it is generated.
 import * as haApi from "@/services/v1/ha/api";
+import { HEALTH_POLL_MS, useStorageHealth } from "@/routes/admin/-storage/hooks/use-storage-health";
 import { useStorageStatus } from "@/routes/admin/-storage/hooks/use-storage-status";
 
 vi.mock("@/services/v1/ha/api");
@@ -35,6 +36,10 @@ function withQueryClient() {
 
 beforeEach(() => {
   mockedHa.getStorage.mockResolvedValue(storage);
+  mockedHa.getStorageHealth.mockResolvedValue({
+    interval_seconds: 60,
+    checks: [{ at: "2026-10-08T12:00:00Z", ok: true, latency_ms: 4 }],
+  });
 });
 
 afterEach(() => {
@@ -87,5 +92,37 @@ describe("useStorageStatus", () => {
     // The last good data is still on screen behind the error, rather than the
     // page emptying out.
     expect(result.current.storage).toEqual(storage);
+  });
+});
+
+describe("useStorageHealth", () => {
+  test("polls on its own cadence and advances the timeline edge", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const { wrapper } = withQueryClient();
+    const { result } = renderHook(() => useStorageHealth(), { wrapper });
+
+    await waitFor(() => expect(result.current.health?.checks).toHaveLength(1));
+    const firstEdge = result.current.now;
+    expect(firstEdge).not.toBeNull();
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(HEALTH_POLL_MS); });
+
+    expect(mockedHa.getStorageHealth).toHaveBeenCalledTimes(2);
+    expect(result.current.now).toBeGreaterThan(firstEdge!);
+  });
+
+  test("a failed poll keeps the last history and freezes the edge", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const { wrapper } = withQueryClient();
+    const { result } = renderHook(() => useStorageHealth(), { wrapper });
+    await waitFor(() => expect(result.current.health?.checks).toHaveLength(1));
+    const edge = result.current.now;
+
+    mockedHa.getStorageHealth.mockRejectedValue(new ApiError(502, "bad gateway"));
+    await act(async () => { await vi.advanceTimersByTimeAsync(HEALTH_POLL_MS); });
+
+    await waitFor(() => expect(result.current.error).toBe("bad gateway"));
+    expect(result.current.health?.checks).toHaveLength(1);
+    expect(result.current.now).toBe(edge);
   });
 });

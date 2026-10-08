@@ -5,6 +5,7 @@ import { Switch } from "@/components/ui/switch";
 import { useTranslation } from "@/lib/i18n";
 import { ClusterPanel } from "@/routes/admin/-storage/components/cluster-panel";
 import { MigrationHistory } from "@/routes/admin/-storage/components/migration-history";
+import { StorageHealthCard } from "@/routes/admin/-storage/components/storage-health-panel";
 import { StorageOverview } from "@/routes/admin/-storage/components/storage-overview";
 import { useStorageStatus } from "@/routes/admin/-storage/hooks/use-storage-status";
 import { formatTimestamp } from "@/utils/format-timestamp";
@@ -57,16 +58,29 @@ export function StoragePage() {
           )}
 
           {storage.cluster ? (
-            <ClusterPanel cluster={storage.cluster} providerName={storage.provider_name} />
+            <ClusterPanel
+              cluster={storage.cluster}
+              providerName={storage.provider_name}
+              health={storage.backend === "s3" ? <StorageHealthCard /> : undefined}
+            />
+          ) : storage.backend === "s3" ? (
+            <div className="space-y-3">
+              <div className="grid gap-3 lg:grid-cols-2">
+                <StorageHealthCard />
+              </div>
+              {storage.cluster_error && (
+                <Alert>{t("storage.cluster-unavailable")}: {storage.cluster_error}</Alert>
+              )}
+            </div>
           ) : storage.cluster_error ? (
             // The cluster panel being absent is a symptom, not a configuration
             // choice, so say why.
             <Alert>{t("storage.cluster-unavailable")}: {storage.cluster_error}</Alert>
-          ) : storage.backend !== "s3" ? (
+          ) : (
             <div className="rounded-md border border-dashed border-[var(--fx-border-subtle)] px-3 py-6 text-center text-sm text-muted-foreground">
               {t("storage.fs-note")}
             </div>
-          ) : null}
+          )}
 
           {storage.backend === "s3" && <MigrationHistory />}
         </div>
