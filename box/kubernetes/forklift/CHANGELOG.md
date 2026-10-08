@@ -4,17 +4,11 @@ Notable changes per release. Container image versions come from the
 `org.opencontainers.image.version` label in the `Dockerfile`; chart versions from
 `charts/forklift/Chart.yaml`.
 
-## Chart 0.15.1 (2026-10-08)
-
-forklift remains 0.15.0. forklift-mcp remains 0.3.2.
-
-### Changed
-
-- The bundled SeaweedFS no longer renders its bucket hook Job by default. `seaweedfs.allInOne.s3.createBuckets` defaults to `[]` and forklift's bucket falls back to `forklift`, which forklift and the migration Job already create at boot. Argo CD ran the hook as PostSync on every sync, and a hook pod that never started (for example on a node out of pod IPs) kept the sync waiting forever because the Job has no deadline. Set `createBuckets` only for bucket lock, versioning, TTL or anonymous read, which brings the hook back. A release that sets `createBuckets` explicitly keeps its hook and bucket name unchanged.
-
 ## 0.15.0 (2026-10-08)
 
 Chart 0.15.0. forklift-mcp remains 0.3.2.
+
+The 0.15.0 chart was rebuilt on 2026-10-08 so the bundled SeaweedFS skips its bucket hook Job by default (see Changed). The first 0.15.0 chart build renders the hook.
 
 ### Added
 
@@ -28,6 +22,7 @@ Chart 0.15.0. forklift-mcp remains 0.3.2.
 - A migration report opens as its own page at `/admin/storage/migrations/{id}` instead of a modal, so it can be linked, reloaded and opened in a new tab.
 - The report's JSON tab shows the full record including `stored_at`, and the record path copies on hover.
 - Hovering a run's check dots names the stage (PF Preflight, PV Postflight) above the per-check list.
+- The bundled SeaweedFS no longer renders its bucket hook Job by default. `seaweedfs.allInOne.s3.createBuckets` defaults to `[]` and forklift's bucket falls back to `forklift`, which forklift and the migration Job already create at boot. Argo CD runs the hook as PostSync on every sync, and a hook pod that never starts (for example on a node out of pod IPs) keeps the sync waiting forever because the Job has no deadline. Set `createBuckets` only for bucket lock, versioning, TTL or anonymous read, which brings the hook back. A release that sets `createBuckets` explicitly keeps its hook and bucket name unchanged.
 
 ### Fixed
 

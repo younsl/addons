@@ -77,7 +77,7 @@ A check is `SKIP` when an earlier failure leaves nothing to check, so the total 
 
 The steps work the same under Argo CD, with three behaviours to know:
 
-- Argo CD runs Helm `post-install` hooks as PostSync, after every resource is healthy, which is why forklift and the migration Job create the bucket themselves. Since chart 0.15.1 the bundled SeaweedFS renders no bucket hook unless `seaweedfs.allInOne.s3.createBuckets` is set, and then the hook finds the bucket and skips it.
+- Argo CD runs Helm `post-install` hooks as PostSync, after every resource is healthy, which is why forklift and the migration Job create the bucket themselves. Since chart 0.15.0 the bundled SeaweedFS renders no bucket hook unless `seaweedfs.allInOne.s3.createBuckets` is set, and then the hook finds the bucket and skips it.
 - Argo CD renders every sync as revision 1. The hash in the Job name, not the revision, is what gives each new setting a new Job.
 - Argo CD renders without `lookup`, so Secrets that Helm keeps by looking them up come out new on every render. The SeaweedFS subchart's own S3 identities Secret generates a random read-only key that way, and its hash is on the SeaweedFS pod, which would restart it on every sync. The chart therefore writes the identities to `forklift-seaweedfs-s3-config` itself, admin only and identical on every render (`seaweedfs.allInOne.s3.existingConfigSecret`). With `seaweedfs.s3.credentials.admin.existingSecret` the file names the keys as `${SEAWEEDFS_S3_ADMIN_ACCESS_KEY_ID}` and `${SEAWEEDFS_S3_ADMIN_SECRET_ACCESS_KEY}`, which SeaweedFS reads from that Secret.
 
