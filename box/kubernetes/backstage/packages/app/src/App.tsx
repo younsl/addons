@@ -38,7 +38,6 @@ import {
   UnifiedThemeProvider,
   themes as builtinThemes,
 } from '@backstage/theme';
-import { ArgocdAppsetPage } from '@internal/plugin-argocd-appset';
 import { OpenCostPage, CostAdjustPage } from '@internal/plugin-opencost';
 import { BuiThemerPage } from '@backstage/plugin-mui-to-bui';
 import { BuildInfoSettings } from './components/settings/AboutSettings';
@@ -115,7 +114,6 @@ const routes = (
     </Route>
     <Route path="/catalog-import" element={<CatalogImportPage />} />
     <Route path="/catalog-graph" element={<CatalogGraphPage />} />
-    <Route path="/argocd-appset/*" element={<ArgocdAppsetPage />} />
     <Route path="/cost-report" element={<OpenCostPage />} />
     <Route path="/cost-report/custom-export" element={<CostAdjustPage />} />
     <Route path="/mui-to-bui" element={<BuiThemerPage />} />

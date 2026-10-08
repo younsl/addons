@@ -18,6 +18,7 @@ Released 2026-10-06. Built on Backstage [v1.55.3](https://github.com/backstage/b
 - The backend adds `GET /merge-requests` and `GET /merge-request-counts`. Open merge requests are listed once per repository and reused for 30 seconds, and each one's changed files are read from its diff and cached against its head commit, so only a merge request pushed to since the last read costs another request. Requests use the same `integrations.gitlab` token as the branch listing.
 - `/application-sets` responses carry a new `sourcePaths` field per ApplicationSet and `gitSources` per Application.
 - Card footers show the ApplicationSet age in `kubectl get` style (`190d`) instead of the creation timestamp, and the footer actions take equal width.
+- Rebuilt on 2026-10-08 at the same tag to remove the `argocd-appset` plugin (frontend and backend). The ArgoCD sidebar entry and home quick link, the `/argocd-appset` route, the `app.plugins.argocdAppSet` flag, the `argocdApplicationSet` config block and the `argocd-appset` entry in `backend.auth.externalAccess` are gone. Deployments can drop that block and entry, the `SLACK_WEBHOOK_URL` environment variable and Secret key, and the Kubernetes RBAC granted to the Backstage service account for ApplicationSets and Applications. The release workflow now runs the `platforms-backend` tests, which take over the `jest` dev dependency. The `backstage-mcp` image is rebuilt at `0.1.0` without its `argocd_*` tools, leaving 18.
 
 ## 1.55.3-1
 

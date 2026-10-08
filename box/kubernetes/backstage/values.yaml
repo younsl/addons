@@ -63,8 +63,6 @@ backstage:
     app:
       title: Backstage
       baseUrl: https://backstage.example.com
-      plugins:
-        argocdAppSet: true
 
     organization:
       name: DevOps Portal
@@ -104,7 +102,6 @@ backstage:
               - plugin: search
               - plugin: techdocs
               - plugin: platforms
-              - plugin: argocd-appset
               - plugin: opencost
       auditor:
         severityLogLevelMappings:

@@ -1,7 +1,6 @@
 import React from 'react';
 import {
   KubernetesIcon,
-  ArgocdIcon,
   CategoryIcon,
   ExtensionIcon,
   CostIcon,
@@ -21,7 +20,6 @@ export const quickLinks: QuickLinkItem[] = [
   { url: '/catalog', label: 'Catalog', Icon: CategoryIcon, description: 'Browse all registered entities' },
   { url: '/api-docs', label: 'APIs', Icon: ExtensionIcon, description: 'Explore API documentation' },
   // Operations
-  { url: '/argocd-appset', label: 'ArgoCD', Icon: ArgocdIcon, description: 'Manage ArgoCD ApplicationSets' },
   { url: '/cost-report', label: 'Cost Report', Icon: CostIcon, description: 'View cluster cost breakdown' },
 ];
 

@@ -25,12 +25,6 @@
       "path": "packages/backend"
     },
     {
-      "path": "plugins/argocd-appset"
-    },
-    {
-      "path": "plugins/argocd-appset-backend"
-    },
-    {
       "path": "plugins/opencost"
     },
     {

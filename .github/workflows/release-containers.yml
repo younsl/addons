@@ -88,7 +88,7 @@ jobs:
 
       - name: Run tests
         run: |
-          yarn workspace @internal/plugin-argocd-appset-backend test --no-cache --ci
+          yarn workspace @internal/plugin-platforms-backend test --no-cache --ci
 
   # ---------------------------------------------------------------------------
   # Release: one native runner per architecture, each pushing an untagged

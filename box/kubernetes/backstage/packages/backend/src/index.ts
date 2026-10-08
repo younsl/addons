@@ -33,8 +33,6 @@ backend.add(import('@backstage/plugin-search-backend-module-catalog'));
 
 backend.add(import('@internal/plugin-platforms-backend'));
 
-backend.add(import('@internal/plugin-argocd-appset-backend'));
-
 backend.add(import('@internal/plugin-opencost-backend'));
 
 backend.add(import('@backstage/plugin-permission-backend'));

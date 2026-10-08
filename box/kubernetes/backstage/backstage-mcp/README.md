@@ -19,7 +19,7 @@ Serving is stateless: every MCP request is answered on its own, so replicas scal
 
 ## Tools
 
-26 tools, all annotated `readOnlyHint: true`. Names are prefixed by the Backstage page they read from.
+18 tools, all annotated `readOnlyHint: true`. Names are prefixed by the Backstage page they read from.
 
 | Page | Tools |
 | --- | --- |
@@ -27,7 +27,6 @@ Serving is stateless: every MCP request is answered on its own, so replicas scal
 | Search | `search_query` (software-catalog and techdocs indexes) |
 | Docs | `techdocs_get_metadata`, `techdocs_get_page` (HTML rendered to text with headings and fenced code) |
 | Platforms | `platforms_get_stats` |
-| ArgoCD | `argocd_get_status`, `argocd_list_application_sets`, `argocd_get_application_set`, `argocd_list_upstream_charts`, `argocd_get_upstream_chart`, `argocd_get_upstream_scan_status`, `argocd_list_audit_logs`, `argocd_list_repo_branches` |
 | Cost Report | `opencost_get_config`, `opencost_list_filters`, `opencost_list_years`, `opencost_search_controllers`, `opencost_get_monthly_totals`, `opencost_get_daily_summary`, `opencost_list_monthly_pod_costs`, `opencost_list_daily_pod_costs`, `opencost_get_pod_daily_costs`, `opencost_list_collection_runs` |
 
 List tools take `offset` and `limit` and report `total` and `truncated`, so an agent pages instead of raising the limit. A result longer than `MAX_RESULT_CHARS` is cut with a note asking the model to narrow the query.
@@ -53,7 +52,6 @@ backend:
           - plugin: search
           - plugin: techdocs
           - plugin: platforms
-          - plugin: argocd-appset
           - plugin: opencost
 ```
 

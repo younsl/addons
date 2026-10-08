@@ -49,7 +49,6 @@ impl BackstageMcp {
                 + Self::search_router()
                 + Self::techdocs_router()
                 + Self::platforms_router()
-                + Self::argocd_router()
                 + Self::opencost_router(),
         }
     }
@@ -267,7 +266,7 @@ mod tests {
         assert!(info.capabilities.tools.is_some());
         assert_eq!(info.instructions.as_deref(), Some(INSTRUCTIONS));
         let names = handler.tool_names();
-        assert!(names.len() > 25, "{names:?}");
+        assert!(names.len() > 15, "{names:?}");
         assert!(names.contains(&"catalog_search_entities".to_string()));
         assert!(
             names

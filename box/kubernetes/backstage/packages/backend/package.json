@@ -33,7 +33,6 @@
     "@backstage/plugin-search-backend": "^2.1.7",
     "@backstage/plugin-search-backend-module-catalog": "^0.3.19",
     "@backstage/plugin-techdocs-backend": "^2.3.0",
-    "@internal/plugin-argocd-appset-backend": "workspace:*",
     "@internal/plugin-opencost-backend": "workspace:*",
     "@internal/plugin-platforms-backend": "workspace:*",
     "better-sqlite3": "^12.6.2",

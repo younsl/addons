@@ -6,11 +6,6 @@ export interface Config {
      */
     plugins?: {
       /**
-       * Enable or disable ArgoCD AppSet plugin
-       * @visibility frontend
-       */
-      argocdAppSet?: boolean;
-      /**
        * Enable or disable OpenCost plugin
        * @visibility frontend
        */

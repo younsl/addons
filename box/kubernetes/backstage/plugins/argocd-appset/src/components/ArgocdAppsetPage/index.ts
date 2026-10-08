@@ -1,1 +1,0 @@
-export { ArgocdAppsetPage } from './ArgocdAppsetPage';

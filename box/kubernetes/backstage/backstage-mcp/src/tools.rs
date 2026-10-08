@@ -4,7 +4,6 @@
 //! sorting and paging done here, because most plugin endpoints return every
 //! row at once and an agent needs a bounded slice of them.
 
-pub mod argocd;
 pub mod catalog;
 pub mod opencost;
 pub mod platforms;
@@ -27,8 +26,6 @@ pub enum ToolError {
     Backstage(#[from] BackstageError),
     #[error("{0}")]
     Input(String),
-    #[error("{0}")]
-    NotFound(String),
     #[error("failed to encode result: {0}")]
     Encode(#[from] serde_json::Error),
 }
@@ -129,20 +126,6 @@ pub fn page<T>(items: Vec<T>, paging: Paging, default_limit: usize) -> Page<T> {
         truncated,
         items: page_items,
     }
-}
-
-/// Case-insensitive substring match across any of `fields`. An absent needle
-/// matches everything.
-#[must_use]
-pub fn matches_text(needle: Option<&str>, fields: &[Option<&str>]) -> bool {
-    let Some(needle) = needle.map(str::trim).filter(|value| !value.is_empty()) else {
-        return true;
-    };
-    let needle = needle.to_lowercase();
-    fields
-        .iter()
-        .flatten()
-        .any(|field| field.to_lowercase().contains(&needle))
 }
 
 /// Exact match against an optional filter.
@@ -264,10 +247,6 @@ mod tests {
 
     #[test]
     fn text_matching() {
-        assert!(matches_text(None, &[Some("x")]));
-        assert!(matches_text(Some("  "), &[None]));
-        assert!(matches_text(Some("PAY"), &[None, Some("team-payments")]));
-        assert!(!matches_text(Some("pay"), &[Some("orders")]));
         assert!(matches_eq(None::<&String>, &"a".to_string()));
         assert!(!matches_eq(Some(&"b".to_string()), &"a".to_string()));
     }

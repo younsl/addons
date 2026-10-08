@@ -11,14 +11,13 @@ import StorageIcon from '@material-ui/icons/Storage';
 import AttachMoneyIcon from '@material-ui/icons/AttachMoney';
 import { Text } from '@backstage/ui';
 import { SvgIcon } from '@material-ui/core';
-import { siArgo, siKubernetes, type SimpleIcon } from 'simple-icons';
+import { siKubernetes, type SimpleIcon } from 'simple-icons';
 
 const createIcon = (icon: SimpleIcon) => () => (
   <SvgIcon titleAccess={icon.title}>
     <path d={icon.path} />
   </SvgIcon>
 );
-const ArgocdIcon = createIcon(siArgo);
 const KubernetesIcon = createIcon(siKubernetes);
 import {
   Settings as SidebarSettings,
@@ -175,7 +174,6 @@ const PlatformsSidebarItem = () => {
 
 export const Root = ({ children }: PropsWithChildren<{}>) => {
   const config = useApi(configApiRef);
-  const argocdAppSetEnabled = config.getOptionalBoolean('app.plugins.argocdAppSet') ?? true;
   const opencostEnabled = config.getOptionalBoolean('app.plugins.opencost') ?? true;
 
   return (
@@ -195,9 +193,6 @@ export const Root = ({ children }: PropsWithChildren<{}>) => {
       </FoldableSection>
 
       <FoldableSection title="Operations" icon={<BuildIcon />} defaultOpen={false}>
-        {argocdAppSetEnabled && (
-          <SidebarItem icon={ArgocdIcon} to="argocd-appset" text="ArgoCD" />
-        )}
         {opencostEnabled && (
           <SidebarItem icon={AttachMoneyIcon} to="cost-report" text="Cost Report" />
         )}

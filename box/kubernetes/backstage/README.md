@@ -9,7 +9,7 @@ Custom Backstage image with GitLab auto-discovery, [Keycloak](https://github.com
 
 ### Plugins moved to an internal platform (2026-10-03)
 
-Most in-house plugins are retired. Operational tooling such as access audits, account requests, log extraction and capacity reservations moved to a dedicated internal platform, so this image now leans on Backstage far less. What stays is the portal core (catalog, API docs, TechDocs, templates, platforms, cost report) plus ArgoCD ApplicationSets until its move finishes. The [changelog](docs/changelog.md) lists the removed plugins.
+Most in-house plugins are retired. Operational tooling such as access audits, account requests, log extraction and capacity reservations moved to a dedicated internal platform, so this image now leans on Backstage far less. What stays is the portal core (catalog, API docs, TechDocs, templates, platforms, cost report). The [changelog](docs/changelog.md) lists the removed plugins.
 
 ## Quick Start
 

@@ -67,7 +67,6 @@ catalog:
 # Plugins that need cluster access this machine does not have.
 app:
   plugins:
-    argocdAppSet: false
     opencost: false
 ```
 
@@ -150,7 +149,7 @@ yarn backstage-cli repo test
 A single workspace (faster while iterating on one plugin):
 
 ```bash
-yarn workspace @internal/plugin-argocd-appset-backend test
+yarn workspace @internal/plugin-platforms-backend test
 ```
 
 Watch mode for the package you are editing:

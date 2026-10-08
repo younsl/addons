@@ -1,5 +1,5 @@
 import React from 'react';
-import { siArgo, siKubernetes } from 'simple-icons';
+import { siKubernetes } from 'simple-icons';
 
 const SvgIconBase = ({ d, title, style }: { d: string | string[]; title?: string; style?: React.CSSProperties }) => (
   <svg
@@ -19,10 +19,6 @@ const SvgIconBase = ({ d, title, style }: { d: string | string[]; title?: string
 
 export const KubernetesIcon = ({ style }: { style?: React.CSSProperties }) => (
   <SvgIconBase d={siKubernetes.path} title={siKubernetes.title} style={style} />
-);
-
-export const ArgocdIcon = ({ style }: { style?: React.CSSProperties }) => (
-  <SvgIconBase d={siArgo.path} title={siArgo.title} style={style} />
 );
 
 export const CategoryIcon = ({ style }: { style?: React.CSSProperties }) => (
