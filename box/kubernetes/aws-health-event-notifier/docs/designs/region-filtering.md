@@ -1,6 +1,8 @@
 # Region filtering
 
-Status: implemented in 0.3.0.
+| Status | Category |
+| --- | --- |
+| implemented in 0.3.0. | alerting |
 
 ## Summary
 

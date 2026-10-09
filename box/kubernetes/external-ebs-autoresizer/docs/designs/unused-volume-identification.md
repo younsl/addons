@@ -1,6 +1,8 @@
 # Unused volume identification
 
-Status: implemented, always on, no configuration surface
+| Status | Category |
+| --- | --- |
+| implemented, always on, no configuration surface | cost |
 
 A cluster leaks storage in a way nothing tells you about. A [Deployment][k8s-deployment] is
 deleted and its [PersistentVolumeClaim][k8s-pvc] survives. A [StatefulSet][k8s-statefulset] is scaled from six

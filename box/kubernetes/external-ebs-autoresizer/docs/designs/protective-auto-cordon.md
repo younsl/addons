@@ -1,6 +1,8 @@
 # Protective auto-cordon
 
-Status: implemented (`autoProtectiveCordon`, per policy, default off)
+| Status | Category |
+| --- | --- |
+| implemented (`autoProtectiveCordon`, per policy, default off) | reliability |
 
 The resize loop grows a root volume once its filesystem crosses a usage threshold. On an in-cluster Kubernetes [Node][k8s-node] the [scheduler][k8s-scheduler] keeps placing [Pods][k8s-pod] on that disk while it grows, and keeps doing so when the volume cannot grow at all. This design [cordons][k8s-cordon] such a Node for as long as its disk is over the threshold, as a protective measure for scheduling, and lifts the cordon automatically once the disk has room again.
 

@@ -1,8 +1,8 @@
 # Applying throughput recommendations on resize
 
-Status: implemented (`throughputRecommendation.applyOnResize`, default on
-whenever the recommender is enabled; an explicit `false` is the kill switch
-that keeps recommendations advisory-only)
+| Status | Category |
+| --- | --- |
+| implemented (`throughputRecommendation.applyOnResize`, default on whenever the recommender is enabled; an explicit `false` is the kill switch that keeps recommendations advisory-only) | performance |
 
 The throughput recommender computes what a gp3 volume should be provisioned at,
 but only ever publishes it as [Node][k8s-node] [annotations][k8s-annotations]. This design lets the resize loop

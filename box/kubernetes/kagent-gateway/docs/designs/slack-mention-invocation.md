@@ -1,6 +1,8 @@
 # Slack mention invocation
 
-Status: implemented in 0.3.0
+| Status | Category |
+| --- | --- |
+| implemented in 0.3.0 | integration |
 
 The implementation follows this document, with one addition. The thread reply
 is not a single message posted at the end: a status message goes up as soon as

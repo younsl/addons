@@ -1,6 +1,8 @@
 # Volume-free storage
 
-Status: implemented in app 1.7.0 / chart 0.12.0
+| Status | Category |
+| --- | --- |
+| implemented in app 1.7.0 / chart 0.12.0 | architecture |
 
 ![Volume-free storage, from the Kubernetes side](volume-free-storage.svg)
 

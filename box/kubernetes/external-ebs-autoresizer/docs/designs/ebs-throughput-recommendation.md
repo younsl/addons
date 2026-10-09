@@ -1,6 +1,8 @@
 # Node EBS throughput recommendation
 
-Status: implemented, disabled by default (`throughputRecommendation.enabled: false`).
+| Status | Category |
+| --- | --- |
+| implemented, disabled by default (`throughputRecommendation.enabled: false`). | performance |
 
 Recommends a gp3 throughput (and the IOPS it requires) for each Kubernetes [Node][k8s-node] in
 the cluster the addon runs in, and publishes the recommendation as [annotations][k8s-annotations] on
