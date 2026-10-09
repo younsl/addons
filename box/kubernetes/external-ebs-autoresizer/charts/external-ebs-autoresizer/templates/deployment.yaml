@@ -26,6 +26,9 @@ spec:
         {{- end }}
     spec:
       serviceAccountName: {{ include "external-ebs-autoresizer.serviceAccountName" . }}
+      {{- with .Values.priorityClassName }}
+      priorityClassName: {{ . }}
+      {{- end }}
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}

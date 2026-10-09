@@ -245,6 +245,8 @@ securityContext:
     drop:
       - ALL
 
+# -- (string) PriorityClass name for the pod, e.g. system-cluster-critical; empty omits the field
+priorityClassName: ""
 # -- (object) Node selector for pod scheduling
 nodeSelector: {}
 # -- (list) Tolerations for pod scheduling
