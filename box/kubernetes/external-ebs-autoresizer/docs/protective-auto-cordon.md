@@ -2,7 +2,25 @@
 
 How to turn on the [protective auto-cordon][k8s-cordon] and what it does to a [Node][k8s-node].
 
-Disabled by default. Set `autoProtectiveCordon: true` on `defaultPolicy` or on a policy's `resize` block to protect scheduling on in-cluster Kubernetes Nodes whose root disk is filling up. It is a protective measure, not maintenance: the addon cordons the Node so the [scheduler][k8s-scheduler] stops placing new [Pods][k8s-pod] on a disk that is about to run out, and lifts the cordon itself once the disk has room again.
+It is a protective measure, not maintenance: the addon cordons a Node whose root disk is filling up so the [scheduler][k8s-scheduler] stops placing new [Pods][k8s-pod] on a disk that is about to run out, and lifts the cordon itself once the disk has room again.
+
+## Enabling
+
+Disabled by default. Set `autoProtectiveCordon: true` on `defaultPolicy` or on a policy's `resize` block. Only EKS nodes have a Node object, so it also needs `excludeEKSNodes: false`, and the addon warns at startup otherwise. The chart grants `list` and `patch` on `nodes` whenever any policy turns it on.
+
+```yaml
+excludeEKSNodes: false
+policies:
+  - name: eks-workers
+    weight: 1
+    instanceSelector:
+      tags:
+        eks:cluster-name: example
+    resize:
+      autoProtectiveCordon: true
+```
+
+## Behavior
 
 - **Cordon**: when a measured instance maps to a Node (by [`spec.providerID`][k8s-node-spec]) and its root usage is at or above the effective `usageThresholdPercent`, the Node gets `spec.unschedulable: true` and the `external-ebs-autoresizer/protective-cordon` [annotation][k8s-annotations] (the cordon time). This happens before the resize, so it also covers the cooldown and max-size skips, the cases where the volume cannot grow in time.
 - **Uncordon**: once usage is back under the threshold (right after a verified resize, or on any later pass), the addon removes `spec.unschedulable` and the annotation.
@@ -10,7 +28,9 @@ Disabled by default. Set `autoProtectiveCordon: true` on `defaultPolicy` or on a
 - **Scope**: only EKS nodes have a Node object, so it needs `excludeEKSNodes: false` (the addon warns at startup otherwise). Running Pods are never [evicted][k8s-eviction], and a `paused` policy is never measured, so its Nodes are neither cordoned nor uncordoned.
 - **Dry run**: `dryRun: true` logs what would be cordoned or uncordoned and changes nothing.
 
-Each change emits a Node [Event][k8s-events] (`ProtectiveCordonApplied` as Warning, `ProtectiveCordonReleased` as Normal), visible in [`kubectl describe node`][k8s-kubectl-describe], and counts in `external_ebs_autoresizer_protective_cordon_total{action,result}`. The chart grants `list` and `patch` on `nodes` whenever any policy turns it on.
+## Kubernetes Events
+
+Each change emits a Node [Event][k8s-events]: `ProtectiveCordonApplied` as Warning and `ProtectiveCordonReleased` as Normal, visible in [`kubectl describe node`][k8s-kubectl-describe].
 
 ```console
 $ kubectl describe node ip-10-0-1-5.ap-northeast-2.compute.internal
@@ -28,19 +48,15 @@ Node Events are stored in the `default` namespace, so they can also be listed ac
 $ kubectl get events -n default --field-selector reason=ProtectiveCordonApplied
 ```
 
-```yaml
-excludeEKSNodes: false
-policies:
-  - name: eks-workers
-    weight: 1
-    instanceSelector:
-      tags:
-        eks:cluster-name: example
-    resize:
-      autoProtectiveCordon: true
-```
+## Metrics
+
+Each cordon and uncordon attempt counts in `external_ebs_autoresizer_protective_cordon_total{action,result}`. See [metrics.md](metrics.md#external_ebs_autoresizer_protective_cordon_total).
+
+## Lifting a cordon by hand
 
 To lift a protective cordon by hand, run [`kubectl uncordon <node>`][k8s-kubectl-uncordon]. The addon drops its annotation on the next pass. Turning `autoProtectiveCordon` off for a group keeps releasing that group's existing cordons as long as any policy still has it on. With it off everywhere the addon stops reading Nodes, so uncordon remaining Nodes by hand.
+
+## Design
 
 See [designs/protective-auto-cordon.md](designs/protective-auto-cordon.md) for why it cordons instead of tainting or draining, the ownership mark, the threshold choice, and failure behavior.
 
