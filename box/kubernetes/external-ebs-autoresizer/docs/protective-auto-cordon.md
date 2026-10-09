@@ -1,6 +1,6 @@
 # Protective auto-cordon
 
-How to turn on the protective auto-[cordon][k8s-cordon] and what it does to a [Node][k8s-node].
+How to turn on the [protective auto-cordon][k8s-cordon] and what it does to a [Node][k8s-node].
 
 Disabled by default. Set `autoProtectiveCordon: true` on `defaultPolicy` or on a policy's `resize` block to protect scheduling on in-cluster Kubernetes Nodes whose root disk is filling up. It is a protective measure, not maintenance: the addon cordons the Node so the [scheduler][k8s-scheduler] stops placing new [Pods][k8s-pod] on a disk that is about to run out, and lifts the cordon itself once the disk has room again.
 
@@ -11,6 +11,22 @@ Disabled by default. Set `autoProtectiveCordon: true` on `defaultPolicy` or on a
 - **Dry run**: `dryRun: true` logs what would be cordoned or uncordoned and changes nothing.
 
 Each change emits a Node [Event][k8s-events] (`ProtectiveCordonApplied` as Warning, `ProtectiveCordonReleased` as Normal), visible in [`kubectl describe node`][k8s-kubectl-describe], and counts in `external_ebs_autoresizer_protective_cordon_total{action,result}`. The chart grants `list` and `patch` on `nodes` whenever any policy turns it on.
+
+```console
+$ kubectl describe node ip-10-0-1-5.ap-northeast-2.compute.internal
+...
+Events:
+  Type     Reason                    Age   From                      Message
+  ----     ------                    ----  ----                      -------
+  Warning  ProtectiveCordonApplied   12m   external-ebs-autoresizer  Protective cordon applied by external-ebs-autoresizer: root filesystem usage 85% is at or above the 80% threshold, so no new Pods are scheduled here. It is lifted automatically once usage falls back under the threshold.
+  Normal   ProtectiveCordonReleased  4m    external-ebs-autoresizer  Protective cordon released by external-ebs-autoresizer: root filesystem usage 62% is back under the 80% threshold.
+```
+
+Node Events are stored in the `default` namespace, so they can also be listed across the cluster:
+
+```console
+$ kubectl get events -n default --field-selector reason=ProtectiveCordonApplied
+```
 
 ```yaml
 excludeEKSNodes: false
