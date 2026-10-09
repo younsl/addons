@@ -42,7 +42,7 @@ Events:
   Normal   ProtectiveCordonReleased  4m    external-ebs-autoresizer  Protective cordon released by external-ebs-autoresizer: root filesystem usage 62% is back under the 80% threshold.
 ```
 
-Node Events are stored in the `default` namespace, so they can also be listed across the cluster:
+Like the kubelet's own Node Events, they are stored in the `default` namespace, since a Node has none of its own:
 
 ```console
 $ kubectl get events -n default --field-selector reason=ProtectiveCordonApplied
