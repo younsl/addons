@@ -1,6 +1,6 @@
 # external-ebs-autoresizer
 
-![Version: 0.6.1](https://img.shields.io/badge/Version-0.6.1-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.6.1](https://img.shields.io/badge/AppVersion-0.6.1-informational?style=flat-square)
+![Version: 0.7.0](https://img.shields.io/badge/Version-0.7.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.7.0](https://img.shields.io/badge/AppVersion-0.7.0-informational?style=flat-square)
 
 Auto-expands the root filesystem (ext2/3/4 or XFS) of standalone EC2 instances via EBS ModifyVolume and SSM
 
@@ -39,7 +39,7 @@ helm install external-ebs-autoresizer oci://ghcr.io/younsl/charts/external-ebs-a
 Install a specific version:
 
 ```console
-helm install external-ebs-autoresizer oci://ghcr.io/younsl/charts/external-ebs-autoresizer --version 0.6.1
+helm install external-ebs-autoresizer oci://ghcr.io/younsl/charts/external-ebs-autoresizer --version 0.7.0
 ```
 
 ### Install from local chart
@@ -47,7 +47,7 @@ helm install external-ebs-autoresizer oci://ghcr.io/younsl/charts/external-ebs-a
 Download external-ebs-autoresizer chart and install from local directory:
 
 ```console
-helm pull oci://ghcr.io/younsl/charts/external-ebs-autoresizer --untar --version 0.6.1
+helm pull oci://ghcr.io/younsl/charts/external-ebs-autoresizer --untar --version 0.7.0
 helm install external-ebs-autoresizer ./external-ebs-autoresizer
 ```
 
@@ -90,11 +90,12 @@ The following table lists the configurable parameters and their default values.
 | config.excludeEKSNodes | bool | `true` | Exclude EKS cluster nodes (managed node groups, self-managed, Karpenter) so only standalone EC2 instances are managed |
 | config.reconcileInterval | string | `"5m"` | Reconcile loop interval as a duration; supports h, m, s and combinations (e.g. 30s, 5m, 1h, 1h30m) |
 | config.reconcileConcurrency | int | `10` | Max instances reconciled in parallel per pass |
-| config.defaultPolicy | object | `{"alertEnabled":true,"growAmount":"10GiB","growMode":"percent","growPercent":10,"maxVolumeSizeGiB":1000,"paused":false,"usageThresholdPercent":80}` | Default-policy volume-expansion settings applied to every instance not matched by a named policy. usageThresholdPercent and growMode are REQUIRED; the rest are optional. |
+| config.defaultPolicy | object | `{"alertEnabled":true,"autoProtectiveCordon":false,"growAmount":"10GiB","growMode":"percent","growPercent":10,"maxVolumeSizeGiB":1000,"paused":false,"usageThresholdPercent":80}` | Default-policy volume-expansion settings applied to every instance not matched by a named policy. usageThresholdPercent and growMode are REQUIRED; the rest are optional. |
 | config.defaultPolicy.usageThresholdPercent | int | `80` | REQUIRED. Root filesystem usage percent that triggers a resize |
 | config.defaultPolicy.growMode | string | `"percent"` | REQUIRED. Growth mode: "percent" grows by growPercent, "absolute" grows by growAmount |
 | config.defaultPolicy.paused | bool | `false` | Pause the default policy: skip (never resize) every instance not matched by a named policy |
 | config.defaultPolicy.alertEnabled | bool | `true` | Alert switch for instances not matched by a named policy: false mutes their Alertmanager alerts. Named policies can override it per group via resize.alertEnabled. Only consulted when alertmanager.enabled is true |
+| config.defaultPolicy.autoProtectiveCordon | bool | `false` | Protective auto-cordon for instances not matched by a named policy: true cordons the instance's Kubernetes Node while its root usage is at or above usageThresholdPercent, so no new Pods land on a filling disk, and uncordons it once usage falls back under. Only cordons the addon applied are lifted. Named policies can override it per group via resize.autoProtectiveCordon. Takes effect only on EKS nodes, so it needs excludeEKSNodes false, and it grants patch on nodes in the ClusterRole |
 | config.defaultPolicy.growPercent | int | `10` | EBS volume growth percent per resize (used when growMode is percent) |
 | config.defaultPolicy.growAmount | string | `"10GiB"` | Absolute growth per resize with a MiB or GiB unit, e.g. 10GiB or 5120MiB (used when growMode is absolute); MiB rounds up to whole GiB |
 | config.defaultPolicy.maxVolumeSizeGiB | int | `1000` | Maximum volume size in GiB; resizes that would exceed it are skipped |

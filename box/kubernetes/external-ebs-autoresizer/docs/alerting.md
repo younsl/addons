@@ -18,7 +18,7 @@ familiarity with Prometheus Alertmanager is enough.
 
 ## Background
 
-The addon runs as a long-lived Deployment inside EKS. On a fixed interval it
+The addon runs as a long-lived [Deployment][k8s-deployment] inside EKS. On a fixed interval it
 scans standalone EC2 instances, measures their root disk usage, and grows the
 root EBS volume when usage crosses a threshold. Each volume that is grown also
 has its filesystem extended in place.
@@ -173,7 +173,7 @@ config:
 The gates compose as AND: an alert is sent only when `alertmanager.enabled` is
 true, the instance's effective policy has `alertEnabled` true (omitted fields
 inherit from `defaultPolicy`), and the outcome matches `notifyOn`. Muting a
-policy affects alerts only; metrics, Kubernetes Events, and Grafana annotations
+policy affects alerts only; metrics, Kubernetes [Events][k8s-events], and Grafana annotations
 are unaffected.
 
 ## Auto-resolution
@@ -221,6 +221,7 @@ Enable alerting through Helm `--set` flags:
 ```bash
 helm install external-ebs-autoresizer \
   oci://ghcr.io/younsl/charts/external-ebs-autoresizer \
+  --version x.y.z \
   --namespace kube-system \
   --set config.alertmanager.enabled=true \
   --set config.alertmanager.url=http://alertmanager-operated.monitoring:9093 \
@@ -249,6 +250,7 @@ config:
 ```bash
 helm install external-ebs-autoresizer \
   oci://ghcr.io/younsl/charts/external-ebs-autoresizer \
+  --version x.y.z \
   --namespace kube-system \
   -f values.yaml
 ```
@@ -290,3 +292,6 @@ Keep two things in mind: alerts auto-resolve as one-shot events rather than
 staying firing, and delivery is best-effort. For continuous monitoring and a
 durable history, pair alerting with the metrics described in
 [metrics.md](metrics.md).
+
+[k8s-deployment]: https://kubernetes.io/docs/concepts/workloads/controllers/deployment/
+[k8s-events]: https://kubernetes.io/docs/reference/kubernetes-api/cluster-resources/event-v1/

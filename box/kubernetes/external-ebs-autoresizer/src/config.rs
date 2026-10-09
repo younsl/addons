@@ -90,6 +90,11 @@ pub struct ResizeSpec {
     /// matching instances. The global `alertmanager.enabled` switch remains the
     /// master gate. Defaults to true.
     pub alert_enabled: Option<bool>,
+    /// When true, cordons the Kubernetes Node of a matching instance while its
+    /// root usage is at or above the threshold, so no new Pod lands on a
+    /// filling disk, and uncordons it once usage is back under. Only a cordon
+    /// the addon applied itself is ever lifted. Defaults to false.
+    pub auto_protective_cordon: Option<bool>,
     pub usage_threshold_percent: Option<i32>,
     pub grow_mode: Option<String>,
     pub grow_percent: Option<i32>,
@@ -187,6 +192,8 @@ pub struct Config {
     /// The default-policy alert switch. Only consulted when
     /// `alertmanager_enabled` is true.
     pub alert_enabled: bool,
+    /// The default-policy protective cordon switch.
+    pub auto_protective_cordon: bool,
     pub ssm_command_timeout: Duration,
     pub volume_modify_timeout: Duration,
     /// Measures and decides but never mutates AWS resources.
@@ -471,6 +478,7 @@ pub fn parse(raw: &str, env: &Env) -> Result<Config, ConfigError> {
             .unwrap_or(DEFAULT_MAX_VOLUME_SIZE_GIB),
         paused: dp.paused.unwrap_or(false),
         alert_enabled: dp.alert_enabled.unwrap_or(true),
+        auto_protective_cordon: dp.auto_protective_cordon.unwrap_or(false),
         ssm_command_timeout: parse::parse_duration("ssmCommandTimeout", &f.ssm_command_timeout)?,
         volume_modify_timeout: parse::parse_duration(
             "volumeModifyTimeout",
@@ -564,6 +572,7 @@ mod tests {
         assert_eq!(c.max_volume_size_gib, 1000);
         assert!(!c.paused);
         assert!(c.alert_enabled);
+        assert!(!c.auto_protective_cordon);
         assert_eq!(c.ssm_command_timeout, Duration::from_mins(5));
         assert_eq!(c.volume_modify_timeout, Duration::from_mins(10));
         assert!(!c.dry_run);
@@ -630,6 +639,7 @@ defaultPolicy:
   growMode: " ABSOLUTE "
   paused: true
   alertEnabled: false
+  autoProtectiveCordon: true
   growPercent: 25
   growAmount: 5120MiB
   maxVolumeSizeGiB: 2000
@@ -678,6 +688,7 @@ policies:
       maxVolumeSizeGiB: 3000
       paused: false
       alertEnabled: true
+      autoProtectiveCordon: false
       growPercent: 5
 "#;
         let e = Env {
@@ -697,6 +708,7 @@ policies:
         assert_eq!(c.grow_mode, GROW_MODE_ABSOLUTE, "normalized");
         assert!(c.paused);
         assert!(!c.alert_enabled);
+        assert!(c.auto_protective_cordon);
         assert_eq!(c.grow_percent, 25);
         assert_eq!(c.grow_amount_gib, 5);
         assert_eq!(c.max_volume_size_gib, 2000);
@@ -748,6 +760,7 @@ policies:
         assert_eq!(p.resize.max_volume_size_gib, Some(3000));
         assert_eq!(p.resize.paused, Some(false));
         assert_eq!(p.resize.alert_enabled, Some(true));
+        assert_eq!(p.resize.auto_protective_cordon, Some(false));
         assert_eq!(p.resize.grow_percent, Some(5));
     }
 

@@ -48,6 +48,7 @@ pub struct Metrics {
     error_total: CounterVec,
     reconcile_total: Counter,
     policy_instances: GaugeVec,
+    protective_cordon_total: CounterVec,
 
     node_current_mibps: GaugeVec,
     node_peak_mibps: GaugeVec,
@@ -181,6 +182,12 @@ impl Metrics {
                 "external_ebs_autoresizer_recommendation_total",
                 "Total throughput recommendations published, by action (increase, decrease, none, unknown) and reason.",
                 &["action", "reason"],
+            ),
+            protective_cordon_total: counter_vec(
+                &r,
+                "external_ebs_autoresizer_protective_cordon_total",
+                "Total protective cordon changes on Nodes whose root filesystem usage crossed the threshold, by action (cordon, uncordon) and result (success, failure).",
+                &["action", "result"],
             ),
             throughput_apply_total: counter_vec(
                 &r,
@@ -372,6 +379,13 @@ impl Metrics {
         }
     }
 
+    /// Counts one protective cordon or uncordon attempt on a Node.
+    pub fn observe_protective_cordon(&self, action: &str, result: &str) {
+        self.protective_cordon_total
+            .with_label_values(&[action, result])
+            .inc();
+    }
+
     /// Counts one attempted throughput piggyback: applied, or
     /// `fallback_size_only` when the combined request was rejected.
     pub fn observe_throughput_apply(&self, result: &str) {
@@ -542,6 +556,7 @@ mod tests {
         ]));
         m.observe_throughput_apply("applied");
         m.observe_throughput_apply_skip("stale");
+        m.observe_protective_cordon("cordon", "success");
         m.observe_recommender_reconcile();
         let out = m.render();
         for want in [
@@ -556,6 +571,7 @@ mod tests {
             "external_ebs_autoresizer_policy_instances{policy=\"db\"} 0",
             "external_ebs_autoresizer_throughput_apply_total{result=\"applied\"} 1",
             "external_ebs_autoresizer_throughput_apply_skip_total{reason=\"stale\"} 1",
+            "external_ebs_autoresizer_protective_cordon_total{action=\"cordon\",result=\"success\"} 1",
             "external_ebs_autoresizer_recommender_reconcile_total 1",
         ] {
             assert!(out.contains(want), "missing {want}\n{out}");

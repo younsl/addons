@@ -6,7 +6,7 @@ metadata:
   labels:
     {{- include "external-ebs-autoresizer.labels" . | nindent 4 }}
 rules:
-  {{- if .Values.config.throughputRecommendation.enabled }}
+  {{- if (include "external-ebs-autoresizer.nodeAccessEnabled" .) }}
   - apiGroups: [""]
     resources: ["nodes"]
     verbs:
@@ -14,10 +14,6 @@ rules:
       - list
       - patch
   {{- end }}
-  # The unused volume scan is always on. It reads Pods and StatefulSets to decide
-  # which claims have a consumer, and annotates only the claims and volumes it
-  # finds unused. There is no delete verb anywhere: identifying an unused volume
-  # is its whole job.
   - apiGroups: [""]
     resources: ["pods"]
     verbs:
@@ -32,9 +28,6 @@ rules:
       - get
       - list
       - patch
-  # Events about Nodes, claims, and volumes land in the object's own namespace or
-  # in "default", never in the release namespace, so they need the cluster-scoped
-  # grant rather than the Role's.
   - apiGroups: [""]
     resources: ["events"]
     verbs:

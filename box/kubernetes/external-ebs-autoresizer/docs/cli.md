@@ -5,7 +5,7 @@
 The `external-ebs-autoresizer` binary ships operational subcommands alongside
 the controller, in the style of Grafana Alloy. They let you validate the config
 file and inspect policy reach without a running controller: from a laptop
-before deploying, or inside the Pod with `kubectl exec` after.
+before deploying, or inside the [Pod][k8s-pod] with `kubectl exec` after.
 
 Read this if you are:
 
@@ -41,7 +41,7 @@ Every command reads the same config file, resolved in this order:
 
 1. `--config <path>` flag
 2. `CONFIG_FILE` environment variable
-3. `/etc/external-ebs-autoresizer/config.yaml` (the chart's ConfigMap mount)
+3. `/etc/external-ebs-autoresizer/config.yaml` (the chart's [ConfigMap][k8s-configmap] mount)
 
 ## Commands
 
@@ -69,10 +69,10 @@ Never contacts AWS unless `--count` is set.
 
 ```console
 $ external-ebs-autoresizer policies --config config.example.yaml
-POLICY   WEIGHT  SELECTOR                        PAUSED  THRESHOLD%  GROW             MAX_GIB
-bastion  5       name~bastion                    true    60          percent +10%     1000
-shared   1       name~^shared-                   false   80          absolute +50GiB  1000
-default  -       (instances matching no policy)  false   80          percent +10%     1000
+POLICY   WEIGHT  SELECTOR                        PAUSED  ALERT  PROTECTIVE_CORDON  THRESHOLD%  GROW             MAX_GIB
+bastion  5       name~bastion                    true    false  false              60          percent +10%     1000
+shared   1       name~^shared-                   false   true   false              80          absolute +50GiB  1000
+default  -       (instances matching no policy)  false   true   false              80          percent +10%     1000
 ```
 
 | Column | Meaning |
@@ -81,6 +81,8 @@ default  -       (instances matching no policy)  false   80          percent +10
 | `WEIGHT` | Match precedence; highest wins when several policies match one instance |
 | `SELECTOR` | Compact selector: `Key=Value` tag equalities and `name~<regex>`, ANDed with ` & ` |
 | `PAUSED` | `true` means matching instances are skipped entirely |
+| `ALERT` | Effective `alertEnabled` |
+| `PROTECTIVE_CORDON` | Effective `autoProtectiveCordon`: `true` means the [Node][k8s-node] of a matching instance is [cordoned][k8s-cordon] while its usage is at or above the threshold |
 | `THRESHOLD%` | Effective `usageThresholdPercent` |
 | `GROW` | Effective growth: `percent +N%` or `absolute +NGiB` |
 | `MAX_GIB` | Effective `maxVolumeSizeGiB` ceiling |
@@ -91,10 +93,10 @@ the `external_ebs_autoresizer_policy_instances` metric):
 
 ```console
 $ external-ebs-autoresizer policies --count --config config.example.yaml
-POLICY   WEIGHT  SELECTOR                        PAUSED  THRESHOLD%  GROW             MAX_GIB  MATCHED
-bastion  5       name~bastion                    true    60          percent +10%     1000     1
-shared   1       name~^shared-                   false   80          absolute +50GiB  1000     5
-default  -       (instances matching no policy)  false   80          percent +10%     1000     0
+POLICY   WEIGHT  SELECTOR                        PAUSED  ALERT  PROTECTIVE_CORDON  THRESHOLD%  GROW             MAX_GIB  MATCHED
+bastion  5       name~bastion                    true    false  false              60          percent +10%     1000     1
+shared   1       name~^shared-                   false   true   false              80          absolute +50GiB  1000     5
+default  -       (instances matching no policy)  false   true   false              80          percent +10%     1000     0
 ```
 
 ### instances
@@ -121,7 +123,7 @@ policy's reach before merging a selector change.
 
 ### unused
 
-Lists the PersistentVolumeClaims and PersistentVolumes no workload is using,
+Lists the [PersistentVolumeClaims][k8s-pvc] and [PersistentVolumes][k8s-pv] no workload is using,
 sorted longest-unused first. It reads the Kubernetes API and writes nothing, so
 it is safe to run at any time. Requires in-cluster access, so it runs inside the
 Pod rather than from a laptop.
@@ -140,13 +142,13 @@ persistentvolumeclaim  legacy     uploads            no_consumer_pod          72
 |--------|---------|
 | `KIND` | `persistentvolumeclaim` or `persistentvolume` |
 | `NAMESPACE` | The claim's namespace, `-` for a cluster-scoped volume |
-| `REASON` | Why it is unused. See [Unused volume identification](../README.md#unused-volume-identification) for each value |
+| `REASON` | Why it is unused. See [Unused volume identification](unused-volumes.md#what-counts-as-unused) for each value |
 | `UNUSED_FOR` | How long it has been continuously unused |
 | `CAPACITY` | Provisioned size, the number that turns the report into a cost |
 | `EBS_VOLUME` | The EBS volume ID to price or delete in EC2, `-` when not EBS-backed |
 | `BOUND_TO` | The bound volume for a claim, the bound claim for a volume |
 
-The `UNUSED_FOR` clock lives in the annotation the scan loop writes, so a freshly
+The `UNUSED_FOR` clock lives in the [annotation][k8s-annotations] the scan loop writes, so a freshly
 started controller reports every object as unused since now until its first pass
 lands. Which objects are listed is unaffected. Pass `--all` to include objects
 that have not yet been unused for 24 hours.
@@ -175,7 +177,7 @@ kubectl exec deploy/external-ebs-autoresizer -- external-ebs-autoresizer unused
 
 The Pod's IRSA/Pod Identity credentials cover the read-only EC2 calls, since
 the controller already requires them. `unused` needs no AWS credentials at all,
-only the ClusterRole the chart creates whenever `rbac.create` is true.
+only the [ClusterRole][k8s-rbac] the chart creates whenever `rbac.create` is true.
 
 ## Local verification
 
@@ -202,3 +204,12 @@ Three read-only questions, three commands:
 
 Wire `validate` into CI for config changes, and reach for `policies --count`
 first when a resize did not happen where you expected one.
+
+[k8s-pod]: https://kubernetes.io/docs/concepts/workloads/pods/
+[k8s-configmap]: https://kubernetes.io/docs/concepts/configuration/configmap/
+[k8s-cordon]: https://kubernetes.io/docs/concepts/architecture/nodes/#manual-node-administration
+[k8s-node]: https://kubernetes.io/docs/concepts/architecture/nodes/
+[k8s-pvc]: https://kubernetes.io/docs/concepts/storage/persistent-volumes/#persistentvolumeclaims
+[k8s-pv]: https://kubernetes.io/docs/concepts/storage/persistent-volumes/
+[k8s-annotations]: https://kubernetes.io/docs/concepts/overview/working-with-objects/annotations/
+[k8s-rbac]: https://kubernetes.io/docs/reference/access-authn-authz/rbac/#role-and-clusterrole

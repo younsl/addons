@@ -41,3 +41,21 @@ true
 {{- default "default" .Values.serviceAccount.name -}}
 {{- end -}}
 {{- end -}}
+
+{{- define "external-ebs-autoresizer.protectiveCordonEnabled" -}}
+{{- $enabled := .Values.config.defaultPolicy.autoProtectiveCordon -}}
+{{- range .Values.config.policies -}}
+{{- if and .resize .resize.autoProtectiveCordon -}}
+{{- $enabled = true -}}
+{{- end -}}
+{{- end -}}
+{{- if $enabled -}}
+true
+{{- end -}}
+{{- end -}}
+
+{{- define "external-ebs-autoresizer.nodeAccessEnabled" -}}
+{{- if or .Values.config.throughputRecommendation.enabled (include "external-ebs-autoresizer.protectiveCordonEnabled" .) -}}
+true
+{{- end -}}
+{{- end -}}

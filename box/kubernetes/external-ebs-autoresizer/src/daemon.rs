@@ -13,6 +13,7 @@ use crate::awsx::Clients;
 use crate::config::{Config, GROW_MODE_ABSOLUTE};
 use crate::controller;
 use crate::humanize::{go_duration, round_duration};
+use crate::k8s::cordon::{CordonApi, KubeCordon};
 use crate::k8s::events::{Emitter, KubeEvents};
 use crate::k8s::leader::{self, KubeLeases, LeaderConfig, Timing};
 use crate::k8s::nodes::KubeNodes;
@@ -130,12 +131,13 @@ pub async fn run(cfg: Config) -> Result<()> {
         clients.clone(),
         metrics.clone(),
         ResizerOptions {
-            resolver: Some(resolver),
+            resolver: Some(resolver.clone()),
             events: sinks.events.clone(),
             notifier: sinks.notifier.clone(),
             annotator: sinks.annotator.clone(),
             recs: store.clone(),
             node_events: object_events.clone(),
+            cordon: build_cordon(&cfg, &resolver, kube.as_ref()),
         },
     ));
     let recommender = build_recommender(
@@ -340,6 +342,32 @@ fn log_alert_policies(cfg: &Config, resolver: &Resolver) {
     let (enabled, muted) = resolver.alert_policy_names();
     info!(notify_on = %cfg.alertmanager_notify_on, alert_enabled_policies = ?enabled, alert_muted_policies = ?muted,
         "alertmanager notifications configured per policy");
+}
+
+/// Constructs the protective cordon client, or `None` when no policy turns it
+/// on or there is no cluster to cordon in.
+fn build_cordon(
+    cfg: &Config,
+    resolver: &Resolver,
+    kube: Option<&kube::Client>,
+) -> Option<Arc<dyn CordonApi>> {
+    let policies = resolver.protective_cordon_policy_names();
+    if policies.is_empty() {
+        info!("Protective cordon disabled: no policy sets autoProtectiveCordon");
+        return None;
+    }
+    let Some(client) = kube else {
+        error!(policies = ?policies, "Protective cordon disabled: no in-cluster Kubernetes access");
+        return None;
+    };
+    if cfg.exclude_eks_nodes {
+        warn!(policies = ?policies,
+            hint = "set excludeEKSNodes: false so EKS nodes are discovered, then scope them with a policy",
+            "Protective cordon is enabled but excludeEKSNodes is true, so no cluster Node is discovered and none will be cordoned");
+    }
+    info!(policies = ?policies, annotation = %crate::k8s::cordon::annotation_key(), dry_run = cfg.dry_run,
+        "Protective cordon enabled: a Node whose root filesystem usage is at or above its policy threshold is cordoned, and uncordoned once usage falls back under it. Only cordons the addon applied are ever lifted");
+    Some(Arc::new(KubeCordon::new(client.clone())))
 }
 
 /// Constructs the recommender, or `None` when it is disabled or cannot run.
@@ -592,6 +620,16 @@ mod tests {
         let c = cfg();
         let metrics = Arc::new(Metrics::new());
         assert!(build_scanner(&c, None, metrics.clone(), None).is_none());
+        assert!(
+            build_cordon(&c, &Resolver::new(&c).unwrap(), None).is_none(),
+            "disabled"
+        );
+        let mut on = cfg();
+        on.auto_protective_cordon = true;
+        assert!(
+            build_cordon(&on, &Resolver::new(&on).unwrap(), None).is_none(),
+            "no cluster"
+        );
         let clients = Arc::new(Clients::from_parts(
             Box::new(crate::awsx::fake::FakeEc2::default()),
             Box::new(crate::awsx::fake::FakeSsm::default()),

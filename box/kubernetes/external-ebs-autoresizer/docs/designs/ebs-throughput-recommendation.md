@@ -2,8 +2,8 @@
 
 Status: implemented, disabled by default (`throughputRecommendation.enabled: false`).
 
-Recommends a gp3 throughput (and the IOPS it requires) for each Kubernetes Node in
-the cluster the addon runs in, and publishes the recommendation as annotations on
+Recommends a gp3 throughput (and the IOPS it requires) for each Kubernetes [Node][k8s-node] in
+the cluster the addon runs in, and publishes the recommendation as [annotations][k8s-annotations] on
 the Node object.
 
 ## Scope
@@ -107,7 +107,7 @@ targets remain for that node name instead of adding them. Two cases need that:
 - A shared backend where two clusters on the same subnets produce identical node
   names. A plain `sum by (node)` would add two unrelated nodes' throughput and
   overstate the peak; the max reports the busier of the two.
-- A node exporter Pod that restarted, whose old and new target labels are both
+- A node exporter [Pod][k8s-pod] that restarted, whose old and new target labels are both
   inside the staleness window for a few minutes. A plain sum would double the node's
   throughput for that period.
 
@@ -308,7 +308,7 @@ aws ec2 modify-volume --volume-id vol-0a1b2c3d4e5f6a7b8 --throughput 375 --iops 
 
 ## Kubernetes Events
 
-As each Node's evaluation begins, a Normal Event is recorded against the Node:
+As each Node's evaluation begins, a Normal [Event][k8s-events] is recorded against the Node:
 
 ```console
 $ kubectl describe node ip-10-0-1-5.ap-northeast-2.compute.internal
@@ -329,9 +329,9 @@ Two implementation notes:
   existing one. A per-node, per-pass Event is therefore one object per node, not one
   per pass per node.
 - **A separate emitter.** A Node is cluster-scoped, so its Events carry no namespace
-  and land in `default`, the same as the kubelet's. client-go rejects an Event whose
+  and land in `default`, the same as the [kubelet][k8s-kubelet]'s. client-go rejects an Event whose
   namespace differs from the one its sink was built with, so the recommender cannot
-  reuse the resizer's Pod-namespaced emitter. That is also why the ClusterRole grants
+  reuse the resizer's Pod-namespaced emitter. That is also why the [ClusterRole][k8s-rbac] grants
   `create` and `patch` on events.
 
 Events are auxiliary: when the emitter cannot be built (running outside a cluster)
@@ -345,7 +345,7 @@ the recommender logs a warning and carries on.
 - **No write when nothing changed.** If every value matches what is already on the
   Node and `throughput-observed-at` is younger than 24h, the pass issues no `PATCH`. Otherwise
   a steady-state cluster would rewrite every Node's annotations hourly, churning
-  etcd and every Node's `resourceVersion` for no new information.
+  etcd and every Node's [`resourceVersion`][k8s-resource-versions] for no new information.
 - **Stale keys are deleted.** When a Node drops to `unknown` (volume detached,
   metrics gone), the numeric keys are removed in the same patch. Leaving the last
   numbers behind would present a stale recommendation as a current one.
@@ -382,8 +382,8 @@ and is left alone.
 The demand signal is per node, summed across block devices. Attributing it to one
 volume requires mapping a node exporter `device` label back to a volume ID, which
 on Nitro means reading `/dev/disk/by-id/nvme-Amazon_Elastic_Block_Store_vol*`,
-which means a privileged DaemonSet on every node. That is a different deployment
-shape than a single controller Deployment, so the ambiguous case is reported rather
+which means a privileged [DaemonSet][k8s-daemonset] on every node. That is a different deployment
+shape than a single controller [Deployment][k8s-deployment], so the ambiguous case is reported rather
 than guessed at. Nodes with only a root volume, the common EKS and Karpenter
 shape, are unaffected.
 
@@ -425,7 +425,7 @@ unavailable at boot is no reason to skip every later pass. The probe is bounded 
 `queryTimeout` so it cannot hang startup on a backend that accepts the connection
 and never answers.
 
-The probe runs on **every replica**, before leader election, deliberately. The query
+The probe runs on **every replica**, before [leader election][k8s-leader-election], deliberately. The query
 is read-only, and a standby replica that cannot read the metrics backend is worth
 seeing at startup rather than at failover.
 
@@ -449,8 +449,8 @@ throughputRecommendation:
 
 Plus `PROMETHEUS_BEARER_TOKEN` from the environment, for a gateway that fronts the
 metrics backend with token auth. It is deliberately not a config-file key: the
-chart renders the config into a ConfigMap, so a file-sourced credential would be
-stored in plain text. Inject it from a Secret through the chart's `extraEnv`.
+chart renders the config into a [ConfigMap][k8s-configmap], so a file-sourced credential would be
+stored in plain text. Inject it from a [Secret][k8s-secret] through the chart's `extraEnv`.
 
 Each remaining setting is here because a cluster genuinely differs on it:
 `metricNodeNameLabel` because kube-prometheus-stack and a plain node exporter scrape disagree
@@ -570,3 +570,16 @@ permission is added.
 | EC2 describe fails during a pass | Same: nothing is written from partial data |
 | One Node's patch fails | Logged and counted, the pass continues with the remaining Nodes |
 | `metricNodeNameLabel` wrong for the cluster | The startup probe reports it as an ERROR naming the fix, and every Node reports `no_metrics_for_node` |
+
+[k8s-node]: https://kubernetes.io/docs/concepts/architecture/nodes/
+[k8s-annotations]: https://kubernetes.io/docs/concepts/overview/working-with-objects/annotations/
+[k8s-pod]: https://kubernetes.io/docs/concepts/workloads/pods/
+[k8s-events]: https://kubernetes.io/docs/reference/kubernetes-api/cluster-resources/event-v1/
+[k8s-kubelet]: https://kubernetes.io/docs/reference/command-line-tools-reference/kubelet/
+[k8s-rbac]: https://kubernetes.io/docs/reference/access-authn-authz/rbac/#role-and-clusterrole
+[k8s-resource-versions]: https://kubernetes.io/docs/reference/using-api/api-concepts/#resource-versions
+[k8s-daemonset]: https://kubernetes.io/docs/concepts/workloads/controllers/daemonset/
+[k8s-deployment]: https://kubernetes.io/docs/concepts/workloads/controllers/deployment/
+[k8s-leader-election]: https://kubernetes.io/docs/concepts/architecture/leases/#leader-election
+[k8s-configmap]: https://kubernetes.io/docs/concepts/configuration/configmap/
+[k8s-secret]: https://kubernetes.io/docs/concepts/configuration/secret/

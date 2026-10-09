@@ -1,7 +1,7 @@
 //! Reads in-cluster Kubernetes Nodes and writes annotations back to them. It
-//! is the only place the addon touches Node objects, and it is deliberately
-//! limited to list and annotate: the recommender publishes advice on the Node
-//! and never taints, drains, or otherwise changes a Node's scheduling state.
+//! is deliberately limited to list and annotate: the recommender publishes
+//! advice on the Node and never taints, drains, or otherwise changes a Node's
+//! scheduling state. The resizer's protective cordon lives in `cordon`.
 
 use std::collections::BTreeMap;
 

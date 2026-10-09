@@ -17,7 +17,7 @@ familiarity with Grafana dashboards is enough.
 
 ## Background
 
-The addon runs as a long-lived Deployment inside EKS. On a fixed interval it
+The addon runs as a long-lived [Deployment][k8s-deployment] inside EKS. On a fixed interval it
 scans standalone EC2 instances, measures their root disk usage, and grows the
 root EBS volume when usage crosses a threshold.
 
@@ -159,7 +159,7 @@ When `GRAFANA_ANNOTATION_ENABLED` is `true`, both `GRAFANA_URL` and
 
 ### Providing the token
 
-The token is sensitive, so it is never put in the ConfigMap. Choose one of:
+The token is sensitive, so it is never put in the [ConfigMap][k8s-configmap]. Choose one of:
 
 - **Generated Secret**: set `config.grafanaAnnotation.apiToken`. The chart
   creates a Secret named `<release>-grafana-annotation` and injects the token
@@ -176,6 +176,7 @@ With a generated Secret:
 ```bash
 helm install external-ebs-autoresizer \
   oci://ghcr.io/younsl/charts/external-ebs-autoresizer \
+  --version x.y.z \
   --namespace kube-system \
   --set config.grafanaAnnotation.enabled=true \
   --set config.grafanaAnnotation.url=http://grafana.monitoring:3000 \
@@ -205,6 +206,7 @@ config:
 ```bash
 helm install external-ebs-autoresizer \
   oci://ghcr.io/younsl/charts/external-ebs-autoresizer \
+  --version x.y.z \
   --namespace kube-system \
   -f values.yaml
 ```
@@ -227,3 +229,6 @@ Keep two things in mind: annotations are global and tag-based rather than tied
 to one dashboard, and delivery is best-effort. For continuous monitoring and a
 durable history, pair annotations with the metrics described in
 [metrics.md](metrics.md).
+
+[k8s-deployment]: https://kubernetes.io/docs/concepts/workloads/controllers/deployment/
+[k8s-configmap]: https://kubernetes.io/docs/concepts/configuration/configmap/

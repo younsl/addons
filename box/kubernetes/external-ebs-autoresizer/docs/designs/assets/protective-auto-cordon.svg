@@ -1,0 +1,83 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 760" width="980" height="760" role="img" aria-label="Decision flow of the protective auto-cordon inside one resize pass">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#6e6e6e"/>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="980" height="760" fill="#0a0a0a"/>
+  <g font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">
+    <text x="24" y="28" font-size="14" fill="#f0f0f0">protective-auto-cordon: decision flow</text>
+    <text x="24" y="46" font-size="10.5" fill="#6e6e6e">cordon at the resize threshold, release once usage is back under, only ever lift our own mark</text>
+
+    <rect x="24" y="80" width="300" height="60" rx="3" fill="#0f0f0f" stroke="#4a4a4a" stroke-width="1"/>
+    <text x="38" y="104" font-size="11.5" fill="#d4d4d4">resize pass</text>
+    <text x="38" y="124" font-size="10.5" fill="#8a8a8a">every reconcileInterval, leader only</text>
+
+    <line x1="174" y1="140" x2="174" y2="168" stroke="#6e6e6e" stroke-width="1" marker-end="url(#arrow)"/>
+
+    <rect x="24" y="170" width="300" height="60" rx="3" fill="#0f0f0f" stroke="#4a4a4a" stroke-width="1"/>
+    <text x="38" y="194" font-size="11.5" fill="#d4d4d4">list EC2-backed Nodes once</text>
+    <text x="38" y="214" font-size="10.5" fill="#8a8a8a">only if a policy in this pass opts in</text>
+
+    <line x1="174" y1="230" x2="174" y2="258" stroke="#6e6e6e" stroke-width="1" marker-end="url(#arrow)"/>
+
+    <rect x="24" y="260" width="300" height="60" rx="3" fill="#0f0f0f" stroke="#4a4a4a" stroke-width="1"/>
+    <text x="38" y="284" font-size="11.5" fill="#d4d4d4">measure root usage</text>
+    <text x="38" y="304" font-size="10.5" fill="#8a8a8a">SSM df, per instance (paused: never)</text>
+
+    <line x1="174" y1="320" x2="174" y2="338" stroke="#6e6e6e" stroke-width="1" marker-end="url(#arrow)"/>
+
+    <path d="M174,340 L284,380 L174,420 L64,380 z" fill="#0f0f0f" stroke="#8a8a8a" stroke-width="1"/>
+    <text x="174" y="378" font-size="11" fill="#d4d4d4" text-anchor="middle">usage &gt;= threshold?</text>
+    <text x="174" y="394" font-size="10" fill="#6e6e6e" text-anchor="middle">effective policy</text>
+
+    <line x1="284" y1="380" x2="398" y2="380" stroke="#6e6e6e" stroke-width="1" marker-end="url(#arrow)"/>
+    <text x="300" y="372" font-size="10.5" fill="#8a8a8a">yes</text>
+
+    <rect x="400" y="300" width="556" height="160" rx="3" fill="#0f0f0f" stroke="#c8a24a" stroke-width="1"/>
+    <text x="414" y="322" font-size="11.5" fill="#e0c37a">apply protective cordon (policy switch on)</text>
+    <text x="414" y="344" font-size="10.5" fill="#8a8a8a">already carries our mark</text><text x="620" y="344" font-size="10.5" fill="#8a8a8a">-&gt;</text><text x="640" y="344" font-size="10.5" fill="#8a8a8a">no-op</text>
+    <text x="414" y="362" font-size="10.5" fill="#8a8a8a">unschedulable without our mark</text><text x="620" y="362" font-size="10.5" fill="#8a8a8a">-&gt;</text><text x="640" y="362" font-size="10.5" fill="#8a8a8a">leave alone, not ours</text>
+    <text x="414" y="380" font-size="10.5" fill="#8a8a8a">no Node (standalone EC2)</text><text x="620" y="380" font-size="10.5" fill="#8a8a8a">-&gt;</text><text x="640" y="380" font-size="10.5" fill="#8a8a8a">nothing to cordon</text>
+    <text x="414" y="398" font-size="10.5" fill="#8a8a8a">dry run</text><text x="620" y="398" font-size="10.5" fill="#8a8a8a">-&gt;</text><text x="640" y="398" font-size="10.5" fill="#8a8a8a">log only</text>
+    <text x="414" y="416" font-size="10.5" fill="#d4d4d4">otherwise</text><text x="620" y="416" font-size="10.5" fill="#d4d4d4">-&gt;</text><text x="640" y="416" font-size="10.5" fill="#d4d4d4">spec.unschedulable: true</text>
+    <text x="640" y="434" font-size="10.5" fill="#d4d4d4">+ protective-cordon annotation</text>
+    <text x="640" y="452" font-size="10.5" fill="#d4d4d4">+ ProtectiveCordonApplied (Warning)</text>
+
+    <line x1="678" y1="460" x2="678" y2="488" stroke="#6e6e6e" stroke-width="1" marker-end="url(#arrow)"/>
+
+    <rect x="400" y="490" width="556" height="70" rx="3" fill="#0f0f0f" stroke="#4a4a4a" stroke-width="1"/>
+    <text x="414" y="514" font-size="11.5" fill="#d4d4d4">resize flow (unchanged)</text>
+    <text x="414" y="534" font-size="10.5" fill="#8a8a8a">max size, cooldown, dry run, modify, wait, extend</text>
+    <text x="414" y="550" font-size="10.5" fill="#8a8a8a">a skip or a failure keeps the cordon on</text>
+
+    <line x1="678" y1="560" x2="678" y2="598" stroke="#6e6e6e" stroke-width="1" marker-end="url(#arrow)"/>
+    <text x="688" y="584" font-size="10.5" fill="#8a8a8a">resize completed</text>
+
+    <rect x="400" y="600" width="556" height="70" rx="3" fill="#0f0f0f" stroke="#4a4a4a" stroke-width="1"/>
+    <text x="414" y="624" font-size="11.5" fill="#d4d4d4">verify usage after extend</text>
+    <text x="414" y="644" font-size="10.5" fill="#8a8a8a">still at or above threshold</text><text x="620" y="644" font-size="10.5" fill="#8a8a8a">-&gt;</text><text x="640" y="644" font-size="10.5" fill="#8a8a8a">stays cordoned</text>
+    <text x="414" y="660" font-size="10.5" fill="#8a8a8a">verification failed</text><text x="620" y="660" font-size="10.5" fill="#8a8a8a">-&gt;</text><text x="640" y="660" font-size="10.5" fill="#8a8a8a">next pass decides</text>
+
+    <line x1="400" y1="635" x2="326" y2="635" stroke="#6e6e6e" stroke-width="1" marker-end="url(#arrow)"/>
+    <text x="334" y="627" font-size="10.5" fill="#8a8a8a">under</text>
+
+    <line x1="174" y1="420" x2="174" y2="488" stroke="#6e6e6e" stroke-width="1" marker-end="url(#arrow)"/>
+    <text x="184" y="458" font-size="10.5" fill="#8a8a8a">no</text>
+
+    <rect x="24" y="490" width="300" height="180" rx="3" fill="#0f0f0f" stroke="#6aa86a" stroke-width="1"/>
+    <text x="38" y="512" font-size="11.5" fill="#9fd49f">release protective cordon</text>
+    <text x="38" y="532" font-size="10.5" fill="#6e6e6e">whatever the policy switch says now</text>
+    <text x="38" y="554" font-size="10.5" fill="#8a8a8a">no mark</text><text x="170" y="554" font-size="10.5" fill="#8a8a8a">-&gt;</text><text x="190" y="554" font-size="10.5" fill="#8a8a8a">nothing</text>
+    <text x="38" y="572" font-size="10.5" fill="#8a8a8a">dry run</text><text x="170" y="572" font-size="10.5" fill="#8a8a8a">-&gt;</text><text x="190" y="572" font-size="10.5" fill="#8a8a8a">log only</text>
+    <text x="38" y="590" font-size="10.5" fill="#d4d4d4">mark, unschedulable</text><text x="170" y="590" font-size="10.5" fill="#d4d4d4">-&gt;</text><text x="190" y="590" font-size="10.5" fill="#d4d4d4">uncordon</text>
+    <text x="52" y="608" font-size="10.5" fill="#d4d4d4">+ drop mark</text>
+    <text x="52" y="626" font-size="10.5" fill="#d4d4d4">+ ProtectiveCordonReleased</text>
+    <text x="38" y="644" font-size="10.5" fill="#8a8a8a">mark, schedulable</text><text x="170" y="644" font-size="10.5" fill="#8a8a8a">-&gt;</text><text x="190" y="644" font-size="10.5" fill="#8a8a8a">drop mark</text>
+    <text x="52" y="660" font-size="10.5" fill="#6e6e6e">(uncordoned by hand)</text>
+
+    <text x="24" y="714" font-size="10.5" fill="#6e6e6e">failures are counted in protective_cordon_total and logged, the resize never waits on a Node</text>
+    <text x="24" y="732" font-size="10.5" fill="#6e6e6e">no eviction, no drain, no cap on cordoned Nodes</text>
+  </g>
+</svg>

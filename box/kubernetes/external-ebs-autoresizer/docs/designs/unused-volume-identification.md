@@ -2,10 +2,10 @@
 
 Status: implemented, always on, no configuration surface
 
-A cluster leaks storage in a way nothing tells you about. A Deployment is
-deleted and its PersistentVolumeClaim survives. A StatefulSet is scaled from six
+A cluster leaks storage in a way nothing tells you about. A [Deployment][k8s-deployment] is
+deleted and its [PersistentVolumeClaim][k8s-pvc] survives. A [StatefulSet][k8s-statefulset] is scaled from six
 replicas to two and Kubernetes deliberately keeps the four claims it no longer
-uses. A PersistentVolume under a `Retain` reclaim policy outlives the claim that
+uses. A [PersistentVolume][k8s-pv] under a `Retain` reclaim policy outlives the claim that
 was bound to it, and Kubernetes will never reuse it and never delete it. In each
 case the EBS volume behind the object keeps billing at the full provisioned
 size, and no controller in the cluster is unhappy about it.
@@ -18,7 +18,7 @@ deletes one.
 Deleting is the obvious next step and is deliberately out of scope, not
 deferred.
 
-"Unused" here is an observation about the cluster's current state: no live Pod
+"Unused" here is an observation about the cluster's current state: no live [Pod][k8s-pod]
 mounts this claim. It is not a statement about the data. A claim held for a
 quarterly batch job, a StatefulSet parked at zero replicas over a holiday, a
 volume kept deliberately for a restore, and a claim nobody will ever read again
@@ -30,9 +30,9 @@ Every other mutation this addon performs is triggered by a measurement. A resize
 happens because `df` reported a number. A throughput piggyback rides a
 modification a measurement already justified. A deletion here would be triggered
 by an inference, and it would be the one action in this addon that no later pass
-can undo. So the scanner's Kubernetes surface is list and patch, its ClusterRole
+can undo. So the scanner's Kubernetes surface is list and patch, its [ClusterRole][k8s-rbac]
 carries no `delete` verb on any resource, and the decision is handed to an
-operator through an annotation they can read with kubectl.
+operator through an [annotation][k8s-annotations] they can read with kubectl.
 
 The same reasoning is why the scanner touches no AWS API at all. The EBS volume
 ID it reports comes from the PersistentVolume's own
@@ -58,7 +58,7 @@ make cost grow with the thing being measured. Everything after the lists is a
 pure function over the snapshot, which is what makes the classification testable
 without a cluster.
 
-The loop lives under the same leader election as the other two, on its own
+The loop lives under the same [leader election][k8s-leader-election] as the other two, on its own
 interval. What it reports changes only when workloads are deleted, and every
 finding is held back a day by the grace period anyway, so running it at the
 resizer's cadence would re-list the entire cluster to reach the same answer.
@@ -180,7 +180,7 @@ cluster's claims sortable by how long they have been dead.
   for a rule.
 - `external_ebs_autoresizer_unused_scan_total`: pass starts, the loop's
   liveness signal.
-- Kubernetes Events on the object itself, covered below.
+- Kubernetes [Events][k8s-events] on the object itself, covered below.
 
 Identity and measurement are separate series on purpose. A series identity that
 includes `reason` restarts whenever the reason changes, so a range query over an
@@ -225,7 +225,7 @@ output (PromQL, the CLI table, kubectl on the annotation) filters by namespace
 trivially.
 
 The cost of having no config file keys is that an operator reading the mounted
-ConfigMap finds nothing about the scanner at all. The startup logs make up for
+[ConfigMap][k8s-configmap] finds nothing about the scanner at all. The startup logs make up for
 it: the loop prints its effective values, its scope, what it reads, and what it
 writes, on every boot.
 
@@ -236,7 +236,7 @@ still reports under it.
 ## Kubernetes Events
 
 The verdict is published a second time as an Event against the object itself, so
-it is visible in `kubectl describe pvc` next to whatever else happened to that
+it is visible in [`kubectl describe pvc`][k8s-kubectl-describe] next to whatever else happened to that
 claim.
 
 A finding is a standing state rather than something that happens, which is the
@@ -291,3 +291,15 @@ annotation schema.
   which are events with a start and an end. A count of unused volumes is a
   gauge someone should threshold in their own alerting rules, and
   `unused_objects` exists for exactly that.
+
+[k8s-deployment]: https://kubernetes.io/docs/concepts/workloads/controllers/deployment/
+[k8s-pvc]: https://kubernetes.io/docs/concepts/storage/persistent-volumes/#persistentvolumeclaims
+[k8s-statefulset]: https://kubernetes.io/docs/concepts/workloads/controllers/statefulset/
+[k8s-pv]: https://kubernetes.io/docs/concepts/storage/persistent-volumes/
+[k8s-pod]: https://kubernetes.io/docs/concepts/workloads/pods/
+[k8s-rbac]: https://kubernetes.io/docs/reference/access-authn-authz/rbac/#role-and-clusterrole
+[k8s-annotations]: https://kubernetes.io/docs/concepts/overview/working-with-objects/annotations/
+[k8s-leader-election]: https://kubernetes.io/docs/concepts/architecture/leases/#leader-election
+[k8s-events]: https://kubernetes.io/docs/reference/kubernetes-api/cluster-resources/event-v1/
+[k8s-configmap]: https://kubernetes.io/docs/concepts/configuration/configmap/
+[k8s-kubectl-describe]: https://kubernetes.io/docs/reference/kubectl/generated/kubectl_describe/

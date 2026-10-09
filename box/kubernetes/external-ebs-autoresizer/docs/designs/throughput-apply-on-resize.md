@@ -5,7 +5,7 @@ whenever the recommender is enabled; an explicit `false` is the kill switch
 that keeps recommendations advisory-only)
 
 The throughput recommender computes what a gp3 volume should be provisioned at,
-but only ever publishes it as Node annotations. This design lets the resize loop
+but only ever publishes it as [Node][k8s-node] [annotations][k8s-annotations]. This design lets the resize loop
 apply that recommendation, without giving the recommender any write access and
 without spending an extra EBS modification slot.
 
@@ -106,7 +106,7 @@ incorrectly.
 
 ## Node events
 
-Every modification outcome is published as an Event on the volume's Node when
+Every modification outcome is published as an [Event][k8s-events] on the volume's Node when
 the recommender knows which Node that is (`recstore.NodeRef`, which ignores
 entry age because an attachment does not go stale the way a demand estimate
 does):
@@ -115,14 +115,14 @@ does):
   changed, e.g. `size 100 GiB to 110 GiB, throughput 125 to 250 MiB/s, IOPS
   3000 to 4000`, plus the usage change. On a fallback it names the rejected
   throughput change explicitly, so "size grew but throughput did not" is
-  visible in `kubectl describe node`.
+  visible in [`kubectl describe node`][k8s-kubectl-describe].
 - `VolumeModifyFailed` (Warning): names the attempted changes and the stage
   that failed (`modify`, `wait`, `resize`).
 
 Skip outcomes (stale entry, no recommendation, wrong direction) are metrics
 and debug logs, not events: they can occur every pass and would be noise. The
 6-hour cooldown bounds event volume per volume. Standalone EC2 instances have
-no Node object and keep the existing Pod-side `Resize*` events; nodes the
+no Node object and keep the existing [Pod][k8s-pod]-side `Resize*` events; nodes the
 recommender cannot evaluate (multiple volumes, too young) have no store entry
 and behave the same.
 
@@ -163,3 +163,9 @@ recommender is enabled, which is a precondition of this feature.
 - No per-policy switch. The volumes in both loops' scope are already selected
   by the resize policies and the recommender's own eligibility rules; a
   per-policy apply switch would be a third overlapping selector.
+
+[k8s-annotations]: https://kubernetes.io/docs/concepts/overview/working-with-objects/annotations/
+[k8s-node]: https://kubernetes.io/docs/concepts/architecture/nodes/
+[k8s-events]: https://kubernetes.io/docs/reference/kubernetes-api/cluster-resources/event-v1/
+[k8s-kubectl-describe]: https://kubernetes.io/docs/reference/kubectl/generated/kubectl_describe/
+[k8s-pod]: https://kubernetes.io/docs/concepts/workloads/pods/

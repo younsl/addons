@@ -1,6 +1,8 @@
 //! Kubernetes access: the in-cluster client, Lease-based leader election,
-//! Event publishing, and the Node client of the throughput recommender.
+//! Event publishing, the Node client of the throughput recommender, and the
+//! protective cordon client of the resizer.
 
+pub mod cordon;
 pub mod events;
 pub mod leader;
 pub mod nodes;

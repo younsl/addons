@@ -1,6 +1,7 @@
 //! Orchestrates the measure -> decide -> grow -> wait -> expand flow for the
 //! root EBS volume of each target standalone EC2 instance.
 
+pub mod cordon;
 pub mod piggyback;
 pub mod report;
 
@@ -19,6 +20,7 @@ use crate::awsx::{
 };
 use crate::config::{Config, GROW_MODE_ABSOLUTE};
 use crate::humanize::go_duration;
+use crate::k8s::cordon::{CordonApi, CordonNode};
 use crate::k8s::events::{Emitter, Target};
 use crate::policy::{DEFAULT_POLICY_NAME, Effective, Resolver, from_config};
 use crate::recstore::Store;
@@ -126,6 +128,7 @@ pub trait Recorder: Send + Sync {
     fn observe_policy_instances(&self, counts: &HashMap<String, usize>);
     fn observe_throughput_apply(&self, result: &str);
     fn observe_throughput_apply_skip(&self, reason: &str);
+    fn observe_protective_cordon(&self, action: &str, result: &str);
 }
 
 impl Recorder for crate::observability::Metrics {
@@ -167,6 +170,9 @@ impl Recorder for crate::observability::Metrics {
     fn observe_throughput_apply_skip(&self, reason: &str) {
         Self::observe_throughput_apply_skip(self, reason);
     }
+    fn observe_protective_cordon(&self, action: &str, result: &str) {
+        Self::observe_protective_cordon(self, action, result);
+    }
 }
 
 /// Skip reasons reported via `observe_skip` when an instance is above the
@@ -203,6 +209,8 @@ pub struct Resizer {
     recs: Option<Arc<Store>>,
     /// Publishes Events against Node objects. `None` disables Node Events.
     node_events: Option<Emitter>,
+    /// Cordons and uncordons Nodes. `None` disables the protective cordon.
+    cordon: Option<Arc<dyn CordonApi>>,
 }
 
 /// The optional collaborators of a resizer.
@@ -214,6 +222,7 @@ pub struct Options {
     pub annotator: Option<Arc<dyn Annotator>>,
     pub recs: Option<Arc<Store>>,
     pub node_events: Option<Emitter>,
+    pub cordon: Option<Arc<dyn CordonApi>>,
 }
 
 impl Resizer {
@@ -237,6 +246,7 @@ impl Resizer {
             annotator: opts.annotator,
             recs: opts.recs,
             node_events: opts.node_events,
+            cordon: opts.cordon,
         }
     }
 
@@ -292,6 +302,7 @@ impl Resizer {
         }
         self.log_policy_counts(&counts);
         self.rec.observe_policy_instances(&counts);
+        let mut nodes = self.protective_cordon_nodes(&effs).await;
 
         // Reconcile instances concurrently with a bounded worker pool. Each
         // instance targets an independent EBS volume, so parallelism is safe;
@@ -302,9 +313,10 @@ impl Resizer {
         for (inst, eff) in instances.iter().cloned().zip(effs) {
             let permit = sem.clone().acquire_owned().await.expect("semaphore open");
             let this = self.clone();
+            let node = nodes.remove(&inst.id);
             set.spawn(async move {
                 let _permit = permit;
-                if let Err(err) = this.reconcile_instance(&inst, &eff).await {
+                if let Err(err) = this.reconcile_instance(&inst, &eff, node).await {
                     error!(instance = %inst.id, name = %inst.name, error = %err, "instance reconcile failed");
                 }
             });
@@ -337,6 +349,7 @@ impl Resizer {
         &self,
         inst: &Instance,
         eff: &Effective,
+        mut node: Option<CordonNode>,
     ) -> Result<(), anyhow::Error> {
         let (instance, name, policy) = (inst.id.as_str(), inst.name.as_str(), eff.policy.as_str());
         if inst.root_volume_id.is_empty() {
@@ -394,8 +407,12 @@ impl Resizer {
                 name, policy, "usage below threshold, nothing to do"
             );
             self.rec.observe_skip(SKIP_BELOW_THRESHOLD, policy);
+            self.release_protective_cordon(inst, &mut node, usage, eff)
+                .await;
             return Ok(());
         }
+        self.apply_protective_cordon(inst, &mut node, usage, eff)
+            .await;
 
         let current = inst.root_volume_size_gib;
         let target = target_size(current, eff);
@@ -620,6 +637,10 @@ impl Resizer {
                     new_size_gib = target,
                     "resize verified"
                 );
+                if after < eff.usage_threshold_percent {
+                    self.release_protective_cordon(inst, &mut node, after, eff)
+                        .await;
+                }
                 after
             }
             Err(err) => {
@@ -816,6 +837,7 @@ pub(crate) mod tests {
         pub policy_counts: Mutex<Vec<HashMap<String, usize>>>,
         pub applies: Mutex<Vec<String>>,
         pub apply_skips: Mutex<Vec<String>>,
+        pub cordons: Mutex<Vec<(String, String)>>,
     }
 
     impl Recorder for Rec {
@@ -851,6 +873,54 @@ pub(crate) mod tests {
         }
         fn observe_throughput_apply_skip(&self, reason: &str) {
             self.apply_skips.lock().unwrap().push(reason.into());
+        }
+        fn observe_protective_cordon(&self, action: &str, result: &str) {
+            self.cordons
+                .lock()
+                .unwrap()
+                .push((action.into(), result.into()));
+        }
+    }
+
+    #[derive(Default)]
+    pub(crate) struct FakeCordon {
+        pub nodes: Mutex<HashMap<String, CordonNode>>,
+        pub list_error: Option<String>,
+        pub fail: bool,
+        /// Every mutating call as `(action, node)`.
+        pub calls: Mutex<Vec<(String, String)>>,
+    }
+
+    impl FakeCordon {
+        fn record(&self, action: &str, name: &str) -> Result<(), String> {
+            self.calls
+                .lock()
+                .unwrap()
+                .push((action.into(), name.into()));
+            if self.fail {
+                Err("forbidden".into())
+            } else {
+                Ok(())
+            }
+        }
+    }
+
+    #[async_trait]
+    impl CordonApi for FakeCordon {
+        async fn list(&self) -> Result<HashMap<String, CordonNode>, String> {
+            match &self.list_error {
+                Some(e) => Err(e.clone()),
+                None => Ok(self.nodes.lock().unwrap().clone()),
+            }
+        }
+        async fn cordon(&self, name: &str, _: DateTime<Utc>) -> Result<(), String> {
+            self.record("cordon", name)
+        }
+        async fn uncordon(&self, name: &str) -> Result<(), String> {
+            self.record("uncordon", name)
+        }
+        async fn forget(&self, name: &str) -> Result<(), String> {
+            self.record("forget", name)
         }
     }
 
@@ -939,6 +1009,7 @@ pub(crate) mod tests {
         pub pod_events: Arc<Capture>,
         pub node_events: Arc<Capture>,
         pub recs: Arc<Store>,
+        pub cordon: Arc<FakeCordon>,
         pub resizer: Arc<Resizer>,
     }
 
@@ -948,6 +1019,17 @@ pub(crate) mod tests {
         ssm: FakeSsm,
         resolver: Option<Resolver>,
     ) -> Harness {
+        harness_with_cordon(cfg, ec2, ssm, resolver, FakeCordon::default())
+    }
+
+    pub(crate) fn harness_with_cordon(
+        cfg: Config,
+        ec2: FakeEc2,
+        ssm: FakeSsm,
+        resolver: Option<Resolver>,
+        cordon: FakeCordon,
+    ) -> Harness {
+        let cordon = Arc::new(cordon);
         let ec2 = Arc::new(ec2);
         let ssm = Arc::new(ssm);
         let rec = Arc::new(Rec::default());
@@ -971,6 +1053,7 @@ pub(crate) mod tests {
                 annotator: Some(annotator.clone()),
                 recs: Some(recs.clone()),
                 node_events: Some(Emitter::new(node_events.clone())),
+                cordon: Some(cordon.clone()),
             },
         ));
         Harness {
@@ -982,6 +1065,7 @@ pub(crate) mod tests {
             pod_events,
             node_events,
             recs,
+            cordon,
             resizer,
         }
     }

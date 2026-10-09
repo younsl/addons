@@ -18,7 +18,7 @@ familiarity with Prometheus and PromQL is enough.
 
 ## Background
 
-The addon runs as a long-lived Deployment inside EKS. On a fixed interval it
+The addon runs as a long-lived [Deployment][k8s-deployment] inside EKS. On a fixed interval it
 scans standalone EC2 instances, measures their root disk usage, and grows the
 root EBS volume when usage crosses a threshold. One full scan is called a
 **reconcile pass**, and each instance inside a pass goes through several
@@ -174,7 +174,7 @@ The total number of errors, grouped by the reconcile stage where each error
 happened. The `stage` label is one of `discover`, `measure`, `cooldown`,
 `modify`, `wait`, or `resize` (see the Background section for what each stage
 does), plus `node_list`, `query_peak`, `query_samples`, `describe_volumes`,
-`describe_instance_types`, and `annotate` from the throughput recommender.
+`describe_instance_types`, and `annotate` from the throughput recommender, and `protective_cordon` when listing [Nodes][k8s-node] for the [protective auto-cordon][k8s-cordon] fails.
 
 This metric is more detailed than `resize_total` because it shows *where* things
 break. For example, many errors with `stage="measure"` point to an SSM or
@@ -189,7 +189,16 @@ The total number of reconcile passes that have started. It increases by one each
 interval (set by `reconcileInterval`, default `5m`).
 
 Use it as a liveness signal. If this counter stops growing, the reconcile loop
-has stalled, even if the Pod still looks healthy.
+has stalled, even if the [Pod][k8s-pod] still looks healthy.
+
+### external_ebs_autoresizer_protective_cordon_total
+
+- Type: Counter
+- Labels: `action`, `result`
+
+The total number of protective auto-cordon changes on Nodes whose root filesystem usage crossed the threshold. `action` is `cordon` or `uncordon`, `result` is `success` or `failure`. Only populated when a policy sets `autoProtectiveCordon: true`. Dry runs count nothing.
+
+A cordon that is never followed by an uncordon means a Node stays unschedulable because its disk cannot get back under the threshold, usually paired with `skip_total{reason="max_size"}`. Alert on any `result="failure"`: a failed cordon leaves the Node open to new Pods, and a failed uncordon keeps it closed.
 
 ### external_ebs_autoresizer_node_throughput_current_mibps
 
@@ -278,7 +287,7 @@ the recommender is disabled.
 - Labels: `namespace`, `name`, `volume_name`, `volume_id`, `storage_class`,
   `reason`
 
-One series per reported unused PersistentVolumeClaim, carrying every descriptive
+One series per reported unused [PersistentVolumeClaim][k8s-pvc], carrying every descriptive
 label the report is listed by. The value is always `1`: this is an identity
 series, not a measurement. `reason` is one of `no_consumer_pod`,
 `statefulset_scaled_down`, or `unbound`. `volume_id` is the EBS volume behind the
@@ -293,7 +302,7 @@ below for a table that also carries the numbers.
 - Labels: `name`, `volume_id`, `storage_class`, `reason`, `reclaim_policy`,
   `claim_namespace`, `claim_name`
 
-One series per reported unused PersistentVolume. `reason` is one of `released`,
+One series per reported unused [PersistentVolume][k8s-pv]. `reason` is one of `released`,
 `available`, `failed`, `missing_claim`, or `bound_to_unused_claim`.
 `reclaim_policy` matters for reading the row: a `Released` volume under `Retain`
 is one Kubernetes will never clean up on its own. `claim_namespace` and
@@ -382,7 +391,7 @@ The total number of scan passes that ended in an error. Subtract it from
 
 This is a different unit of work from `error_total`. A pass fails as a whole when
 it cannot read the cluster inventory (`error_total{stage="pv_inventory"}`), while
-a per-object annotation failure (`error_total{stage="pv_annotate"}`) is logged,
+a per-object [annotation][k8s-annotations] failure (`error_total{stage="pv_annotate"}`) is logged,
 counted, and skipped without aborting the pass. A pass can therefore raise
 `error_total` several times and still succeed.
 
@@ -434,7 +443,7 @@ rejecting the calls.
 replica.
 
 Every loop (resizer, throughput recommender, unused volume scanner) runs under
-one leader election, so a follower publishes no scan, resize, or reconcile
+one [leader election][k8s-leader-election], so a follower publishes no scan, resize, or reconcile
 activity at all. That is by design, and it is indistinguishable from a leader
 whose loops have wedged. Any liveness alert over the counters above must be
 scoped with `and on (pod) external_ebs_autoresizer_leader == 1`, or it fires on
@@ -536,7 +545,7 @@ sum(external_ebs_autoresizer_unused_objects_capacity_bytes{kind="persistentvolum
   + sum(external_ebs_autoresizer_unused_objects_capacity_bytes{kind="persistentvolume", reason!="bound_to_unused_claim"}) / 1024^3
 ```
 
-Claims left behind by a StatefulSet scale-down, oldest first. The `and on` filters
+Claims left behind by a [StatefulSet][k8s-statefulset] scale-down, oldest first. The `and on` filters
 the value series by an `_info` selector without copying its labels:
 
 ```promql
@@ -594,7 +603,7 @@ sum by (reason) (
 
 ## Conclusion
 
-The addon exposes fourteen metrics, and together they answer fourteen simple
+The addon exposes fifteen metrics, and together they answer fifteen simple
 questions:
 
 | Question | Metric | Type |
@@ -606,6 +615,7 @@ questions:
 | If something fails, where? | `error_total` | Counter |
 | Is the loop still running? | `reconcile_total` | Counter |
 | Which policy covers which instances? | `policy_instances` | Gauge |
+| Which Nodes did the addon cordon or uncordon? | `protective_cordon_total` | Counter |
 | What throughput do nodes have? | `node_throughput_current_mibps` | Gauge |
 | What throughput do they actually use? | `node_throughput_observed_peak_mibps` | Gauge |
 | What should they have? | `node_throughput_recommended_mibps` | Gauge |
@@ -619,3 +629,13 @@ on a rising `resize_total{result="failure"}` rate, one on a stalled
 `reconcile_total`, and one on `skip_total{reason="max_size"}` paired with high
 `root_usage_percent` to catch disks stuck at the ceiling. From there you can add
 per-instance usage views using the labels on `root_usage_percent`.
+
+[k8s-deployment]: https://kubernetes.io/docs/concepts/workloads/controllers/deployment/
+[k8s-cordon]: https://kubernetes.io/docs/concepts/architecture/nodes/#manual-node-administration
+[k8s-node]: https://kubernetes.io/docs/concepts/architecture/nodes/
+[k8s-pod]: https://kubernetes.io/docs/concepts/workloads/pods/
+[k8s-pvc]: https://kubernetes.io/docs/concepts/storage/persistent-volumes/#persistentvolumeclaims
+[k8s-pv]: https://kubernetes.io/docs/concepts/storage/persistent-volumes/
+[k8s-annotations]: https://kubernetes.io/docs/concepts/overview/working-with-objects/annotations/
+[k8s-leader-election]: https://kubernetes.io/docs/concepts/architecture/leases/#leader-election
+[k8s-statefulset]: https://kubernetes.io/docs/concepts/workloads/controllers/statefulset/
