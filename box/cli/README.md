@@ -1,4 +1,4 @@
-# tools
+# cli
 
 Kubernetes and automation CLI tools.
 

@@ -1,4 +1,4 @@
-**ij** (Infra Janitor) is an EC2 operations CLI: SSM connect with fuzzy search, port forwarding, instance start and stop, and AMI cleanup. See the [README](https://github.com/${REPOSITORY}/blob/main/box/tools/ij/README.md) for usage.
+**ij** (Infra Janitor) is an EC2 operations CLI: SSM connect with fuzzy search, port forwarding, instance start and stop, and AMI cleanup. See the [README](https://github.com/${REPOSITORY}/blob/main/box/cli/ij/README.md) for usage.
 
 ## Changes
 

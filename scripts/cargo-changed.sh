@@ -3,9 +3,9 @@
 # Run a cargo check in every crate that owns one of the given files.
 # Called by pre-commit with the changed files as arguments.
 #
-#   ./scripts/cargo-changed.sh fmt    box/tools/ij/src/main.rs
-#   ./scripts/cargo-changed.sh clippy box/tools/ij/src/main.rs
-#   ./scripts/cargo-changed.sh test   box/tools/ij/src/main.rs
+#   ./scripts/cargo-changed.sh fmt    box/cli/ij/src/main.rs
+#   ./scripts/cargo-changed.sh clippy box/cli/ij/src/main.rs
+#   ./scripts/cargo-changed.sh test   box/cli/ij/src/main.rs
 
 set -euo pipefail
 

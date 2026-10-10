@@ -5,7 +5,7 @@ on:
   push:
     branches: [main]
     paths:
-      - 'box/tools/ij/Cargo.toml'
+      - 'box/cli/ij/Cargo.toml'
   workflow_dispatch:
     inputs:
       project:
@@ -53,7 +53,7 @@ jobs:
 
           case "${PROJECT_NAME}" in
             ij)
-              PROJECT_BASE_DIR="box/tools/ij"
+              PROJECT_BASE_DIR="box/cli/ij"
               MACOS_RUNNER="macos-26"
               ;;
             *)
