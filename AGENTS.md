@@ -31,6 +31,12 @@ Chart READMEs come from helm-docs (`box/kubernetes/charts/README.md.gotmpl`, reg
 
 `docs/kb/README.md` comes from `scripts/kb-index.sh`, which also validates note frontmatter and sections. A pre-commit hook runs it, and lychee checks the links in `docs/kb/`.
 
+## Helm Charts
+
+- Every chart ships a `values.schema.json` (draft-07) and updates it in the same commit as `values.yaml`. Misspelled keys and wrong types must fail `helm lint` and `helm template` instead of being silently ignored.
+- Root and chart-owned blocks set `additionalProperties: false` and the root allows `global`. App config blocks mirror the Rust config structs. Kubernetes pass-through fields (`resources`, `affinity`, `securityContext`, ...) are type-only.
+- Every key in `values.yaml` carries a helm-docs comment in the form `# -- (type) description`, which feeds the generated README. Commented-out examples stay plain `#`.
+
 ## Release Triggers
 
 Every release triggers on merge to `main` when a version value inside a file changes, and skips if that
