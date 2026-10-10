@@ -20,7 +20,7 @@ use tokio::sync::watch;
 
 use crate::State;
 use crate::config::{BuildInfo, Config};
-use crate::telemetry::LogFilterHandle;
+use crate::telemetry::{LogBuffer, LogFilterHandle};
 
 /// Static facts about this instance shown in the console.
 #[derive(Debug, Clone, Serialize)]
@@ -55,19 +55,22 @@ pub struct AppState {
     pub state: State,
     pub info: Arc<Info>,
     pub log_filter: LogFilterHandle,
+    pub logs: LogBuffer,
 }
 
 pub fn router(app: AppState) -> Router {
     let console = Router::new()
         .route("/", get(ui::index))
+        .route("/logs", get(ui::index))
         .route("/assets/app.css", get(ui::css))
         .route("/assets/app.js", get(ui::js))
-        .route("/info", get(api::info))
-        .route("/status", get(api::status))
-        .route("/tree", get(api::tree))
-        .route("/file", get(api::file))
-        .route("/reconcile", post(api::reconcile))
-        .route("/log-level", put(api::log_level))
+        .route("/api/info", get(api::info))
+        .route("/api/status", get(api::status))
+        .route("/api/tree", get(api::tree))
+        .route("/api/file", get(api::file))
+        .route("/api/reconcile", post(api::reconcile))
+        .route("/api/log-level", put(api::log_level))
+        .route("/api/logs", get(api::logs))
         .layer(middleware::from_fn(guard::loopback_only));
     Router::new()
         .route("/healthz", get(api::healthz))

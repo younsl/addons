@@ -24,7 +24,7 @@ print_plan() {
     echo "tether will reconcile dotfiles symlinks into $HOME:"
     echo "  image: $TETHER_IMAGE"
     echo "  config: $TETHER_CONFIG_FILE"
-    echo "  api:   http://127.0.0.1:$TETHER_PORT/status"
+    echo "  console: http://127.0.0.1:$TETHER_PORT"
 }
 
 start_tether() {
@@ -60,8 +60,8 @@ start_tether() {
         -p "127.0.0.1:$TETHER_PORT:8080" \
         "$TETHER_IMAGE" >/dev/null
 
-    echo "$TETHER_NAME started. Check the first reconcile with:"
-    echo "  curl -s 127.0.0.1:$TETHER_PORT/status"
+    echo "$TETHER_NAME started. Open the console:"
+    echo "  http://127.0.0.1:$TETHER_PORT"
 }
 
 prompt_user() {

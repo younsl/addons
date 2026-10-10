@@ -4,7 +4,7 @@ How tether reconciles symlinks and what ends up in its image.
 
 ## Reconcile loop
 
-One loop owns every file system change. It runs on start, then on every RECONCILE_INTERVAL tick or POST /reconcile request. Requests made while a run is in progress collapse into one more run. Each run rereads the link spec, plans one step per target, applies the steps, and publishes a report that /status and /metrics serve.
+One loop owns every file system change. It runs on start, then on every RECONCILE_INTERVAL tick or POST /api/reconcile request. Requests made while a run is in progress collapse into one more run. Each run rereads the link spec, plans one step per target, applies the steps, and publishes a report that /api/status and /metrics serve.
 
 | Target state | Action |
 | --- | --- |

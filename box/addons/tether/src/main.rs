@@ -9,7 +9,7 @@ use tokio::sync::watch;
 use tokio::task::JoinSet;
 
 use tether::config::{BuildInfo, Config};
-use tether::telemetry::{self, LogFilterHandle};
+use tether::telemetry::{self, LogBuffer, LogFilterHandle};
 use tether::web::{self, AppState, Info};
 use tether::{Metrics, State, banner, controller};
 
@@ -17,7 +17,7 @@ use tether::{Metrics, State, banner, controller};
 async fn main() -> anyhow::Result<()> {
     let cfg = Config::load();
     eprint!("{}", banner::render(BuildInfo::CURRENT));
-    let log_filter = telemetry::init(&cfg.log_level, cfg.log_format);
+    let (log_filter, logs) = telemetry::init(&cfg.log_level, cfg.log_format);
 
     let (shutdown_tx, shutdown_rx) = watch::channel(false);
     tokio::spawn(async move {
@@ -25,12 +25,13 @@ async fn main() -> anyhow::Result<()> {
         let _ = shutdown_tx.send(true);
     });
 
-    run(cfg, log_filter, shutdown_rx).await
+    run(cfg, log_filter, logs, shutdown_rx).await
 }
 
 async fn run(
     cfg: Config,
     log_filter: LogFilterHandle,
+    logs: LogBuffer,
     shutdown: watch::Receiver<bool>,
 ) -> anyhow::Result<()> {
     let build = BuildInfo::CURRENT;
@@ -55,6 +56,7 @@ async fn run(
         state: state.clone(),
         info: Arc::new(Info::new(&cfg, build)),
         log_filter,
+        logs,
     };
 
     let mut tasks = JoinSet::new();
@@ -120,10 +122,13 @@ mod tests {
         let (_layer, handle) = filter();
         let (tx, rx) = watch::channel(false);
         tx.send(true).expect("signal shutdown");
-        tokio::time::timeout(Duration::from_secs(10), run(test_config(), handle, rx))
-            .await
-            .expect("run returns")
-            .expect("run succeeds");
+        tokio::time::timeout(
+            Duration::from_secs(10),
+            run(test_config(), handle, LogBuffer::default(), rx),
+        )
+        .await
+        .expect("run returns")
+        .expect("run succeeds");
     }
 
     #[tokio::test]
@@ -133,7 +138,9 @@ mod tests {
         let mut cfg = test_config();
         cfg.port = busy.local_addr().expect("addr").port();
         let (_tx, rx) = watch::channel(false);
-        let err = run(cfg, handle, rx).await.expect_err("busy port must fail");
+        let err = run(cfg, handle, LogBuffer::default(), rx)
+            .await
+            .expect_err("busy port must fail");
         assert!(format!("{err:#}").contains("http port"), "{err:#}");
     }
 }

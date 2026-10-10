@@ -26,7 +26,7 @@ bootstrap-dotfiles.sh starts tether with docker or podman, installs the reposito
 
 1. Add it under configs/TOOL/.
 2. Add a [[links]] entry to config.toml.
-3. curl -s -X POST 127.0.0.1:8080/reconcile, or wait for the next interval.
+3. curl -s -X POST 127.0.0.1:8080/api/reconcile, or wait for the next interval.
 
 ## Local-only files
 

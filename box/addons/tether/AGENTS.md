@@ -32,7 +32,7 @@ Modeled on kube-rs/controller-rs: lib.rs owns Error and Result and exports the m
 
 - **Never edit symlinked targets** (~/.config/nvim, ~/.zshrc, ...). Edit the source in configs/ instead.
 - **Hard-coded path**: config.toml and the scripts expect this repository at $HOME/github/younsl/addons.
-- **Adding or moving a config needs a matching config.toml entry.** tether rereads it on every reconcile (every 5m, or curl -X POST 127.0.0.1:8080/reconcile).
+- **Adding or moving a config needs a matching config.toml entry.** tether rereads it on every reconcile (every 5m, or curl -X POST 127.0.0.1:8080/api/reconcile).
 - **Scripts carry no comments** and every script starts with set -euo pipefail.
 - scripts/git/commit-history-cleaner.sh and the chc alias are **destructive**: they wipe all history and force push. Never run them in this monorepo.
 - bootstrap-dotfiles.sh is #!/bin/zsh: prompts must use read "VAR?prompt". zsh's read -p reads from a coprocess and silently yields an empty value.

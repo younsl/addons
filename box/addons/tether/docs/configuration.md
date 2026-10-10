@@ -17,15 +17,15 @@ Each setting is a flag with an environment variable fallback. The container sets
 | --log-format | LOG_FORMAT | json | json or text |
 
 - RUST_LOG overrides LOG_LEVEL with a full filter such as tether=debug.
-- PUT /log-level changes the filter while tether runs, without a restart.
+- PUT /api/log-level changes the filter while tether runs, without a restart.
 - An invalid interval or a relative home stops tether at startup with the reason.
 
 ## Config file
 
 The config file declares which source links to which home target, and which package files to regenerate. The repository copy is [config.toml](../config.toml).
 
-- It is reread on every reconcile, so an edit takes effect at the next check or on POST /reconcile.
-- Unknown keys fail the load. A typo shows up in the console and in /status instead of being silently ignored.
+- It is reread on every reconcile, so an edit takes effect at the next check or on POST /api/reconcile.
+- Unknown keys fail the load. A typo shows up in the console and in /api/status instead of being silently ignored.
 - While the file cannot be loaded, tether changes nothing, /readyz answers 503 Service Unavailable, and the console shows the error.
 
 ### Paths
@@ -121,7 +121,7 @@ podman machine start
 
 ## Load errors
 
-These are the errors /status and the console show when the config file cannot be used.
+These are the errors /api/status and the console show when the config file cannot be used.
 
 | Cause | Message |
 | --- | --- |

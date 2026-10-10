@@ -11,7 +11,7 @@ A small server that keeps personal macOS dotfiles symlinked into a home director
 ```bash
 git clone https://github.com/younsl/addons ~/github/younsl/addons
 ~/github/younsl/addons/box/addons/tether/scripts/bootstrap/bootstrap-dotfiles.sh
-curl -s 127.0.0.1:8080/status
+curl -s 127.0.0.1:8080/api/status
 ```
 
 ## Docs

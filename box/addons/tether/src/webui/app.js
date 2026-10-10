@@ -287,7 +287,7 @@ async function showFile(path) {
   $("viewer-path").textContent = relative;
   notice("Loading");
   try {
-    const file = await getJson(`/file?path=${encodeURIComponent(path)}`);
+    const file = await getJson(`/api/file?path=${encodeURIComponent(path)}`);
     if (file.content === undefined) {
       notice(`This file is not shown because it is binary, not UTF-8, or larger than 1 MB (${formatSize(file.size)}).`);
     } else if (file.content === "") {
@@ -314,7 +314,7 @@ async function openViewer(root, title, opener) {
 
   let tree;
   try {
-    tree = await getJson(`/tree?path=${encodeURIComponent(root)}`);
+    tree = await getJson(`/api/tree?path=${encodeURIComponent(root)}`);
   } catch {
     notice("This source is no longer in the last reconcile. Close the viewer and try again.");
     return;
@@ -348,6 +348,162 @@ function closeViewer() {
   document.body.classList.remove("locked");
   viewer.opener?.focus();
 }
+
+const ROUTES = { "/": "page-overview", "/logs": "page-logs" };
+
+function onLogsPage() {
+  return location.pathname === "/logs";
+}
+
+function route() {
+  const page = ROUTES[location.pathname] ?? "page-overview";
+  for (const id of Object.values(ROUTES)) $(id).hidden = id !== page;
+  for (const link of document.querySelectorAll(".nav-link")) {
+    if (link.dataset.route === location.pathname) link.setAttribute("aria-current", "page");
+    else link.removeAttribute("aria-current");
+  }
+  document.title = onLogsPage() ? "tether logs" : "tether";
+  $("facts").parentElement.hidden = onLogsPage();
+  if (onLogsPage()) {
+    renderLogFilters();
+    renderLogLines(true);
+  }
+}
+
+function navigate(path) {
+  if (path !== location.pathname) history.pushState(null, "", path);
+  route();
+  window.scrollTo(0, 0);
+}
+
+const LOG_LEVELS = [
+  { id: "all", label: "All", match: () => true },
+  { id: "error", label: "Error", match: (r) => r.level === "error" },
+  { id: "warn", label: "Warn", match: (r) => r.level === "warn" },
+  { id: "info", label: "Info", match: (r) => r.level === "info" },
+  { id: "debug", label: "Debug", match: (r) => r.level === "debug" || r.level === "trace" },
+];
+const logs = { records: [], last: 0, level: "all" };
+
+function clockTime(iso) {
+  const d = new Date(iso);
+  return [d.getHours(), d.getMinutes(), d.getSeconds()].map((n) => String(n).padStart(2, "0")).join(":");
+}
+
+const COPY_ICON = '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><rect x="5.5" y="5.5" width="8" height="8" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M10.5 3.5V3a1.5 1.5 0 0 0-1.5-1.5H3.5A1.5 1.5 0 0 0 2 3v5.5A1.5 1.5 0 0 0 3.5 10H4" fill="none" stroke="currentColor" stroke-width="1.3"/></svg>';
+
+function logText(r) {
+  const fields = r.fields.map(([k, v]) => `${k}=${v}`).join(" ");
+  return `${r.time} ${r.level.toUpperCase()} ${r.message}${fields ? " " + fields : ""}`;
+}
+
+async function copyText(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+    toast("Copied to the clipboard.");
+  } catch {
+    toast("Copy failed. Select the text and copy it by hand.", "error");
+  }
+}
+
+function logLine(r) {
+  const li = document.createElement("li");
+  li.className = "log-line";
+  li.dataset.level = r.level;
+  const time = document.createElement("time");
+  time.dateTime = r.time;
+  time.textContent = clockTime(r.time);
+  const level = document.createElement("span");
+  level.className = "log-level";
+  level.textContent = r.level;
+  const text = document.createElement("span");
+  text.className = "log-text";
+  const msg = document.createElement("span");
+  msg.className = "log-message";
+  msg.textContent = r.message;
+  text.append(msg);
+  for (const [key, value] of r.fields) {
+    const field = document.createElement("span");
+    field.className = "log-field";
+    const k = document.createElement("span");
+    k.className = "log-key";
+    k.textContent = `${key}=`;
+    field.append(k, document.createTextNode(tilde(value)));
+    text.append(" ", field);
+  }
+  const copy = document.createElement("button");
+  copy.type = "button";
+  copy.className = "log-copy";
+  copy.setAttribute("aria-label", "Copy this log line");
+  copy.innerHTML = COPY_ICON;
+  copy.addEventListener("click", () => copyText(logText(r)));
+  li.append(time, level, text, copy);
+  return li;
+}
+
+function renderLogFilters() {
+  const bar = $("logs-filters");
+  bar.replaceChildren();
+  for (const f of LOG_LEVELS) {
+    const count = logs.records.filter(f.match).length;
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "pill";
+    btn.setAttribute("role", "tab");
+    btn.setAttribute("aria-selected", String(logs.level === f.id));
+    const label = document.createElement("span");
+    label.textContent = f.label;
+    const c = document.createElement("span");
+    c.className = "count";
+    c.textContent = String(count);
+    btn.append(label, c);
+    btn.addEventListener("click", () => {
+      logs.level = f.id;
+      renderLogFilters();
+      renderLogLines(true);
+    });
+    bar.append(btn);
+  }
+}
+
+function renderLogLines(reset, added = []) {
+  const list = $("log-lines");
+  const filter = LOG_LEVELS.find((f) => f.id === logs.level) ?? LOG_LEVELS[0];
+  if (reset) list.replaceChildren(...logs.records.filter(filter.match).map(logLine));
+  else list.append(...added.filter(filter.match).map(logLine));
+  while (list.children.length > 1000) list.firstChild.remove();
+  const empty = $("logs-empty");
+  empty.hidden = list.children.length > 0;
+  empty.textContent = logs.records.length === 0 ? "No events yet." : "No events at this level.";
+  if ($("logs-follow").checked) $("logs-body").scrollTop = $("logs-body").scrollHeight;
+}
+
+function renderLogAlert() {
+  const alerts = logs.records.filter((r) => r.level === "warn" || r.level === "error").length;
+  const badge = $("logs-alert");
+  badge.hidden = alerts === 0;
+  badge.textContent = String(alerts);
+  badge.dataset.kind = logs.records.some((r) => r.level === "error") ? "error" : "warn";
+}
+
+async function pollLogs() {
+  let added;
+  try {
+    added = await getJson(`/api/logs?after=${logs.last}`);
+  } catch {
+    return;
+  }
+  if (added.length === 0) return;
+  logs.last = added[added.length - 1].seq;
+  logs.records.push(...added);
+  if (logs.records.length > 1000) logs.records.splice(0, logs.records.length - 1000);
+  renderLogAlert();
+  if (onLogsPage()) {
+    renderLogFilters();
+    renderLogLines(false, added);
+  }
+}
+
 
 function renderRows() {
   const entries = state.report?.entries ?? [];
@@ -505,10 +661,10 @@ function render(ok) {
 async function refresh() {
   try {
     if (!state.info) {
-      state.info = await getJson("/info");
+      state.info = await getJson("/api/info");
       renderBuild();
     }
-    const res = await fetch("/status", { cache: "no-store" });
+    const res = await fetch("/api/status", { cache: "no-store" });
     if (res.ok) state.report = await res.json();
     state.lastOk = Date.now();
     render(true);
@@ -529,12 +685,12 @@ async function reconcileNow() {
   btn.replaceChildren(spinner, document.createTextNode("Reconciling"));
   renderStatus();
   try {
-    const res = await fetch("/reconcile", { method: "POST" });
+    const res = await fetch("/api/reconcile", { method: "POST" });
     if (res.status !== 202) throw new Error(`Reconcile request returned ${res.status}.`);
     const deadline = Date.now() + 15000;
     while (Date.now() < deadline) {
       await new Promise((r) => setTimeout(r, 400));
-      const report = await getJson("/status").catch(() => null);
+      const report = await getJson("/api/status").catch(() => null);
       if (report && report.started_at !== before) {
         state.report = report;
         break;
@@ -569,12 +725,24 @@ document.addEventListener("DOMContentLoaded", () => {
       closeViewer();
       return;
     }
-    if (!$("viewer").hidden) return;
+    if (!$("viewer").hidden || onLogsPage()) return;
     if (e.key === "/" && document.activeElement !== $("search")) {
       e.preventDefault();
       $("search").focus();
     }
   });
+  for (const link of document.querySelectorAll(".nav-link")) {
+    link.addEventListener("click", (e) => {
+      if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
+      e.preventDefault();
+      navigate(link.dataset.route);
+    });
+  }
+  window.addEventListener("popstate", route);
+  route();
+  $("logs-follow").addEventListener("change", () => renderLogLines(true));
   refresh();
+  pollLogs();
   setInterval(refresh, POLL_MS);
+  setInterval(pollLogs, 2000);
 });

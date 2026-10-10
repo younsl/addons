@@ -81,6 +81,17 @@ pub async fn file(Extract(app): Extract<AppState>, Query(query): Query<PathQuery
         .map_or_else(|| not_found("this file"), |file| Json(file).into_response())
 }
 
+#[derive(Debug, Deserialize)]
+pub struct LogsQuery {
+    #[serde(default)]
+    after: u64,
+}
+
+/// tether's own log events newer than `after`, from memory.
+pub async fn logs(Extract(app): Extract<AppState>, Query(query): Query<LogsQuery>) -> Response {
+    Json(app.logs.since(query.after, 1000)).into_response()
+}
+
 pub async fn reconcile(Extract(app): Extract<AppState>) -> StatusCode {
     app.state.request_reconcile();
     StatusCode::ACCEPTED
@@ -119,6 +130,7 @@ mod tests {
     use axum::http::{Method, Request};
     use http_body_util::BodyExt;
     use tower::ServiceExt;
+    use tracing_subscriber::layer::SubscriberExt;
     use tracing_subscriber::{Registry, reload};
 
     use super::*;
@@ -150,6 +162,7 @@ mod tests {
                     reconcile_interval_secs: 300,
                 }),
                 log_filter: handle,
+                logs: crate::telemetry::LogBuffer::default(),
             },
             _filter: filter,
         }
@@ -197,7 +210,7 @@ mod tests {
             StatusCode::SERVICE_UNAVAILABLE
         );
         assert_eq!(
-            call(&h.app, Method::GET, "/status", &[], "").await.0,
+            call(&h.app, Method::GET, "/api/status", &[], "").await.0,
             StatusCode::SERVICE_UNAVAILABLE
         );
         let (code, body, _) = call(&h.app, Method::GET, "/metrics", &[], "").await;
@@ -218,14 +231,14 @@ mod tests {
             call(&h.app, Method::GET, "/readyz", &[], "").await.0,
             StatusCode::OK
         );
-        let (code, body, _) = call(&h.app, Method::GET, "/status", &[], "").await;
+        let (code, body, _) = call(&h.app, Method::GET, "/api/status", &[], "").await;
         assert_eq!(code, StatusCode::OK);
         let json: serde_json::Value = serde_json::from_str(&body).expect("json");
         assert_eq!(json["dry_run"], true);
         assert_eq!(json["entries"], serde_json::json!([]));
         assert_eq!(json["packages"], serde_json::json!([]));
 
-        let (code, body, _) = call(&h.app, Method::GET, "/info", &[], "").await;
+        let (code, body, _) = call(&h.app, Method::GET, "/api/info", &[], "").await;
         assert_eq!(code, StatusCode::OK);
         let json: serde_json::Value = serde_json::from_str(&body).expect("json");
         assert_eq!(json["home"], "/home/dev");
@@ -256,7 +269,7 @@ mod tests {
         let (code, body, _) = call(
             &h.app,
             Method::GET,
-            &format!("/tree?{}", q(&zshrc)),
+            &format!("/api/tree?{}", q(&zshrc)),
             &local,
             "",
         )
@@ -268,7 +281,7 @@ mod tests {
         let (code, body, _) = call(
             &h.app,
             Method::GET,
-            &format!("/file?{}", q(&zshrc)),
+            &format!("/api/file?{}", q(&zshrc)),
             &local,
             "",
         )
@@ -277,7 +290,7 @@ mod tests {
         let file: serde_json::Value = serde_json::from_str(&body).expect("json");
         assert_eq!(file["content"], "zshrc");
 
-        for uri in ["/file?path=%2Fetc%2Fpasswd", "/tree?path=%2Fetc"] {
+        for uri in ["/api/file?path=%2Fetc%2Fpasswd", "/api/tree?path=%2Fetc"] {
             assert_eq!(
                 call(&h.app, Method::GET, uri, &local, "").await.0,
                 StatusCode::NOT_FOUND,
@@ -285,14 +298,14 @@ mod tests {
             );
         }
         assert_eq!(
-            call(&h.app, Method::GET, "/file", &local, "").await.0,
+            call(&h.app, Method::GET, "/api/file", &local, "").await.0,
             StatusCode::BAD_REQUEST
         );
         assert_eq!(
             call(
                 &h.app,
                 Method::POST,
-                &format!("/file?{}", q(&zshrc)),
+                &format!("/api/file?{}", q(&zshrc)),
                 &local,
                 ""
             )
@@ -303,11 +316,47 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn logs_are_served_incrementally() {
+        let h = harness();
+        let subscriber = tracing_subscriber::registry().with(h.app.logs.layer());
+        tracing::subscriber::with_default(subscriber, || {
+            tracing::info!("first");
+            tracing::warn!(path = "/x", "second");
+        });
+        let local = [("host", "127.0.0.1:8080")];
+
+        let (code, body, _) = call(&h.app, Method::GET, "/api/logs", &local, "").await;
+        assert_eq!(code, StatusCode::OK);
+        let all: serde_json::Value = serde_json::from_str(&body).expect("json");
+        assert_eq!(all.as_array().expect("array").len(), 2);
+        assert_eq!(all[1]["level"], "warn");
+        assert_eq!(all[1]["fields"][0], serde_json::json!(["path", "/x"]));
+
+        let (_, body, _) = call(&h.app, Method::GET, "/api/logs?after=1", &local, "").await;
+        let newer: serde_json::Value = serde_json::from_str(&body).expect("json");
+        assert_eq!(newer.as_array().expect("array").len(), 1);
+        assert_eq!(newer[0]["message"], "second");
+
+        assert_eq!(
+            call(
+                &h.app,
+                Method::GET,
+                "/api/logs",
+                &[("host", "evil.example.com")],
+                ""
+            )
+            .await
+            .0,
+            StatusCode::FORBIDDEN
+        );
+    }
+
+    #[tokio::test]
     async fn reconcile_accepts_same_origin_only() {
         let h = harness();
         let host = ("host", "127.0.0.1:8080");
         assert_eq!(
-            call(&h.app, Method::POST, "/reconcile", &[host], "")
+            call(&h.app, Method::POST, "/api/reconcile", &[host], "")
                 .await
                 .0,
             StatusCode::ACCEPTED
@@ -316,7 +365,7 @@ mod tests {
             call(
                 &h.app,
                 Method::POST,
-                "/reconcile",
+                "/api/reconcile",
                 &[host, ("origin", "http://127.0.0.1:8080")],
                 ""
             )
@@ -328,7 +377,7 @@ mod tests {
             call(
                 &h.app,
                 Method::POST,
-                "/reconcile",
+                "/api/reconcile",
                 &[host, ("origin", "https://evil.example.com")],
                 ""
             )
@@ -337,7 +386,9 @@ mod tests {
             StatusCode::FORBIDDEN
         );
         assert_eq!(
-            call(&h.app, Method::GET, "/reconcile", &[host], "").await.0,
+            call(&h.app, Method::GET, "/api/reconcile", &[host], "")
+                .await
+                .0,
             StatusCode::METHOD_NOT_ALLOWED
         );
     }
@@ -347,7 +398,9 @@ mod tests {
         let h = harness();
         let foreign = [("host", "rebind.example.com:8080")];
         assert_eq!(
-            call(&h.app, Method::GET, "/status", &foreign, "").await.0,
+            call(&h.app, Method::GET, "/api/status", &foreign, "")
+                .await
+                .0,
             StatusCode::FORBIDDEN
         );
         assert_eq!(
@@ -366,6 +419,7 @@ mod tests {
         let local = [("host", "localhost:8080")];
         for (path, kind) in [
             ("/", "text/html"),
+            ("/logs", "text/html"),
             ("/assets/app.css", "text/css"),
             ("/assets/app.js", "text/javascript"),
         ] {
@@ -397,7 +451,7 @@ mod tests {
         let (code, body, _) = call(
             &h.app,
             Method::PUT,
-            "/log-level",
+            "/api/log-level",
             &json,
             r#"{"filter":"debug"}"#,
         )
@@ -413,7 +467,7 @@ mod tests {
         let (code, _, _) = call(
             &h.app,
             Method::PUT,
-            "/log-level",
+            "/api/log-level",
             &json,
             r#"{"filter":"tether=nope"}"#,
         )

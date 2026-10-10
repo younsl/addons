@@ -43,7 +43,7 @@ pub struct Report {
     pub error: Option<String>,
     pub entries: Vec<Entry>,
     pub packages: Vec<FileReport>,
-    /// Tracked source files for the console viewer, served by /tree and /file.
+    /// Tracked source files for the console viewer, served by /api/tree and /api/file.
     #[serde(skip)]
     pub files: Arc<Snapshot>,
 }

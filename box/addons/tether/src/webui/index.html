@@ -16,12 +16,16 @@
   <div class="nav-inner">
     <a class="wordmark" href="/">tether</a>
     <span class="nav-meta" id="build"></span>
+    <nav class="nav-links" aria-label="Pages">
+      <a class="nav-link" href="/" data-route="/">Overview</a>
+      <a class="nav-link" href="/logs" data-route="/logs">Logs<span class="log-alert" id="logs-alert" hidden></span></a>
+    </nav>
     <span class="health" id="health" data-state="unknown"><span class="dot" aria-hidden="true"></span><span id="health-text">Connecting</span></span>
     <button class="btn btn-primary" id="reconcile" type="button">Reconcile now</button>
   </div>
 </header>
 
-<main>
+<main id="page-overview">
   <section class="status" id="status" data-tone="neutral" aria-live="polite">
     <div class="mesh" aria-hidden="true"></div>
     <div class="status-inner">
@@ -58,6 +62,23 @@
     </div>
     <ul class="packages" id="packages"></ul>
     <div class="guide" id="mount-guide" hidden></div>
+  </section>
+</main>
+
+<main id="page-logs" hidden>
+  <header class="page-head">
+    <h1>Logs</h1>
+    <p class="lede">The last 1000 events from this tether, newest at the bottom. Change the level with PUT /api/log-level.</p>
+  </header>
+  <section class="panel logs-panel" aria-label="Log events">
+    <div class="panel-head">
+      <div class="filters" role="tablist" aria-label="Filter logs by level" id="logs-filters"></div>
+      <label class="follow"><input type="checkbox" id="logs-follow" checked> Follow new events</label>
+    </div>
+    <div class="logs-body" id="logs-body">
+      <ol class="log-lines" id="log-lines"></ol>
+      <p class="empty" id="logs-empty" hidden></p>
+    </div>
   </section>
 </main>
 
