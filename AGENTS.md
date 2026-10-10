@@ -25,9 +25,34 @@ Examples:
 
 ## Rust
 
+Every crate is standalone (no workspace). Match these when adding or touching one.
+
+### Crate
+
+- Every crate must use `edition = "2024"`. Never use an older edition, including for new crates.
+- `rust-version` equals the repository toolchain (`1.99.0`). Bump it in every crate together.
+- `[lints.rust] unsafe_code = "forbid"` and `[lints.clippy]` with `all`, `pedantic`, and `nursery` at `warn`. Allow a single lint in `Cargo.toml` with a one-line reason instead of scattering `#[allow]`.
+- `[profile.release]` sets `lto = true`, `codegen-units = 1`, `strip = true`, and `panic = "abort"` for long-running services. Use `opt-level = "z"` for small I/O-bound services and `3` otherwise.
+- Declare only the tokio features the crate uses, never `full`.
 - 2018+ module style: `foo.rs` alongside a `foo/` directory. Never `foo/mod.rs`.
+
+### Runtime
+
+- TLS is rustls only. Never pull in openssl or native-tls, which breaks the static `scratch` build. Set `default-features = false` on `reqwest` and `kube` and enable the rustls features explicitly.
+- Install the `aws-lc-rs` crypto provider once at the top of `main` so every rustls client and listener shares it.
+- Errors: `thiserror` enums inside modules, `anyhow` only at the binary boundary (`main` and CLI glue).
+- Configuration comes from `clap` derive with an `env` fallback on every flag, so Helm sets values through environment variables.
+- Logging uses `tracing` with JSON output by default. Expose `--log-level`/`LOG_LEVEL` and `--log-format`/`LOG_FORMAT` (`json` or `text`), and let `RUST_LOG` override the level through `EnvFilter`.
+- Long-running services serve `/healthz`, `/readyz`, and `/metrics` and shut down gracefully on SIGTERM. Use `prometheus-client` for new metrics code.
+
+### Verification
+
+- `cargo fmt --check`, `cargo clippy -- -D warnings`, and `cargo test` pass after every change. The pre-commit hook runs them for changed crates.
 - Unit tests in a `#[cfg(test)]` module in the same file. Integration tests in `tests/`.
 - Every Rust application under `box/` holds at least 70% line coverage, measured with `cargo llvm-cov`. Check before releasing, not after.
+
+### Build
+
 - Container images are `scratch` with statically linked binaries built via cargo-zigbuild. The working cross-compilation setup (toolchain, linker, pinned zig version) lives in `.github/workflows/_release-rust-scratch-containers.yml`.
 - The root `.gitignore` ignores every path named `config` (AWS credentials). Only `**/src/config` and `**/internal/config` are whitelisted. A `config/` directory anywhere else needs its own exception, or its files silently stay untracked and CI fails on a missing module.
 
