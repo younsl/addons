@@ -81,4 +81,12 @@ Write all repository documentation in concise English, including READMEs and thi
 
 `docs/kb/` holds personal SRE notes, one directory per domain (`kubernetes/`, `observability/`, ...) and one subject per kebab-case file. Commit with `[kb] docs(<domain>): ...`.
 
+Every note starts with YAML frontmatter so agents can find relevant notes without reading bodies:
+
+- `description`: one sentence stating the rule and its main reason
+- `tags`: lowercase keywords, domain first
+- `resources`: Kubernetes kinds or tool objects the rule applies to, omitted when none
+
+Find notes for a kind with `rg -l 'resources:.*\bService\b' docs/kb`.
+
 Notes come from real work and this repository is public. Never include company names, internal domains, hostnames, IP ranges, account IDs, ARNs, credentials, or personal info. Use `example.com`, `10.0.0.0/16`, `123456789012`, `${SECRET_NAME}` instead. Incident write-ups describe the failure mode and fix, not the affected internal service.
