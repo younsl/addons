@@ -401,6 +401,7 @@ pub(crate) mod tests {
 
         use crate::repo::Manager;
         use crate::repo::group::tests::mk_group;
+        use crate::testing::api::{ADMIN_PASS, ADMIN_USER, USER_PASS};
         use crate::testing::repo::{
             TestManager, TestResponse, call, mk_repo, mux, new_test_manager, send,
         };
@@ -418,7 +419,7 @@ pub(crate) mod tests {
                     ..Default::default()
                 },
             );
-            svc.bootstrap_admin("admin", "adminpw")
+            svc.bootstrap_admin(ADMIN_USER, ADMIN_PASS)
                 .await
                 .expect("bootstrap admin");
             let manager = Manager::new(
@@ -507,7 +508,7 @@ pub(crate) mod tests {
                 repoconfig::default(),
             )
             .await;
-            grant_role(&tm.store, "reader", "readerpw", "mvn-*", "read").await;
+            grant_role(&tm.store, "reader", USER_PASS, "mvn-*", "read").await;
             let h = authz_mux(&tm.manager, svc);
             let path = "/maven/mvn-hosted/com/acme/a/1.0/a-1.0.jar";
 
@@ -520,13 +521,13 @@ pub(crate) mod tests {
             );
 
             // Admin can write; the reader cannot.
-            let resp = do_authz(&h, Method::PUT, path, "admin", "adminpw", "JAR").await;
+            let resp = do_authz(&h, Method::PUT, path, "admin", ADMIN_PASS, "JAR").await;
             assert_eq!(resp.status, StatusCode::CREATED, "admin put");
-            let resp = do_authz(&h, Method::PUT, path, "reader", "readerpw", "JAR").await;
+            let resp = do_authz(&h, Method::PUT, path, "reader", USER_PASS, "JAR").await;
             assert_eq!(resp.status, StatusCode::FORBIDDEN, "reader put");
 
             // The reader can read; a repo outside their pattern is forbidden.
-            let resp = do_authz(&h, Method::GET, path, "reader", "readerpw", "").await;
+            let resp = do_authz(&h, Method::GET, path, "reader", USER_PASS, "").await;
             assert_eq!(resp.status, StatusCode::OK, "reader get");
             mk_repo(
                 &tm.store,
@@ -541,7 +542,7 @@ pub(crate) mod tests {
                 Method::GET,
                 "/maven/other/x.jar",
                 "reader",
-                "readerpw",
+                USER_PASS,
                 "",
             )
             .await;
@@ -562,7 +563,7 @@ pub(crate) mod tests {
             let h = authz_mux(&tm.manager, svc);
             let path = "/maven/mvn-hosted/com/acme/a/1.0/a-1.0.jar";
 
-            let resp = do_authz(&h, Method::PUT, path, "admin", "adminpw", "JAR").await;
+            let resp = do_authz(&h, Method::PUT, path, "admin", ADMIN_PASS, "JAR").await;
             assert_eq!(resp.status, StatusCode::CREATED, "seed put");
             // Anonymous read is allowed, anonymous write is not.
             let resp = do_authz(&h, Method::GET, path, "", "", "").await;
@@ -654,7 +655,7 @@ pub(crate) mod tests {
             .await;
             mk_group(&tm.store, "mvn-public", &["mvn-hosted"]).await;
             // The reader may only access the group, not the member.
-            grant_role(&tm.store, "reader", "readerpw", "mvn-public", "read").await;
+            grant_role(&tm.store, "reader", USER_PASS, "mvn-public", "read").await;
             let h = authz_mux(&tm.manager, svc);
 
             let resp = do_authz(
@@ -662,7 +663,7 @@ pub(crate) mod tests {
                 Method::PUT,
                 "/maven/mvn-hosted/a/b/1.0/b-1.0.jar",
                 "admin",
-                "adminpw",
+                ADMIN_PASS,
                 "JAR",
             )
             .await;
@@ -675,7 +676,7 @@ pub(crate) mod tests {
                 Method::GET,
                 "/maven/mvn-hosted/a/b/1.0/b-1.0.jar",
                 "reader",
-                "readerpw",
+                USER_PASS,
                 "",
             )
             .await;
@@ -685,7 +686,7 @@ pub(crate) mod tests {
                 Method::GET,
                 "/maven/mvn-public/a/b/1.0/b-1.0.jar",
                 "reader",
-                "readerpw",
+                USER_PASS,
                 "",
             )
             .await;
@@ -696,7 +697,7 @@ pub(crate) mod tests {
                 Method::PUT,
                 "/maven/mvn-public/a/b/1.0/b-1.0.jar",
                 "admin",
-                "adminpw",
+                ADMIN_PASS,
                 "X",
             )
             .await;

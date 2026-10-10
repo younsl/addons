@@ -1105,6 +1105,7 @@ pub(crate) mod tests {
         use crate::auth::authz::match_glob;
         use crate::auth::*;
         use crate::meta;
+        use crate::testing::api::USER_PASS;
         use crate::testing::auth::{
             basic_auth_parts, cookie_parts, new_test_service, request_parts, to_request,
         };
@@ -1294,7 +1295,7 @@ pub(crate) mod tests {
             role_name: &str,
             actions: &str,
         ) {
-            let hash = hash_password("pw123456").expect("hash");
+            let hash = hash_password(USER_PASS).expect("hash");
             let u = store
                 .create_user(meta::User {
                     username: username.into(),
@@ -1303,7 +1304,7 @@ pub(crate) mod tests {
                     ..Default::default()
                 })
                 .await
-                .unwrap_or_else(|e| panic!("create user {username}: {e}"));
+                .expect("create user");
             let role = store
                 .create_role(meta::Role {
                     name: role_name.into(),
@@ -1331,7 +1332,7 @@ pub(crate) mod tests {
         async fn management_plane_middlewares() {
             let t = new_test_service().await;
             t.svc
-                .bootstrap_admin("admin", "pw123456")
+                .bootstrap_admin("admin", USER_PASS)
                 .await
                 .expect("bootstrap");
             mk_user_with_role(&t.store, "plain", "reader-role", "read").await;
@@ -1375,7 +1376,7 @@ pub(crate) mod tests {
                 let parts = if user.is_empty() {
                     request_parts()
                 } else {
-                    basic_auth_parts(user, "pw123456")
+                    basic_auth_parts(user, USER_PASS)
                 };
                 let resp = guard(which).oneshot(to_request(parts)).await.unwrap();
                 let who = if user.is_empty() { "anonymous" } else { user };
@@ -1391,7 +1392,7 @@ pub(crate) mod tests {
         async fn impersonation_resolves_as_target() {
             let t = new_test_service().await;
             t.svc
-                .bootstrap_admin("admin", "pw123456")
+                .bootstrap_admin("admin", USER_PASS)
                 .await
                 .expect("bootstrap");
             mk_user_with_role(&t.store, "plain", "reader-role", "read").await;
@@ -1457,7 +1458,7 @@ pub(crate) mod tests {
             mk_user_with_role(&t.store, "approver", "approver-role", "read,approve").await;
             mk_user_with_role(&t.store, "gone", "gone-role", "read,approve").await;
             // A scoped approver on maven only, to prove the repository argument is used.
-            let hash = hash_password("pw123456").unwrap();
+            let hash = hash_password(USER_PASS).unwrap();
             let scoped = t
                 .store
                 .create_user(meta::User {

@@ -3093,9 +3093,10 @@ pub(crate) mod tests {
             assert_eq!(resp.status, StatusCode::OK, "{}", resp.text());
             let (authorization, api_key) = seen.lock().clone();
             assert!(
-                authorization.is_empty() && api_key.is_empty(),
-                "credentials leaked across hosts: Authorization={authorization:?} X-Api-Key={api_key:?}"
+                authorization.is_empty(),
+                "Authorization leaked across hosts"
             );
+            assert!(api_key.is_empty(), "X-Api-Key leaked across hosts");
         }
 
         fn basic_auth(headers: &HeaderMap) -> Option<(String, String)> {

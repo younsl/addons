@@ -24,6 +24,7 @@ use crate::api::Handler;
 
 pub const ADMIN_USER: &str = "admin";
 pub const ADMIN_PASS: &str = "adminpw";
+pub const USER_PASS: &str = "pw123456";
 
 /// The API under test with the store behind it. The temporary directory is held
 /// so the database file outlives the test body.
@@ -391,7 +392,7 @@ pub async fn dangling_harness() -> DanglingHarness {
 /// Creates a local user with read access to repositories matching `pattern`,
 /// which is all these views require.
 pub async fn mk_read_user(store: &Store, username: &str, pattern: &str) {
-    let hash = auth::hash_password("pw123456").expect("hash password");
+    let hash = auth::hash_password(USER_PASS).expect("hash password");
     let user = store
         .create_user(User {
             username: username.to_string(),
@@ -426,7 +427,7 @@ pub async fn mk_read_user(store: &Store, username: &str, pattern: &str) {
 /// Creates a local user with the given CSV actions on every repository, so the
 /// lifecycle routes can be exercised as something other than an administrator.
 pub async fn mk_upload_user(store: &Store, username: &str, actions: &str) {
-    let hash = auth::hash_password("pw123456").expect("hash password");
+    let hash = auth::hash_password(USER_PASS).expect("hash password");
     let user = store
         .create_user(User {
             username: username.to_string(),

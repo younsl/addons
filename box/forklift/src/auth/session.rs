@@ -151,6 +151,7 @@ pub(crate) mod tests {
 
     use crate::auth::*;
     use crate::meta;
+    use crate::testing::api::USER_PASS;
     use crate::testing::auth::{
         TestService, cookie_parts, new_test_service, request_parts, to_request,
     };
@@ -202,7 +203,7 @@ pub(crate) mod tests {
     #[tokio::test]
     async fn session_cookie_resolve() {
         let t = new_test_service().await;
-        let u = mk_local_user(&t.store, "alice", "pw123456").await;
+        let u = mk_local_user(&t.store, "alice", USER_PASS).await;
 
         let parts = session_request(&t.svc, "alice", meta::SOURCE_LOCAL, &[]);
         let p = t
@@ -240,7 +241,7 @@ pub(crate) mod tests {
     #[tokio::test]
     async fn session_csrf_token() {
         let t = new_test_service().await;
-        mk_local_user(&t.store, "csrf-user", "pw123456").await;
+        mk_local_user(&t.store, "csrf-user", USER_PASS).await;
         let mut parts = session_request(&t.svc, "csrf-user", meta::SOURCE_LOCAL, &[]);
         let token = t
             .svc
@@ -276,7 +277,7 @@ pub(crate) mod tests {
     #[tokio::test]
     async fn session_groups_grant_mapped_roles() {
         let t = new_test_service().await;
-        mk_local_user(&t.store, "dev", "pw123456").await;
+        mk_local_user(&t.store, "dev", USER_PASS).await;
 
         let role = t
             .store
@@ -319,7 +320,7 @@ pub(crate) mod tests {
     #[tokio::test]
     async fn require_auth_middleware() {
         let t = new_test_service().await;
-        mk_local_user(&t.store, "alice", "pw123456").await;
+        mk_local_user(&t.store, "alice", USER_PASS).await;
 
         let app = || {
             Router::new()

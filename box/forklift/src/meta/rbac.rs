@@ -527,11 +527,11 @@ pub(crate) mod tests {
         s.apply_managed_rbac(shrunk).await.expect("apply 2");
 
         let by_user = s.roles_by_user().await.unwrap();
-        for (uid, rs) in &by_user {
+        for rs in by_user.values() {
             for r in rs {
                 assert!(
                     r.name != "dev" && r.id != dev_id,
-                    "user {uid} still holds the dropped role: {r:?}"
+                    "a user still holds the dropped role: {r:?}"
                 );
             }
         }
@@ -630,8 +630,8 @@ pub(crate) mod tests {
             .get_user_by_username("ci-bot")
             .await
             .expect("ci-bot not created");
-        assert_eq!(bot.source, SOURCE_LOCAL, "ci-bot = {bot:?}");
-        assert_eq!(bot.password_hash, "hashed-pw", "ci-bot = {bot:?}");
+        assert_eq!(bot.source, SOURCE_LOCAL, "ci-bot source");
+        assert_eq!(bot.password_hash, "hashed-pw", "ci-bot password hash");
 
         let again = s.get_user(existing.id).await.unwrap();
         assert_eq!(
