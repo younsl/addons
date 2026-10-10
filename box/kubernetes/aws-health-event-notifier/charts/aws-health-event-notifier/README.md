@@ -116,7 +116,7 @@ The following table lists the configurable parameters and their default values.
 | slack.timeoutSeconds | int | `10` | Slack request timeout in seconds. |
 | logging.level | string | `"info"` | Log level filter (e.g., info, debug, aws_health_event_notifier=debug). |
 | logging.json | bool | `true` | Emit logs as JSON. |
-| filter.allowCategories | list | `[]` | Allowed `eventTypeCategory` values. Empty = allow all. One of: issue, scheduledChange, accountNotification, investigation, securityNotification. |
+| filter.allowCategories | list | `[]` | Allowed `eventTypeCategory` values. Empty = allow all. One of: issue, scheduledChange, accountNotification, investigation. |
 | filter.denyCategories | list | `[]` | Denied `eventTypeCategory` values (wins over allow). |
 | filter.allowServices | list | `[]` | Allowed AWS service codes (case-insensitive). Empty = allow all. |
 | filter.denyServices | list | `[]` | Denied AWS service codes (wins over allow). |

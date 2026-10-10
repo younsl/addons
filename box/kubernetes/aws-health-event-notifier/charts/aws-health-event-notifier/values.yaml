@@ -146,11 +146,10 @@ logging:
 # Empty allow list = allow everything. Deny always wins.
 filter:
   # -- (list) Allowed `eventTypeCategory` values. Empty = allow all.
-  # One of: issue, scheduledChange, accountNotification, investigation, securityNotification.
+  # One of: issue, scheduledChange, accountNotification, investigation.
   allowCategories: []
     # - issue
     # - scheduledChange
-    # - securityNotification
   # -- (list) Denied `eventTypeCategory` values (wins over allow).
   denyCategories: []
     # - accountNotification

@@ -206,10 +206,10 @@
       "additionalProperties": false,
       "properties": {
         "allowCategories": {
-          "$ref": "#/definitions/stringList"
+          "$ref": "#/definitions/categoryList"
         },
         "denyCategories": {
-          "$ref": "#/definitions/stringList"
+          "$ref": "#/definitions/categoryList"
         },
         "allowServices": {
           "$ref": "#/definitions/stringList"
@@ -264,6 +264,13 @@
       "type": "array",
       "items": {
         "type": "string"
+      }
+    },
+    "categoryList": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": ["issue", "accountNotification", "scheduledChange", "investigation"]
       }
     },
     "eventCodeList": {
