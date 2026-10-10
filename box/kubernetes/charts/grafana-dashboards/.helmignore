@@ -1,8 +1,0 @@
-# Patterns to ignore when building packages.
-.git/
-.gitignore
-.helmignore
-Makefile
-README.md
-README.md.gotmpl
-*.tgz

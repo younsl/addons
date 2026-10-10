@@ -27,6 +27,7 @@ INCLUDES="[]"
 
 while read -r chart_path; do
   [[ -n "${chart_path}" ]] || continue
+  [[ -f "${chart_path}/Chart.yaml" ]] || continue
   name=$(basename "${chart_path}")
   version=$(awk '/^version:/ {print $2; exit}' "${chart_path}/Chart.yaml")
   app_version=$(awk '/^appVersion:/ {gsub(/"/, "", $2); print $2; exit}' "${chart_path}/Chart.yaml")
