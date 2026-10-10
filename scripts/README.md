@@ -53,8 +53,8 @@ It is wired into `.pre-commit-config.yaml`: fmt and clippy run on `pre-commit`, 
 
 The script `cd`s into each crate instead of passing `--manifest-path`, because rustup picks `rust-toolchain.toml` from the working directory.
 
-## kb-index.sh
+## kb-lint.sh
 
-Validates every note under `docs/kb/` and regenerates `docs/kb/README.md` from their frontmatter. It exits non-zero on any validation error and leaves the index untouched. Requires `yq`.
+Validates the frontmatter and section order of every note under `box/kb/` and exits non-zero on any error. Requires `yq`. The index in `box/kb/README.md` is written by hand.
 
-It is wired into `.pre-commit-config.yaml` for changes under `docs/kb/`. The schema it enforces is described in `AGENTS.md`.
+It is wired into `.pre-commit-config.yaml` for changes under `box/kb/`. The schema it enforces is described in `AGENTS.md`.

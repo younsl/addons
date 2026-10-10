@@ -31,7 +31,7 @@ jobs:
 
           # One line per scoped author: "<login> <path prefix>".
           # Authors not listed here are not restricted.
-          scopes='ByeongGi box/kubernetes/forklift/'
+          scopes='ByeongGi box/forklift/'
 
           prefix=$(awk -v a="${AUTHOR}" 'tolower($1) == tolower(a) { print $2 }' <<<"${scopes}")
           if [[ -z "${prefix}" ]]; then

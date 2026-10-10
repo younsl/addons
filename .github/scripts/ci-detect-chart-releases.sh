@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Decide which Helm charts under box/kubernetes to release.
+# Decide which Helm charts under box to release.
 # Usage: ci-detect-chart-releases.sh   Writes has_changes and matrix to GITHUB_OUTPUT.
 # Env: GH_TOKEN, GITHUB_ACTOR, GITHUB_SHA, GITHUB_OUTPUT, EVENT_NAME,
 #   PUSH_BEFORE (push), INPUT_CHART and FORCE (workflow_dispatch).
@@ -11,16 +11,16 @@ FORCE="${FORCE:-false}"
 
 if [[ "${EVENT_NAME}" == "workflow_dispatch" ]]; then
   if [[ -n "${INPUT_CHART}" ]]; then
-    CANDIDATES=$(find box/kubernetes -name Chart.yaml -path "*/${INPUT_CHART}/Chart.yaml" -not -path "*/.git/*" -exec dirname {} \; | head -1)
+    CANDIDATES=$(find box -name Chart.yaml -path "*/${INPUT_CHART}/Chart.yaml" -not -path "*/.git/*" -exec dirname {} \; | head -1)
     if [[ -z "${CANDIDATES}" ]]; then
       echo "::error::Chart ${INPUT_CHART} not found"
       exit 1
     fi
   else
-    CANDIDATES=$(find box/kubernetes -name Chart.yaml -not -path "*/.git/*" -exec dirname {} \; | sort)
+    CANDIDATES=$(find box -name Chart.yaml -not -path "*/.git/*" -exec dirname {} \; | sort)
   fi
 else
-  CANDIDATES=$("${SCRIPT_DIR}/ci-changed-files.sh" | grep '^box/kubernetes/.*/Chart\.yaml$' | xargs -r -n1 dirname || true)
+  CANDIDATES=$("${SCRIPT_DIR}/ci-changed-files.sh" | grep '^box/.*/Chart\.yaml$' | xargs -r -n1 dirname || true)
 fi
 
 INCLUDES="[]"

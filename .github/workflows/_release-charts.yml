@@ -6,7 +6,7 @@ on:
     branches:
       - main
     paths:
-      - 'box/kubernetes/**/Chart.yaml'
+      - 'box/**/Chart.yaml'
   workflow_dispatch:
     inputs:
       chart:
@@ -100,7 +100,7 @@ jobs:
         env:
           CHART_PATH: ${{ matrix.chart_path }}
         run: |
-          SHARED_TEMPLATE="$(pwd)/box/kubernetes/charts/README.md.gotmpl"
+          SHARED_TEMPLATE="$(pwd)/box/charts/README.md.gotmpl"
 
           if [ -f "${CHART_PATH}/README.md.gotmpl" ]; then
             helm-docs --chart-search-root "${CHART_PATH}" --template-files="README.md.gotmpl" --sort-values-order file --log-level info

@@ -9,7 +9,7 @@ on:
   push:
     branches: [main]
     paths:
-      - 'box/kubernetes/harbor/**'
+      - 'box/harbor/**'
   workflow_dispatch:
     inputs:
       force:
@@ -45,7 +45,7 @@ jobs:
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: box/kubernetes/harbor
+          workspaces: box/harbor
 
       - name: Check VERSION and GHCR
         id: check
@@ -54,7 +54,7 @@ jobs:
           FORCE: ${{ inputs.force }}
           EVENT_NAME: ${{ github.event_name }}
           PUSH_BEFORE: ${{ github.event.before }}
-        run: .github/scripts/ci-detect-harbor-release.sh box/kubernetes/harbor
+        run: .github/scripts/ci-detect-harbor-release.sh box/harbor
 
   release:
     needs: detect
@@ -66,7 +66,7 @@ jobs:
       packages: write
     defaults:
       run:
-        working-directory: box/kubernetes/harbor
+        working-directory: box/harbor
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -80,7 +80,7 @@ jobs:
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: box/kubernetes/harbor
+          workspaces: box/harbor
 
       - name: Check
         run: |

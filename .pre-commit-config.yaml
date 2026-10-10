@@ -14,16 +14,16 @@ repos:
     hooks:
       - id: lychee
         args: ["--no-progress", "--include-fragments"]
-        files: '^docs/kb/.*\.md$'
+        files: '^box/kb/.*\.md$'
 
   # Helm
   - repo: local
     hooks:
       - id: helm-docs
         name: helm-docs
-        entry: make -C box/kubernetes/charts docs
+        entry: make -C box/charts docs
         language: system
-        files: 'box/kubernetes/.*\.(yaml|tpl|gotmpl)$'
+        files: 'box/.*\.(yaml|tpl|gotmpl)$'
         pass_filenames: false
 
   # Docs
@@ -35,11 +35,11 @@ repos:
         language: system
         files: '^docs/resume/resume\.html$'
         pass_filenames: false
-      - id: kb-index
-        name: kb-index
-        entry: scripts/kb-index.sh
+      - id: kb-lint
+        name: kb-lint
+        entry: scripts/kb-lint.sh
         language: script
-        files: '^docs/kb/.*\.md$'
+        files: '^box/kb/.*\.md$'
         pass_filenames: false
 
   # Rust

@@ -18,7 +18,7 @@ Everything committed here is public, including commit messages and PR attachment
 
 Commit directly to `main` with a DCO sign-off (`git commit -s`). Do not open a branch for routine work.
 
-Several agent sessions share this working tree and git index, so the index often holds files you did not stage. Never run `git add -A` or `git add .`. Commit with a pathspec (`git commit -s -- box/kubernetes/<component>`) so other sessions' staged files stay out, then check the scope with `git show --name-only HEAD`.
+Several agent sessions share this working tree and git index, so the index often holds files you did not stage. Never run `git add -A` or `git add .`. Commit with a pathspec (`git commit -s -- box/<component>`) so other sessions' staged files stay out, then check the scope with `git show --name-only HEAD`.
 
 ### Commit messages
 
@@ -102,7 +102,7 @@ Every release triggers on push to `main` when a version value inside a file chan
 | Container image | `org.opencontainers.image.version` label in the Dockerfile | Builds and pushes to GHCR |
 | Helm chart | `version` in `Chart.yaml` | Pushes to `ghcr.io/younsl/charts/{chart}` |
 | Rust CLI (`ij`) | `version` in `Cargo.toml` | Builds release binaries and cuts the `ij/x.y.z` release |
-| Harbor arm64 images | `box/kubernetes/harbor/VERSION` | Rebuilds upstream Harbor images for arm64 |
+| Harbor arm64 images | `box/harbor/VERSION` | Rebuilds upstream Harbor images for arm64 |
 
 - Release decisions (what changed, what is already published) live in `.github/scripts/ci-*.sh`. Workflows only wire environment and matrices into them. Rust scratch-container projects are listed in `.github/scripts/ci-rust-projects.json`.
 - The `paths:` list at the top of each workflow in `.github/workflows/` decides which workflow owns a component. Trust it over any list written elsewhere.
@@ -116,12 +116,11 @@ Never edit these by hand. A pre-commit hook regenerates them.
 
 | File | Source | Regenerate |
 | --- | --- | --- |
-| Chart `README.md` | helm-docs with `box/kubernetes/charts/README.md.gotmpl` or a chart-local `README.md.gotmpl` | `make -C box/kubernetes/charts docs` |
-| `docs/kb/README.md` | `scripts/kb-index.sh`, which also validates note frontmatter and sections | `scripts/kb-index.sh` |
+| Chart `README.md` | helm-docs with `box/charts/README.md.gotmpl` or a chart-local `README.md.gotmpl` | `make -C box/charts docs` |
 
 ## Knowledge Base
 
-`docs/kb/` holds personal SRE notes, one directory per domain (`kubernetes/`, `observability/`, ...) and one subject per kebab-case file. Commit with `[kb] docs(<domain>): ...`. lychee checks every link in `docs/kb/`.
+`box/kb/` holds personal SRE notes, one directory per domain (`kubernetes/`, `observability/`, ...) and one subject per kebab-case file. Commit with `[kb] docs(<domain>): ...`. lychee checks every link in `box/kb/`, and `scripts/kb-lint.sh` validates the frontmatter and sections below.
 
 Notes come from real work. Incident write-ups describe the failure mode and fix, not the affected internal service.
 
@@ -137,4 +136,6 @@ The body is one H1 followed by these H2 sections in order: `Rule`, `Why`, `Excep
 
 Link every major keyword (tool, Kubernetes object or field, AWS service, protocol concept) to its official documentation or GitHub repository at its first mention in the body. Frontmatter, headings, and code blocks stay unlinked. Prefer a deep link with an anchor over a landing page.
 
-Find notes for a kind with `rg -l 'resources:.*\bService\b' docs/kb`, or scan `docs/kb/README.md` for one-line summaries.
+Add, rename, or supersede a note together with its row in `box/kb/README.md`, which is written by hand.
+
+Find notes for a kind with `rg -l 'resources:.*\bService\b' box/kb`, or scan `box/kb/README.md` for one-line summaries.

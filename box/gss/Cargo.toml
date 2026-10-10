@@ -1,0 +1,75 @@
+[package]
+name = "ghes-schedule-scanner"
+version = "0.6.1"
+edition = "2024"
+rust-version = "1.99.0"
+authors = ["Younsung Lee <cysl@kakao.com>"]
+description = "Kubernetes add-on for monitoring and analyzing CI/CD scheduled workflows in GitHub Enterprise Server"
+license = "Apache-2.0"
+repository = "https://github.com/younsl/addons"
+homepage = "https://github.com/younsl/addons/tree/main/box/gss"
+readme = "README.md"
+keywords = ["github", "kubernetes", "scanner", "workflow", "cronjob"]
+categories = ["command-line-utilities", "development-tools"]
+exclude = [
+    ".github/*",
+    ".pre-commit-config.yaml",
+    "docs/*",
+    "charts/*",
+]
+
+[[bin]]
+name = "ghes-schedule-scanner"
+path = "src/main.rs"
+
+[dependencies]
+# Async runtime
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time"] }
+async-trait = "0.1"
+
+# HTTP client
+reqwest = { version = "0.12", features = ["json", "rustls-tls-webpki-roots-no-provider"], default-features = false }
+rustls = { version = "0.23", default-features = false, features = ["aws-lc-rs", "tls12"] }
+
+# GitHub API
+octocrab = { version = "0.54", default-features = false, features = ["follow-redirect", "retry", "rustls", "timeout", "tracing", "default-client", "rustls-aws-lc-rs", "jwt-aws-lc-rs"] }
+
+# CLI
+clap = { version = "4", features = ["derive", "env"] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_yaml = "0.9"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["json", "env-filter"] }
+
+# Error handling
+anyhow = "1"
+
+# Utilities
+chrono = { version = "0.4", features = ["serde"] }
+base64 = "0.22"
+
+[build-dependencies]
+chrono = "0.4"
+rustc_version = "0.4"
+
+[dev-dependencies]
+wiremock = "0.6"
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+all = "warn"
+pedantic = "warn"
+nursery = "warn"
+
+[profile.release]
+strip = true
+lto = true
+codegen-units = 1
+opt-level = "z"
