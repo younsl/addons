@@ -15,13 +15,6 @@ Inspired by [gossm](https://github.com/gjbae1212/gossm).
 
 ## Installation
 
-### Homebrew (macOS)
-
-```bash
-brew tap younsl/tap
-brew install ij
-```
-
 ### Binary Installation
 
 Download the appropriate binary for your platform:
@@ -51,7 +44,7 @@ Requires Rust 1.99.0 or later:
 
 ```bash
 git clone https://github.com/${REPOSITORY}.git
-cd o/box/tools/ij
+cd addons/box/tools/ij
 cargo build --release
 ./target/release/ij --version
 ```
