@@ -145,7 +145,7 @@ mod tests {
     #[test]
     fn roundtrip() {
         let params = KdfParams::new_random();
-        let key = derive_key("correct horse battery staple", &params).unwrap();
+        let key = derive_key(&generate_password(24, true, true), &params).unwrap();
         let sealed = seal(&key, b"secret payload").unwrap();
         let opened = open(&key, &sealed).unwrap();
         assert_eq!(opened, b"secret payload");
@@ -154,9 +154,9 @@ mod tests {
     #[test]
     fn wrong_password_fails() {
         let params = KdfParams::new_random();
-        let key = derive_key("right", &params).unwrap();
+        let key = derive_key(&generate_password(24, true, true), &params).unwrap();
         let sealed = seal(&key, b"x").unwrap();
-        let wrong = derive_key("wrong", &params).unwrap();
+        let wrong = derive_key(&generate_password(24, true, true), &params).unwrap();
         assert!(matches!(
             open(&wrong, &sealed),
             Err(VltError::InvalidMasterPassword)

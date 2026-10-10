@@ -99,15 +99,7 @@ fn cache_path() -> Option<PathBuf> {
 fn try_wrap_key() -> Option<[u8; WRAP_KEY_LEN]> {
     let entry = keyring::Entry::new(KEYRING_SERVICE, KEYRING_ACCOUNT).ok()?;
     match entry.get_password() {
-        Ok(stored) => {
-            let bytes = B64.decode(stored.as_bytes()).ok()?;
-            if bytes.len() != WRAP_KEY_LEN {
-                return None;
-            }
-            let mut k = [0u8; WRAP_KEY_LEN];
-            k.copy_from_slice(&bytes);
-            Some(k)
-        }
+        Ok(stored) => B64.decode(stored.as_bytes()).ok()?.try_into().ok(),
         Err(keyring::Error::NoEntry) => {
             let mut k = [0u8; WRAP_KEY_LEN];
             getrandom::fill(&mut k).ok()?;
