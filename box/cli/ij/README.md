@@ -65,15 +65,14 @@ Press `Ctrl+C` to stop the tunnel.
 
 Requires AWS CLI v2 and Session Manager plugin.
 
-Download the binary for your platform from [GitHub Releases](https://github.com/younsl/addons/releases?q=ij%2F&expanded=true):
+Prebuilt binaries for Linux and macOS (amd64, arm64) live in [`dist/<version>/`](dist/) with a `SHA256SUMS` file per version.
 
 ```bash
-VERSION=$(curl -fsSL "https://api.github.com/repos/younsl/addons/releases?per_page=100" | grep -m1 -o '"tag_name": *"ij/[^"]*"' | sed 's/.*ij\///;s/"//')
+VERSION=0.1.0
 OS=$(uname -s | tr '[:upper:]' '[:lower:]')
 ARCH=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
-curl -fsSLO "https://github.com/younsl/addons/releases/download/ij/${VERSION}/ij-${OS}-${ARCH}.tar.gz"
-tar -xzf "ij-${OS}-${ARCH}.tar.gz"
-sudo install -m 0755 "ij-${OS}-${ARCH}" /usr/local/bin/ij
+curl -fsSL "https://raw.githubusercontent.com/younsl/addons/main/box/cli/ij/dist/${VERSION}/ij-${OS}-${ARCH}.tar.gz" | tar -xz
+sudo install -m 0755 ij /usr/local/bin/ij
 ij --version
 ```
 

@@ -22,8 +22,8 @@ on:
 
 jobs:
   # ---------------------------------------------------------------------------
-  # Detect: read the version from Cargo.toml, skip when that release already
-  # exists on GitHub. A merge that leaves the version untouched no-ops here.
+  # Detect: read the version from Cargo.toml, skip when dist/<version> already
+  # exists on main. A merge that leaves the version untouched no-ops here.
   # ---------------------------------------------------------------------------
   detect:
     runs-on: ubuntu-26.04
@@ -79,7 +79,7 @@ jobs:
           TAG="${PROJECT_NAME}/${VERSION}"
 
           HAS_RELEASE="true"
-          if gh release view "${TAG}" --repo "${GITHUB_REPOSITORY}" > /dev/null 2>&1; then
+          if [[ -d "${PROJECT_BASE_DIR}/dist/${VERSION}" ]]; then
             # The duplicate check keeps a merge that touched Cargo.toml without
             # bumping the version from re-cutting a release. A manual run asking
             # for force is a statement of intent.
@@ -87,7 +87,7 @@ jobs:
               echo "✅ ${TAG} already released, skip"
               HAS_RELEASE="false"
             else
-              echo "♻️ ${TAG} already released, forced re-release, the existing release will be overwritten"
+              echo "♻️ ${TAG} already released, forced re-release overwrites dist/${VERSION}"
             fi
           else
             echo "🆕 ${TAG} not released yet, will release"
@@ -249,7 +249,9 @@ jobs:
         working-directory: ${{ env.PROJECT_BASE_DIR }}
         run: |
           BINARY_NAME="${PROJECT_NAME}-${{ matrix.platform }}-${{ matrix.arch }}"
-          tar -czf "${BINARY_NAME}.tar.gz" "${BINARY_NAME}"
+          mkdir -p package
+          cp "${BINARY_NAME}" "package/${PROJECT_NAME}"
+          tar -czf "${BINARY_NAME}.tar.gz" -C package "${PROJECT_NAME}"
           echo "Created: ${BINARY_NAME}.tar.gz"
           ls -lh "${BINARY_NAME}.tar.gz"
 
@@ -259,109 +261,67 @@ jobs:
           name: ${{ env.PROJECT_NAME }}-${{ matrix.platform }}-${{ matrix.arch }}
           path: ${{ env.PROJECT_BASE_DIR }}/${{ env.PROJECT_NAME }}-${{ matrix.platform }}-${{ matrix.arch }}.tar.gz
 
-  release:
+  # Commits the archives to <project>/dist/<version> on main, served from
+  # raw.githubusercontent.com.
+  publish:
     runs-on: ubuntu-26.04
     needs: [detect, build-binaries, test]
     permissions:
       contents: write
+    concurrency:
+      group: publish-${{ needs.detect.outputs.project_name }}
+      cancel-in-progress: false
     env:
       PROJECT_NAME: ${{ needs.detect.outputs.project_name }}
       PROJECT_BASE_DIR: ${{ needs.detect.outputs.project_base_dir }}
       VERSION: ${{ needs.detect.outputs.version }}
-      TAG: ${{ needs.detect.outputs.tag }}
     steps:
-      - name: Checkout
+      - name: Checkout main
         uses: actions/checkout@v6
         with:
-          fetch-depth: 0
+          ref: main
 
       - name: Download binary artifacts
         uses: actions/download-artifact@v7
         with:
           path: artifacts
           pattern: ${{ env.PROJECT_NAME }}-*
+          merge-multiple: true
 
-      - name: Prepare release assets
+      - name: Commit binaries to dist
         run: |
-          mkdir -p release-assets
-          find artifacts -name "*.tar.gz" -exec cp {} release-assets/ \;
-          echo "Release assets:"
-          ls -lh release-assets/
+          set -euo pipefail
 
-      - name: Generate checksums table
-        working-directory: release-assets
-        run: |
-          {
-            echo "| Platform | Architecture | Binary | SHA256 Checksum |"
-            echo "|----------|--------------|--------|-----------------|"
+          DIST_DIR="${PROJECT_BASE_DIR}/dist/${VERSION}"
+          rm -rf "${DIST_DIR}"
+          mkdir -p "${DIST_DIR}"
+          cp artifacts/*.tar.gz "${DIST_DIR}/"
+          (cd "${DIST_DIR}" && sha256sum -- *.tar.gz > SHA256SUMS)
 
-            if [ -f "${PROJECT_NAME}-linux-amd64.tar.gz" ]; then
-              checksum=$(sha256sum "${PROJECT_NAME}-linux-amd64.tar.gz" | awk '{print $1}')
-              echo "| Linux | amd64 | \`${PROJECT_NAME}-linux-amd64.tar.gz\` | \`$checksum\` |"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -- "${DIST_DIR}"
+          git commit -s -m "[${PROJECT_NAME}] chore(dist): publish ${PROJECT_NAME} ${VERSION}" -m "Built from ${GITHUB_SHA} by ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+
+          PUSHED=false
+          for _ in 1 2 3; do
+            if git push origin HEAD:main; then
+              PUSHED=true
+              break
             fi
-
-            if [ -f "${PROJECT_NAME}-linux-arm64.tar.gz" ]; then
-              checksum=$(sha256sum "${PROJECT_NAME}-linux-arm64.tar.gz" | awk '{print $1}')
-              echo "| Linux | arm64 | \`${PROJECT_NAME}-linux-arm64.tar.gz\` | \`$checksum\` |"
-            fi
-
-            if [ -f "${PROJECT_NAME}-darwin-amd64.tar.gz" ]; then
-              checksum=$(sha256sum "${PROJECT_NAME}-darwin-amd64.tar.gz" | awk '{print $1}')
-              echo "| macOS | amd64 (Intel) | \`${PROJECT_NAME}-darwin-amd64.tar.gz\` | \`$checksum\` |"
-            fi
-
-            if [ -f "${PROJECT_NAME}-darwin-arm64.tar.gz" ]; then
-              checksum=$(sha256sum "${PROJECT_NAME}-darwin-arm64.tar.gz" | awk '{print $1}')
-              echo "| macOS | arm64 (Apple Silicon) | \`${PROJECT_NAME}-darwin-arm64.tar.gz\` | \`$checksum\` |"
-            fi
-          } > checksums_table.txt
-
-          {
-            echo "CHECKSUMS_TABLE<<EOF"
-            cat checksums_table.txt
-            echo "EOF"
-          } >> $GITHUB_ENV
-
-          echo "Generated checksums table:"
-          cat checksums_table.txt
-
-      - name: Generate release body from template
-        env:
-          REPOSITORY: ${{ github.repository }}
-        run: |
-          TEMPLATE=".github/release-templates/${PROJECT_NAME}.md"
-
-          if [ ! -f "${TEMPLATE}" ]; then
-            echo "Error: Release template not found at ${TEMPLATE}"
+            git pull --rebase origin main
+          done
+          if [[ "${PUSHED}" != "true" ]]; then
+            echo "::error::Failed to push ${DIST_DIR} to main"
             exit 1
           fi
 
-          # The previous tag is the newest one for this project other than the
-          # current tag, so a forced re-release still diffs against the last version.
-          PREV_TAG=$(git tag --list "${PROJECT_NAME}/*" --sort=-v:refname | grep -vxF "${TAG}" | head -1 || true)
-          if [ -n "${PREV_TAG}" ]; then
-            CHANGES=$(git log --no-merges --format='- %s (%h)' "${PREV_TAG}..${GITHUB_SHA}" -- "${PROJECT_BASE_DIR}" | sed "s/^- \[${PROJECT_NAME}\] /- /")
-            CHANGES="${CHANGES:-- No changes under ${PROJECT_BASE_DIR}}"
-            CHANGES+=$'\n\n'"**Full Changelog**: https://github.com/${REPOSITORY}/compare/${PREV_TAG}...${TAG}"
-          else
-            CHANGES="- Initial release"
-          fi
-          export CHANGES
-
-          envsubst '${PROJECT_NAME} ${VERSION} ${REPOSITORY} ${CHECKSUMS_TABLE} ${CHANGES}' < "${TEMPLATE}" > release-body.md
-
-          echo "Generated release body:"
-          cat release-body.md
-
-      - name: Create Release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: release-assets/*
-          tag_name: ${{ env.TAG }}
-          target_commitish: ${{ github.sha }}
-          name: ${{ env.PROJECT_NAME }} ${{ env.VERSION }}
-          body_path: release-body.md
-          generate_release_notes: false
-          draft: false
-          prerelease: false
-          token: ${{ secrets.GITHUB_TOKEN }}
+          {
+            echo "### ${PROJECT_NAME} ${VERSION}"
+            echo
+            echo "Published to \`${DIST_DIR}\`."
+            echo
+            echo '```'
+            cat "${DIST_DIR}/SHA256SUMS"
+            echo '```'
+          } >> "${GITHUB_STEP_SUMMARY}"

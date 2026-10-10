@@ -101,7 +101,7 @@ Every release triggers on push to `main` when a version value inside a file chan
 | --- | --- | --- |
 | Container image | `org.opencontainers.image.version` label in the Dockerfile | Builds and pushes to GHCR |
 | Helm chart | `version` in `Chart.yaml` | Pushes to `ghcr.io/younsl/charts/{chart}` |
-| Rust CLI (`ij`) | `version` in `Cargo.toml` | Builds release binaries and cuts the `ij/x.y.z` release |
+| Rust CLI (`ij`) | `version` in `Cargo.toml` | Builds binaries and commits them to `box/cli/ij/dist/x.y.z/` on `main` |
 | Harbor arm64 images | `box/addons/harbor/VERSION` | Rebuilds upstream Harbor images for arm64 |
 
 - Release decisions (what changed, what is already published) live in `.github/scripts/ci-*.sh`. Workflows only wire environment and matrices into them. Rust scratch-container projects are listed in `.github/scripts/ci-rust-projects.json`.
