@@ -2,11 +2,21 @@
 description: Write admission policies as ValidatingAdmissionPolicy and MutatingAdmissionPolicy, using Kyverno only for generate, cleanup, image verification, and background reports.
 tags: [kubernetes, admission, policy, cel, kyverno]
 resources: [ValidatingAdmissionPolicy, MutatingAdmissionPolicy, ClusterPolicy]
+status: adopted
+reviewed: 2026-10-10
 ---
 
 # Prefer VAP and MAP over Kyverno
 
-Admission policies default to the built-in ValidatingAdmissionPolicy (VAP) and MutatingAdmissionPolicy (MAP). Kyverno is used only for what the built-in APIs cannot do.
+## Rule
+
+Admission policies default to the built-in ValidatingAdmissionPolicy (VAP) and MutatingAdmissionPolicy (MAP). Kyverno is used only for what the built-in APIs cannot do, listed under Exceptions.
+
+- Validate with VAP, mutate with MAP
+- Check MAP availability on the cluster before relying on it: `kubectl api-resources | grep mutatingadmissionpolicies`
+- A policy does nothing without a binding, so always ship the policy and its binding together
+- Roll out with `validationActions: ["Warn", "Audit"]` first, then switch to `["Deny"]` once no legitimate request is flagged
+- `failurePolicy` also covers CEL evaluation errors and misconfigured params, so test expressions against real objects before setting `Fail`
 
 ## Why
 
@@ -16,21 +26,15 @@ Admission policies default to the built-in ValidatingAdmissionPolicy (VAP) and M
 - **Standard language**: CEL is the same expression language used by CRD validation rules and other Kubernetes APIs, so the skill and the policies carry over to any conformant cluster without vendor lock-in.
 - **Native API objects**: policies are plain `admissionregistration.k8s.io` resources that work with GitOps, RBAC, and managed control planes like any other manifest.
 
-## When Kyverno is still needed
+## Exceptions
+
+Kyverno is still the right tool for:
 
 - Generating resources (for example a default NetworkPolicy in every new namespace)
 - Cleanup policies that delete resources on a schedule or condition
 - Image signature and attestation verification (`verifyImages`)
 - Background scans and policy reports for resources that already exist, since VAP and MAP act only at admission time
 - External data lookups beyond what `paramKind` and `paramRef` can supply
-
-## Rules of thumb
-
-- Validate with VAP, mutate with MAP, and reach for Kyverno only for the cases above
-- Check MAP availability on the cluster before relying on it: `kubectl api-resources | grep mutatingadmissionpolicies`
-- A policy does nothing without a binding, so always ship the policy and its binding together
-- Roll out with `validationActions: ["Warn", "Audit"]` first, then switch to `["Deny"]` once no legitimate request is flagged
-- `failurePolicy` also covers CEL evaluation errors and misconfigured params, so test expressions against real objects before setting `Fail`
 
 ## Example
 
