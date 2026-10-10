@@ -263,7 +263,6 @@ mod tests {
             namespaces: vec![],
         };
         let yaml = synth_kubeconfig_yaml(&secret);
-        eprintln!("YAML:\n{yaml}");
         let kubeconfig = Kubeconfig::from_yaml(&yaml).expect("synth kubeconfig should parse");
         assert_eq!(kubeconfig.current_context.as_deref(), Some("edge-a"));
         assert_eq!(kubeconfig.clusters.len(), 1);

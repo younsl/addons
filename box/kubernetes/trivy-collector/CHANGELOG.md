@@ -6,6 +6,12 @@ The app and the chart version independently, and each releases when its own vers
 
 Migration steps live in [docs/upgrading.md](docs/upgrading.md), not here. This file says what changed. That one says what you have to do about it.
 
+## app 1.8.1 / chart 0.13.1
+
+### Security
+
+- A unit test no longer prints the synthesized hub kubeconfig, which carries the cluster bearer token, to stderr. Flagged by CodeQL `rust/cleartext-logging`. Test code only, the release binary is unchanged.
+
 ## app 1.8.0 / chart 0.13.0
 
 Alert rules become Kubernetes objects.
