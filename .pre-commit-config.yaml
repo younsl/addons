@@ -16,6 +16,7 @@ repos:
         args: ["--no-progress", "--include-fragments"]
         files: '^docs/kb/.*\.md$'
 
+  # Helm
   - repo: local
     hooks:
       - id: helm-docs
@@ -24,6 +25,10 @@ repos:
         language: system
         files: 'box/kubernetes/.*\.(yaml|tpl|gotmpl)$'
         pass_filenames: false
+
+  # Docs
+  - repo: local
+    hooks:
       - id: resume-pdf
         name: resume-pdf
         entry: make -C docs/resume pdf
@@ -36,6 +41,10 @@ repos:
         language: script
         files: '^docs/kb/.*\.md$'
         pass_filenames: false
+
+  # Rust
+  - repo: local
+    hooks:
       - id: cargo-fmt
         name: cargo fmt
         entry: scripts/cargo-changed.sh fmt
