@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Sanitize public identity references before mirroring to a private repo.
 #
-# Every old value is derived from the repo at runtime (values.yaml, Dockerfile
-# OCI labels, and the backstage-mcp Cargo.toml / Chart.yaml), so this script
-# holds no identity string of its own and is safe to commit. Upstream OSS links
+# Every old value is derived from the repo at runtime (values.yaml and the
+# Dockerfile OCI labels), so this script holds no identity string of its own
+# and is safe to commit. Upstream OSS links
 # and generic registry fixtures (ghcr.io/org/...) are intentionally kept.
 #
 # Usage:
@@ -12,14 +12,11 @@
 #   ./scripts/sanitize.sh --mirror <dir>   # export tracked files, sanitize, sync to <dir>
 #
 # --mirror never touches the source tree: it stages `git ls-files` output in a
-# temp dir, sanitizes there, then rsyncs into <dir>. backstage-mcp/ ships inside
-# the same component, so it is sanitized against the same replacement targets.
+# temp dir, sanitizes there, then rsyncs into <dir>.
 #
 # Override replacement targets via environment variables:
 #   NEW_REGISTRY=harbor.example.com/backstage \
 #   NEW_SOURCE_URL=https://git.example.com/platform/backstage \
-#   NEW_MAINTAINER="Platform Team" \
-#   NEW_MAINTAINER_EMAIL=platform@example.com \
 #   ./scripts/sanitize.sh --mirror ../mirror/backstage
 set -euo pipefail
 
@@ -27,8 +24,6 @@ SRC_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$SRC_ROOT"
 
 VALUES="values.yaml"
-MCP_DIR="backstage-mcp"
-MCP_CHART="${MCP_DIR}/charts/backstage-mcp"
 
 MODE=report
 MIRROR_DEST=""
@@ -64,20 +59,9 @@ OLD_REPOSITORY=$(yaml_value "$VALUES" repository)
 OLD_NAMESPACE="${OLD_REPOSITORY%%/*}"
 OLD_SOURCE_URL=$(sed -nE 's|.*org\.opencontainers\.image\.source="([^"]+)".*|\1|p' Dockerfile | head -1)
 
-# backstage-mcp carries a Rust package and a chart of its own.
-OLD_MCP_REPO_URL=$(sed -nE 's|^repository[[:space:]]*=[[:space:]]*"([^"]+)".*|\1|p' "${MCP_DIR}/Cargo.toml" | head -1)
-OLD_MCP_HOMEPAGE=$(sed -nE 's|^homepage[[:space:]]*=[[:space:]]*"([^"]+)".*|\1|p' "${MCP_DIR}/Cargo.toml" | head -1)
-OLD_AUTHOR=$(sed -nE 's|^authors[[:space:]]*=[[:space:]]*\["([^"]+)".*|\1|p' "${MCP_DIR}/Cargo.toml" | head -1)
-OLD_HOME=$(yaml_value "${MCP_CHART}/Chart.yaml" home)
-OLD_CHART_SOURCE=$(sed -nE 's|^[[:space:]]*- (https?://.*)$|\1|p' "${MCP_CHART}/Chart.yaml" | head -1)
-OLD_MAINTAINER=$(sed -nE 's|^[[:space:]]*- name:[[:space:]]*(.+)$|\1|p' "${MCP_CHART}/Chart.yaml" | head -1)
-OLD_MAINTAINER_EMAIL=$(yaml_value "${MCP_CHART}/Chart.yaml" email)
-OLD_MAINTAINER_URL=$(yaml_value "${MCP_CHART}/Chart.yaml" url)
 OLD_CHART_REGISTRY="${OLD_HOST}/${OLD_NAMESPACE}/charts"
 
-for v in OLD_HOST OLD_REPOSITORY OLD_NAMESPACE OLD_SOURCE_URL \
-         OLD_MCP_REPO_URL OLD_MCP_HOMEPAGE OLD_AUTHOR \
-         OLD_HOME OLD_CHART_SOURCE OLD_MAINTAINER OLD_MAINTAINER_EMAIL OLD_MAINTAINER_URL; do
+for v in OLD_HOST OLD_REPOSITORY OLD_NAMESPACE OLD_SOURCE_URL; do
   [[ -n "${!v}" ]] || { echo "FAIL: could not derive $v from the repo" >&2; exit 1; }
 done
 [[ "$OLD_REPOSITORY" == */* ]] || { echo "FAIL: $VALUES repository has no namespace" >&2; exit 1; }
@@ -86,8 +70,6 @@ done
 
 NEW_REGISTRY="${NEW_REGISTRY:-registry.example.com/backstage}"
 NEW_SOURCE_URL="${NEW_SOURCE_URL:-https://git.example.com/platform/backstage}"
-NEW_MAINTAINER="${NEW_MAINTAINER:-platform}"
-NEW_MAINTAINER_EMAIL="${NEW_MAINTAINER_EMAIL:-platform@example.com}"
 
 REGISTRY_HOST="${NEW_REGISTRY%%/*}"
 REGISTRY_PATH="${NEW_REGISTRY#*/}"
@@ -100,51 +82,24 @@ TAB=$'\t'
 # pattern<TAB>replacement, longest / most specific first. Applied with sed
 # s%..%..%g, so neither side may contain '%'.
 RULES=(
-  "${OLD_HOME}/blob/main/LICENSE${TAB}LICENSE"
   "${OLD_CHART_REGISTRY}${TAB}${NEW_CHART_REGISTRY}"
   "${OLD_HOST}/${OLD_REPOSITORY}${TAB}${NEW_REGISTRY}"
   "${OLD_HOST}/${OLD_NAMESPACE}${TAB}${REGISTRY_HOST}"
   "${OLD_SOURCE_URL}${TAB}${NEW_SOURCE_URL}"
   "${OLD_REPOSITORY}${TAB}${REGISTRY_PATH}"
   "registry: ${OLD_HOST}${TAB}registry: ${REGISTRY_HOST}"
-  "${OLD_AUTHOR}${TAB}${NEW_MAINTAINER} <${NEW_MAINTAINER_EMAIL}>"
-  "name: ${OLD_MAINTAINER}${TAB}name: ${NEW_MAINTAINER}"
-  "| ${OLD_MAINTAINER} |${TAB}| ${NEW_MAINTAINER} |"
-  " <${OLD_MAINTAINER_URL}> ${TAB} "
-  "${OLD_MAINTAINER_EMAIL}${TAB}${NEW_MAINTAINER_EMAIL}"
 )
 
-# Whole lines to drop: the public repository pointers, the chart's home/sources
-# block, the maintainer profile URL, and badges aimed at the public identity.
+# Whole lines to drop: badges aimed at the public identity.
 DELETE_PATTERNS=(
-  "^repository = \"${OLD_MCP_REPO_URL}\"$"
-  "^homepage = \"${OLD_MCP_HOMEPAGE}\"$"
-  "^home: ${OLD_HOME}$"
-  "^sources:$"
-  "^  - ${OLD_CHART_SOURCE}"
-  "^    url: ${OLD_MAINTAINER_URL}$"
   "img\.shields\.io.*(${OLD_NAMESPACE}|${OLD_HOST})"
 )
 
-# helm-docs sections that only make sense on the public repo, with the blank
-# line that follows them.
-strip_blocks() {
-  local f
-  for f in "$@"; do
-    [[ -f "$f" ]] || continue
-    perl -0777 -i -pe '
-      s/\*\*Homepage:\*\* <[^\n]*>\n\n//g;
-      s/## Source Code\n\n(\* <[^\n]*>\n)+\n//g;
-    ' "$f"
-  done
-}
-
 escape_re() { sed 's/[].[^$*\\/]/\\&/g' <<<"$1"; }
 
-# An identity leak is the namespace itself, the public registry named as the
-# image source, or the maintainer address. A bare host in a test fixture
-# (ghcr.io/org/...) is not a leak.
-CHECK_PATTERN="$(escape_re "$OLD_NAMESPACE")|registry: $(escape_re "$OLD_HOST")|$(escape_re "$OLD_MAINTAINER_EMAIL")"
+# An identity leak is the namespace itself or the public registry named as the
+# image source. A bare host in a test fixture (ghcr.io/org/...) is not a leak.
+CHECK_PATTERN="$(escape_re "$OLD_NAMESPACE")|registry: $(escape_re "$OLD_HOST")"
 
 matching_lines() {
   grep -rInE \
@@ -172,7 +127,6 @@ rewrite_tree() { # run inside the tree to sanitize
       sed -i '' "s%${rule%%${TAB}*}%${rule#*${TAB}}%g" "$f"
     done
   done
-  strip_blocks "${MCP_DIR}/README.md" "${MCP_CHART}/README.md"
 
   leftover=$(list_files)
   if [[ -n "$leftover" ]]; then

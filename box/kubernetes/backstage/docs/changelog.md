@@ -19,6 +19,7 @@ Released 2026-10-06. Built on Backstage [v1.55.3](https://github.com/backstage/b
 - `/application-sets` responses carry a new `sourcePaths` field per ApplicationSet and `gitSources` per Application.
 - Card footers show the ApplicationSet age in `kubectl get` style (`190d`) instead of the creation timestamp, and the footer actions take equal width.
 - Rebuilt on 2026-10-08 at the same tag to remove the `argocd-appset` plugin (frontend and backend). The ArgoCD sidebar entry and home quick link, the `/argocd-appset` route, the `app.plugins.argocdAppSet` flag, the `argocdApplicationSet` config block and the `argocd-appset` entry in `backend.auth.externalAccess` are gone. Deployments can drop that block and entry, the `SLACK_WEBHOOK_URL` environment variable and Secret key, and the Kubernetes RBAC granted to the Backstage service account for ApplicationSets and Applications. The release workflow now runs the `platforms-backend` tests, which take over the `jest` dev dependency. The `backstage-mcp` image is rebuilt at `0.1.0` without its `argocd_*` tools, leaving 18.
+- On 2026-10-10 `backstage-mcp` was removed along with its `ghcr.io/younsl/backstage-mcp` image and chart, since the plugin removals left it with no tools. This image is unchanged. Deployments can drop the `BACKSTAGE_MCP_TOKEN` environment variable and Secret key, the `backstage-mcp` entry in `backend.auth.externalAccess`, and the backstage-mcp release.
 
 ## 1.55.3-1
 

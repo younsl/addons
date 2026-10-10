@@ -22,10 +22,6 @@ make run    # run container locally (requires .env)
 
 Authentication is [Keycloak](https://github.com/keycloak/keycloak) OIDC only. Guest login is disabled.
 
-## MCP Server
-
-[backstage-mcp](backstage-mcp/README.md) is a separate read-only MCP server, built in Rust and released as its own image and chart, that exposes the catalog, search, TechDocs and every in-house plugin page as tools for AI agents such as kagent. It calls this instance over the backend REST API with a `backend.auth.externalAccess` static token, so it needs no Backstage rebuild to change.
-
 ## Documentation
 
 - [Installation](docs/installation.md)

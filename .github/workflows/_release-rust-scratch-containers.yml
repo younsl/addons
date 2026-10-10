@@ -17,7 +17,6 @@ on:
       - 'box/kubernetes/argocd-canary-gate/Dockerfile'
       - 'box/kubernetes/filesystem-cleaner/Dockerfile'
       - 'box/kubernetes/external-ebs-autoresizer/Dockerfile'
-      - 'box/kubernetes/backstage/backstage-mcp/Dockerfile'
       - 'box/kubernetes/forklift/Dockerfile'
       - 'box/kubernetes/forklift/Dockerfile.mcp'
   workflow_dispatch:
@@ -39,7 +38,6 @@ on:
           - argocd-canary-gate
           - filesystem-cleaner
           - external-ebs-autoresizer
-          - backstage-mcp
           - forklift
           - forklift-mcp
       force:

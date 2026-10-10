@@ -11,7 +11,6 @@
   "box/kubernetes/argocd-canary-gate/Dockerfile":                {},
   "box/kubernetes/filesystem-cleaner/Dockerfile":                {},
   "box/kubernetes/external-ebs-autoresizer/Dockerfile":          {},
-  "box/kubernetes/backstage/backstage-mcp/Dockerfile":           {},
   "box/kubernetes/forklift/Dockerfile":                          { "frontend_manager": "pnpm", "frontend_dir": "web", "embed_dir": "src/webui/dist" },
   "box/kubernetes/forklift/Dockerfile.mcp":                      { "project": "forklift-mcp" }
 }

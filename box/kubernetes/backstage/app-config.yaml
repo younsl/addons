@@ -70,20 +70,6 @@ backend:
     connection: {}
   auth:
     dangerouslyDisableDefaultAuthPolicy: true
-    # Static token for backstage-mcp. Declared in app-config.local.yaml or the
-    # Helm values rather than here, because a `${VAR}` that is not set makes
-    # the backend refuse to start.
-    # externalAccess:
-    #   - type: static
-    #     options:
-    #       token: ${BACKSTAGE_MCP_TOKEN}
-    #       subject: backstage-mcp
-    #     accessRestrictions:
-    #       - plugin: catalog
-    #       - plugin: search
-    #       - plugin: techdocs
-    #       - plugin: platforms
-    #       - plugin: opencost
 
 integrations:
   gitlab:
