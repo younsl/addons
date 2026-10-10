@@ -6,7 +6,7 @@ This file records only what the repository cannot tell you by itself: convention
 
 ## Overview
 
-Monorepo of Kubernetes addons, operators, CLI tools, and runtime container images, plus personal docs under `docs/`. Components with an image live in `box/addons/`, standalone Helm charts in `box/charts/`, CLIs in `box/cli/`. Every component is built in Rust except `backstage` (Node.js/React). `trivy-collector` and `forklift` embed a web frontend that the image build compiles first.
+Monorepo of Kubernetes addons, operators, CLI tools, and runtime container images, plus personal docs under `docs/`. Components with an image live in `box/addons/`, standalone Helm charts in `box/charts/`, CLIs in `box/cli/`. Every component is built in Rust except `backstage` (Node.js/React). `trivy-collector` and `forklift` embed a web frontend that the image build compiles first. box/addons/tether/ also holds personal macOS dotfiles (configs/, scripts/) that tether links into place. They never enter its image (see its AGENTS.md).
 
 Each component does one thing well. Prefer a new small component over extending an existing one past its purpose.
 

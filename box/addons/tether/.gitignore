@@ -6,3 +6,14 @@ lcov.info
 
 # OS
 .DS_Store
+
+# Dotfiles: re-include configs the root `config` rule hides
+!/configs/**/config
+
+# Dotfiles: local-only files the configs load at runtime
+/configs/git/config-*
+!/configs/git/config-younsl
+/configs/git/*.key
+/configs/zsh/.zshrc.local
+/configs/claude/scripts/statusbar-rs
+/.brewfile-last-backup

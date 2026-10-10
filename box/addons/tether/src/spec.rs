@@ -114,7 +114,7 @@ mod tests {
     const HOME: &str = "/home/dev";
 
     fn parse(text: &str) -> Result<Spec, SpecError> {
-        Spec::parse(text, Path::new("links.toml"), Path::new(HOME))
+        Spec::parse(text, Path::new("config.toml"), Path::new(HOME))
     }
 
     #[test]
@@ -219,7 +219,7 @@ mod tests {
     fn rejects_unknown_field() {
         let err = parse("source_root = \"~\"\nbackup_root = \"~\"\nextra = 1\n")
             .expect_err("unknown field");
-        assert!(err.to_string().starts_with("parse links.toml"), "{err}");
+        assert!(err.to_string().starts_with("parse config.toml"), "{err}");
     }
 
     #[test]
@@ -233,7 +233,7 @@ mod tests {
     #[test]
     fn load_reads_file() {
         let dir = tempfile::tempdir().expect("tempdir");
-        let path = dir.path().join("links.toml");
+        let path = dir.path().join("config.toml");
         fs::write(&path, "source_root = \"~\"\nbackup_root = \"~\"\n").expect("write");
         assert!(Spec::load(&path, Path::new(HOME)).is_ok());
     }

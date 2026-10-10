@@ -18,7 +18,7 @@ use crate::spec::Spec;
 
 #[derive(Debug, Clone)]
 pub struct Settings {
-    pub links_file: PathBuf,
+    pub config_file: PathBuf,
     pub home: PathBuf,
     pub dry_run: bool,
 }
@@ -26,7 +26,7 @@ pub struct Settings {
 impl From<&Config> for Settings {
     fn from(cfg: &Config) -> Self {
         Self {
-            links_file: cfg.links_file.clone(),
+            config_file: cfg.file.clone(),
             home: cfg.home.clone(),
             dry_run: cfg.dry_run,
         }
@@ -97,7 +97,7 @@ pub fn run_once(settings: &Settings, now: Timestamp) -> Report {
         entries: Vec::new(),
     };
 
-    let spec = match Spec::load(&settings.links_file, &settings.home) {
+    let spec = match Spec::load(&settings.config_file, &settings.home) {
         Ok(spec) => spec,
         Err(err) => {
             report.error = Some(err.to_string());
@@ -215,9 +215,9 @@ mod tests {
         fs::create_dir_all(home.join("repo")).expect("repo");
         fs::write(home.join("repo/zshrc"), "zsh").expect("source");
         fs::write(home.join(".zshrc"), "local").expect("existing target");
-        let links_file = dir.path().join("links.toml");
+        let config_file = dir.path().join("config.toml");
         fs::write(
-            &links_file,
+            &config_file,
             "source_root = \"~/repo\"\nbackup_root = \"~/.backup\"\n\n[[links]]\nsource = \"zshrc\"\ntarget = \"~/.zshrc\"\n",
         )
         .expect("spec");
@@ -225,7 +225,7 @@ mod tests {
             _dir: dir,
             target: home.join(".zshrc"),
             settings: Settings {
-                links_file,
+                config_file,
                 home,
                 dry_run,
             },
@@ -274,7 +274,7 @@ mod tests {
     #[test]
     fn run_once_reports_spec_error() {
         let mut fx = fixture(false);
-        fx.settings.links_file = fx.settings.home.join("missing.toml");
+        fx.settings.config_file = fx.settings.home.join("missing.toml");
         let report = run_once(&fx.settings, now());
         assert!(!report.succeeded());
         assert_eq!(report.entries.len(), 0);
@@ -292,7 +292,7 @@ mod tests {
         assert!(shared.report().is_some());
 
         let mut broken = fx.settings;
-        broken.links_file = PathBuf::from("/nonexistent/links.toml");
+        broken.config_file = PathBuf::from("/nonexistent/config.toml");
         shared.publish(run_once(&broken, now()));
         assert!(!shared.is_ready());
     }

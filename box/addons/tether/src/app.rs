@@ -21,7 +21,7 @@ pub async fn run(cfg: Config, shutdown: watch::Receiver<bool>) -> anyhow::Result
         commit = build.commit,
         built = build.date,
         rustc = build.rustc,
-        links_file = %cfg.links_file.display(),
+        config_file = %cfg.file.display(),
         home = %cfg.home.display(),
         reconcile_interval = %humantime::format_duration(cfg.reconcile_interval),
         dry_run = cfg.dry_run,
@@ -71,7 +71,7 @@ mod tests {
 
     fn test_config() -> Config {
         Config {
-            links_file: PathBuf::from("/nonexistent/links.toml"),
+            file: PathBuf::from("/nonexistent/config.toml"),
             home: PathBuf::from("/nonexistent"),
             reconcile_interval: Duration::from_secs(3600),
             dry_run: true,

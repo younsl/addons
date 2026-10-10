@@ -42,9 +42,13 @@ pub enum LogFormat {
     about = "Server that keeps dotfiles symlinked into a home directory"
 )]
 pub struct Config {
-    /// Link spec file mapping dotfiles sources to home targets.
-    #[arg(long, env = "LINKS_FILE", default_value = "/etc/tether/links.toml")]
-    pub links_file: PathBuf,
+    /// Config file mapping dotfiles sources to home targets.
+    #[arg(
+        long = "config-file",
+        env = "CONFIG_FILE",
+        default_value = "/etc/tether/config.toml"
+    )]
+    pub file: PathBuf,
 
     /// Home directory that `~` in the spec expands to. In a container, mount
     /// it at the same path as on the host so the links resolve there too.
@@ -126,7 +130,7 @@ mod tests {
     #[test]
     fn defaults() {
         let cfg = parse(&["--home", "/home/dev"]).expect("defaults parse");
-        assert_eq!(cfg.links_file, PathBuf::from("/etc/tether/links.toml"));
+        assert_eq!(cfg.file, PathBuf::from("/etc/tether/config.toml"));
         assert_eq!(cfg.home, PathBuf::from("/home/dev"));
         assert_eq!(cfg.reconcile_interval, Duration::from_secs(300));
         assert!(!cfg.dry_run);
@@ -138,8 +142,8 @@ mod tests {
     #[test]
     fn overrides() {
         let cfg = parse(&[
-            "--links-file",
-            "/tmp/links.toml",
+            "--config-file",
+            "/tmp/config.toml",
             "--home",
             "/Users/dev",
             "--reconcile-interval",
@@ -153,7 +157,7 @@ mod tests {
             "TEXT",
         ])
         .expect("overrides parse");
-        assert_eq!(cfg.links_file, PathBuf::from("/tmp/links.toml"));
+        assert_eq!(cfg.file, PathBuf::from("/tmp/config.toml"));
         assert_eq!(cfg.reconcile_interval, Duration::from_secs(90));
         assert!(cfg.dry_run);
         assert_eq!(cfg.port, 9000);

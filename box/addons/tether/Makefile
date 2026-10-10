@@ -20,13 +20,13 @@ build:
 release:
 	cargo build --release
 
-## run: reconcile links.toml against the local home in dry-run mode
+## run: reconcile config.toml against the local home in dry-run mode
 run:
-	LINKS_FILE=links.toml DRY_RUN=true LOG_FORMAT=text cargo run
+	CONFIG_FILE=config.toml DRY_RUN=true LOG_FORMAT=text cargo run
 
 ## dev: run with debug logging
 dev:
-	LINKS_FILE=links.toml DRY_RUN=true LOG_FORMAT=text LOG_LEVEL=debug cargo run
+	CONFIG_FILE=config.toml DRY_RUN=true LOG_FORMAT=text LOG_LEVEL=debug cargo run
 
 ## test: run tests
 test:

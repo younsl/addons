@@ -1,4 +1,4 @@
-source_root = "~/github/younsl/dotfiles/configs"
+source_root = "~/github/younsl/addons/box/addons/tether/configs"
 backup_root = "~/.dotfiles-backup"
 
 [[links]]

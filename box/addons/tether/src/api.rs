@@ -129,10 +129,10 @@ mod tests {
     #[tokio::test]
     async fn status_after_reconcile() {
         let dir = tempfile::tempdir().expect("tempdir");
-        let links_file = dir.path().join("links.toml");
-        std::fs::write(&links_file, "source_root = \"~\"\nbackup_root = \"~/b\"\n").expect("spec");
+        let config_file = dir.path().join("config.toml");
+        std::fs::write(&config_file, "source_root = \"~\"\nbackup_root = \"~/b\"\n").expect("spec");
         let settings = Settings {
-            links_file,
+            config_file,
             home: dir.path().to_path_buf(),
             dry_run: true,
         };
