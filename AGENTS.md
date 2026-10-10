@@ -76,3 +76,9 @@ with `cargo llvm-cov`. Check before releasing, not after.
 ## Documentation
 
 Write all repository documentation in concise English, including READMEs and this file.
+
+## Knowledge Base
+
+`docs/kb/` holds personal SRE notes, one directory per domain (`kubernetes/`, `observability/`, ...) and one subject per kebab-case file. Commit with `[kb] docs(<domain>): ...`.
+
+Notes come from real work and this repository is public. Never include company names, internal domains, hostnames, IP ranges, account IDs, ARNs, credentials, or personal info. Use `example.com`, `10.0.0.0/16`, `123456789012`, `${SECRET_NAME}` instead. Incident write-ups describe the failure mode and fix, not the affected internal service.
