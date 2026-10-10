@@ -120,7 +120,7 @@ The following table lists the configurable parameters and their default values.
 | securityContext | object | See `values.yaml` | Container-level security context |
 | pdb.enabled | bool | `false` | Enable PodDisruptionBudget |
 | pdb.maxUnavailable | int | `1` | Maximum number of pods that can be unavailable during disruption |
-| pdb.unhealthyPodEvictionPolicy | string | `"IfReady"` | Unhealthy pod eviction policy (IfReady or AlwaysAllow) |
+| pdb.unhealthyPodEvictionPolicy | string | `"IfHealthyBudget"` | Unhealthy pod eviction policy (IfHealthyBudget or AlwaysAllow) |
 | nodeSelector | object | `{}` | Node selector |
 | tolerations | list | `[]` | Tolerations |
 | affinity | object | `{}` | Affinity rules |

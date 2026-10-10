@@ -7,7 +7,7 @@ metadata:
     {{- include "ahen.labels" . | nindent 4 }}
 spec:
   replicas: {{ .Values.replicaCount }}
-  revisionHistoryLImit: {{ .Values.revisionHistoryLimit }}
+  revisionHistoryLimit: {{ .Values.revisionHistoryLimit }}
   selector:
     matchLabels:
       {{- include "ahen.selectorLabels" . | nindent 6 }}

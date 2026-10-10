@@ -170,8 +170,8 @@ pdb:
   enabled: false
   # -- (int) Maximum number of pods that can be unavailable during disruption
   maxUnavailable: 1
-  # -- (string) Unhealthy pod eviction policy (IfReady or AlwaysAllow)
-  unhealthyPodEvictionPolicy: IfReady
+  # -- (string) Unhealthy pod eviction policy (IfHealthyBudget or AlwaysAllow)
+  unhealthyPodEvictionPolicy: IfHealthyBudget
 
 # -- (object) Node selector
 nodeSelector: {}

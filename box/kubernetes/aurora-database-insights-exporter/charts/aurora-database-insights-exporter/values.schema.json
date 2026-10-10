@@ -147,7 +147,8 @@
           "type": ["integer", "string"]
         },
         "unhealthyPodEvictionPolicy": {
-          "type": "string"
+          "type": ["string", "null"],
+          "enum": ["", null, "IfHealthyBudget", "AlwaysAllow"]
         }
       }
     },
