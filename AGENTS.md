@@ -38,6 +38,7 @@ Every crate is standalone (no workspace). Match these when adding or touching on
 
 ### Runtime
 
+- Kubernetes operators and controllers are built with [kube.rs](https://github.com/kube-rs/kube): `kube::runtime::Controller` for reconcile loops and `#[derive(CustomResource)]` for CRDs. Never use another client library or shell out to `kubectl`.
 - TLS is rustls only. Never pull in openssl or native-tls, which breaks the static `scratch` build. Set `default-features = false` on `reqwest` and `kube` and enable the rustls features explicitly.
 - Install the `aws-lc-rs` crypto provider once at the top of `main` so every rustls client and listener shares it.
 - Errors: `thiserror` enums inside modules, `anyhow` only at the binary boundary (`main` and CLI glue).
