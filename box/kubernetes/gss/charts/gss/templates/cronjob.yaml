@@ -53,26 +53,31 @@ spec:
                 configMapKeyRef:
                   name: {{ include "gss.configMapName" . }}
                   key: GITHUB_BASE_URL
+                  optional: true
             - name: GITHUB_ORG
               valueFrom:
                 configMapKeyRef:
                   name: {{ include "gss.configMapName" . }}
                   key: GITHUB_ORG
+                  optional: true
             - name: LOG_LEVEL
               valueFrom:
                 configMapKeyRef:
                   name: {{ include "gss.configMapName" . }}
                   key: LOG_LEVEL
+                  optional: true
             - name: REQUEST_TIMEOUT
               valueFrom:
                 configMapKeyRef:
                   name: {{ include "gss.configMapName" . }}
                   key: REQUEST_TIMEOUT
+                  optional: true
             - name: CONCURRENT_SCANS
               valueFrom:
                 configMapKeyRef:
                   name: {{ include "gss.configMapName" . }}
                   key: CONCURRENT_SCANS
+                  optional: true
             - name: GITHUB_TOKEN
               valueFrom:
                 secretKeyRef:
@@ -83,21 +88,25 @@ spec:
                 configMapKeyRef:
                   name: {{ include "gss.configMapName" . }}
                   key: SLACK_TOKEN
+                  optional: true
             - name: SLACK_CHANNEL_ID
               valueFrom:
                 configMapKeyRef:
                   name: {{ include "gss.configMapName" . }}
                   key: SLACK_CHANNEL_ID
+                  optional: true
             - name: SLACK_CANVAS_ID
               valueFrom:
                 configMapKeyRef:
                   name: {{ include "gss.configMapName" . }}
                   key: SLACK_CANVAS_ID
+                  optional: true
             - name: PUBLISHER_TYPE
               valueFrom:
                 configMapKeyRef:
                   name: {{ include "gss.configMapName" . }}
                   key: PUBLISHER_TYPE
+                  optional: true
             {{- with .Values.resources }}
             resources:
               {{- toYaml . | nindent 14 }}
