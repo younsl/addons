@@ -1,0 +1,83 @@
+source_root = "~/github/younsl/dotfiles/configs"
+backup_root = "~/.dotfiles-backup"
+
+[[links]]
+source = "git"
+target = "~/.config/git"
+
+[[links]]
+source = "k9s"
+target = "~/.config/k9s"
+
+[[links]]
+source = "ghostty"
+target = "~/.config/ghostty"
+
+[[links]]
+source = "nvim"
+target = "~/.config/nvim"
+
+[[links]]
+source = "package-managers/pip"
+target = "~/.config/pip"
+
+[[links]]
+source = "package-managers/uv"
+target = "~/.config/uv"
+
+[[links]]
+source = "package-managers/npm/.npmrc"
+target = "~/.npmrc"
+
+[[links]]
+source = "package-managers/pnpm/config.yaml"
+target = "~/.config/pnpm/config.yaml"
+
+[[links]]
+source = "package-managers/yarn/.yarnrc"
+target = "~/.yarnrc"
+
+[[links]]
+source = "package-managers/mise"
+target = "~/.config/mise"
+
+[[links]]
+source = "zsh/.zshrc"
+target = "~/.zshrc"
+
+[[links]]
+source = "zsh/functions"
+target = "~/.config/zsh/functions"
+
+[[links]]
+source = "gnupg/gpg.conf"
+target = "~/.gnupg/gpg.conf"
+
+[[links]]
+source = "gnupg/gpg-agent.conf"
+target = "~/.gnupg/gpg-agent.conf"
+
+[[links]]
+source = "gnupg/common.conf"
+target = "~/.gnupg/common.conf"
+
+[[links]]
+source = "claude/settings.json"
+target = "~/.claude/settings.json"
+
+[[links]]
+source = "claude/AGENTS.md"
+target = "~/.claude/CLAUDE.md"
+
+[[links]]
+source = "claude/skills"
+target = "~/.claude/skills"
+per_entry = true
+
+[[links]]
+source = "claude/hooks"
+target = "~/.claude/hooks"
+
+[[links]]
+source = "claude/scripts"
+target = "~/.claude/scripts"

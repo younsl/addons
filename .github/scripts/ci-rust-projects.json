@@ -12,5 +12,6 @@
   "box/addons/filesystem-cleaner/Dockerfile":                {},
   "box/addons/external-ebs-autoresizer/Dockerfile":          {},
   "box/addons/forklift/Dockerfile":                          { "frontend_manager": "pnpm", "frontend_dir": "web", "embed_dir": "src/webui/dist" },
-  "box/addons/forklift/Dockerfile.mcp":                      { "project": "forklift-mcp" }
+  "box/addons/forklift/Dockerfile.mcp":                      { "project": "forklift-mcp" },
+  "box/addons/tether/Dockerfile":                            {}
 }
