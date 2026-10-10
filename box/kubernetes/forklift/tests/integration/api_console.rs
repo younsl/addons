@@ -90,7 +90,7 @@ async fn receiver_handlers() {
     for c in [
         r#"{"name":"bad name","webhook_url":"https://h.example/x"}"#,
         r#"{"name":"ok","webhook_url":"notaurl"}"#,
-        r#"{bad json"#,
+        r"{bad json",
     ] {
         let resp = srv
             .admin_do(Method::POST, "/notification/receivers", c)
@@ -414,7 +414,7 @@ async fn set_repository_disabled() {
         .admin_do(
             Method::POST,
             &format!("/repositories/{id}/disabled"),
-            r#"{bad"#,
+            r"{bad",
         )
         .await;
     assert_eq!(

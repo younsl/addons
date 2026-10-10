@@ -30,7 +30,7 @@ struct AnnouncementDTO {
 
 impl Default for AnnouncementDTO {
     fn default() -> Self {
-        AnnouncementDTO {
+        Self {
             body: String::new(),
             updated_by: String::new(),
             updated_at: DateTime::parse_from_rfc3339("0001-01-01T00:00:00Z")
@@ -70,9 +70,8 @@ pub(super) async fn get(State(h): State<Arc<Handler>>) -> Response {
 /// responsibility, and it never injects raw HTML.
 pub(super) async fn put(State(h): State<Arc<Handler>>, request: Request) -> Response {
     let (parts, body) = request.into_parts();
-    let bytes = match axum::body::to_bytes(body, MAX_ANNOUNCEMENT_BYTES * 2).await {
-        Ok(bytes) => bytes,
-        Err(_) => return write_error(StatusCode::BAD_REQUEST, "invalid body"),
+    let Ok(bytes) = axum::body::to_bytes(body, MAX_ANNOUNCEMENT_BYTES * 2).await else {
+        return write_error(StatusCode::BAD_REQUEST, "invalid body");
     };
     let Ok(input) = serde_json::from_slice::<AnnouncementInput>(&bytes) else {
         return write_error(StatusCode::BAD_REQUEST, "invalid body");

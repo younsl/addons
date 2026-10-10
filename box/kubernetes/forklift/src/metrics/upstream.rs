@@ -63,9 +63,9 @@ pub struct UpstreamProber {
 
 impl UpstreamProber {
     /// Builds the prober and registers it as a collector.
-    pub fn new(store: Arc<dyn RepoLister>, registry: &Registry) -> Arc<UpstreamProber> {
+    pub fn new(store: Arc<dyn RepoLister>, registry: &Registry) -> Arc<Self> {
         crate::server::install_crypto_provider();
-        let p = Arc::new(UpstreamProber {
+        let p = Arc::new(Self {
             store,
             // Probes carry the repository's upstream credentials, so redirects
             // are never followed: a redirecting upstream must not bounce them
@@ -97,7 +97,7 @@ impl UpstreamProber {
         ticker.tick().await;
         loop {
             tokio::select! {
-                _ = cancel.cancelled() => return,
+                () = cancel.cancelled() => return,
                 _ = ticker.tick() => self.probe_all().await,
             }
         }

@@ -34,8 +34,8 @@ pub struct Ready(Arc<AtomicBool>);
 
 impl Ready {
     /// A flag with the given initial value.
-    pub fn new(ready: bool) -> Ready {
-        Ready(Arc::new(AtomicBool::new(ready)))
+    pub fn new(ready: bool) -> Self {
+        Self(Arc::new(AtomicBool::new(ready)))
     }
 
     /// Reads the flag.
@@ -59,11 +59,11 @@ pub fn http_error(status: StatusCode, msg: &str) -> Response {
     resp
 }
 
-/// Installs rustls' ring provider as the process-wide default. Idempotent: a
+/// Installs rustls' aws-lc-rs provider as the process-wide default. Idempotent: a
 /// second call (another test binary, another entry point) is a no-op, which is
 /// why the result is discarded.
 pub fn install_crypto_provider() {
-    let _ = rustls::crypto::ring::default_provider().install_default();
+    let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
 }
 
 /// The HTTP metrics recorded by the logging middleware, shared with it as
@@ -99,7 +99,7 @@ impl Server {
         cfg: Arc<crate::config::Config>,
         store: Arc<crate::meta::Store>,
         registry: &Registry,
-    ) -> Server {
+    ) -> Self {
         let metrics = Arc::new(Metrics {
             req_duration: HistogramVec::new(
                 HistogramOpts::new("http_request_duration_seconds", "HTTP request latency.")
@@ -160,7 +160,7 @@ impl Server {
             .route("/readyz", get(health::handle_readyz))
             .with_state(health);
 
-        Server {
+        Self {
             cfg,
             store,
             router,
@@ -171,7 +171,7 @@ impl Server {
 
     /// The metadata store the health probe checks, for callers that mount
     /// routes needing it.
-    pub fn store(&self) -> &Arc<crate::meta::Store> {
+    pub const fn store(&self) -> &Arc<crate::meta::Store> {
         &self.store
     }
 
@@ -184,7 +184,7 @@ impl Server {
     /// [`Server::run`]. axum's `Router` combinators consume `self`, so the
     /// usual shape is `*s.router_mut() = std::mem::take(s.router_mut()).route(...)`;
     /// [`Server::merge`] wraps that for the common case.
-    pub fn router_mut(&mut self) -> &mut Router {
+    pub const fn router_mut(&mut self) -> &mut Router {
         &mut self.router
     }
 

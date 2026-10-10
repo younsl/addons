@@ -31,8 +31,9 @@ pub struct HubConfig {
 }
 
 impl HubConfig {
+    #[must_use]
     pub fn label_selector(&self) -> String {
-        format!("{}={}", SECRET_TYPE_LABEL, SECRET_TYPE_VALUE)
+        format!("{SECRET_TYPE_LABEL}={SECRET_TYPE_VALUE}")
     }
 }
 

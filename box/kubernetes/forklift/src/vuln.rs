@@ -55,13 +55,13 @@ pub const SEV_CRITICAL: Severity = Severity::Critical;
 
 impl Severity {
     /// Returns the lowercase label used in storage and the API.
-    pub fn as_str(self) -> &'static str {
+    pub const fn as_str(self) -> &'static str {
         match self {
-            Severity::Critical => "critical",
-            Severity::High => "high",
-            Severity::Medium => "medium",
-            Severity::Low => "low",
-            Severity::None => "none",
+            Self::Critical => "critical",
+            Self::High => "high",
+            Self::Medium => "medium",
+            Self::Low => "low",
+            Self::None => "none",
         }
     }
 }
@@ -97,7 +97,7 @@ pub struct Advisory {
 /// The result of scanning one coordinate: the advisories that apply, the
 /// highest severity among them, and a per-severity count. `ids` and
 /// `advisories` are empty when the coordinate is clean.
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Finding {
     pub ids: Vec<String>,
     pub advisories: Vec<Advisory>,
@@ -110,7 +110,7 @@ pub struct Finding {
 
 impl Finding {
     /// Returns the number of advisories at `sev`.
-    pub fn count(&self, sev: Severity) -> i64 {
+    pub const fn count(&self, sev: Severity) -> i64 {
         self.counts[sev as usize]
     }
 

@@ -51,11 +51,11 @@ use tracing::error;
     )
 )]
 struct Cli {
-    /// Path to the config file (`$CONFIG_FILE`, else the mounted default)
-    #[arg(long, global = true)]
+    /// Path to the config file (else the mounted default)
+    #[arg(long, env = "CONFIG_FILE", global = true)]
     config: Option<String>,
     /// Verbose output (debug logging)
-    #[arg(short, long, global = true)]
+    #[arg(short, long, env = "VERBOSE", global = true)]
     verbose: bool,
     #[command(subcommand)]
     command: Option<Command>,
@@ -71,7 +71,7 @@ enum Command {
     Policies {
         /// Discover instances via AWS and add a MATCHED column with the count
         /// each policy identifies
-        #[arg(long)]
+        #[arg(long, env = "POLICIES_COUNT")]
         count: bool,
     },
     /// List discovered instances grouped by the policy each matches (calls AWS)
@@ -81,7 +81,7 @@ enum Command {
     Unused {
         /// Include objects that have not yet been unused for
         /// unusedVolumeScan.minUnusedAge
-        #[arg(long)]
+        #[arg(long, env = "UNUSED_ALL")]
         all: bool,
     },
 }
@@ -92,12 +92,14 @@ type Subscriber = Box<dyn tracing::Subscriber + Send + Sync>;
 /// through it, including the Kubernetes client's, so a lease renewal failure
 /// lands in the same JSON format as the addon's own lines.
 fn subscriber(level: &str, format: &str) -> Subscriber {
-    let filter = tracing_subscriber::EnvFilter::new(match level.to_ascii_lowercase().as_str() {
+    let level = match level.to_ascii_lowercase().as_str() {
         "debug" => "debug",
         "warn" => "warn",
         "error" => "error",
         _ => "info",
-    });
+    };
+    let filter = tracing_subscriber::EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new(level));
     let builder = tracing_subscriber::fmt()
         .with_env_filter(filter)
         .with_target(false);

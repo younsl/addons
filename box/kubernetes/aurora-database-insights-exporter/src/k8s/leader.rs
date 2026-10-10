@@ -151,7 +151,8 @@ impl LeaderElector {
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
-            .as_secs() as i64;
+            .as_secs();
+        let now = i64::try_from(now).unwrap_or(i64::MAX);
         let lease_name = &self.config.lease_name;
 
         match self.api.get(lease_name).await {
@@ -161,7 +162,7 @@ impl LeaderElector {
                     .and_then(|s| s.holder_identity.as_deref())
                     .unwrap_or("");
                 let duration_secs =
-                    spec.and_then(|s| s.lease_duration_seconds).unwrap_or(15) as i64;
+                    i64::from(spec.and_then(|s| s.lease_duration_seconds).unwrap_or(15));
 
                 if holder == self.identity {
                     self.renew_lease(lease_name).await?;
@@ -171,8 +172,7 @@ impl LeaderElector {
                 // Check if expired by comparing renew_time + duration vs now
                 let renew_epoch: i64 = spec
                     .and_then(|s| s.renew_time.as_ref())
-                    .map(|t| t.0.as_second())
-                    .unwrap_or(0);
+                    .map_or(0, |t| t.0.as_second());
 
                 if renew_epoch > 0 && now < renew_epoch + duration_secs {
                     // Lease still valid
@@ -202,7 +202,9 @@ impl LeaderElector {
             },
             spec: Some(LeaseSpec {
                 holder_identity: Some(self.identity.clone()),
-                lease_duration_seconds: Some(self.config.lease_duration_seconds as i32),
+                lease_duration_seconds: Some(
+                    i32::try_from(self.config.lease_duration_seconds).unwrap_or(i32::MAX),
+                ),
                 acquire_time: Some(now.clone()),
                 renew_time: Some(now),
                 lease_transitions: Some(0),
@@ -230,7 +232,9 @@ impl LeaderElector {
             spec: Some(LeaseSpec {
                 holder_identity: Some(self.identity.clone()),
                 renew_time: Some(now),
-                lease_duration_seconds: Some(self.config.lease_duration_seconds as i32),
+                lease_duration_seconds: Some(
+                    i32::try_from(self.config.lease_duration_seconds).unwrap_or(i32::MAX),
+                ),
                 ..Default::default()
             }),
         };
@@ -260,7 +264,9 @@ impl LeaderElector {
                 holder_identity: Some(self.identity.clone()),
                 acquire_time: Some(now.clone()),
                 renew_time: Some(now),
-                lease_duration_seconds: Some(self.config.lease_duration_seconds as i32),
+                lease_duration_seconds: Some(
+                    i32::try_from(self.config.lease_duration_seconds).unwrap_or(i32::MAX),
+                ),
                 lease_transitions: Some(transitions),
                 ..Default::default()
             }),
@@ -302,7 +308,7 @@ mod tests {
     #[test]
     fn test_simple_id_not_empty() {
         let id = simple_id();
-        assert!(!id.is_empty());
+        assert_ne!(id, "");
         assert!(id.len() >= 8);
     }
 

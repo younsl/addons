@@ -63,8 +63,8 @@ pub enum Error {
 
 impl Error {
     /// Wraps an I/O error with the operation that produced it.
-    pub fn io(op: &'static str, source: io::Error) -> Self {
-        Error::Io { op, source }
+    pub const fn io(op: &'static str, source: io::Error) -> Self {
+        Self::Io { op, source }
     }
 
     /// Wraps an SDK error with the operation that produced it.
@@ -72,7 +72,7 @@ impl Error {
     where
         E: std::error::Error + Send + Sync + 'static,
     {
-        Error::S3 {
+        Self::S3 {
             op,
             source: Box::new(source),
         }
@@ -148,8 +148,8 @@ pub struct StagedFile {
 
 impl StagedFile {
     /// Wraps a blob file that must be left in place when the handle is dropped.
-    pub fn new(file: std::fs::File, path: PathBuf) -> Self {
-        StagedFile {
+    pub const fn new(file: std::fs::File, path: PathBuf) -> Self {
+        Self {
             file,
             path,
             remove_on_drop: false,
@@ -157,8 +157,8 @@ impl StagedFile {
     }
 
     /// Wraps a private staging copy that is removed when the handle is dropped.
-    pub fn removing(file: std::fs::File, path: PathBuf) -> Self {
-        StagedFile {
+    pub const fn removing(file: std::fs::File, path: PathBuf) -> Self {
+        Self {
             file,
             path,
             remove_on_drop: true,
@@ -217,7 +217,7 @@ impl FsStore {
         std::fs::create_dir_all(&base).map_err(|e| Error::io("create blob dir", e))?;
         let tmp = base.join("tmp");
         std::fs::create_dir_all(&tmp).map_err(|e| Error::io("create blob tmp dir", e))?;
-        Ok(FsStore { root: base })
+        Ok(Self { root: base })
     }
 
     /// Fan out by the first two byte-pairs to avoid huge directories.

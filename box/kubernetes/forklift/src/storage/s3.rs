@@ -52,11 +52,11 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 /// Builds an S3 [`Client`] from `cfg`. The SDK's default credential chain
 /// resolves IRSA (web identity) and EKS Pod Identity (container credentials)
 /// with no extra code; static keys are used only when both are set. The HTTP
-/// client is rustls over ring so the binary carries no OpenSSL.
+/// client is rustls over aws-lc-rs so the binary carries no OpenSSL.
 pub async fn new_s3_client(cfg: &S3Config) -> Result<Client> {
     let http_client = aws_smithy_http_client::Builder::new()
         .tls_provider(tls::Provider::Rustls(
-            tls::rustls_provider::CryptoMode::Ring,
+            tls::rustls_provider::CryptoMode::AwsLc,
         ))
         .build_https();
     let mut loader = aws_config::defaults(BehaviorVersion::latest()).http_client(http_client);
@@ -127,7 +127,7 @@ impl S3BlobStore {
         let client = new_s3_client(cfg).await?;
         let temp_dir = temp_dir.as_ref().to_path_buf();
         std::fs::create_dir_all(&temp_dir).map_err(|e| Error::io("create blob temp dir", e))?;
-        Ok(S3BlobStore {
+        Ok(Self {
             client,
             bucket: cfg.bucket.clone(),
             prefix: cfg.prefix.trim_matches('/').to_string(),
@@ -430,14 +430,14 @@ pub(crate) mod tests {
 
     impl FakeS3 {
         fn new() -> Self {
-            FakeS3 {
+            Self {
                 objects: Arc::new(Mutex::new(BTreeMap::new())),
                 page_size: None,
             }
         }
 
         fn with_page_size(page_size: usize) -> Self {
-            FakeS3 {
+            Self {
                 objects: Arc::new(Mutex::new(BTreeMap::new())),
                 page_size: Some(page_size),
             }
@@ -516,7 +516,7 @@ pub(crate) mod tests {
 
     impl Respond for FakeS3 {
         fn respond(&self, request: &Request) -> ResponseTemplate {
-            let key = FakeS3::key_of(request);
+            let key = Self::key_of(request);
             match request.method.as_str() {
                 "GET" if request.url.query_pairs().any(|(k, _)| k == "list-type") => {
                     self.list(request)

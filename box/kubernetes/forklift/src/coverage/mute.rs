@@ -29,13 +29,13 @@ pub struct MuteScopes {
 
 impl MuteScopes {
     /// Any reports whether at least one check is muted.
-    pub fn any(&self) -> bool {
+    pub const fn any(&self) -> bool {
         self.ci || self.registry
     }
 
     /// All reports whether every check is muted, which is the whole project
     /// being out of the measurement.
-    pub fn all(&self) -> bool {
+    pub const fn all(&self) -> bool {
         self.ci && self.registry
     }
 
@@ -83,7 +83,7 @@ pub fn parse_mute_scopes(input: &[String]) -> Res<MuteScopes> {
 /// the checks muted on it. A muted check is neither required nor credited, so a
 /// project with one check muted is applied once the other half is present, and
 /// is never partial: with a single requirement there is no half-way.
-pub fn verdict_for(ci_wired: bool, registry_pinned: bool, muted: MuteScopes) -> AppliedState {
+pub const fn verdict_for(ci_wired: bool, registry_pinned: bool, muted: MuteScopes) -> AppliedState {
     let (mut required, mut met) = (0, 0);
     if !muted.ci {
         required += 1;

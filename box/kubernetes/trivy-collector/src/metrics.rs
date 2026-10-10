@@ -113,7 +113,7 @@ impl Metrics {
         })
         .set(1);
 
-        let mut metrics = Metrics {
+        let mut metrics = Self {
             registered_count: 1, // info (always registered)
             info,
             http_requests_total: None,
@@ -143,7 +143,8 @@ impl Metrics {
     }
 
     /// Returns the total number of registered metric families.
-    pub fn count(&self) -> usize {
+    #[must_use]
+    pub const fn count(&self) -> usize {
         self.registered_count
     }
 

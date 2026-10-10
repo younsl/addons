@@ -42,7 +42,7 @@ pub struct MigrationSummary {
 }
 
 impl MigrationSummary {
-    fn touched_nothing(&self) -> bool {
+    const fn touched_nothing(&self) -> bool {
         self.imported == 0 && self.skipped_existing == 0 && self.failed == 0
     }
 }

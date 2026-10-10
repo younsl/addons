@@ -60,9 +60,9 @@ pub(crate) struct JobQueue<T> {
 }
 
 impl<T> JobQueue<T> {
-    fn new(capacity: usize) -> JobQueue<T> {
+    fn new(capacity: usize) -> Self {
         let (tx, rx) = tokio::sync::mpsc::channel(capacity);
-        JobQueue {
+        Self {
             tx,
             rx: tokio::sync::Mutex::new(Some(rx)),
         }
@@ -145,8 +145,8 @@ impl Manager {
         authz: Option<Arc<auth::Service>>,
         rec: Option<Arc<audit::Recorder>>,
         registry: Option<&Registry>,
-    ) -> Arc<Manager> {
-        let m = Arc::new(Manager {
+    ) -> Arc<Self> {
+        let m = Arc::new(Self {
             engine: Arc::clone(&engine),
             store: Arc::clone(&store),
             authz,
@@ -344,7 +344,7 @@ impl Manager {
     }
 
     /// Exposes the underlying engine (for the background sweeper in main).
-    pub fn engine(&self) -> &Arc<Engine> {
+    pub const fn engine(&self) -> &Arc<Engine> {
         &self.engine
     }
 
@@ -408,13 +408,13 @@ impl Manager {
     /// Applies the shared format-handler middleware: group fan-out innermost,
     /// audit logging outermost (so a group request is audited once, under the
     /// group's own name with the final status).
-    pub(crate) async fn wrap(m: Arc<Manager>, req: Request, h: HandlerFn) -> Response {
-        Manager::audited(m, req, h).await
+    pub(crate) async fn wrap(m: Arc<Self>, req: Request, h: HandlerFn) -> Response {
+        Self::audited(m, req, h).await
     }
 
     /// Wraps a format handler so every repository request — including denied and
     /// not-found ones — lands in the audit log with its final status.
-    pub(crate) async fn audited(m: Arc<Manager>, req: Request, h: HandlerFn) -> Response {
+    pub(crate) async fn audited(m: Arc<Self>, req: Request, h: HandlerFn) -> Response {
         let Some(rec) = m.rec.clone() else {
             return super::group::grouped(m, req, h).await;
         };
@@ -431,7 +431,7 @@ impl Manager {
             path,
             username,
             method: method.to_string(),
-            status: resp.status().as_u16() as i64,
+            status: i64::from(resp.status().as_u16()),
             client_ip,
             user_agent,
             ..Default::default()
@@ -583,7 +583,7 @@ pub(crate) struct Resolved {
 }
 
 /// Maps an HTTP method to an RBAC action.
-pub(crate) fn action_for_method(method: &Method) -> &'static str {
+pub(crate) const fn action_for_method(method: &Method) -> &'static str {
     match *method {
         Method::PUT | Method::POST | Method::PATCH => auth::ACTION_WRITE,
         Method::DELETE => auth::ACTION_DELETE,
@@ -592,7 +592,7 @@ pub(crate) fn action_for_method(method: &Method) -> &'static str {
 }
 
 /// Maps an HTTP method to an audit event type.
-pub(crate) fn event_for_method(method: &Method) -> &'static str {
+pub(crate) const fn event_for_method(method: &Method) -> &'static str {
     match *method {
         Method::PUT | Method::POST => meta::EVENT_UPLOAD,
         Method::DELETE => meta::EVENT_DELETE,

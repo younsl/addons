@@ -1,9 +1,9 @@
 mod ami;
-pub(crate) mod app;
-pub(crate) mod aws;
+pub mod app;
+pub mod aws;
 mod cleanup;
 mod error;
-pub(crate) mod ui;
+pub mod ui;
 
 use std::io::stdout;
 use std::time::Duration;
@@ -22,7 +22,7 @@ use self::ami::ScanResult;
 use self::app::{App, AppAction, AppMode};
 
 /// CLI arguments for the ami-cleanup subcommand.
-#[derive(clap::Args, Debug, Clone, PartialEq)]
+#[derive(clap::Args, Debug, Clone, PartialEq, Eq)]
 pub struct AmiCleanupArgs {
     /// AWS profile name (interactive selection if omitted)
     #[arg(long)]
@@ -42,14 +42,14 @@ pub struct AmiCleanupArgs {
 }
 
 /// Messages sent from the background scan task to the TUI loop.
-pub(crate) enum ScanMsg {
+pub enum ScanMsg {
     Log(String),
     Done(String),
     Finished(Vec<ScanResult>),
     Error(String),
 }
 
-pub(crate) struct ScanParams {
+pub struct ScanParams {
     pub profile: String,
     pub regions: Vec<String>,
     pub min_age_days: u64,
@@ -92,14 +92,15 @@ pub async fn run(args: AmiCleanupArgs) -> anyhow::Result<()> {
     let deleted = app.deleted_count();
     let failed = app.failed_count();
     if deleted > 0 || failed > 0 {
-        println!("Cleanup: {} deleted, {} failed", deleted, failed);
+        println!("Cleanup: {deleted} deleted, {failed} failed");
     }
 
     Ok(())
 }
 
 /// Spawn the scanning work on a background task, sending progress via channel.
-pub(crate) fn spawn_scan(params: ScanParams, tx: mpsc::UnboundedSender<ScanMsg>) {
+#[allow(clippy::too_many_lines)]
+pub fn spawn_scan(params: ScanParams, tx: mpsc::UnboundedSender<ScanMsg>) {
     let profile = params.profile;
     let regions = params.regions;
     let min_age_days = params.min_age_days;
@@ -191,7 +192,7 @@ pub(crate) fn spawn_scan(params: ScanParams, tx: mpsc::UnboundedSender<ScanMsg>)
 
                 // Step 2: Collect in-use refs
                 let _ = tx.send(ScanMsg::Log(format!("{prefix}: Collecting in-use refs..")));
-                let mut used_ami_ids = match ami::get_used_ami_ids(&ec2, &asg).await {
+                let mut used_ami_ids = match Box::pin(ami::get_used_ami_ids(&ec2, &asg)).await {
                     Ok(ids) => {
                         let _ = tx.send(ScanMsg::Done(format!(
                             "{prefix}: {profile} uses {} AMIs",
@@ -211,7 +212,7 @@ pub(crate) fn spawn_scan(params: ScanParams, tx: mpsc::UnboundedSender<ScanMsg>)
                     let cp_config = aws::build_config(cp, Some(&region)).await;
                     let cp_ec2 = aws_sdk_ec2::Client::new(&cp_config);
                     let cp_asg = aws_sdk_autoscaling::Client::new(&cp_config);
-                    match ami::get_used_ami_ids(&cp_ec2, &cp_asg).await {
+                    match Box::pin(ami::get_used_ami_ids(&cp_ec2, &cp_asg)).await {
                         Ok(ids) => {
                             let _ = tx.send(ScanMsg::Done(format!(
                                 "{prefix}: {cp} uses {} AMIs",
@@ -260,7 +261,7 @@ pub(crate) fn spawn_scan(params: ScanParams, tx: mpsc::UnboundedSender<ScanMsg>)
 }
 
 /// Handle a key action. Returns true if the app should quit.
-pub(crate) async fn handle_action(
+pub async fn handle_action(
     terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
     app: &mut App,
     args: &AmiCleanupArgs,
@@ -289,18 +290,14 @@ pub(crate) async fn handle_action(
                 .await
                 .unwrap_or_else(|_| "unknown".to_string());
             app.header = format!("{account_id} (profile: {profile})");
-            start_scan(app, args, tx.clone()).await;
+            start_scan(app, args, tx.clone());
         }
         AppAction::None => {}
     }
     Ok(false)
 }
 
-pub(crate) async fn start_scan(
-    app: &mut App,
-    args: &AmiCleanupArgs,
-    tx: mpsc::UnboundedSender<ScanMsg>,
-) {
+pub fn start_scan(app: &App, args: &AmiCleanupArgs, tx: mpsc::UnboundedSender<ScanMsg>) {
     let profile = app
         .profile_selector
         .owner_profile
@@ -308,10 +305,10 @@ pub(crate) async fn start_scan(
         .or_else(|| args.profile.clone())
         .unwrap_or_default();
 
-    let consumer_profiles = if !app.profile_selector.consumer_profiles.is_empty() {
-        app.profile_selector.consumer_profiles.clone()
-    } else {
+    let consumer_profiles = if app.profile_selector.consumer_profiles.is_empty() {
         args.consumer_profiles.clone()
+    } else {
+        app.profile_selector.consumer_profiles.clone()
     };
 
     spawn_scan(
@@ -335,7 +332,7 @@ async fn run_app(
 
     // If starting in Scanning mode (CLI provided --profile), kick off scan immediately
     if app.mode == AppMode::Scanning {
-        start_scan(app, args, tx.clone()).await;
+        start_scan(app, args, tx.clone());
     }
 
     let mut tick = tokio::time::interval(Duration::from_millis(100));
@@ -348,14 +345,10 @@ async fn run_app(
                 biased;
 
                 event = reader.next() => {
-                    match event {
-                        Some(Ok(Event::Key(key))) => {
-                            if matches!(app.handle_key(key), AppAction::Quit) {
-                                break;
-                            }
-                        }
-                        Some(Ok(Event::Resize(_, _))) => {}
-                        _ => {}
+                    if let Some(Ok(Event::Key(key))) = event
+                        && matches!(app.handle_key(key), AppAction::Quit)
+                    {
+                        break;
                     }
                     terminal.draw(|f| ui::draw(f, app, f.area()))?;
                 }
@@ -417,7 +410,7 @@ async fn run_app(
     Ok(())
 }
 
-pub(crate) async fn run_deletions(
+pub async fn run_deletions(
     terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
     app: &mut App,
     profile: &str,
@@ -468,9 +461,9 @@ mod tests {
     fn test_defaults() {
         let cli = TestCli::try_parse_from(["test"]).unwrap();
         assert!(cli.args.profile.is_none());
-        assert!(cli.args.region.is_empty());
+        assert_eq!(cli.args.region, Vec::<String>::new());
         assert_eq!(cli.args.min_age_days, 0);
-        assert!(cli.args.consumer_profiles.is_empty());
+        assert_eq!(cli.args.consumer_profiles, Vec::<String>::new());
     }
 
     #[test]

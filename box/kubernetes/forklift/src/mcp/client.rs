@@ -39,12 +39,12 @@ impl Client {
     ///
     /// `token`, when non-empty, authenticates tool calls whose MCP request carried no
     /// Authorization header.
-    pub fn new(upstream: &str, token: &str, metrics: Option<Arc<Metrics>>) -> Arc<Client> {
+    pub fn new(upstream: &str, token: &str, metrics: Option<Arc<Metrics>>) -> Arc<Self> {
         let http = reqwest::Client::builder()
             .timeout(Duration::from_secs(60))
             .build()
             .unwrap_or_default();
-        Arc::new(Client {
+        Arc::new(Self {
             base_url: upstream.trim_end_matches('/').to_string(),
             fallback_token: token.to_string(),
             http,
@@ -145,7 +145,7 @@ pub(crate) fn query_escape(s: &str) -> String {
     for b in s.bytes() {
         match b {
             b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
-                out.push(b as char)
+                out.push(b as char);
             }
             b' ' => out.push('+'),
             _ => {

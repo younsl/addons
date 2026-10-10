@@ -42,7 +42,7 @@ impl Manager {
     /// independently by [`Manager::policy_gates`] before this package-level
     /// workflow.
     pub(crate) fn approval_gate(
-        m: Arc<Manager>,
+        m: Arc<Self>,
         parts: Arc<Parts>,
         res: Arc<Resolved>,
         pkg: String,
@@ -206,9 +206,8 @@ impl Manager {
         if eco.is_empty() {
             return false;
         }
-        let scan = match self.store.get_vuln_scan(eco, pkg, version).await {
-            Ok(scan) => scan,
-            Err(_) => return false,
+        let Ok(scan) = self.store.get_vuln_scan(eco, pkg, version).await else {
+            return false;
         };
         if vuln::parse_severity(&scan.max_severity) != vuln::Severity::None {
             return false;
@@ -243,7 +242,7 @@ impl Manager {
                 path: pkg.to_string(),
                 username: AUTO_APPROVE_ACTOR.to_string(),
                 method: parts.method.to_string(),
-                status: StatusCode::OK.as_u16() as i64,
+                status: i64::from(StatusCode::OK.as_u16()),
                 client_ip: audit::client_ip_parts(parts),
                 user_agent: super::header_str(&parts.headers, "User-Agent").to_string(),
                 ..Default::default()
@@ -353,7 +352,7 @@ impl Manager {
             path: pkg.to_string(),
             username,
             method: parts.method.to_string(),
-            status: StatusCode::FORBIDDEN.as_u16() as i64,
+            status: i64::from(StatusCode::FORBIDDEN.as_u16()),
             client_ip: audit::client_ip_parts(parts),
             user_agent: super::header_str(&parts.headers, "User-Agent").to_string(),
             ..Default::default()
@@ -368,7 +367,7 @@ impl Manager {
     /// for a poisoned release a loud failure beats the resolver silently picking
     /// another version.
     pub(crate) fn version_deny_gate(
-        m: Arc<Manager>,
+        m: Arc<Self>,
         parts: Arc<Parts>,
         res: Arc<Resolved>,
         pkg: String,
@@ -422,7 +421,7 @@ impl Manager {
                         path: format!("{pkg}@{version}"),
                         username,
                         method: parts.method.to_string(),
-                        status: StatusCode::FORBIDDEN.as_u16() as i64,
+                        status: i64::from(StatusCode::FORBIDDEN.as_u16()),
                         client_ip: audit::client_ip_parts(&parts),
                         user_agent: super::header_str(&parts.headers, "User-Agent").to_string(),
                         ..Default::default()
@@ -574,7 +573,10 @@ pub(crate) mod tests {
         cfg.approval = ApprovalConfig {
             enabled: true,
             mode: mode.to_string(),
-            auto_approve: auto_approve.iter().map(|s| s.to_string()).collect(),
+            auto_approve: auto_approve
+                .iter()
+                .map(std::string::ToString::to_string)
+                .collect(),
             ..Default::default()
         };
         cfg

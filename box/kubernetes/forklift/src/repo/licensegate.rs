@@ -25,7 +25,7 @@ impl Manager {
     ///
     /// `Some(response)` means the request was blocked.
     pub(crate) fn license_gate(
-        m: Arc<Manager>,
+        m: Arc<Self>,
         parts: Arc<Parts>,
         res: Arc<Resolved>,
         pkg: String,
@@ -99,7 +99,7 @@ impl Manager {
                     path: format!("{pkg}@{version}"),
                     username,
                     method: parts.method.to_string(),
-                    status: StatusCode::FORBIDDEN.as_u16() as i64,
+                    status: i64::from(StatusCode::FORBIDDEN.as_u16()),
                     client_ip: audit::client_ip_parts(&parts),
                     user_agent: super::header_str(&parts.headers, "User-Agent").to_string(),
                     ..Default::default()
@@ -189,7 +189,7 @@ pub(crate) mod tests {
         ) -> license::Result<LicenseResult> {
             Ok(LicenseResult::default())
         }
-        fn source(&self) -> &str {
+        fn source(&self) -> &'static str {
             "fake"
         }
     }
@@ -215,7 +215,7 @@ pub(crate) mod tests {
                 licenses: vec!["MIT".to_string()],
             })
         }
-        fn source(&self) -> &str {
+        fn source(&self) -> &'static str {
             "rec"
         }
     }
@@ -225,8 +225,8 @@ pub(crate) mod tests {
         cfg.license = LicensePolicyConfig {
             enabled: true,
             action: action.to_string(),
-            deny: deny.iter().map(|s| s.to_string()).collect(),
-            allow: allow.iter().map(|s| s.to_string()).collect(),
+            deny: deny.iter().map(std::string::ToString::to_string).collect(),
+            allow: allow.iter().map(std::string::ToString::to_string).collect(),
             ..Default::default()
         };
         cfg
@@ -493,7 +493,11 @@ pub(crate) mod tests {
             ),
         ];
         for (name, licenses, deny, allow, want) in cases {
-            let to_vec = |v: &&[&str]| v.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+            let to_vec = |v: &&[&str]| {
+                v.iter()
+                    .map(std::string::ToString::to_string)
+                    .collect::<Vec<_>>()
+            };
             let got = license_violation(&to_vec(licenses), &to_vec(deny), &to_vec(allow)).is_some();
             assert_eq!(got, *want, "{name}");
         }

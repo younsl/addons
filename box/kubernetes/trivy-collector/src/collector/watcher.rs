@@ -84,6 +84,7 @@ pub struct WatchScope {
 }
 
 impl WatchScope {
+    #[must_use]
     pub fn from_config(config: &Config) -> Self {
         Self {
             namespaces: config.namespaces.clone(),
@@ -95,6 +96,7 @@ impl WatchScope {
     /// Same report kinds, different namespaces. Edge clusters carry their own
     /// namespace list in their registration Secret, while the report kinds are
     /// a fleet-wide setting.
+    #[must_use]
     pub fn with_namespaces(&self, namespaces: Vec<String>) -> Self {
         Self {
             namespaces,
@@ -102,7 +104,8 @@ impl WatchScope {
         }
     }
 
-    pub fn collects(&self, kind: ReportKind) -> bool {
+    #[must_use]
+    pub const fn collects(&self, kind: ReportKind) -> bool {
         match kind {
             ReportKind::Vulnerability => self.collect_vulnerability_reports,
             ReportKind::Sbom => self.collect_sbom_reports,
@@ -156,7 +159,7 @@ impl ClusterWatcher {
 
     /// Build a watcher bound to a pre-built client, used by hub-pull mode when
     /// the client is derived from a registered cluster Secret.
-    pub fn with_client(
+    pub const fn with_client(
         client: Client,
         db: Arc<Database>,
         cluster_name: String,
@@ -256,7 +259,7 @@ struct SyncProgress {
 }
 
 impl SyncProgress {
-    fn new() -> Self {
+    const fn new() -> Self {
         Self {
             count: 0,
             started: None,
@@ -268,14 +271,12 @@ impl SyncProgress {
         self.started = Some(std::time::Instant::now());
     }
 
-    fn increment(&mut self) {
+    const fn increment(&mut self) {
         self.count += 1;
     }
 
     fn elapsed_secs(&self) -> f64 {
-        self.started
-            .map(|t| t.elapsed().as_secs_f64())
-            .unwrap_or(0.0)
+        self.started.map_or(0.0, |t| t.elapsed().as_secs_f64())
     }
 }
 
@@ -479,6 +480,7 @@ fn report_identity(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::collector::types::{SbomReportData, VulnerabilityReportData};
     use k8s_openapi::apimachinery::pkg::apis::meta::v1::ObjectMeta;
 
     fn vuln(namespace: Option<&str>, name: Option<&str>) -> VulnerabilityReport {
@@ -489,7 +491,7 @@ mod tests {
                 name: name.map(str::to_string),
                 ..Default::default()
             },
-            report: Default::default(),
+            report: VulnerabilityReportData::default(),
         }
     }
 
@@ -511,7 +513,7 @@ mod tests {
         let sbom = SbomReport {
             types: None,
             metadata: ObjectMeta::default(),
-            report: Default::default(),
+            report: SbomReportData::default(),
         };
         assert!(sbom.summary().starts_with("components="));
     }
@@ -531,7 +533,7 @@ mod tests {
     #[test]
     fn scope_defaults_to_collecting_both_kinds_everywhere() {
         let scope = WatchScope::default();
-        assert!(scope.namespaces.is_empty());
+        assert_eq!(scope.namespaces, [] as [std::string::String; 0]);
         assert!(scope.collects(ReportKind::Vulnerability));
         assert!(scope.collects(ReportKind::Sbom));
     }
@@ -618,7 +620,7 @@ mod tests {
                 name: Some(name.to_string()),
                 ..Default::default()
             },
-            report: Default::default(),
+            report: SbomReportData::default(),
         };
         report.report.summary.components_count = components as i64;
         report

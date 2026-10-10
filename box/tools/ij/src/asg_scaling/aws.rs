@@ -2,6 +2,11 @@
 
 use tracing::{debug, warn};
 
+/// Error returned by the AWS API layer for ASG operations.
+#[derive(Debug, thiserror::Error)]
+#[error(transparent)]
+pub struct AsgError(Box<dyn std::error::Error + Send + Sync>);
+
 /// Information about an Auto Scaling Group.
 #[derive(Debug, Clone)]
 pub struct AsgInfo {
@@ -17,7 +22,7 @@ pub struct AsgInfo {
 pub async fn list_asgs(
     config: &aws_config::SdkConfig,
     region: &str,
-) -> anyhow::Result<Vec<AsgInfo>> {
+) -> Result<Vec<AsgInfo>, AsgError> {
     let region_config = aws_sdk_autoscaling::config::Builder::from(config)
         .region(aws_config::Region::new(region.to_string()))
         .build();
@@ -38,7 +43,7 @@ pub async fn list_asgs(
             Ok(r) => r,
             Err(e) => {
                 warn!("Failed to describe ASGs in {region}: {e}");
-                return Err(e.into());
+                return Err(AsgError(Box::new(e)));
             }
         };
 
@@ -53,7 +58,7 @@ pub async fn list_asgs(
             });
         }
 
-        next_token = resp.next_token().map(|s| s.to_string());
+        next_token = resp.next_token().map(std::string::ToString::to_string);
         if next_token.is_none() {
             break;
         }
@@ -71,7 +76,7 @@ pub async fn update_asg(
     min: i32,
     max: i32,
     desired: i32,
-) -> anyhow::Result<()> {
+) -> Result<(), AsgError> {
     let region_config = aws_sdk_autoscaling::config::Builder::from(config)
         .region(aws_config::Region::new(region.to_string()))
         .build();
@@ -86,7 +91,8 @@ pub async fn update_asg(
         .max_size(max)
         .desired_capacity(desired)
         .send()
-        .await?;
+        .await
+        .map_err(|e| AsgError(Box::new(e)))?;
 
     Ok(())
 }
@@ -105,7 +111,7 @@ mod tests {
             instances_count: 3,
             region: "us-east-1".into(),
         };
-        let cloned = info.clone();
+        let cloned = info;
         assert_eq!(cloned.name, "test-asg");
         assert_eq!(cloned.min_size, 1);
         assert_eq!(cloned.max_size, 10);

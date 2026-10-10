@@ -71,12 +71,12 @@ pub enum Error {
 pub type Result<T> = std::result::Result<T, Error>;
 
 /// The default session lifetime when [`Options::session_ttl`] is zero.
-const DEFAULT_SESSION_TTL: Duration = Duration::from_secs(12 * 60 * 60);
+const DEFAULT_SESSION_TTL: Duration = Duration::from_hours(12);
 
 /// Bounds an impersonated session. It is deliberately far shorter than a normal
 /// session so a forgotten impersonation expires on its own instead of lingering
 /// for the full session lifetime.
-pub const IMPERSONATION_TTL: Duration = Duration::from_secs(60 * 60);
+pub const IMPERSONATION_TTL: Duration = Duration::from_hours(1);
 
 /// Configures the auth [`Service`].
 #[derive(Default)]
@@ -108,7 +108,7 @@ pub struct Service {
 impl Service {
     /// Builds a Service. If `session_secret` is empty, an ephemeral random
     /// secret is generated (suitable for single-instance only).
-    pub fn new(store: Arc<meta::Store>, opts: Options) -> Arc<Service> {
+    pub fn new(store: Arc<meta::Store>, opts: Options) -> Arc<Self> {
         let mut secret = opts.session_secret;
         if secret.is_empty() {
             secret = vec![0u8; 32];
@@ -122,7 +122,7 @@ impl Service {
         } else {
             opts.session_ttl
         };
-        Arc::new(Service {
+        Arc::new(Self {
             store,
             codec: SessionCodec::new(secret, ttl),
             oidc: opts.oidc,
@@ -133,7 +133,7 @@ impl Service {
     }
 
     /// The metadata store the service authenticates against.
-    pub fn store(&self) -> &Arc<meta::Store> {
+    pub const fn store(&self) -> &Arc<meta::Store> {
         &self.store
     }
 
@@ -149,12 +149,12 @@ impl Service {
     }
 
     /// Reports whether unauthenticated reads are allowed.
-    pub fn anonymous_read(&self) -> bool {
+    pub const fn anonymous_read(&self) -> bool {
         self.anonymous_read
     }
 
     /// Reports whether OIDC login is available.
-    pub fn oidc_enabled(&self) -> bool {
+    pub const fn oidc_enabled(&self) -> bool {
         self.oidc.is_some()
     }
 
@@ -1120,7 +1120,10 @@ pub(crate) mod tests {
         fn scope(actions: &[&str]) -> Vec<Scope> {
             vec![Scope {
                 repo_pattern: "maven-*".into(),
-                actions: actions.iter().map(|a| a.to_string()).collect(),
+                actions: actions
+                    .iter()
+                    .map(std::string::ToString::to_string)
+                    .collect(),
             }]
         }
 
@@ -1423,7 +1426,7 @@ pub(crate) mod tests {
                     "plain",
                     meta::SOURCE_LOCAL,
                     "admin",
-                    Duration::from_secs(24 * 3600),
+                    Duration::from_hours(24),
                 )
                 .expect("encode impersonated");
             let data = codec.decode(&value).expect("decode");

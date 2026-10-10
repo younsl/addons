@@ -59,6 +59,7 @@ fn entry_document(files: &dyn Files) -> Cow<'static, [u8]> {
 /// exists it is served with Content-Encoding: gzip, and identity requests keep
 /// getting the original. Both paths degrade cleanly when the .gz files are
 /// absent (no web build).
+#[allow(clippy::unused_async)]
 pub async fn handler(req: Request) -> Response {
     let path = req.uri().path().trim_start_matches('/').to_string();
     if !path.is_empty()
@@ -221,12 +222,12 @@ pub(crate) mod tests {
     struct SyntheticFiles(HashMap<&'static str, &'static [u8]>);
 
     impl SyntheticFiles {
-        fn new() -> SyntheticFiles {
+        fn new() -> Self {
             let mut m: HashMap<&'static str, &'static [u8]> = HashMap::new();
             m.insert("assets/app-abc123.js", b"console.log('full source')");
             m.insert("assets/app-abc123.js.gz", b"gzip-bytes");
             m.insert("favicon.svg", b"<svg/>");
-            SyntheticFiles(m)
+            Self(m)
         }
     }
 

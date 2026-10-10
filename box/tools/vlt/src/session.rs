@@ -60,6 +60,7 @@ pub enum LoadResult {
 }
 
 /// Outcome of a cache write after a successful unlock.
+#[derive(Clone, Copy)]
 pub enum SaveOutcome {
     /// Cache written and encrypted via the OS keyring.
     Encrypted,
@@ -75,8 +76,7 @@ fn ttl() -> Duration {
         .ok()
         .and_then(|s| s.parse::<u64>().ok())
         .filter(|n| *n > 0)
-        .map(Duration::from_secs)
-        .unwrap_or(TTL)
+        .map_or(TTL, Duration::from_secs)
 }
 
 fn cache_path() -> Option<PathBuf> {
@@ -129,13 +129,10 @@ pub fn load(vault_path: &Path) -> LoadResult {
     let Ok(raw) = std::fs::read(&path) else {
         return LoadResult::Miss;
     };
-    let cache: CacheFile = match serde_json::from_slice(&raw) {
-        Ok(c) => c,
-        Err(_) => {
-            // Old/unknown layout — toss it.
-            drop_cache(&path);
-            return LoadResult::Miss;
-        }
+    let Ok(cache) = serde_json::from_slice::<CacheFile>(&raw) else {
+        // Old/unknown layout — toss it.
+        drop_cache(&path);
+        return LoadResult::Miss;
     };
 
     let now = chrono::Utc::now().timestamp();
@@ -183,16 +180,16 @@ pub fn load(vault_path: &Path) -> LoadResult {
                 drop_cache(&path);
                 return LoadResult::Miss;
             };
-            match String::from_utf8(plain) {
-                Ok(master) => LoadResult::Hit {
+            String::from_utf8(plain).map_or_else(
+                |_| {
+                    drop_cache(&path);
+                    LoadResult::Miss
+                },
+                |master| LoadResult::Hit {
                     master,
                     encrypted: true,
                 },
-                Err(_) => {
-                    drop_cache(&path);
-                    LoadResult::Miss
-                }
-            }
+            )
         }
     }
 }
@@ -235,7 +232,7 @@ pub fn save(master: &str, vault_path: &Path) -> SaveOutcome {
     };
 
     let cache = CacheFile {
-        expires_at: chrono::Utc::now().timestamp() + ttl().as_secs() as i64,
+        expires_at: chrono::Utc::now().timestamp() + ttl().as_secs().cast_signed(),
         vault_path: vault_path.display().to_string(),
         payload,
     };

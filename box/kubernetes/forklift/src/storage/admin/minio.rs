@@ -65,7 +65,7 @@ pub struct MinioAdmin {
 }
 
 impl MinioAdmin {
-    pub fn new(cfg: &AdminConfig, api: &AdminApi) -> Result<MinioAdmin> {
+    pub fn new(cfg: &AdminConfig, api: &AdminApi) -> Result<Self> {
         if cfg.s3_endpoint.trim().is_empty() {
             return Err(Error::AdminUnavailable(
                 "the admin api is served on the s3 endpoint, which is not set".into(),
@@ -76,7 +76,7 @@ impl MinioAdmin {
                 "the admin api needs static s3 credentials".into(),
             ));
         }
-        Ok(MinioAdmin {
+        Ok(Self {
             url: format!("{}{}", base_url(&cfg.s3_endpoint)?, api.info_path),
             op: api.op,
             region: if cfg.region.is_empty() {
@@ -167,7 +167,7 @@ fn summarize(info: InfoMessage) -> ClusterInfo {
     let (mut online_from_drives, mut offline_from_drives) = (0i64, 0i64);
     for s in &info.servers {
         if out.version.is_empty() {
-            out.version = s.version.clone();
+            out.version.clone_from(&s.version);
         }
         for d in &s.drives {
             total += d.total_space;

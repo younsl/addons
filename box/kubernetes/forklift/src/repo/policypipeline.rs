@@ -20,8 +20,8 @@ pub(crate) type RequestPolicy =
 impl Manager {
     fn policy_registry() -> HashMap<&'static str, RequestPolicy> {
         HashMap::from([
-            (POLICY_VULNERABILITY, Manager::vuln_gate as RequestPolicy),
-            (POLICY_LICENSE, Manager::license_gate as RequestPolicy),
+            (POLICY_VULNERABILITY, Self::vuln_gate as RequestPolicy),
+            (POLICY_LICENSE, Self::license_gate as RequestPolicy),
         ])
     }
 
@@ -34,7 +34,7 @@ impl Manager {
         pkg: &str,
         version: &str,
     ) -> Option<Response> {
-        if let Some(resp) = Manager::version_deny_gate(
+        if let Some(resp) = Self::version_deny_gate(
             Arc::clone(self),
             Arc::clone(&parts),
             Arc::clone(&res),
@@ -45,7 +45,7 @@ impl Manager {
         {
             return Some(resp);
         }
-        let registry = Manager::policy_registry();
+        let registry = Self::policy_registry();
         for name in res.cfg.policy_pipeline.effective_order() {
             if name == POLICY_AGE {
                 break;
@@ -86,7 +86,7 @@ impl Manager {
             let pkg = pkg.clone();
             let version = version.clone();
             Box::pin(async move {
-                let registry = Manager::policy_registry();
+                let registry = Self::policy_registry();
                 let mut after_age = false;
                 for name in res.cfg.policy_pipeline.effective_order() {
                     if name == POLICY_AGE {
@@ -111,7 +111,7 @@ impl Manager {
                         return Some(resp);
                     }
                 }
-                Manager::approval_gate(manager, parts, res, pkg, version).await
+                Self::approval_gate(manager, parts, res, pkg, version).await
             })
         })
     }
@@ -219,7 +219,7 @@ pub(crate) mod tests {
         let mut cfg = approval_cfg(MODE_ENFORCE, &[]);
         cfg.age_policy = AgePolicyConfig {
             enabled: true,
-            min_age: Duration::from_std(std::time::Duration::from_secs(24 * 60 * 60)),
+            min_age: Duration::from_std(std::time::Duration::from_hours(24)),
             action: ACTION_BLOCK.to_string(),
             ..Default::default()
         };

@@ -65,7 +65,7 @@ pub struct CoveragePayload {
 /// applied, with no partial, none missing, and no scan error hiding a verdict.
 /// A scan that found no target at all is not full coverage: that usually means
 /// the scope is wrong rather than the work being done.
-pub fn is_full_coverage(r: &CoverageReport) -> bool {
+pub const fn is_full_coverage(r: &CoverageReport) -> bool {
     r.target > 0 && r.partial == 0 && r.not_applied == 0 && r.errored == 0
 }
 
@@ -168,7 +168,7 @@ impl Notifier {
         }
 
         let percent = if r.target > 0 {
-            (r.applied as f64 / r.target as f64 * 100.0 + 0.5) as i64
+            (r.applied as f64 / r.target as f64).mul_add(100.0, 0.5) as i64
         } else {
             0
         };

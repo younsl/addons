@@ -108,11 +108,15 @@ Scan duration: 18.5s
 | `GITHUB_ORG`      | Target GitHub organization   | `my-company`                 |
 | `GITHUB_BASE_URL` | GitHub Enterprise Server URL | `https://github.example.com` |
 
+Every variable also has a matching command line flag, for example --github-org for GITHUB_ORG. Run ghes-schedule-scanner --help for the full list.
+
 ### Optional Environment Variables
 
 | Variable                      | Description                                 | Default   |
 | ----------------------------- | ------------------------------------------- | --------- |
 | `LOG_LEVEL`                   | Logging level (debug, info, warn, error)    | `info`    |
+| `LOG_FORMAT`                  | Log output format (json, text)              | `json`    |
+| `RUST_LOG`                    | `EnvFilter` directives, overrides LOG_LEVEL | unset     |
 | `PUBLISHER_TYPE`              | Output format (console, slack-canvas)       | `console` |
 | `REQUEST_TIMEOUT`             | HTTP request timeout for scanning (seconds) | `60`      |
 | `CONCURRENT_SCANS`            | Max concurrent repository scans             | `10`      |

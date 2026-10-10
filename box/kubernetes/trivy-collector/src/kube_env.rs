@@ -14,6 +14,7 @@ pub const SERVICE_ACCOUNT_NAMESPACE_PATH: &str =
 
 /// The namespace from the projected ServiceAccount, or `None` when running
 /// outside a pod.
+#[must_use]
 pub fn in_cluster_namespace() -> Option<String> {
     read_namespace_file(Path::new(SERVICE_ACCOUNT_NAMESPACE_PATH))
 }

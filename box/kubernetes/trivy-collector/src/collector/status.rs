@@ -44,22 +44,25 @@ pub enum ReportKind {
 
 impl ReportKind {
     /// The `report_type` value this kind is stored under in `reports`.
-    pub fn as_report_type(self) -> &'static str {
+    #[must_use]
+    pub const fn as_report_type(self) -> &'static str {
         match self {
-            ReportKind::Vulnerability => "vulnerabilityreport",
-            ReportKind::Sbom => "sbomreport",
+            Self::Vulnerability => "vulnerabilityreport",
+            Self::Sbom => "sbomreport",
         }
     }
 }
 
 impl WatcherStatus {
     /// Status for a scraper that expects at least one cluster.
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
     /// Status for a scraper with no watchers configured at all, whose empty
     /// report set is the final answer rather than a transient one.
+    #[must_use]
     pub fn watching_nothing() -> Self {
         Self {
             expects_clusters: false,
@@ -68,7 +71,7 @@ impl WatcherStatus {
     }
 
     /// Whether any cluster is being watched.
-    pub fn is_watching(&self) -> bool {
+    pub const fn is_watching(&self) -> bool {
         self.expects_clusters
     }
 
@@ -99,6 +102,7 @@ impl WatcherStatus {
             ReportKind::Vulnerability => entry.vuln_watcher_running = running,
             ReportKind::Sbom => entry.sbom_watcher_running = running,
         }
+        drop(guard);
     }
 
     pub fn set_sync_done(&self, cluster: &str, kind: ReportKind, done: bool) {
@@ -108,6 +112,7 @@ impl WatcherStatus {
             ReportKind::Vulnerability => entry.vuln_initial_sync_done = done,
             ReportKind::Sbom => entry.sbom_initial_sync_done = done,
         }
+        drop(guard);
     }
 
     pub fn cluster(&self, cluster: &str) -> Option<ClusterSync> {

@@ -386,6 +386,8 @@ pub struct Env {
     pub pod_uid: String,
     pub grafana_api_token: String,
     pub prometheus_bearer_token: String,
+    pub log_level: Option<String>,
+    pub log_format: Option<String>,
 }
 
 impl Env {
@@ -399,6 +401,8 @@ impl Env {
             pod_uid: get("POD_UID"),
             grafana_api_token: get("GRAFANA_API_TOKEN"),
             prometheus_bearer_token: get("PROMETHEUS_BEARER_TOKEN"),
+            log_level: Some(get("LOG_LEVEL")).filter(|v| !v.is_empty()),
+            log_format: Some(get("LOG_FORMAT")).filter(|v| !v.is_empty()),
         }
     }
 }
@@ -487,8 +491,11 @@ pub fn parse(raw: &str, env: &Env) -> Result<Config, ConfigError> {
         dry_run: f.dry_run,
         health_port: f.health_port,
         metrics_port: f.metrics_port,
-        log_level: f.log_level.clone(),
-        log_format: f.log_format.clone(),
+        log_level: env.log_level.clone().unwrap_or_else(|| f.log_level.clone()),
+        log_format: env
+            .log_format
+            .clone()
+            .unwrap_or_else(|| f.log_format.clone()),
         pod_name: env.pod_name.clone(),
         pod_namespace: env.pod_namespace.clone(),
         pod_uid: env.pod_uid.clone(),
@@ -697,6 +704,7 @@ policies:
             pod_uid: "uid".into(),
             grafana_api_token: "tok".into(),
             prometheus_bearer_token: "bearer".into(),
+            ..Env::default()
         };
         let c = parse(raw, &e).unwrap();
         assert_eq!(c.tag_filters.len(), 2);
@@ -872,6 +880,18 @@ policies:
             err.contains("parse config file") && err.contains("config.yaml"),
             "{err}"
         );
+    }
+
+    #[test]
+    fn env_overrides_log_settings() {
+        let e = Env {
+            log_level: Some("warn".into()),
+            log_format: Some("text".into()),
+            ..Env::default()
+        };
+        let c = parse(MINIMAL, &e).unwrap();
+        assert_eq!(c.log_level, "warn");
+        assert_eq!(c.log_format, "text");
     }
 
     #[test]

@@ -156,7 +156,7 @@ fn timestamp() -> String {
     Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true)
 }
 
-fn is_zero(n: &i64) -> bool {
+const fn is_zero(n: &i64) -> bool {
     *n == 0
 }
 
@@ -173,7 +173,7 @@ impl Notifier {
             .timeout(timeout)
             .build()
             .unwrap_or_default();
-        Notifier {
+        Self {
             client,
             timeout,
             settings: RwLock::new(Settings::default()),
@@ -250,7 +250,7 @@ struct AlarmField {
 
 impl AlarmField {
     fn new(label: &'static str, value: impl Into<String>) -> Self {
-        AlarmField {
+        Self {
             label,
             value: value.into(),
         }
@@ -361,7 +361,7 @@ impl Notifier {
         };
         let pkgs = vec![DeliveredPackage {
             repo: evt.repo.clone(),
-            package: evt.pkg.clone(),
+            package: evt.pkg,
         }];
         for t in targets {
             if t.url.is_empty() {
@@ -578,7 +578,7 @@ pub(crate) mod tests {
         use crate::notify::*;
 
         pub(crate) fn install_crypto() {
-            rustls::crypto::ring::default_provider()
+            rustls::crypto::aws_lc_rs::default_provider()
                 .install_default()
                 .ok();
         }

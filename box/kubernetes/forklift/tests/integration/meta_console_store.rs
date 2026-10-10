@@ -166,6 +166,6 @@ async fn with_deadline(name: &str, call: impl Future<Output = Result<()>>) {
     match tokio::time::timeout(std::time::Duration::from_secs(2), call).await {
         Ok(Ok(())) => {}
         Ok(Err(e)) => panic!("{name} failed: {e}"),
-        Err(_) => panic!("{name} blocked behind the open write statement"),
+        Err(e) => panic!("{name} blocked behind the open write statement: {e}"),
     }
 }

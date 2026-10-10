@@ -112,7 +112,7 @@ impl<'de> serde::Deserialize<'de> for FullReport {
             data: serde_json::Value,
         }
         let wire = Wire::deserialize(deserializer)?;
-        Ok(FullReport {
+        Ok(Self {
             meta: wire.meta,
             data_json: wire.data.to_string(),
         })

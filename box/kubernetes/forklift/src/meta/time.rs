@@ -26,9 +26,10 @@ pub fn format_time_opt<Tz: TimeZone>(t: Option<DateTime<Tz>>) -> Option<String> 
 }
 
 pub fn parse_time(s: &str) -> DateTime<Utc> {
-    DateTime::parse_from_rfc3339(s)
-        .map(|t| t.with_timezone(&Utc))
-        .unwrap_or_else(|_| DateTime::<Utc>::from_timestamp(0, 0).expect("epoch"))
+    DateTime::parse_from_rfc3339(s).map_or_else(
+        |_| DateTime::<Utc>::from_timestamp(0, 0).expect("epoch"),
+        |t| t.with_timezone(&Utc),
+    )
 }
 
 /// Parses an optional column; `None` and the empty string map to `None`.
@@ -43,7 +44,7 @@ pub fn parse_time_opt(s: Option<&str>) -> Option<DateTime<Utc>> {
 /// Two encodings reach this function and both must answer true. Rows read back from the
 /// database use the Unix epoch, because [`parse_time`] maps an empty or unparseable NOT NULL
 /// column to it.
-pub fn is_zero(t: DateTime<Utc>) -> bool {
+pub const fn is_zero(t: DateTime<Utc>) -> bool {
     t.timestamp() <= 0
 }
 

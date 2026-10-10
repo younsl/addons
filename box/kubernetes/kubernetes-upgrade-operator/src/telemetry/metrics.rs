@@ -264,7 +264,11 @@ async fn metrics_handler(State(registry): State<Arc<Registry>>) -> impl IntoResp
 }
 
 /// Start the metrics server on the given port.
-pub async fn serve(port: u16, registry: Arc<Registry>) -> anyhow::Result<()> {
+pub async fn serve(
+    port: u16,
+    registry: Arc<Registry>,
+    shutdown: tokio_util::sync::CancellationToken,
+) -> anyhow::Result<()> {
     use axum::Router;
     use axum::routing::get;
     use tokio::net::TcpListener;
@@ -276,7 +280,9 @@ pub async fn serve(port: u16, registry: Arc<Registry>) -> anyhow::Result<()> {
 
     let listener = TcpListener::bind(format!("0.0.0.0:{port}")).await?;
     info!("Metrics server listening on port {}", port);
-    axum::serve(listener, app).await?;
+    axum::serve(listener, app)
+        .with_graceful_shutdown(shutdown.cancelled_owned())
+        .await?;
     Ok(())
 }
 

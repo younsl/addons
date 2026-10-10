@@ -712,7 +712,7 @@ pub(crate) mod tests {
         let engine = Engine::new(Arc::clone(&store), blobs, &prometheus::Registry::new());
         let upload_config = UploadConfig {
             enabled,
-            max_duration: std::time::Duration::from_secs(30 * 60),
+            max_duration: std::time::Duration::from_mins(30),
             max_concurrent: 4,
             max_concurrent_user: 2,
             max_assets: 16,
@@ -723,7 +723,7 @@ pub(crate) mod tests {
             go_max_zip_bytes: 500 << 20,
             archive_max_entries: 100_000,
             archive_max_meta_bytes: 16 << 20,
-            idempotency_ttl: std::time::Duration::from_secs(24 * 60 * 60),
+            idempotency_ttl: std::time::Duration::from_hours(24),
         };
         let handler = Handler::new(Arc::clone(&store), Some(Arc::clone(&authz)), None);
         handler.set_upload_enabled(enabled);

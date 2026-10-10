@@ -31,7 +31,7 @@ pub struct SessionManager {
 
 impl SessionManager {
     /// Create a new session manager.
-    pub fn new(profile: Option<String>, shell_commands: Vec<String>) -> Self {
+    pub const fn new(profile: Option<String>, shell_commands: Vec<String>) -> Self {
         Self {
             profile,
             shell_commands,
@@ -96,7 +96,7 @@ impl SessionManager {
 
         #[cfg(unix)]
         {
-            pty::connect_with_pty(cmd).map_err(|e| Error::Session(e.to_string()))
+            pty::connect_with_pty(&cmd).map_err(|e| Error::Session(e.to_string()))
         }
 
         #[cfg(not(unix))]
@@ -144,12 +144,11 @@ impl SessionManager {
 
         let status = cmd
             .status()
-            .map_err(|e| Error::Session(format!("Failed to execute aws ssm: {}", e)))?;
+            .map_err(|e| Error::Session(format!("Failed to execute aws ssm: {e}")))?;
 
         if !status.success() {
             return Err(Error::Session(format!(
-                "Port forwarding session failed with status: {}",
-                status
+                "Port forwarding session failed with status: {status}"
             )));
         }
         Ok(())

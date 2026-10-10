@@ -18,6 +18,7 @@ use crate::auth::session::AuthSession;
 ///
 /// Absent when `auth_mode=none` (middleware not installed) or in unit tests
 /// that call tools without an HTTP transport.
+#[must_use]
 pub fn session_from(extensions: &Extensions) -> Option<AuthSession> {
     extensions
         .get::<Parts>()
@@ -64,13 +65,16 @@ mod tests {
     }
 
     fn extensions_with_groups(groups: &[&str]) -> Extensions {
-        let (mut parts, _) = axum::http::Request::new(()).into_parts();
+        let (mut parts, ()) = axum::http::Request::new(()).into_parts();
         parts.extensions.insert(AuthSession {
             sub: "u".into(),
             email: None,
             name: None,
             preferred_username: None,
-            groups: groups.iter().map(|g| g.to_string()).collect(),
+            groups: groups
+                .iter()
+                .map(std::string::ToString::to_string)
+                .collect(),
             expires_at: i64::MAX,
         });
         let mut ext = Extensions::new();

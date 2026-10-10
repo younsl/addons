@@ -44,8 +44,8 @@ impl Source {
         blobs: Arc<dyn storage::BlobStore>,
         token: &str,
         data_dir: impl Into<PathBuf>,
-    ) -> Arc<Source> {
-        Arc::new(Source {
+    ) -> Arc<Self> {
+        Arc::new(Self {
             store,
             blobs,
             token: token.to_string(),

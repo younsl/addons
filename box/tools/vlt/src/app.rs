@@ -107,7 +107,7 @@ pub enum FormFocus {
 }
 
 impl FormState {
-    pub fn focus_next(&mut self) {
+    pub const fn focus_next(&mut self) {
         self.focus = match self.focus {
             FormFocus::Title => FormFocus::Username,
             FormFocus::Username => FormFocus::Password,
@@ -128,7 +128,7 @@ impl FormState {
         };
     }
 
-    pub fn focus_prev(&mut self) {
+    pub const fn focus_prev(&mut self) {
         self.focus = match self.focus {
             FormFocus::Title => FormFocus::AddLink,
             FormFocus::Username => FormFocus::Title,
@@ -150,7 +150,7 @@ impl FormState {
         };
     }
 
-    fn first_link_focus(&self) -> FormFocus {
+    const fn first_link_focus(&self) -> FormFocus {
         if self.links.is_empty() {
             FormFocus::AddLink
         } else {
@@ -167,9 +167,10 @@ impl FormState {
     /// Delete the link the cursor is currently inside. No-op outside link
     /// rows.
     pub fn delete_focused_link(&mut self) {
-        let i = match self.focus {
-            FormFocus::LinkName(i) | FormFocus::LinkDescription(i) | FormFocus::LinkUrl(i) => i,
-            _ => return,
+        let (FormFocus::LinkName(i) | FormFocus::LinkDescription(i) | FormFocus::LinkUrl(i)) =
+            self.focus
+        else {
+            return;
         };
         if i >= self.links.len() {
             return;
@@ -612,7 +613,7 @@ impl App {
     }
 }
 
-fn session_outcome_label(o: session::SaveOutcome) -> &'static str {
+const fn session_outcome_label(o: session::SaveOutcome) -> &'static str {
     match o {
         session::SaveOutcome::Encrypted => "cached for 1h (encrypted via keyring)",
         session::SaveOutcome::Plaintext => "cached for 1h (plaintext, keyring unavailable)",
@@ -620,7 +621,7 @@ fn session_outcome_label(o: session::SaveOutcome) -> &'static str {
     }
 }
 
-fn default_list() -> ListState {
+const fn default_list() -> ListState {
     ListState {
         selected: 0,
         search: String::new(),
@@ -633,7 +634,7 @@ fn default_list() -> ListState {
 struct TreeNode {
     name: String,
     path: String,
-    children: std::collections::BTreeMap<String, TreeNode>,
+    children: std::collections::BTreeMap<String, Self>,
     items: Vec<ItemSummary>,
 }
 
@@ -641,7 +642,7 @@ fn build_tree(items: &[ItemSummary]) -> TreeNode {
     let mut root = TreeNode {
         name: String::new(),
         path: String::new(),
-        children: Default::default(),
+        children: std::collections::BTreeMap::new(),
         items: Vec::new(),
     };
     for it in items {
@@ -662,7 +663,7 @@ fn build_tree(items: &[ItemSummary]) -> TreeNode {
                 TreeNode {
                     name: part.to_string(),
                     path: p,
-                    children: Default::default(),
+                    children: std::collections::BTreeMap::new(),
                     items: Vec::new(),
                 }
             });

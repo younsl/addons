@@ -267,19 +267,19 @@ async fn artifact_label_audit() {
         (
             meta::EVENT_ARTIFACT_LABEL_REMOVE.to_string(),
             ADMIN_USER.to_string(),
-            StatusCode::OK.as_u16() as i64,
+            i64::from(StatusCode::OK.as_u16()),
             "keep-forever".to_string(),
         ),
         (
             meta::EVENT_ARTIFACT_LABEL_ADD.to_string(),
             "eve".to_string(),
-            StatusCode::FORBIDDEN.as_u16() as i64,
+            i64::from(StatusCode::FORBIDDEN.as_u16()),
             "eve-was-here".to_string(),
         ),
         (
             meta::EVENT_ARTIFACT_LABEL_ADD.to_string(),
             ADMIN_USER.to_string(),
-            StatusCode::CREATED.as_u16() as i64,
+            i64::from(StatusCode::CREATED.as_u16()),
             "keep-forever".to_string(),
         ),
     ];

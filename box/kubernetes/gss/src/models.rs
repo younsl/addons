@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 pub struct WorkflowInfo {
     pub repo_name: String,
     pub workflow_name: String,
-    pub workflow_id: i64,
+    pub workflow_id: u64,
     pub workflow_file_name: String,
     pub cron_schedules: Vec<String>,
     pub last_status: String,
@@ -14,10 +14,10 @@ pub struct WorkflowInfo {
 }
 
 impl WorkflowInfo {
-    pub fn new(
+    pub const fn new(
         repo_name: String,
         workflow_name: String,
-        workflow_id: i64,
+        workflow_id: u64,
         workflow_file_name: String,
     ) -> Self {
         Self {
@@ -43,7 +43,7 @@ pub struct ScanResult {
 }
 
 impl ScanResult {
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
             workflows: Vec::new(),
             total_repos: 0,
@@ -91,7 +91,7 @@ mod tests {
         assert_eq!(workflow.repo_name, "test-repo");
         assert_eq!(workflow.workflow_name, "test-workflow");
         assert_eq!(workflow.workflow_id, 123);
-        assert!(workflow.cron_schedules.is_empty());
+        assert_eq!(workflow.cron_schedules, Vec::<String>::new());
     }
 
     #[test]

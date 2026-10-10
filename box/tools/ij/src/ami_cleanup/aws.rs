@@ -1,7 +1,9 @@
 use std::collections::BTreeSet;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use aws_sdk_ec2::Client as Ec2Client;
+
+use super::error::AppError;
 
 pub async fn build_config(profile: &str, region: Option<&str>) -> aws_config::SdkConfig {
     // Resolve credentials via the MFA-aware path so profiles with `mfa_serial`
@@ -24,19 +26,28 @@ pub async fn build_config(profile: &str, region: Option<&str>) -> aws_config::Sd
     }
 }
 
-pub async fn get_account_id(config: &aws_config::SdkConfig) -> anyhow::Result<String> {
+pub async fn get_account_id(config: &aws_config::SdkConfig) -> Result<String, AppError> {
     let sts = aws_sdk_sts::Client::new(config);
-    let identity = sts.get_caller_identity().send().await?;
+    let identity = sts
+        .get_caller_identity()
+        .send()
+        .await
+        .map_err(|e| AppError::Sdk(Box::new(e)))?;
     Ok(identity.account().unwrap_or_default().to_string())
 }
 
 pub fn get_profile_region(config: &aws_config::SdkConfig) -> Option<String> {
-    config.region().map(|r| r.to_string())
+    config.region().map(std::string::ToString::to_string)
 }
 
-pub async fn get_enabled_regions(config: &aws_config::SdkConfig) -> anyhow::Result<Vec<String>> {
+pub async fn get_enabled_regions(config: &aws_config::SdkConfig) -> Result<Vec<String>, AppError> {
     let ec2 = Ec2Client::new(config);
-    let resp = ec2.describe_regions().all_regions(false).send().await?;
+    let resp = ec2
+        .describe_regions()
+        .all_regions(false)
+        .send()
+        .await
+        .map_err(|e| AppError::Sdk(Box::new(e)))?;
 
     let mut regions: Vec<String> = resp
         .regions()
@@ -49,18 +60,22 @@ pub async fn get_enabled_regions(config: &aws_config::SdkConfig) -> anyhow::Resu
 }
 
 pub fn list_profiles() -> Vec<String> {
-    let mut profiles = BTreeSet::new();
-
-    let home = match dirs::home_dir() {
-        Some(h) => h,
-        None => return vec![],
+    let Some(home) = dirs::home_dir() else {
+        return vec![];
     };
 
+    let config_path =
+        std::env::var("AWS_CONFIG_FILE").map_or_else(|_| home.join(".aws/config"), PathBuf::from);
+    let creds_path = std::env::var("AWS_SHARED_CREDENTIALS_FILE")
+        .map_or_else(|_| home.join(".aws/credentials"), PathBuf::from);
+    profiles_from_files(&config_path, &creds_path)
+}
+
+fn profiles_from_files(config_path: &Path, creds_path: &Path) -> Vec<String> {
+    let mut profiles = BTreeSet::new();
+
     // Parse ~/.aws/config: [profile xxx] and [default]
-    let config_path = std::env::var("AWS_CONFIG_FILE")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| home.join(".aws/config"));
-    if let Ok(content) = std::fs::read_to_string(&config_path) {
+    if let Ok(content) = std::fs::read_to_string(config_path) {
         for line in content.lines() {
             let line = line.trim();
             if let Some(rest) = line.strip_prefix('[') {
@@ -75,10 +90,7 @@ pub fn list_profiles() -> Vec<String> {
     }
 
     // Parse ~/.aws/credentials: [xxx]
-    let creds_path = std::env::var("AWS_SHARED_CREDENTIALS_FILE")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| home.join(".aws/credentials"));
-    if let Ok(content) = std::fs::read_to_string(&creds_path) {
+    if let Ok(content) = std::fs::read_to_string(creds_path) {
         for line in content.lines() {
             let line = line.trim();
             if let Some(rest) = line.strip_prefix('[') {
@@ -96,36 +108,19 @@ pub fn list_profiles() -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serial_test::serial;
     use std::io::Write;
     use tempfile::NamedTempFile;
 
     fn with_aws_files(config_content: &str, creds_content: &str) -> Vec<String> {
         let mut config_file = NamedTempFile::new().unwrap();
-        write!(config_file, "{}", config_content).unwrap();
+        write!(config_file, "{config_content}").unwrap();
         let mut creds_file = NamedTempFile::new().unwrap();
-        write!(creds_file, "{}", creds_content).unwrap();
+        write!(creds_file, "{creds_content}").unwrap();
 
-        // SAFETY: Tests using this helper run serially via #[serial], so no
-        // concurrent access to environment variables occurs.
-        unsafe {
-            std::env::set_var("AWS_CONFIG_FILE", config_file.path());
-            std::env::set_var("AWS_SHARED_CREDENTIALS_FILE", creds_file.path());
-        }
-
-        let result = list_profiles();
-
-        // SAFETY: Tests using this helper run serially via #[serial].
-        unsafe {
-            std::env::remove_var("AWS_CONFIG_FILE");
-            std::env::remove_var("AWS_SHARED_CREDENTIALS_FILE");
-        }
-
-        result
+        profiles_from_files(config_file.path(), creds_file.path())
     }
 
     #[test]
-    #[serial]
     fn test_list_profiles_config_file() {
         let profiles = with_aws_files(
             "[default]\nregion=us-east-1\n\n[profile dev]\nregion=ap-northeast-2\n\n[profile prod]\nregion=eu-west-1\n",
@@ -137,7 +132,6 @@ mod tests {
     }
 
     #[test]
-    #[serial]
     fn test_list_profiles_credentials_file() {
         let profiles = with_aws_files(
             "",
@@ -148,7 +142,6 @@ mod tests {
     }
 
     #[test]
-    #[serial]
     fn test_list_profiles_combined_dedup() {
         let profiles = with_aws_files(
             "[default]\nregion=us-east-1\n[profile dev]\n",
@@ -159,39 +152,29 @@ mod tests {
     }
 
     #[test]
-    #[serial]
     fn test_list_profiles_sorted() {
         let profiles = with_aws_files("[profile z-profile]\n[profile a-profile]\n[default]\n", "");
         assert_eq!(profiles, vec!["a-profile", "default", "z-profile"]);
     }
 
     #[test]
-    #[serial]
     fn test_list_profiles_missing_files() {
-        // SAFETY: Tests using this helper run serially via #[serial].
-        unsafe {
-            std::env::set_var("AWS_CONFIG_FILE", "/nonexistent/config");
-            std::env::set_var("AWS_SHARED_CREDENTIALS_FILE", "/nonexistent/credentials");
-        }
-        let profiles = list_profiles();
-        unsafe {
-            std::env::remove_var("AWS_CONFIG_FILE");
-            std::env::remove_var("AWS_SHARED_CREDENTIALS_FILE");
-        }
-        assert!(profiles.is_empty());
+        let profiles = profiles_from_files(
+            Path::new("/nonexistent/config"),
+            Path::new("/nonexistent/credentials"),
+        );
+        assert_eq!(profiles, Vec::<String>::new());
     }
 
     #[test]
-    #[serial]
     fn test_list_profiles_empty_files() {
         let profiles = with_aws_files("", "");
-        assert!(profiles.is_empty());
+        assert_eq!(profiles, Vec::<String>::new());
     }
 
     #[test]
-    #[serial]
     fn test_list_profiles_ignores_empty_section() {
         let profiles = with_aws_files("", "[]\n");
-        assert!(profiles.is_empty());
+        assert_eq!(profiles, Vec::<String>::new());
     }
 }

@@ -25,8 +25,8 @@ Commands:
   help       Print this message or the help of the given subcommand(s)
 
 Options:
-      --config <CONFIG>  Path to the config file ($CONFIG_FILE, else the mounted default)
-  -v, --verbose          Verbose output (debug logging)
+      --config <CONFIG>  Path to the config file (else the mounted default) [env: CONFIG_FILE=]
+  -v, --verbose          Verbose output (debug logging) [env: VERBOSE=]
   -h, --help             Print help
   -V, --version          Print version
 ```

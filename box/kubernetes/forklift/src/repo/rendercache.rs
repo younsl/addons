@@ -17,7 +17,7 @@ use super::NowFn;
 /// the output. This bound is a backstop for that calculation, matched to the
 /// default metadata TTL after which the stored bytes (and so the key) turn over
 /// anyway.
-pub(crate) const RENDER_CACHE_TTL: Duration = Duration::from_secs(15 * 60);
+pub(crate) const RENDER_CACHE_TTL: Duration = Duration::from_mins(15);
 
 /// Caps the resident rendered documents. Sized to stay well inside the container
 /// memory limit alongside the request path itself; the cache is an
@@ -59,8 +59,8 @@ struct RenderEntry {
 }
 
 impl RenderCache {
-    pub(crate) fn new(limit: i64, ttl: Duration) -> RenderCache {
-        RenderCache {
+    pub(crate) fn new(limit: i64, ttl: Duration) -> Self {
+        Self {
             state: Mutex::new(State::default()),
             limit,
             ttl,

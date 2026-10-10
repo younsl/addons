@@ -56,6 +56,7 @@ pub struct McpOptions {
 }
 
 impl McpOptions {
+    #[must_use]
     pub fn from_config(config: &crate::config::Config) -> Self {
         Self {
             allowed_hosts: config
@@ -121,6 +122,7 @@ pub fn router(state: AppState, opts: &McpOptions, shutdown: CancellationToken) -
 
 /// Bridge the process-wide `watch` shutdown signal into a `CancellationToken`
 /// that rmcp understands. Cancelling the token closes every open MCP session.
+#[must_use]
 pub fn shutdown_token(mut shutdown: tokio::sync::watch::Receiver<bool>) -> CancellationToken {
     let token = CancellationToken::new();
     let child = token.clone();
@@ -140,7 +142,7 @@ mod tests {
     fn options_strip_blank_hosts() {
         let mut config = crate::config::Config::try_parse_from(["trivy-collector"]).unwrap();
         config.mcp_allowed_hosts = vec![
-            "".to_string(),
+            String::new(),
             " trivy.example.com ".to_string(),
             "  ".to_string(),
         ];
@@ -154,8 +156,8 @@ mod tests {
     fn transport_config_disables_host_check_when_empty() {
         let opts = McpOptions::default();
         let cfg = transport_config(&opts, CancellationToken::new());
-        assert!(cfg.allowed_hosts.is_empty());
-        assert!(cfg.allowed_origins.is_empty());
+        assert_eq!(cfg.allowed_hosts, [] as [std::string::String; 0]);
+        assert_eq!(cfg.allowed_origins, [] as [std::string::String; 0]);
         assert!(cfg.legacy_session_mode);
         assert!(cfg.json_response);
         assert_eq!(cfg.max_request_body_bytes, MAX_REQUEST_BODY_BYTES);

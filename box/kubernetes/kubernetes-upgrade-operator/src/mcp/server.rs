@@ -705,7 +705,11 @@ impl ServerHandler for KuoMcp {
 }
 
 /// Start the MCP server on the configured port. Runs until process exit.
-pub async fn serve(config: Config, ctx: Arc<McpContext>) -> Result<()> {
+pub async fn serve(
+    config: Config,
+    ctx: Arc<McpContext>,
+    shutdown: tokio_util::sync::CancellationToken,
+) -> Result<()> {
     let service = StreamableHttpService::new(
         move || Ok(KuoMcp::new(ctx.clone())),
         LocalSessionManager::default().into(),
@@ -713,7 +717,9 @@ pub async fn serve(config: Config, ctx: Arc<McpContext>) -> Result<()> {
         // for local servers. This endpoint is reached as kuo.kuo.svc:8082
         // inside the cluster and is gated by the bearer token, so the Host
         // allowlist adds nothing here.
-        StreamableHttpServerConfig::default().disable_allowed_hosts(),
+        StreamableHttpServerConfig::default()
+            .disable_allowed_hosts()
+            .with_cancellation_token(shutdown.child_token()),
     );
 
     let token_file = TokenFile(Arc::new(config.token_file.clone()));
@@ -723,7 +729,9 @@ pub async fn serve(config: Config, ctx: Arc<McpContext>) -> Result<()> {
 
     let listener = TcpListener::bind(format!("0.0.0.0:{}", config.port)).await?;
     info!("MCP server listening on port {}", config.port);
-    axum::serve(listener, router).await?;
+    axum::serve(listener, router)
+        .with_graceful_shutdown(shutdown.cancelled_owned())
+        .await?;
     Ok(())
 }
 
@@ -844,6 +852,7 @@ mod tests {
             axum::serve(listener, router).await.unwrap();
         });
 
+        crate::install_crypto_provider();
         let client = reqwest::Client::new();
         let initialize = serde_json::json!({
             "jsonrpc": "2.0",

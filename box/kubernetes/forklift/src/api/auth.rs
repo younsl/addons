@@ -1175,7 +1175,7 @@ pub(super) async fn list_roles(State(h): State<Arc<Handler>>) -> Response {
             let id = role.id;
             to_role_dto(
                 role,
-                by_role.get(&id).map(Vec::as_slice).unwrap_or(&[]),
+                by_role.get(&id).map_or(&[][..], Vec::as_slice),
                 user_count.get(&id).copied().unwrap_or_default(),
             )
         })
@@ -1468,7 +1468,7 @@ fn parse_duration_secs(value: &str) -> Option<i64> {
         let magnitude: f64 = number.parse().ok()?;
         number.clear();
         saw_unit = true;
-        total += magnitude * unit_secs;
+        total = magnitude.mul_add(unit_secs, total);
     }
     if !saw_unit || !number.is_empty() {
         return None;
@@ -1961,8 +1961,8 @@ pub(crate) mod tests {
         impl Shape {
             fn json_fields(&self) -> Vec<JsonField> {
                 match self {
-                    Shape::Ty(query) => struct_json_fields(query),
-                    Shape::Json(value) => map_json_fields(value),
+                    Self::Ty(query) => struct_json_fields(query),
+                    Self::Json(value) => map_json_fields(value),
                 }
             }
         }
@@ -2269,11 +2269,11 @@ pub(crate) mod tests {
                 .is_none();
                 let listed = documented.iter().any(|v| v == action);
                 assert!(
-                    !(accepted && !listed),
+                    !accepted || listed,
                     "token scopes accept {action:?} but TokenScope.actions does not list it; no generated client can request it"
                 );
                 assert!(
-                    !(!accepted && listed),
+                    accepted || !listed,
                     "TokenScope.actions lists {action:?} but token scopes reject it; the client offers a value the server 400s on"
                 );
             }
@@ -2293,7 +2293,7 @@ pub(crate) mod tests {
             #[serde(default)]
             required: Vec<String>,
             #[serde(rename = "allOf", default)]
-            all_of: Vec<SchemaNode>,
+            all_of: Vec<Self>,
         }
 
         #[derive(serde::Deserialize)]
@@ -3104,15 +3104,12 @@ pub(crate) mod tests {
             let mut rest = path;
             while let Some(open) = rest.find('{') {
                 out.push_str(&rest[..open]);
-                match rest[open..].find('}') {
-                    Some(close) => {
-                        out.push_str(value);
-                        rest = &rest[open + close + 1..];
-                    }
-                    None => {
-                        rest = &rest[open..];
-                        break;
-                    }
+                if let Some(close) = rest[open..].find('}') {
+                    out.push_str(value);
+                    rest = &rest[open + close + 1..];
+                } else {
+                    rest = &rest[open..];
+                    break;
                 }
             }
             out.push_str(rest);

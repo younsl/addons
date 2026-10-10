@@ -238,7 +238,7 @@ impl Store {
             let mut out: Vec<Artifact> = Vec::new();
             for row in rows {
                 let a = row.map_err(|e| Error::sqlite("scan artifact match", e))?;
-                let row_labels = labels.get(&a.path).map(Vec::as_slice).unwrap_or(&[]);
+                let row_labels = labels.get(&a.path).map_or(&[][..], Vec::as_slice);
                 if !re.is_match(&artifact_search_text(&a, row_labels)) {
                     continue;
                 }

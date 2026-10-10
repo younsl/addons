@@ -36,21 +36,8 @@ pub struct Disk {
 /// what `df` reports for the same mount.
 #[cfg(unix)]
 pub fn disk_usage(path: impl AsRef<Path>) -> io::Result<Disk> {
-    use std::ffi::CString;
-    use std::os::unix::ffi::OsStrExt;
-
     let path = path.as_ref();
-    let c_path = CString::new(path.as_os_str().as_bytes())
-        .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
-    // SAFETY: statvfs only writes into the zeroed struct we hand it and reads
-    // the NUL-terminated path; both outlive the call.
-    let st = unsafe {
-        let mut st: libc::statvfs = std::mem::zeroed();
-        if libc::statvfs(c_path.as_ptr(), &mut st) != 0 {
-            return Err(io::Error::last_os_error());
-        }
-        st
-    };
+    let st = rustix::fs::statvfs(path).map_err(io::Error::from)?;
     let bsize = st.f_frsize as i64;
     let total = st.f_blocks as i64 * bsize;
     // f_bavail excludes blocks reserved for root: it is what a process running

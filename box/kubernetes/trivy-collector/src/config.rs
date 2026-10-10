@@ -65,8 +65,8 @@ pub enum Mode {
 impl std::fmt::Display for Mode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Mode::Server => write!(f, "server"),
-            Mode::Scraper => write!(f, "scraper"),
+            Self::Server => write!(f, "server"),
+            Self::Scraper => write!(f, "scraper"),
         }
     }
 }
@@ -260,8 +260,9 @@ pub struct Config {
 }
 
 impl Config {
+    #[must_use]
     pub fn from_args() -> Self {
-        Config::parse()
+        Self::parse()
     }
 
     /// Validate configuration based on mode
@@ -293,11 +294,13 @@ impl Config {
     }
 
     /// Get cluster name
+    #[must_use]
     pub fn get_cluster_name(&self) -> &str {
         &self.cluster_name
     }
 
     /// Get SQLite database path
+    #[must_use]
     pub fn get_db_path(&self) -> String {
         format!("{}/trivy.db", self.storage_path)
     }
@@ -308,6 +311,7 @@ impl Config {
 /// developer or CI has exported into every test in the crate.
 #[cfg(test)]
 impl Config {
+    #[must_use]
     pub fn for_test(mode: Mode) -> Self {
         Self {
             command: None,

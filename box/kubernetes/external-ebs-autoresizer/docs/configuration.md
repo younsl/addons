@@ -62,6 +62,8 @@ A third environment-injected value applies when the recommender is enabled:
 auth. Like the Grafana token it is never a config-file key, so it stays out of the
 ConfigMap; inject it from a Secret via the chart's `extraEnv`.
 
+`LOG_LEVEL` and `LOG_FORMAT`, when set, override `logLevel` and `logFormat`. `RUST_LOG` overrides the level with a full filter directive.
+
 Everything the recommender does not list above (the observation quantile, headroom,
 recommendation step, throughput bounds, device matcher, query timeout, [annotation][k8s-annotations]
 prefix) is fixed policy in the addon rather than a setting. See

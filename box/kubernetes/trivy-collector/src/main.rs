@@ -10,6 +10,8 @@ use trivy_collector::{collector, logging, migrate, web};
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
+
     let config = Config::from_args();
 
     if let Some(command) = config.command.clone() {
@@ -71,14 +73,13 @@ async fn main() -> Result<()> {
 
     let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
 
-    let result = tokio::select! {
-        result = run_mode(config, health_server, shutdown_rx, metrics) => result,
-        _ = tokio::signal::ctrl_c() => {
-            info!("Received shutdown signal");
-            let _ = shutdown_tx.send(true);
-            Ok(())
-        }
-    };
+    tokio::spawn(async move {
+        wait_for_signal().await;
+        info!("Received shutdown signal");
+        let _ = shutdown_tx.send(true);
+    });
+
+    let result = run_mode(config, health_server, shutdown_rx, metrics).await;
 
     if let Err(e) = result {
         error!(error = %e, "Application error");
@@ -87,6 +88,32 @@ async fn main() -> Result<()> {
 
     info!("Shutdown complete");
     Ok(())
+}
+
+async fn wait_for_signal() {
+    let ctrl_c = async {
+        let _ = tokio::signal::ctrl_c().await;
+    };
+    #[cfg(unix)]
+    let terminate = async {
+        use tokio::signal::unix::{SignalKind, signal};
+        match signal(SignalKind::terminate()) {
+            Ok(mut sig) => {
+                sig.recv().await;
+            }
+            Err(e) => {
+                error!(error = %e, "Failed to install SIGTERM handler");
+                std::future::pending::<()>().await;
+            }
+        }
+    };
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        () = ctrl_c => {},
+        () = terminate => {},
+    }
 }
 
 /// One-shot subcommands, which run instead of a server and exit.

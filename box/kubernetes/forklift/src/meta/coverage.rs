@@ -714,8 +714,11 @@ pub(crate) mod tests {
             .await
             .expect("read_coverage_result")
             .expect("legacy result is readable");
-        assert!(got.projects.is_empty());
-        assert!(got.excluded_projects.is_empty());
+        assert_eq!(got.projects, [] as [coverage::types::Project; 0]);
+        assert_eq!(
+            got.excluded_projects,
+            [] as [coverage::types::ExcludedProject; 0]
+        );
         assert_eq!(got.triggered_by, "schedule");
         assert_eq!(got.forklift_host, "forklift.example.com");
     }

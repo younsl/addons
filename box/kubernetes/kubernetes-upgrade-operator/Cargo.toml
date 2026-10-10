@@ -11,19 +11,23 @@ readme = "README.md"
 
 [dependencies]
 # AWS SDK
-aws-config = "1.8"
-aws-sdk-eks = "1.119"
-aws-sdk-autoscaling = "1.97"
-aws-sdk-sts = "1.56"
+aws-config = { version = "1.8", default-features = false, features = ["default-https-client", "rt-tokio", "credentials-process"] }
+aws-sdk-eks = { version = "1.119", default-features = false, features = ["default-https-client", "rt-tokio"] }
+aws-sdk-autoscaling = { version = "1.97", default-features = false, features = ["default-https-client", "rt-tokio"] }
+aws-sdk-sts = { version = "1.56", default-features = false, features = ["default-https-client", "rt-tokio"] }
 aws-smithy-types = "1"
 
 # Async runtime
-tokio = { version = "1.41", features = ["full"] }
+tokio = { version = "1.41", features = ["macros", "rt-multi-thread", "signal", "net", "sync", "time", "fs"] }
+tokio-util = "0.7"
 futures = "0.3"
 
 # Error handling
 anyhow = "1.0"
 thiserror = "2.0"
+
+# CLI
+clap = { version = "4", features = ["derive", "env"] }
 
 # Logging
 tracing = "0.1"
@@ -38,7 +42,10 @@ schemars = { version = "1.2", features = ["chrono04"] }
 axum = { version = "0.8", features = ["tokio"] }
 
 # HTTP client (Slack notifications)
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls-webpki-roots-no-provider"] }
+
+# TLS crypto provider
+rustls = { version = "0.23", default-features = false, features = ["aws-lc-rs", "std", "tls12"] }
 
 # Metrics
 prometheus-client = "0.23"

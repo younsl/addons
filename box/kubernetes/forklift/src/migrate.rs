@@ -3,7 +3,7 @@
 //! names are copied and verified by digest, and the validated snapshot is
 //! uploaded last.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicI64, Ordering};
@@ -104,8 +104,8 @@ pub struct Guard {
 }
 
 impl Guard {
-    pub fn unverified() -> Guard {
-        Guard {
+    pub fn unverified() -> Self {
+        Self {
             checks: vec![
                 Check::new("lease", Status::Skip, "no HA Lease outside Kubernetes"),
                 Check::warn(
@@ -190,12 +190,12 @@ async fn run(
     let plan = match preflight::run(src, dst, opts, guard.checks).await {
         Ok(plan) => plan,
         Err(Error::Preflight(checks)) => {
-            progress.report.preflight = checks.clone();
+            progress.report.preflight.clone_from(&checks);
             return Err(Error::Preflight(checks));
         }
         Err(e) => return Err(e),
     };
-    progress.report.preflight = plan.checks.clone();
+    progress.report.preflight.clone_from(&plan.checks);
     let mut report = Report {
         required: plan.snapshot.blobs.len() as i64,
         skipped: (plan.snapshot.blobs.len() - plan.missing.len()) as i64,
@@ -352,7 +352,7 @@ async fn upload_meta(
             key: dst.meta_key.clone(),
             body: PutBody::File(snap.file.path().to_path_buf()),
             content_length: snap.size as i64,
-            metadata: Default::default(),
+            metadata: HashMap::default(),
             if_match: None,
             if_none_match: (!overwrite).then(|| "*".to_string()),
         })

@@ -16,6 +16,7 @@ pub const MAX_ITEM_LIMIT: i64 = 200;
 
 /// Clamp a caller-supplied limit into `1..=max`, falling back to
 /// [`DEFAULT_LIMIT`] when absent or non-positive.
+#[must_use]
 pub fn clamp_limit(limit: Option<i64>, max: i64) -> i64 {
     match limit {
         Some(l) if l > 0 => l.min(max),
@@ -24,12 +25,14 @@ pub fn clamp_limit(limit: Option<i64>, max: i64) -> i64 {
 }
 
 /// Normalise an offset: negative or missing becomes 0.
+#[must_use]
 pub fn clamp_offset(offset: Option<i64>) -> i64 {
     offset.unwrap_or(0).max(0)
 }
 
 /// Normalise severity names to the upper-case form stored in Trivy reports.
 /// Unknown values are dropped so a typo cannot silently widen a filter.
+#[must_use]
 pub fn normalize_severities(input: Option<Vec<String>>) -> Option<Vec<String>> {
     let out: Vec<String> = input?
         .into_iter()

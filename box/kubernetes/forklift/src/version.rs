@@ -22,7 +22,7 @@ pub fn string() -> String {
 }
 
 /// The Rust toolchain the binary was built with.
-pub fn rust() -> &'static str {
+pub const fn rust() -> &'static str {
     RUSTC
 }
 

@@ -169,7 +169,8 @@ pub struct AlertRuleCondition {
     pub observed_generation: Option<i64>,
 }
 
-fn is_zero(n: &u64) -> bool {
+#[allow(clippy::trivially_copy_pass_by_ref)]
+const fn is_zero(n: &u64) -> bool {
     *n == 0
 }
 
@@ -181,6 +182,7 @@ impl AlertRuleStatus {
     /// evaluator's counters. Returns `None` when there is nothing to record,
     /// which is the case for a rule the API server defaulted rather than a
     /// person authoring one.
+    #[must_use]
     pub fn audit_patch(rule: &ApiAlertRule) -> Option<serde_json::Value> {
         let mut status = serde_json::Map::new();
         // On a create the handler leaves `updated_by` unset, and that is the
@@ -248,6 +250,7 @@ impl AlertRuleStatus {
         }
     }
 
+    #[must_use]
     pub fn condition(&self, condition_type: &str) -> Option<&AlertRuleCondition> {
         self.conditions
             .iter()
@@ -255,6 +258,7 @@ impl AlertRuleStatus {
     }
 
     /// Whether a condition currently reads `True`.
+    #[must_use]
     pub fn is_condition_true(&self, condition_type: &str) -> bool {
         self.condition(condition_type)
             .is_some_and(|c| c.status == "True")
@@ -301,7 +305,7 @@ pub struct SlackReceiverSpec {
     pub title: Option<String>,
 }
 
-fn default_true() -> bool {
+const fn default_true() -> bool {
     true
 }
 
@@ -322,6 +326,7 @@ impl AlertRule {
     /// `created_at` comes from `metadata.creationTimestamp` so the API server
     /// owns it rather than a client-supplied string, and the remaining audit
     /// fields come from annotations.
+    #[must_use]
     pub fn to_api(&self) -> ApiAlertRule {
         let status = self.status.as_ref();
         ApiAlertRule {
@@ -375,6 +380,7 @@ impl AlertRule {
     /// server on the first apply and preserved on every later one, so a client
     /// cannot backdate a rule by replaying an old payload, and the audit and
     /// evaluation fields belong to the status subresource.
+    #[must_use]
     pub fn from_api(rule: &ApiAlertRule, namespace: &str) -> Self {
         Self {
             metadata: ObjectMeta {

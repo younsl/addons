@@ -15,8 +15,8 @@ pub enum ConditionalWrites {
 }
 
 impl ConditionalWrites {
-    pub fn is_enforced(&self) -> bool {
-        matches!(self, ConditionalWrites::Enforced)
+    pub const fn is_enforced(&self) -> bool {
+        matches!(self, Self::Enforced)
     }
 }
 

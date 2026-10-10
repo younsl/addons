@@ -9,7 +9,7 @@ use super::{Error, Result, Store};
 /// One recorded repository event: artifact traffic (download, upload, delete)
 /// or a repository configuration change (repo.create, repo.update,
 /// repo.delete).
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct AuditLog {
     pub id: i64,
     pub repo_name: String,

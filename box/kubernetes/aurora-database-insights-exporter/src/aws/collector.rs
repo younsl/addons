@@ -11,7 +11,10 @@ use crate::config::CollectionConfig;
 use crate::observability::metrics::{
     API_DESCRIBE_DIMENSION_KEYS, API_GET_DIMENSION_KEY_DETAILS, API_GET_RESOURCE_METRICS, Metrics,
 };
-use crate::types::*;
+use crate::types::{
+    AuroraInstance, DatabaseMetric, HostMetric, InstanceLabels, MetricSnapshot, SqlMetric,
+    SqlTokenizedMetric, UserMetric, WaitEventMetric,
+};
 
 const SQL_TEXT_MAX_LEN: usize = 200;
 
@@ -63,7 +66,7 @@ pub struct AwsPiCollector {
 }
 
 impl AwsPiCollector {
-    pub fn new(client: PiClient) -> Self {
+    pub const fn new(client: PiClient) -> Self {
         Self { client }
     }
 }
@@ -116,11 +119,7 @@ impl PiCollector for AwsPiCollector {
                     .map(|(k, v)| (k.clone(), v.clone()))
                     .collect();
 
-                let value = metric
-                    .data_points()
-                    .last()
-                    .map(|dp| dp.value)
-                    .unwrap_or(0.0);
+                let value = metric.data_points().last().map_or(0.0, |dp| dp.value);
 
                 results.push((dims, value));
             }
@@ -224,7 +223,8 @@ impl PiCollector for AwsPiCollector {
     }
 }
 
-/// Collect metrics for a single instance. Returns a MetricSnapshot on success.
+/// Collect metrics for a single instance. Returns a `MetricSnapshot` on success.
+#[allow(clippy::too_many_lines)]
 pub async fn collect_instance_metrics<P: PiCollector>(
     pi: &P,
     instance: &AuroraInstance,
@@ -352,7 +352,9 @@ pub async fn collect_instance_metrics<P: PiCollector>(
                     .unwrap_or_default();
 
                 // Fetch full SQL text via GetDimensionKeyDetails
-                let sql_full_text = if !sql_id.is_empty() {
+                let sql_full_text = if sql_id.is_empty() {
+                    raw_text.clone()
+                } else {
                     match pi
                         .get_dimension_key_details(resource_id, "db.sql", &sql_id)
                         .await
@@ -374,8 +376,6 @@ pub async fn collect_instance_metrics<P: PiCollector>(
                             raw_text.clone()
                         }
                     }
-                } else {
-                    raw_text.clone()
                 };
 
                 let (sql_full_text, _) = truncate_at(&sql_full_text, SQL_FULL_TEXT_MAX_LEN);
@@ -486,7 +486,7 @@ pub async fn collect_instance_metrics<P: PiCollector>(
 }
 
 /// Truncate to at most `max` bytes, backing off to the nearest UTF-8 character boundary.
-/// Returns (text, was_truncated). Slicing on the raw byte index panics when the cut lands
+/// Returns (text, `was_truncated`). Slicing on the raw byte index panics when the cut lands
 /// inside a multi-byte character, which real SQL literals contain.
 fn truncate_at(raw: &str, max: usize) -> (String, bool) {
     if raw.len() <= max {
@@ -501,7 +501,7 @@ fn truncate_at(raw: &str, max: usize) -> (String, bool) {
     (format!("{}...", &raw[..end]), true)
 }
 
-/// Truncate SQL text to max length, returning (text, was_truncated).
+/// Truncate SQL text to max length, returning (text, `was_truncated`).
 pub fn truncate_sql(raw: &str) -> (String, bool) {
     truncate_at(raw, SQL_TEXT_MAX_LEN)
 }
@@ -647,13 +647,14 @@ pub async fn collection_loop<P: PiCollector + Send + Sync + 'static>(
             cycle,
             instances_collected = collected,
             instances_failed = failed,
-            total_duration_ms = duration.as_millis() as u64,
+            total_duration_ms = u64::try_from(duration.as_millis()).unwrap_or(u64::MAX),
             "Collection cycle completed"
         );
     }
 }
 
 #[cfg(test)]
+#[allow(clippy::unused_async_trait_impl)]
 mod tests {
     use super::*;
 
@@ -1477,8 +1478,8 @@ mod tests {
     //   - aurora_dbinsights_pi_api_errors_total
     // ---------------------------------------------------------------------
 
-    /// Collector that returns a specific error message for the first GetResourceMetrics call
-    /// (wait_event), used to validate error classification routing.
+    /// Collector that returns a specific error message for the first `GetResourceMetrics` call
+    /// (`wait_event`), used to validate error classification routing.
     struct ClassifiedErrorCollector {
         err_msg: &'static str,
     }
@@ -1593,9 +1594,9 @@ mod tests {
         assert_eq!(coll_err, 1.0);
     }
 
-    /// Collector where wait_event succeeds but all other APIs fail — simulates partial failure.
+    /// Collector where `wait_event` succeeds but all other APIs fail — simulates partial failure.
     /// This is the scenario that `collection_errors_total` cannot detect but `pi_api_errors_total`
-    /// can, because apply_snapshot is still called (up=1) despite breakdown APIs failing.
+    /// can, because `apply_snapshot` is still called (up=1) despite breakdown APIs failing.
     struct PartialFailureCollector;
 
     impl PiCollector for PartialFailureCollector {

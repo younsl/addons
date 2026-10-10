@@ -341,6 +341,7 @@ pub struct ReportEvent {
 }
 
 /// Helper to extract app name from labels
+#[must_use]
 pub fn extract_app_name(metadata: &ObjectMeta) -> String {
     metadata
         .labels
@@ -356,6 +357,7 @@ pub fn extract_app_name(metadata: &ObjectMeta) -> String {
 }
 
 /// Helper to extract container name from labels
+#[must_use]
 pub fn extract_container_name(metadata: &ObjectMeta) -> String {
     metadata
         .labels
@@ -524,8 +526,8 @@ mod tests {
     #[test]
     fn test_artifact_default() {
         let artifact = Artifact::default();
-        assert!(artifact.repository.is_empty());
-        assert!(artifact.tag.is_empty());
+        assert_eq!(artifact.repository, "");
+        assert_eq!(artifact.tag, "");
     }
 
     #[test]
@@ -537,7 +539,7 @@ mod tests {
     #[test]
     fn test_sbom_report_data_default() {
         let data = SbomReportData::default();
-        assert!(data.artifact.repository.is_empty());
+        assert_eq!(data.artifact.repository, "");
     }
 
     #[test]

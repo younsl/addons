@@ -35,14 +35,14 @@ fn push_report_filters(
         ("namespace", &params.namespace),
     ] {
         if let Some(v) = value {
-            builder.push(format!(" AND {} = ", column));
+            builder.push(format!(" AND {column} = "));
             builder.push_bind(v.clone());
         }
     }
     for (column, value) in [("app", &params.app), ("image", &params.image)] {
         if let Some(v) = value {
-            builder.push(format!(" AND {} LIKE ", column));
-            builder.push_bind(format!("%{}%", v));
+            builder.push(format!(" AND {column} LIKE "));
+            builder.push_bind(format!("%{v}%"));
         }
     }
 
@@ -52,10 +52,9 @@ fn push_report_filters(
         && let Some(component) = &params.component
     {
         builder.push(format!(
-            " AND EXISTS (SELECT 1 FROM json_each(json_extract(data, '{}')) WHERE json_extract(value, '$.name') LIKE ",
-            SBOM_COMPONENTS_PATH
+            " AND EXISTS (SELECT 1 FROM json_each(json_extract(data, '{SBOM_COMPONENTS_PATH}')) WHERE json_extract(value, '$.name') LIKE "
         ));
-        builder.push_bind(format!("%{}%", component));
+        builder.push_bind(format!("%{component}%"));
         builder.push(")");
     }
 
@@ -127,7 +126,7 @@ impl Database {
         let updated_at = chrono::Utc::now().to_rfc3339();
 
         sqlx::query(
-            r#"
+            r"
             INSERT INTO reports (
                 cluster, namespace, name, report_type, app, image, registry,
                 critical_count, high_count, medium_count, low_count, unknown_count,
@@ -145,7 +144,7 @@ impl Database {
                 components_count = excluded.components_count,
                 data = excluded.data,
                 updated_at = excluded.updated_at
-            "#,
+            ",
         )
         .bind(&payload.cluster)
         .bind(&payload.namespace)
@@ -241,10 +240,10 @@ impl Database {
         let (total,): (i64,) = count_builder.build_query_as().fetch_one(&self.pool).await?;
 
         let mut data_builder: QueryBuilder<Sqlite> = QueryBuilder::new(
-            r#"SELECT id, cluster, namespace, name, app, image, report_type,
+            r"SELECT id, cluster, namespace, name, app, image, report_type,
                    critical_count, high_count, medium_count, low_count, unknown_count,
                    components_count, received_at, updated_at
-            FROM reports WHERE report_type = "#,
+            FROM reports WHERE report_type = ",
         );
         data_builder.push_bind(report_type.to_string());
         push_report_filters(&mut data_builder, report_type, params);
@@ -271,13 +270,13 @@ impl Database {
         report_type: &str,
     ) -> Result<Option<FullReport>> {
         let row = sqlx::query(
-            r#"
+            r"
             SELECT id, cluster, namespace, name, app, image, report_type,
                    critical_count, high_count, medium_count, low_count, unknown_count,
                    components_count, received_at, updated_at, data
             FROM reports
             WHERE cluster = $1 AND namespace = $2 AND name = $3 AND report_type = $4
-            "#,
+            ",
         )
         .bind(cluster)
         .bind(namespace)
@@ -394,7 +393,7 @@ impl Database {
         let sqlite_version: String = version_row.get::<String, _>(0);
 
         let row = sqlx::query(
-            r#"
+            r"
             SELECT
                 COUNT(DISTINCT cluster) as total_clusters,
                 COALESCE(SUM(CASE WHEN report_type = 'vulnerabilityreport' THEN 1 ELSE 0 END), 0) as total_vuln,
@@ -405,7 +404,7 @@ impl Database {
                 COALESCE(SUM(CASE WHEN report_type = 'vulnerabilityreport' THEN low_count ELSE 0 END), 0) as total_low,
                 COALESCE(SUM(CASE WHEN report_type = 'vulnerabilityreport' THEN unknown_count ELSE 0 END), 0) as total_unknown
             FROM reports
-            "#,
+            ",
         )
         .fetch_one(&self.pool)
         .await?;
@@ -470,7 +469,7 @@ impl Database {
         package_name: Option<&str>,
     ) -> Result<Vec<SbomComponentMatch>> {
         let mut qb: QueryBuilder<Sqlite> = QueryBuilder::new(
-            r#"
+            r"
             SELECT
                 r.cluster,
                 r.namespace,
@@ -482,7 +481,7 @@ impl Database {
             FROM reports r,
                  json_each(json_extract(r.data, '$.report.components.components')) j
             WHERE r.report_type = 'sbomreport'
-            "#,
+            ",
         );
         if !clusters.is_empty() {
             qb.push(" AND r.cluster IN (");
@@ -526,16 +525,16 @@ impl Database {
         limit: i64,
         offset: i64,
     ) -> Result<(Vec<ComponentSearchResult>, i64)> {
-        let pattern = format!("%{}%", component);
+        let pattern = format!("%{component}%");
 
         let count_row = sqlx::query(
-            r#"
+            r"
             SELECT COUNT(*)
             FROM reports r,
                  json_each(json_extract(r.data, '$.report.components.components')) j
             WHERE r.report_type = 'sbomreport'
               AND json_extract(j.value, '$.name') LIKE $1
-            "#,
+            ",
         )
         .bind(&pattern)
         .fetch_one(&self.pool)
@@ -543,7 +542,7 @@ impl Database {
         let total: i64 = count_row.get::<i64, _>(0);
 
         let rows = sqlx::query(
-            r#"
+            r"
             SELECT
                 r.cluster,
                 r.namespace,
@@ -560,7 +559,7 @@ impl Database {
               AND json_extract(j.value, '$.name') LIKE $1
             ORDER BY r.updated_at DESC
             LIMIT $2 OFFSET $3
-            "#,
+            ",
         )
         .bind(&pattern)
         .bind(limit)
@@ -593,10 +592,10 @@ impl Database {
         limit: i64,
         offset: i64,
     ) -> Result<(Vec<VulnSearchResult>, i64)> {
-        let pattern = format!("%{}%", query);
+        let pattern = format!("%{query}%");
 
         let count_row = sqlx::query(
-            r#"
+            r"
             SELECT COUNT(*)
             FROM reports r,
                  json_each(json_extract(r.data, '$.report.vulnerabilities')) j
@@ -605,7 +604,7 @@ impl Database {
                 json_extract(j.value, '$.vulnerabilityID') LIKE $1
                 OR json_extract(j.value, '$.resource') LIKE $1
               )
-            "#,
+            ",
         )
         .bind(&pattern)
         .fetch_one(&self.pool)
@@ -613,7 +612,7 @@ impl Database {
         let total: i64 = count_row.get::<i64, _>(0);
 
         let rows = sqlx::query(
-            r#"
+            r"
             SELECT
                 r.cluster,
                 r.namespace,
@@ -636,7 +635,7 @@ impl Database {
               )
             ORDER BY r.updated_at DESC
             LIMIT $2 OFFSET $3
-            "#,
+            ",
         )
         .bind(&pattern)
         .bind(limit)
@@ -667,10 +666,10 @@ impl Database {
 
     /// Suggest distinct vulnerability IDs matching a substring
     pub async fn suggest_vulnerability_ids(&self, query: &str, limit: i64) -> Result<Vec<String>> {
-        let pattern = format!("%{}%", query);
+        let pattern = format!("%{query}%");
 
         let rows = sqlx::query(
-            r#"
+            r"
             SELECT DISTINCT json_extract(j.value, '$.vulnerabilityID') AS vuln_id
             FROM reports r,
                  json_each(json_extract(r.data, '$.report.vulnerabilities')) j
@@ -678,7 +677,7 @@ impl Database {
               AND vuln_id LIKE $1
             ORDER BY vuln_id
             LIMIT $2
-            "#,
+            ",
         )
         .bind(&pattern)
         .bind(limit)
@@ -692,10 +691,10 @@ impl Database {
 
     /// Suggest distinct component names matching a prefix/substring
     pub async fn suggest_component_names(&self, query: &str, limit: i64) -> Result<Vec<String>> {
-        let pattern = format!("%{}%", query);
+        let pattern = format!("%{query}%");
 
         let rows = sqlx::query(
-            r#"
+            r"
             SELECT DISTINCT json_extract(j.value, '$.name') AS comp_name
             FROM reports r,
                  json_each(json_extract(r.data, '$.report.components.components')) j
@@ -703,7 +702,7 @@ impl Database {
               AND comp_name LIKE $1
             ORDER BY comp_name
             LIMIT $2
-            "#,
+            ",
         )
         .bind(&pattern)
         .bind(limit)
@@ -1170,7 +1169,7 @@ mod tests {
             db.upsert_report(&create_test_payload(
                 "prod",
                 "default",
-                &format!("app{}", i),
+                &format!("app{i}"),
                 "vulnerabilityreport",
             ))
             .await
@@ -1357,7 +1356,7 @@ mod tests {
         cluster: &str,
         namespace: &str,
         name: &str,
-        components: serde_json::Value,
+        components: &serde_json::Value,
     ) -> ReportPayload {
         ReportPayload {
             cluster: cluster.to_string(),
@@ -1401,7 +1400,7 @@ mod tests {
             "prod",
             "default",
             "node-app",
-            json!([
+            &json!([
                 {"type": "library", "name": "axios", "version": "1.6.0"},
                 {"type": "library", "name": "lodash", "version": "4.17.21"},
             ]),
@@ -1413,8 +1412,8 @@ mod tests {
             db.upsert_report(&sbom_payload_with_components(
                 "prod",
                 "default",
-                &format!("noise-{}", i),
-                json!([{"type": "library", "name": "openssl", "version": "3.0.7"}]),
+                &format!("noise-{i}"),
+                &json!([{"type": "library", "name": "openssl", "version": "3.0.7"}]),
             ))
             .await
             .unwrap();

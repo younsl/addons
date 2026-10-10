@@ -145,8 +145,8 @@ pub(crate) struct CommentSyntax {
 
 impl CommentSyntax {
     /// The zero value: no comments are stripped at all.
-    pub(crate) const fn empty() -> CommentSyntax {
-        CommentSyntax {
+    pub(crate) const fn empty() -> Self {
+        Self {
             line: Vec::new(),
             block: Vec::new(),
             exact: Vec::new(),
@@ -231,12 +231,9 @@ fn strip_blocks(body: &str, open: &str, close: &str) -> String {
     let mut out = String::new();
     let mut body = body;
     loop {
-        let start = match body.find(open) {
-            Some(i) => i,
-            None => {
-                out.push_str(body);
-                return out;
-            }
+        let Some(start) = body.find(open) else {
+            out.push_str(body);
+            return out;
         };
         out.push_str(&body[..start]);
         let rest = &body[start + open.len()..];
@@ -295,7 +292,7 @@ impl EvidenceSet {
         true
     }
 
-    pub(crate) fn empty(&self) -> bool {
+    pub(crate) const fn empty(&self) -> bool {
         self.paths.is_empty()
     }
 
@@ -337,10 +334,10 @@ pub(crate) fn summarize_evidence(host: &str, paths: &[String], bodies: &[String]
             formats.insert(caps[1].to_string());
         }
     }
-    if !formats.is_empty() {
-        v.format = formats.into_iter().collect::<Vec<_>>().join("/");
-    } else {
+    if formats.is_empty() {
         v.format = classify_by_filename(&sorted);
+    } else {
+        v.format = formats.into_iter().collect::<Vec<_>>().join("/");
     }
     v
 }

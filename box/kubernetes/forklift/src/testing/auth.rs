@@ -9,7 +9,7 @@ use axum::body::Body;
 use base64::Engine as _;
 use http::Request;
 
-use crate::auth::*;
+use crate::auth::{Options, Service};
 use crate::meta;
 
 /// A store plus the temp dir that owns its file, and a Service over it.

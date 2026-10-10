@@ -80,7 +80,7 @@ struct ApprovalDTO {
     notify_detail: String,
 }
 
-fn is_zero(v: &i64) -> bool {
+const fn is_zero(v: &i64) -> bool {
     *v == 0
 }
 
@@ -758,8 +758,7 @@ pub(crate) mod tests {
         assert!(
             dto["reviewers"]
                 .as_array()
-                .map(|r| r.iter().any(|v| v == ADMIN_USER))
-                .unwrap_or(false),
+                .is_some_and(|r| r.iter().any(|v| v == ADMIN_USER)),
             "reviewers = {}, want to contain {ADMIN_USER:?}",
             dto["reviewers"]
         );

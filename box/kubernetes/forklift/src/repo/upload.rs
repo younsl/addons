@@ -14,6 +14,7 @@ use crate::repoconfig::{self, Config, MODE_AUDIT};
 use super::{Kind, Manager, username_from_context};
 
 /// The server-authoritative result of browser-upload preflight.
+///
 /// [`Manager::upload_hosted`] repeats the same validation so preflight cannot be
 /// bypassed by a modified client or a repository configuration change between
 /// requests.
@@ -370,7 +371,7 @@ pub(crate) mod tests {
 
     /// The request parts a browser upload is attributed to.
     fn upload_parts(uri: &str) -> http::request::Parts {
-        let (parts, _) = http::Request::builder()
+        let (parts, ()) = http::Request::builder()
             .method(Method::PUT)
             .uri(uri)
             .body(())

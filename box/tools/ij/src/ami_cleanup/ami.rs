@@ -36,7 +36,7 @@ pub fn compute_unused(
     min_age_days: u64,
 ) -> Vec<OwnedAmi> {
     let cutoff = if min_age_days > 0 {
-        Some(Utc::now() - chrono::Duration::days(min_age_days as i64))
+        Some(Utc::now() - chrono::Duration::days(min_age_days.cast_signed()))
     } else {
         None
     };
@@ -47,14 +47,13 @@ pub fn compute_unused(
         .filter(|ami| !ami.managed)
         .filter(|ami| match (&cutoff, &ami.creation_date) {
             (Some(cutoff), Some(created)) => created < cutoff,
-            (Some(_), None) => true,
-            (None, _) => true,
+            (Some(_), None) | (None, _) => true,
         })
         .cloned()
         .collect()
 }
 
-pub async fn get_owned_amis(ec2: &Ec2Client) -> anyhow::Result<Vec<OwnedAmi>> {
+pub async fn get_owned_amis(ec2: &Ec2Client) -> Result<Vec<OwnedAmi>, AppError> {
     let mut amis = Vec::new();
     let mut next_token: Option<String> = None;
 
@@ -85,7 +84,7 @@ pub async fn get_owned_amis(ec2: &Ec2Client) -> anyhow::Result<Vec<OwnedAmi>> {
                         snapshot_ids.push(sid.to_string());
                     }
                     if let Some(vol_size) = ebs.volume_size() {
-                        size_gb += vol_size as i64;
+                        size_gb += i64::from(vol_size);
                     }
                 }
             }
@@ -118,7 +117,10 @@ pub async fn get_owned_amis(ec2: &Ec2Client) -> anyhow::Result<Vec<OwnedAmi>> {
     Ok(amis)
 }
 
-pub async fn get_used_ami_ids(ec2: &Ec2Client, asg: &AsgClient) -> anyhow::Result<HashSet<String>> {
+pub async fn get_used_ami_ids(
+    ec2: &Ec2Client,
+    asg: &AsgClient,
+) -> Result<HashSet<String>, AppError> {
     let (instance_amis, lt_amis, asg_amis) = tokio::try_join!(
         get_instance_ami_ids(ec2),
         get_launch_template_ami_ids(ec2),
@@ -138,22 +140,18 @@ pub async fn check_shared_amis(ec2: &Ec2Client, amis: &mut [OwnedAmi]) {
         .map(|ami_id| {
             let ec2 = ec2.clone();
             async move {
-                let resp = ec2
+                let is_shared = ec2
                     .describe_image_attribute()
                     .image_id(&ami_id)
                     .attribute(aws_sdk_ec2::types::ImageAttributeName::LaunchPermission)
                     .send()
-                    .await;
-                match resp {
-                    Ok(r) => {
-                        let is_shared = r
-                            .launch_permissions()
+                    .await
+                    .is_ok_and(|r| {
+                        r.launch_permissions()
                             .iter()
-                            .any(|lp| lp.user_id().is_some() || lp.group().is_some());
-                        if is_shared { Some(ami_id) } else { None }
-                    }
-                    Err(_) => None,
-                }
+                            .any(|lp| lp.user_id().is_some() || lp.group().is_some())
+                    });
+                is_shared.then_some(ami_id)
             }
         })
         .buffer_unordered(API_CONCURRENCY)
@@ -168,7 +166,7 @@ pub async fn check_shared_amis(ec2: &Ec2Client, amis: &mut [OwnedAmi]) {
     }
 }
 
-async fn get_instance_ami_ids(ec2: &Ec2Client) -> anyhow::Result<HashSet<String>> {
+async fn get_instance_ami_ids(ec2: &Ec2Client) -> Result<HashSet<String>, AppError> {
     let mut ami_ids = HashSet::new();
     let mut next_token: Option<String> = None;
 
@@ -205,7 +203,7 @@ async fn get_instance_ami_ids(ec2: &Ec2Client) -> anyhow::Result<HashSet<String>
     Ok(ami_ids)
 }
 
-async fn get_launch_template_ami_ids(ec2: &Ec2Client) -> anyhow::Result<HashSet<String>> {
+async fn get_launch_template_ami_ids(ec2: &Ec2Client) -> Result<HashSet<String>, AppError> {
     let mut lt_ids = Vec::new();
     let mut next_token: Option<String> = None;
 
@@ -269,7 +267,7 @@ async fn get_launch_template_ami_ids(ec2: &Ec2Client) -> anyhow::Result<HashSet<
     Ok(ami_ids)
 }
 
-async fn get_asg_ami_ids(asg: &AsgClient) -> anyhow::Result<HashSet<String>> {
+async fn get_asg_ami_ids(asg: &AsgClient) -> Result<HashSet<String>, AppError> {
     let mut ami_ids = HashSet::new();
     let mut next_token: Option<String> = None;
 
@@ -469,7 +467,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_owned_amis_basic() {
-        let xml = r#"<DescribeImagesResponse>
+        let xml = r"<DescribeImagesResponse>
             <imagesSet>
                 <item>
                     <imageId>ami-aaa</imageId>
@@ -495,7 +493,7 @@ mod tests {
                     </tagSet>
                 </item>
             </imagesSet>
-        </DescribeImagesResponse>"#;
+        </DescribeImagesResponse>";
 
         let ec2 = mock_ec2(vec![ec2_event(xml)]);
         let amis = get_owned_amis(&ec2).await.unwrap();
@@ -513,7 +511,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_owned_amis_pagination() {
-        let page1 = r#"<DescribeImagesResponse>
+        let page1 = r"<DescribeImagesResponse>
             <imagesSet>
                 <item>
                     <imageId>ami-page1</imageId>
@@ -523,9 +521,9 @@ mod tests {
                 </item>
             </imagesSet>
             <nextToken>token123</nextToken>
-        </DescribeImagesResponse>"#;
+        </DescribeImagesResponse>";
 
-        let page2 = r#"<DescribeImagesResponse>
+        let page2 = r"<DescribeImagesResponse>
             <imagesSet>
                 <item>
                     <imageId>ami-page2</imageId>
@@ -534,7 +532,7 @@ mod tests {
                     <tagSet/>
                 </item>
             </imagesSet>
-        </DescribeImagesResponse>"#;
+        </DescribeImagesResponse>";
 
         let ec2 = mock_ec2(vec![ec2_event(page1), ec2_event(page2)]);
         let amis = get_owned_amis(&ec2).await.unwrap();
@@ -546,7 +544,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_owned_amis_managed_detection() {
-        let xml = r#"<DescribeImagesResponse>
+        let xml = r"<DescribeImagesResponse>
             <imagesSet>
                 <item>
                     <imageId>ami-backup</imageId>
@@ -569,7 +567,7 @@ mod tests {
                     <tagSet/>
                 </item>
             </imagesSet>
-        </DescribeImagesResponse>"#;
+        </DescribeImagesResponse>";
 
         let ec2 = mock_ec2(vec![ec2_event(xml)]);
         let amis = get_owned_amis(&ec2).await.unwrap();
@@ -582,9 +580,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_owned_amis_empty() {
-        let xml = r#"<DescribeImagesResponse>
+        let xml = r"<DescribeImagesResponse>
             <imagesSet/>
-        </DescribeImagesResponse>"#;
+        </DescribeImagesResponse>";
 
         let ec2 = mock_ec2(vec![ec2_event(xml)]);
         let amis = get_owned_amis(&ec2).await.unwrap();
@@ -593,7 +591,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_owned_amis_no_optional_fields() {
-        let xml = r#"<DescribeImagesResponse>
+        let xml = r"<DescribeImagesResponse>
             <imagesSet>
                 <item>
                     <imageId>ami-minimal</imageId>
@@ -602,7 +600,7 @@ mod tests {
                     <tagSet/>
                 </item>
             </imagesSet>
-        </DescribeImagesResponse>"#;
+        </DescribeImagesResponse>";
 
         let ec2 = mock_ec2(vec![ec2_event(xml)]);
         let amis = get_owned_amis(&ec2).await.unwrap();
@@ -610,7 +608,7 @@ mod tests {
         assert_eq!(amis.len(), 1);
         assert!(amis[0].creation_date.is_none());
         assert!(amis[0].last_launched.is_none());
-        assert!(amis[0].snapshot_ids.is_empty());
+        assert_eq!(amis[0].snapshot_ids, Vec::<String>::new());
         assert_eq!(amis[0].size_gb, 0);
     }
 
@@ -618,7 +616,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_instance_ami_ids_basic() {
-        let xml = r#"<DescribeInstancesResponse>
+        let xml = r"<DescribeInstancesResponse>
             <reservationSet>
                 <item>
                     <instancesSet>
@@ -632,7 +630,7 @@ mod tests {
                     </instancesSet>
                 </item>
             </reservationSet>
-        </DescribeInstancesResponse>"#;
+        </DescribeInstancesResponse>";
 
         let ec2 = mock_ec2(vec![ec2_event(xml)]);
         let ids = get_instance_ami_ids(&ec2).await.unwrap();
@@ -645,7 +643,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_instance_ami_ids_pagination() {
-        let page1 = r#"<DescribeInstancesResponse>
+        let page1 = r"<DescribeInstancesResponse>
             <reservationSet>
                 <item>
                     <instancesSet>
@@ -654,9 +652,9 @@ mod tests {
                 </item>
             </reservationSet>
             <nextToken>tok</nextToken>
-        </DescribeInstancesResponse>"#;
+        </DescribeInstancesResponse>";
 
-        let page2 = r#"<DescribeInstancesResponse>
+        let page2 = r"<DescribeInstancesResponse>
             <reservationSet>
                 <item>
                     <instancesSet>
@@ -664,7 +662,7 @@ mod tests {
                     </instancesSet>
                 </item>
             </reservationSet>
-        </DescribeInstancesResponse>"#;
+        </DescribeInstancesResponse>";
 
         let ec2 = mock_ec2(vec![ec2_event(page1), ec2_event(page2)]);
         let ids = get_instance_ami_ids(&ec2).await.unwrap();
@@ -676,7 +674,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_instance_ami_ids_dedup() {
-        let xml = r#"<DescribeInstancesResponse>
+        let xml = r"<DescribeInstancesResponse>
             <reservationSet>
                 <item>
                     <instancesSet>
@@ -685,7 +683,7 @@ mod tests {
                     </instancesSet>
                 </item>
             </reservationSet>
-        </DescribeInstancesResponse>"#;
+        </DescribeInstancesResponse>";
 
         let ec2 = mock_ec2(vec![ec2_event(xml)]);
         let ids = get_instance_ami_ids(&ec2).await.unwrap();
@@ -696,13 +694,13 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_launch_template_ami_ids_basic() {
-        let lt_list = r#"<DescribeLaunchTemplatesResponse>
+        let lt_list = r"<DescribeLaunchTemplatesResponse>
             <launchTemplates>
                 <item><launchTemplateId>lt-001</launchTemplateId></item>
             </launchTemplates>
-        </DescribeLaunchTemplatesResponse>"#;
+        </DescribeLaunchTemplatesResponse>";
 
-        let lt_ver = r#"<DescribeLaunchTemplateVersionsResponse>
+        let lt_ver = r"<DescribeLaunchTemplateVersionsResponse>
             <launchTemplateVersionSet>
                 <item>
                     <launchTemplateData>
@@ -710,7 +708,7 @@ mod tests {
                     </launchTemplateData>
                 </item>
             </launchTemplateVersionSet>
-        </DescribeLaunchTemplateVersionsResponse>"#;
+        </DescribeLaunchTemplateVersionsResponse>";
 
         // 1 describe_launch_templates + 2 describe_launch_template_versions ($Latest, $Default)
         let ec2 = mock_ec2(vec![
@@ -725,9 +723,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_launch_template_ami_ids_empty() {
-        let xml = r#"<DescribeLaunchTemplatesResponse>
+        let xml = r"<DescribeLaunchTemplatesResponse>
             <launchTemplates/>
-        </DescribeLaunchTemplatesResponse>"#;
+        </DescribeLaunchTemplatesResponse>";
 
         let ec2 = mock_ec2(vec![ec2_event(xml)]);
         let ids = get_launch_template_ami_ids(&ec2).await.unwrap();
@@ -738,7 +736,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_asg_ami_ids_launch_config() {
-        let asg_xml = r#"<DescribeAutoScalingGroupsResponse>
+        let asg_xml = r"<DescribeAutoScalingGroupsResponse>
             <DescribeAutoScalingGroupsResult>
                 <AutoScalingGroups>
                     <member>
@@ -754,9 +752,9 @@ mod tests {
                     </member>
                 </AutoScalingGroups>
             </DescribeAutoScalingGroupsResult>
-        </DescribeAutoScalingGroupsResponse>"#;
+        </DescribeAutoScalingGroupsResponse>";
 
-        let lc_xml = r#"<DescribeLaunchConfigurationsResponse>
+        let lc_xml = r"<DescribeLaunchConfigurationsResponse>
             <DescribeLaunchConfigurationsResult>
                 <LaunchConfigurations>
                     <member>
@@ -767,7 +765,7 @@ mod tests {
                     </member>
                 </LaunchConfigurations>
             </DescribeLaunchConfigurationsResult>
-        </DescribeLaunchConfigurationsResponse>"#;
+        </DescribeLaunchConfigurationsResponse>";
 
         let asg = mock_asg(vec![asg_event(asg_xml), asg_event(lc_xml)]);
         let ids = get_asg_ami_ids(&asg).await.unwrap();
@@ -778,7 +776,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_asg_ami_ids_mixed_instances_policy() {
-        let xml = r#"<DescribeAutoScalingGroupsResponse>
+        let xml = r"<DescribeAutoScalingGroupsResponse>
             <DescribeAutoScalingGroupsResult>
                 <AutoScalingGroups>
                     <member>
@@ -801,7 +799,7 @@ mod tests {
                     </member>
                 </AutoScalingGroups>
             </DescribeAutoScalingGroupsResult>
-        </DescribeAutoScalingGroupsResponse>"#;
+        </DescribeAutoScalingGroupsResponse>";
 
         let asg = mock_asg(vec![asg_event(xml)]);
         let ids = get_asg_ami_ids(&asg).await.unwrap();
@@ -813,11 +811,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_asg_ami_ids_empty() {
-        let xml = r#"<DescribeAutoScalingGroupsResponse>
+        let xml = r"<DescribeAutoScalingGroupsResponse>
             <DescribeAutoScalingGroupsResult>
                 <AutoScalingGroups/>
             </DescribeAutoScalingGroupsResult>
-        </DescribeAutoScalingGroupsResponse>"#;
+        </DescribeAutoScalingGroupsResponse>";
 
         let asg = mock_asg(vec![asg_event(xml)]);
         let ids = get_asg_ami_ids(&asg).await.unwrap();
@@ -828,12 +826,12 @@ mod tests {
 
     #[tokio::test]
     async fn test_check_shared_amis_marks_shared() {
-        let xml = r#"<DescribeImageAttributeResponse>
+        let xml = r"<DescribeImageAttributeResponse>
             <imageId>ami-shared</imageId>
             <launchPermission>
                 <item><userId>123456789012</userId></item>
             </launchPermission>
-        </DescribeImageAttributeResponse>"#;
+        </DescribeImageAttributeResponse>";
 
         let ec2 = mock_ec2(vec![ec2_event(xml)]);
         let mut amis = vec![OwnedAmi {
@@ -853,10 +851,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_check_shared_amis_not_shared() {
-        let xml = r#"<DescribeImageAttributeResponse>
+        let xml = r"<DescribeImageAttributeResponse>
             <imageId>ami-private</imageId>
             <launchPermission/>
-        </DescribeImageAttributeResponse>"#;
+        </DescribeImageAttributeResponse>";
 
         let ec2 = mock_ec2(vec![ec2_event(xml)]);
         let mut amis = vec![OwnedAmi {

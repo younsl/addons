@@ -6,6 +6,7 @@ use axum::routing::get;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use tokio::net::TcpListener;
+use tokio_util::sync::CancellationToken;
 use tracing::info;
 
 /// Shared readiness state.
@@ -42,8 +43,12 @@ async fn readyz(state: axum::extract::State<HealthState>) -> StatusCode {
     }
 }
 
-/// Start the health server on the given port.
-pub async fn serve(port: u16, state: HealthState) -> anyhow::Result<()> {
+/// Start the health server on the given port, draining it once `shutdown` is cancelled.
+pub async fn serve(
+    port: u16,
+    state: HealthState,
+    shutdown: CancellationToken,
+) -> anyhow::Result<()> {
     let app = Router::new()
         .route("/healthz", get(healthz))
         .route("/readyz", get(readyz))
@@ -51,7 +56,9 @@ pub async fn serve(port: u16, state: HealthState) -> anyhow::Result<()> {
 
     let listener = TcpListener::bind(format!("0.0.0.0:{port}")).await?;
     info!("Health server listening on port {}", port);
-    axum::serve(listener, app).await?;
+    axum::serve(listener, app)
+        .with_graceful_shutdown(shutdown.cancelled_owned())
+        .await?;
     Ok(())
 }
 
@@ -128,6 +135,7 @@ mod tests {
             axum::serve(listener, app).await.unwrap();
         });
 
+        crate::install_crypto_provider();
         let client = reqwest::Client::new();
 
         // healthz should always be 200
@@ -154,6 +162,18 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(resp.status().as_u16(), 200);
+    }
+
+    #[tokio::test]
+    async fn test_serve_stops_on_shutdown() {
+        let shutdown = CancellationToken::new();
+        let handle = tokio::spawn(serve(0, HealthState::new(), shutdown.clone()));
+        shutdown.cancel();
+        tokio::time::timeout(std::time::Duration::from_secs(5), handle)
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
     }
 
     #[tokio::test]

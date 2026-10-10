@@ -17,7 +17,7 @@ pub trait PoolStatser: Send + Sync {
 
 impl PoolStatser for crate::meta::Store {
     fn pool_stats(&self) -> (PoolStats, PoolStats) {
-        crate::meta::Store::pool_stats(self)
+        Self::pool_stats(self)
     }
 }
 
@@ -39,9 +39,9 @@ pub struct DbPoolCollector {
 
 impl DbPoolCollector {
     /// Builds a collector over the store's pools.
-    pub fn new(s: Arc<dyn PoolStatser>) -> DbPoolCollector {
+    pub fn new(s: Arc<dyn PoolStatser>) -> Self {
         let label = ["pool"];
-        DbPoolCollector {
+        Self {
             s,
             open: desc(
                 "forklift_db_connections_open",

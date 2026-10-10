@@ -49,11 +49,8 @@ pub async fn login(
     cookie_jar: PrivateCookieJar,
     Query(query): Query<LoginQuery>,
 ) -> impl IntoResponse {
-    let auth_state = match &state.auth {
-        Some(auth) => auth,
-        None => {
-            return (cookie_jar, Redirect::temporary("/")).into_response();
-        }
+    let Some(auth_state) = &state.auth else {
+        return (cookie_jar, Redirect::temporary("/")).into_response();
     };
 
     let return_to = query.return_to.unwrap_or_else(|| "/".to_string());
@@ -102,11 +99,8 @@ pub async fn callback(
     cookie_jar: PrivateCookieJar,
     Query(query): Query<CallbackQuery>,
 ) -> impl IntoResponse {
-    let auth_state = match &state.auth {
-        Some(auth) => auth,
-        None => {
-            return (cookie_jar, Redirect::temporary("/")).into_response();
-        }
+    let Some(auth_state) = &state.auth else {
+        return (cookie_jar, Redirect::temporary("/")).into_response();
     };
 
     // Check for OIDC error response
@@ -119,22 +113,19 @@ pub async fn callback(
         let reason = urlencoding::encode(err);
         return (
             cookie_jar,
-            Redirect::temporary(&format!("/auth/error?reason={}", reason)),
+            Redirect::temporary(&format!("/auth/error?reason={reason}")),
         )
             .into_response();
     }
 
     // Retrieve pending auth state
-    let pending_cookie = match cookie_jar.get(PENDING_AUTH_COOKIE_NAME) {
-        Some(c) => c,
-        None => {
-            warn!("Missing pending auth cookie");
-            return (
-                cookie_jar,
-                Redirect::temporary("/auth/error?reason=missing_state"),
-            )
-                .into_response();
-        }
+    let Some(pending_cookie) = cookie_jar.get(PENDING_AUTH_COOKIE_NAME) else {
+        warn!("Missing pending auth cookie");
+        return (
+            cookie_jar,
+            Redirect::temporary("/auth/error?reason=missing_state"),
+        )
+            .into_response();
     };
 
     let pending: PendingAuth = match serde_json::from_str(pending_cookie.value()) {
@@ -150,16 +141,13 @@ pub async fn callback(
     };
 
     // Verify CSRF token
-    let state_param = match &query.state {
-        Some(s) => s,
-        None => {
-            warn!("Missing state parameter in callback");
-            return (
-                cookie_jar,
-                Redirect::temporary("/auth/error?reason=missing_state"),
-            )
-                .into_response();
-        }
+    let Some(state_param) = &query.state else {
+        warn!("Missing state parameter in callback");
+        return (
+            cookie_jar,
+            Redirect::temporary("/auth/error?reason=missing_state"),
+        )
+            .into_response();
     };
 
     if state_param != &pending.csrf_token {
@@ -172,16 +160,13 @@ pub async fn callback(
     }
 
     // Exchange authorization code for tokens
-    let code = match &query.code {
-        Some(c) => c,
-        None => {
-            warn!("Missing authorization code");
-            return (
-                cookie_jar,
-                Redirect::temporary("/auth/error?reason=missing_code"),
-            )
-                .into_response();
-        }
+    let Some(code) = &query.code else {
+        warn!("Missing authorization code");
+        return (
+            cookie_jar,
+            Redirect::temporary("/auth/error?reason=missing_code"),
+        )
+            .into_response();
     };
 
     let session = match auth_state

@@ -14,7 +14,7 @@ pub(crate) fn zero_time() -> DateTime<Utc> {
 }
 
 pub(crate) mod go_time {
-    use super::*;
+    use super::{DateTime, Deserialize, Deserializer, Serializer, Utc, zero_time};
 
     pub fn serialize<S: Serializer>(t: &DateTime<Utc>, s: S) -> Result<S::Ok, S::Error> {
         s.serialize_str(&crate::meta::time::format_time(*t))
@@ -23,14 +23,14 @@ pub(crate) mod go_time {
     pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<DateTime<Utc>, D::Error> {
         let raw = String::deserialize(d)?;
         Ok(DateTime::parse_from_rfc3339(&raw)
-            .map(|t| t.with_timezone(&Utc))
-            .unwrap_or_else(|_| zero_time()))
+            .map_or_else(|_| zero_time(), |t| t.with_timezone(&Utc)))
     }
 }
 
 pub(crate) mod go_time_opt {
-    use super::*;
+    use super::{DateTime, Deserialize, Deserializer, Serializer, Utc, zero_time};
 
+    #[allow(clippy::ref_option)]
     pub fn serialize<S: Serializer>(t: &Option<DateTime<Utc>>, s: S) -> Result<S::Ok, S::Error> {
         match t {
             Some(t) => s.serialize_str(&crate::meta::time::format_time(*t)),
@@ -42,8 +42,7 @@ pub(crate) mod go_time_opt {
         let raw = Option::<String>::deserialize(d)?;
         Ok(raw.map(|raw| {
             DateTime::parse_from_rfc3339(&raw)
-                .map(|t| t.with_timezone(&Utc))
-                .unwrap_or_else(|_| zero_time())
+                .map_or_else(|_| zero_time(), |t| t.with_timezone(&Utc))
         }))
     }
 }
@@ -74,12 +73,12 @@ pub const STATE_NOT_APPLIED: AppliedState = AppliedState::NotApplied;
 pub const STATE_ERROR: AppliedState = AppliedState::Error;
 
 impl AppliedState {
-    pub fn as_str(self) -> &'static str {
+    pub const fn as_str(self) -> &'static str {
         match self {
-            AppliedState::Applied => "yes",
-            AppliedState::Partial => "partial",
-            AppliedState::NotApplied => "no",
-            AppliedState::Error => "error",
+            Self::Applied => "yes",
+            Self::Partial => "partial",
+            Self::NotApplied => "no",
+            Self::Error => "error",
         }
     }
 }
@@ -100,10 +99,10 @@ impl<'de> Deserialize<'de> for AppliedState {
     fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         let raw = String::deserialize(d)?;
         Ok(match raw.as_str() {
-            "yes" => AppliedState::Applied,
-            "partial" => AppliedState::Partial,
-            "error" => AppliedState::Error,
-            _ => AppliedState::NotApplied,
+            "yes" => Self::Applied,
+            "partial" => Self::Partial,
+            "error" => Self::Error,
+            _ => Self::NotApplied,
         })
     }
 }
@@ -118,7 +117,7 @@ pub const EXCLUDE_MUTED: &str = "muted";
 pub const EXCLUDE_TOPIC_PREFIX: &str = "topic:";
 
 /// Project is one scanned GitLab project and its verdict.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Project {
     pub id: i64,
     /// group/name path with namespace
@@ -163,7 +162,7 @@ pub struct Project {
 
 /// ExcludedProject is a project dropped before it was scanned, so it has a
 /// reason but no verdict.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ExcludedProject {
     pub id: i64,
     pub path: String,
@@ -195,7 +194,7 @@ pub struct Summary {
 
 /// Progress is the live state of a running scan, so the console fills in as the
 /// scan proceeds instead of sitting on the previous result for minutes.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Progress {
     /// Phase is "listing" while the project list is still being paged in, then
     /// "scanning".
@@ -217,7 +216,7 @@ pub struct Progress {
 
 impl Default for Progress {
     fn default() -> Self {
-        Progress {
+        Self {
             phase: String::new(),
             done: 0,
             total: 0,
@@ -259,7 +258,7 @@ pub struct GroupCoverage {
 pub const HISTORY_RETENTION_DAYS: i64 = 14;
 
 /// Snapshot is one historical coverage reading, written after each scan.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Snapshot {
     pub target: i64,
     pub applied: i64,
@@ -273,7 +272,7 @@ pub struct Snapshot {
 
 impl Default for Snapshot {
     fn default() -> Self {
-        Snapshot {
+        Self {
             target: 0,
             applied: 0,
             partial: 0,
@@ -288,7 +287,7 @@ impl Default for Snapshot {
 /// LastCommit is the tip commit of the branch a verdict came from. It is fetched
 /// on demand for the project detail view rather than during the scan, so it
 /// costs one request instead of one per project on every scan.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LastCommit {
     #[serde(rename = "ref")]
     pub ref_: String,
@@ -303,8 +302,8 @@ pub struct LastCommit {
 // `ref` is a Rust keyword, so the field is named `ref_` and renamed on the wire.
 // Done by hand rather than with `r#ref` so the struct reads the same everywhere.
 impl LastCommit {
-    pub fn new() -> LastCommit {
-        LastCommit {
+    pub fn new() -> Self {
+        Self {
             ref_: String::new(),
             short_id: String::new(),
             title: String::new(),
@@ -317,12 +316,12 @@ impl LastCommit {
 
 impl Default for LastCommit {
     fn default() -> Self {
-        LastCommit::new()
+        Self::new()
     }
 }
 
 /// PipelineFile is one CI definition returned to the pipeline viewer.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PipelineFile {
     pub path: String,
     /// Content is the file body, truncated at the per-file cap.
@@ -334,7 +333,7 @@ pub struct PipelineFile {
 }
 
 /// Pipeline is the set of CI definitions on one ref.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Pipeline {
     pub project_path: String,
     #[serde(rename = "ref")]
@@ -347,7 +346,7 @@ pub struct Pipeline {
 /// The GitLab base URL and token are deliberately absent: they come from the
 /// environment so the credential never reaches the metadata database, its
 /// snapshots, or a settings response.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Settings {
     /// ForkliftHost is the external domain a project's configuration must
     /// reference to count as wired, e.g. "forklift.example.com".
@@ -397,7 +396,7 @@ pub struct Settings {
 impl Default for Settings {
     /// Not the same as [`default_settings`].
     fn default() -> Self {
-        Settings {
+        Self {
             forklift_host: String::new(),
             group: String::new(),
             exclude_paths: Vec::new(),

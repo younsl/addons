@@ -3,7 +3,6 @@
 
 use std::sync::Arc;
 
-use once_cell::sync::Lazy;
 use regex::Regex;
 
 use crate::meta::{
@@ -19,8 +18,8 @@ use super::uiupload_maven::uploaded_result;
 
 const NPM_PACKAGE_JSON_PATH: &str = "package/package.json";
 
-static NPM_IDENTIFIER: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"^[a-z0-9][a-z0-9._~-]*$").expect("valid regex"));
+static NPM_IDENTIFIER: std::sync::LazyLock<Regex> =
+    std::sync::LazyLock::new(|| Regex::new(r"^[a-z0-9][a-z0-9._~-]*$").expect("valid regex"));
 
 /// The identity and manifest read out of an uploaded `.tgz`.
 #[derive(Debug, Clone, Default)]
@@ -273,7 +272,10 @@ impl Uploader {
                 .stage_generated(&pkg.name, "index", "application/json", &value)
                 .await
                 .map_err(|_| stage_failed())?;
-            batch.mutable_cas[0].artifact.blob_sha256 = staged_index.digest.clone();
+            batch.mutable_cas[0]
+                .artifact
+                .blob_sha256
+                .clone_from(&staged_index.digest);
             batch.mutable_cas[0].artifact.size = staged_index.size;
             batch.mutable_cas[0].expected_sha256 = expected;
             result.derived = vec![uploaded_result(&staged_index)];
@@ -389,7 +391,7 @@ impl Uploader {
         }
         if manifest
             .get("private")
-            .and_then(|v| v.as_bool())
+            .and_then(serde_json::Value::as_bool)
             .unwrap_or(false)
         {
             return Err(upload_problem(

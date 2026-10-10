@@ -36,7 +36,7 @@ const PI_ERROR_KINDS: [&str; 6] = [
 /// cycle. Tracking what was emitted turns that scan into a set difference.
 pub struct TrackedGaugeVec {
     gauge: GaugeVec,
-    /// resource_id -> label value tuples currently set on `gauge`.
+    /// `resource_id` -> label value tuples currently set on `gauge`.
     active: Mutex<HashMap<String, HashSet<Vec<String>>>>,
 }
 
@@ -53,7 +53,9 @@ impl TrackedGaugeVec {
     }
 
     fn active(&self) -> std::sync::MutexGuard<'_, HashMap<String, HashSet<Vec<String>>>> {
-        self.active.lock().unwrap_or_else(|e| e.into_inner())
+        self.active
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
     /// Set `entries` for `key` and delete the series that key had last time but no longer does.
@@ -92,13 +94,13 @@ impl TrackedGaugeVec {
     }
 
     #[cfg(test)]
-    fn gauge(&self) -> &GaugeVec {
+    const fn gauge(&self) -> &GaugeVec {
         &self.gauge
     }
 }
 
 /// Render a bool as a stable Prometheus label value.
-fn bool_label(b: bool) -> &'static str {
+const fn bool_label(b: bool) -> &'static str {
     if b { "true" } else { "false" }
 }
 
@@ -176,11 +178,12 @@ pub fn classify_pi_error(msg: &str) -> &'static str {
 }
 
 impl Metrics {
+    #[allow(clippy::too_many_lines)]
     pub fn new(exported_tags: &[String]) -> Result<Self> {
         let registry = Registry::new();
 
         let inst_labels = build_instance_label_names(exported_tags);
-        let inst_label_refs: Vec<&str> = inst_labels.iter().map(|s| s.as_str()).collect();
+        let inst_label_refs: Vec<&str> = inst_labels.iter().map(String::as_str).collect();
 
         // Breakdown labels: instance labels + extra dimension labels
         let wait_event_labels = {
@@ -189,14 +192,15 @@ impl Metrics {
             v.push("wait_event_type".to_string());
             v
         };
-        let we_refs: Vec<&str> = wait_event_labels.iter().map(|s| s.as_str()).collect();
+        let we_refs: Vec<&str> = wait_event_labels.iter().map(String::as_str).collect();
 
         let sql_tokenized_labels = {
             let mut v = inst_labels.clone();
             v.push("sql_tokenized_id".to_string());
             v
         };
-        let st_refs: Vec<&str> = sql_tokenized_labels.iter().map(|s| s.as_str()).collect();
+        let sql_tokenized_refs: Vec<&str> =
+            sql_tokenized_labels.iter().map(String::as_str).collect();
 
         let sql_tokenized_info_labels = {
             let mut v = inst_labels.clone();
@@ -207,9 +211,9 @@ impl Metrics {
             ]);
             v
         };
-        let sti_refs: Vec<&str> = sql_tokenized_info_labels
+        let sql_tokenized_info_refs: Vec<&str> = sql_tokenized_info_labels
             .iter()
-            .map(|s| s.as_str())
+            .map(String::as_str)
             .collect();
 
         let sql_labels = {
@@ -217,28 +221,28 @@ impl Metrics {
             v.push("sql_id".to_string());
             v
         };
-        let sql_refs: Vec<&str> = sql_labels.iter().map(|s| s.as_str()).collect();
+        let sql_refs: Vec<&str> = sql_labels.iter().map(String::as_str).collect();
 
         let user_labels = {
             let mut v = inst_labels.clone();
             v.push("db_user".to_string());
             v
         };
-        let user_refs: Vec<&str> = user_labels.iter().map(|s| s.as_str()).collect();
+        let user_refs: Vec<&str> = user_labels.iter().map(String::as_str).collect();
 
         let host_labels = {
             let mut v = inst_labels.clone();
             v.push("client_host".to_string());
             v
         };
-        let host_refs: Vec<&str> = host_labels.iter().map(|s| s.as_str()).collect();
+        let host_refs: Vec<&str> = host_labels.iter().map(String::as_str).collect();
 
         let db_labels = {
             let mut v = inst_labels.clone();
             v.push("db_name".to_string());
             v
         };
-        let db_refs: Vec<&str> = db_labels.iter().map(|s| s.as_str()).collect();
+        let db_refs: Vec<&str> = db_labels.iter().map(String::as_str).collect();
 
         let sql_info_labels = {
             let mut v = inst_labels.clone();
@@ -250,7 +254,7 @@ impl Metrics {
             ]);
             v
         };
-        let si_refs: Vec<&str> = sql_info_labels.iter().map(|s| s.as_str()).collect();
+        let sql_info_refs: Vec<&str> = sql_info_labels.iter().map(String::as_str).collect();
 
         let db_load = GaugeVec::new(
             Opts::new(
@@ -296,7 +300,7 @@ impl Metrics {
                 "aurora_dbinsights_db_load_by_sql_tokenized",
                 "DB Load by top tokenized SQL pattern",
             ),
-            &st_refs,
+            &sql_tokenized_refs,
         )?;
 
         let sql_tokenized_info = TrackedGaugeVec::new(
@@ -304,7 +308,7 @@ impl Metrics {
                 "aurora_dbinsights_sql_tokenized_info",
                 "Tokenized SQL text info metric (value always 1)",
             ),
-            &sti_refs,
+            &sql_tokenized_info_refs,
         )?;
 
         let sql_tokenized_calls_per_sec = TrackedGaugeVec::new(
@@ -312,7 +316,7 @@ impl Metrics {
                 "aurora_dbinsights_sql_tokenized_calls_per_sec",
                 "Calls per second for top tokenized SQL (Aurora PostgreSQL only, from pg_stat_statements)",
             ),
-            &st_refs,
+            &sql_tokenized_refs,
         )?;
 
         let sql_tokenized_avg_latency_per_call = TrackedGaugeVec::new(
@@ -320,7 +324,7 @@ impl Metrics {
                 "aurora_dbinsights_sql_tokenized_avg_latency_per_call",
                 "Average latency per call in ms for top tokenized SQL (Aurora PostgreSQL only, from pg_stat_statements)",
             ),
-            &st_refs,
+            &sql_tokenized_refs,
         )?;
 
         let sql_tokenized_rows_per_call = TrackedGaugeVec::new(
@@ -328,7 +332,7 @@ impl Metrics {
                 "aurora_dbinsights_sql_tokenized_rows_per_call",
                 "Average rows per call for top tokenized SQL (Aurora PostgreSQL only, from pg_stat_statements)",
             ),
-            &st_refs,
+            &sql_tokenized_refs,
         )?;
 
         let db_load_by_sql = TrackedGaugeVec::new(
@@ -368,7 +372,7 @@ impl Metrics {
                 "aurora_dbinsights_sql_info",
                 "SQL text info metric (value always 1). sql_full_text is capped at 1024 bytes",
             ),
-            &si_refs,
+            &sql_info_refs,
         )?;
 
         let scrape_duration_seconds = Gauge::new(
@@ -442,8 +446,8 @@ impl Metrics {
         }
 
         Ok(Self {
-            registered_count,
             registry,
+            registered_count,
             db_load,
             db_load_cpu,
             db_load_non_cpu,
@@ -484,7 +488,8 @@ impl Metrics {
         self.db_load_by_database.clear(resource_id);
     }
 
-    /// Apply a MetricSnapshot to the Prometheus registry.
+    /// Apply a `MetricSnapshot` to the Prometheus registry.
+    #[allow(clippy::too_many_lines)]
     pub fn apply_snapshot(&self, snapshot: &MetricSnapshot) {
         let base = snapshot.labels.as_vec();
         let key = snapshot.labels.resource_id.as_str();
@@ -509,8 +514,7 @@ impl Metrics {
 
         let now_ts = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_secs_f64())
-            .unwrap_or(0.0);
+            .map_or(0.0, |d| d.as_secs_f64());
         self.last_success_timestamp_seconds
             .with_label_values(&base)
             .set(now_ts);
@@ -790,7 +794,7 @@ mod tests {
         let label_names: Vec<&str> = descs[0]
             .variable_labels
             .iter()
-            .map(|l| l.as_str())
+            .map(String::as_str)
             .collect();
         assert!(label_names.contains(&"tag_team"));
         assert!(label_names.contains(&"tag_environment"));

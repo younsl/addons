@@ -56,6 +56,7 @@ impl RemoteStore {
         })
     }
 
+    #[must_use]
     pub fn base_url(&self) -> &str {
         &self.base_url
     }
@@ -74,7 +75,7 @@ impl RemoteStore {
             .query(query)
             .send()
             .await
-            .with_context(|| format!("Internal API request to {} failed", url))?;
+            .with_context(|| format!("Internal API request to {url} failed"))?;
         Self::decode(resp, &url).await
     }
 
@@ -91,7 +92,7 @@ impl RemoteStore {
         }
         resp.json::<T>()
             .await
-            .with_context(|| format!("Failed to decode internal API response from {}", url))
+            .with_context(|| format!("Failed to decode internal API response from {url}"))
     }
 
     /// Path segment encoding for the report-identity routes. Names and
@@ -110,6 +111,7 @@ impl RemoteStore {
 
 /// Flatten `QueryParams` into the internal API's query string. Only the fields
 /// the SQL layer actually reads are sent.
+#[must_use]
 pub fn query_params_to_pairs(
     report_type: &str,
     params: &QueryParams,
@@ -175,7 +177,7 @@ impl ReportStore for RemoteStore {
             .header(INTERNAL_TOKEN_HEADER, &self.token)
             .send()
             .await
-            .with_context(|| format!("Internal API request to {} failed", url))?;
+            .with_context(|| format!("Internal API request to {url} failed"))?;
         if resp.status() == StatusCode::NOT_FOUND {
             return Ok(None);
         }
@@ -318,7 +320,7 @@ impl ReportStore for RemoteStore {
             .json(&event)
             .send()
             .await
-            .with_context(|| format!("Internal API request to {} failed", url))?;
+            .with_context(|| format!("Internal API request to {url} failed"))?;
         let _: serde_json::Value = Self::decode(resp, &url).await?;
         Ok(())
     }
@@ -338,14 +340,14 @@ impl ReportStore for RemoteStore {
             .header(INTERNAL_TOKEN_HEADER, &self.token)
             .send()
             .await
-            .with_context(|| format!("Internal API request to {} failed", url))?;
+            .with_context(|| format!("Internal API request to {url} failed"))?;
         if resp.status() == StatusCode::NOT_FOUND {
             return Ok(false);
         }
         let body: serde_json::Value = Self::decode(resp, &url).await?;
         Ok(body
             .get("deleted")
-            .and_then(|v| v.as_bool())
+            .and_then(serde_json::Value::as_bool)
             .unwrap_or(true))
     }
 
@@ -357,9 +359,12 @@ impl ReportStore for RemoteStore {
             .header(INTERNAL_TOKEN_HEADER, &self.token)
             .send()
             .await
-            .with_context(|| format!("Internal API request to {} failed", url))?;
+            .with_context(|| format!("Internal API request to {url} failed"))?;
         let body: serde_json::Value = Self::decode(resp, &url).await?;
-        Ok(body.get("deleted").and_then(|v| v.as_u64()).unwrap_or(0))
+        Ok(body
+            .get("deleted")
+            .and_then(serde_json::Value::as_u64)
+            .unwrap_or(0))
     }
 }
 
@@ -465,7 +470,7 @@ mod tests {
                     .await;
             });
 
-            let store = RemoteStore::new(&format!("http://{}", addr), client_token).unwrap();
+            let store = RemoteStore::new(&format!("http://{addr}"), client_token).unwrap();
             Self {
                 store,
                 db,
@@ -684,7 +689,7 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        assert!(report.meta.notes.is_empty());
+        assert_eq!(report.meta.notes, "");
         assert!(report.meta.notes_created_at.is_none());
 
         let (reports, _) = h
@@ -716,12 +721,9 @@ mod tests {
         // still return every namespace.
         let scoped = h.store.list_namespaces(Some("prod")).await.unwrap();
         assert_eq!(scoped, vec!["default".to_string()]);
-        assert!(
-            h.store
-                .list_namespaces(Some("nonexistent"))
-                .await
-                .unwrap()
-                .is_empty()
+        assert_eq!(
+            h.store.list_namespaces(Some("nonexistent")).await.unwrap(),
+            [] as [std::string::String; 0]
         );
     }
 

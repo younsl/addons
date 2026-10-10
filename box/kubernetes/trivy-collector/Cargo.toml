@@ -21,6 +21,7 @@ k8s-openapi = { version = "0.28", features = ["v1_32"] }
 
 # HTTP client (collector mode)
 reqwest = { version = "0.13", features = ["json", "query", "form", "rustls"], default-features = false }
+rustls = { version = "0.23", default-features = false, features = ["aws-lc-rs", "tls12"] }
 
 # Web framework (server mode)
 axum = { version = "0.8.9", features = ["tokio"] }
@@ -89,9 +90,32 @@ hostname = "0.4.2"
 [build-dependencies]
 vergen-gix = { version = "10", features = ["build", "cargo", "rustc"] }
 
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+nursery = { level = "warn", priority = -1 }
+# Internal binary crate, rustdoc is never published.
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+# Casts convert counts, sizes, and durations that stay far below the lossy range.
+cast_possible_truncation = "allow"
+cast_possible_wrap = "allow"
+cast_precision_loss = "allow"
+cast_sign_loss = "allow"
+# if let/else reads clearer than nested map_or_else closures.
+option_if_let_else = "allow"
+# Doc comments are free prose, not code references or one-line summaries.
+doc_markdown = "allow"
+too_long_first_doc_paragraph = "allow"
+# Config, permission, and sync-state structs carry independent flags.
+struct_excessive_bools = "allow"
+
 [profile.release]
 opt-level = 3
-lto = "thin"
-codegen-units = 16
+lto = true
+codegen-units = 1
 strip = true
 panic = "abort"

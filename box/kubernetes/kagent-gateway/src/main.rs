@@ -37,12 +37,14 @@ const DRAIN_MARGIN: Duration = Duration::from_secs(30);
 #[command(name = "kagent-gateway", version, about)]
 struct Cli {
     /// Enable debug logging regardless of `LOG_LEVEL`.
-    #[arg(short, long)]
+    #[arg(short, long, env = "VERBOSE")]
     verbose: bool,
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    install_crypto_provider();
+
     let cli = Cli::parse();
     let cfg = match Config::load() {
         Ok(cfg) => cfg,
@@ -268,6 +270,12 @@ fn severity_list(cfg: &Config) -> String {
     let mut items: Vec<&str> = cfg.analyze_severities.iter().map(String::as_str).collect();
     items.sort_unstable();
     items.join(",")
+}
+
+/// Installs aws-lc-rs as the process-wide rustls provider. reqwest is built
+/// without one, so every client constructor calls this and repeats are no-ops.
+pub fn install_crypto_provider() {
+    let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
 }
 
 fn init_tracing(level: &str, format: &str) {

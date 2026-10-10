@@ -216,8 +216,8 @@ pub(super) async fn list(State(h): State<Arc<Handler>>, request: Request) -> Res
             Ok(dto) => dto,
             Err(err) => return write_error(StatusCode::INTERNAL_SERVER_ERROR, &err.to_string()),
         };
-        let st = stats.get(&repository.id).cloned().unwrap_or_default();
-        let ratio = ratios.get(&repository.id).cloned().unwrap_or_default();
+        let st = stats.get(&repository.id).copied().unwrap_or_default();
+        let ratio = ratios.get(&repository.id).copied().unwrap_or_default();
         out.push(RepositoryListItemDTO {
             repository: dto,
             artifact_count: st.artifact_count,
@@ -1083,11 +1083,11 @@ struct ArtifactDTO {
     blob_missing_last_status: i64,
 }
 
-fn is_false(v: &bool) -> bool {
+const fn is_false(v: &bool) -> bool {
     !*v
 }
 
-fn is_zero(v: &i64) -> bool {
+const fn is_zero(v: &i64) -> bool {
     *v == 0
 }
 
@@ -1611,7 +1611,9 @@ fn map_upload_error(err: repo::UploadError) -> Response {
             write_error(validation.status, &validation.message)
         }
         repo::UploadError::Meta(err) => map_error(err),
-        other => write_error(StatusCode::INTERNAL_SERVER_ERROR, &other.to_string()),
+        other @ repo::UploadError::Store(_) => {
+            write_error(StatusCode::INTERNAL_SERVER_ERROR, &other.to_string())
+        }
     }
 }
 

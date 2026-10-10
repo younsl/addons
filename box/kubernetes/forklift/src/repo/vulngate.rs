@@ -23,7 +23,7 @@ impl Manager {
     ///
     /// `Some(response)` means the request was blocked.
     pub(crate) fn vuln_gate(
-        m: Arc<Manager>,
+        m: Arc<Self>,
         parts: Arc<Parts>,
         res: Arc<Resolved>,
         pkg: String,
@@ -104,7 +104,7 @@ impl Manager {
                     path: format!("{pkg}@{version}"),
                     username,
                     method: parts.method.to_string(),
-                    status: StatusCode::FORBIDDEN.as_u16() as i64,
+                    status: i64::from(StatusCode::FORBIDDEN.as_u16()),
                     client_ip: audit::client_ip_parts(&parts),
                     user_agent: super::header_str(&parts.headers, "User-Agent").to_string(),
                     ..Default::default()
@@ -166,7 +166,7 @@ pub(crate) mod tests {
         async fn query(&self, _eco: &str, _pkg: &str, _version: &str) -> vuln::Result<Finding> {
             Ok(Finding::default())
         }
-        fn source(&self) -> &str {
+        fn source(&self) -> &'static str {
             "fake"
         }
     }
@@ -186,7 +186,7 @@ pub(crate) mod tests {
                 .push([eco.to_string(), pkg.to_string(), ver.to_string()]);
             Ok(Finding::default())
         }
-        fn source(&self) -> &str {
+        fn source(&self) -> &'static str {
             "rec"
         }
     }
@@ -197,7 +197,10 @@ pub(crate) mod tests {
             enabled: true,
             action: action.to_string(),
             threshold: threshold.to_string(),
-            ignore: ignore.iter().map(|s| s.to_string()).collect(),
+            ignore: ignore
+                .iter()
+                .map(std::string::ToString::to_string)
+                .collect(),
             ..Default::default()
         };
         cfg
@@ -258,7 +261,9 @@ pub(crate) mod tests {
                 "lodash",
                 "4.17.99",
                 severity,
-                &ids.iter().map(|s| s.to_string()).collect::<Vec<_>>(),
+                &ids.iter()
+                    .map(std::string::ToString::to_string)
+                    .collect::<Vec<_>>(),
                 &HashMap::new(),
                 0,
                 &[],

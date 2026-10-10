@@ -16,6 +16,8 @@ use tracing::{error, info};
 
 #[tokio::main]
 async fn main() {
+    let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
+
     if let Err(e) = run().await {
         error!("Application error: {:#}", e);
         std::process::exit(1);
@@ -27,7 +29,7 @@ async fn run() -> Result<()> {
     let config = Config::load().context("Failed to load configuration")?;
 
     // Initialize logger
-    logger::init_logger(&config.log_level);
+    logger::init_tracing(&config.log_level, &config.log_format);
     info!("Starting GHES Schedule Scanner");
     info!("Version: {}", env!("CARGO_PKG_VERSION"));
     info!(
@@ -40,6 +42,7 @@ async fn run() -> Result<()> {
         github_org = %config.github_organization,
         github_base_url = %config.github_base_url,
         log_level = %config.log_level,
+        log_format = %config.log_format,
         publisher_type = %config.publisher_type,
         request_timeout = config.request_timeout,
         concurrent_scans = config.concurrent_scans,
@@ -99,12 +102,17 @@ async fn run() -> Result<()> {
     Ok(())
 }
 
+#[cfg(test)]
+fn install_crypto_provider() {
+    let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
+}
+
 fn create_github_client(config: &Config) -> Result<Octocrab> {
     let token = config.github_token.clone();
 
     // Parse the base URL and append /api/v3 for GitHub Enterprise Server
     let base_url = config.github_base_url.trim_end_matches('/');
-    let api_url = format!("{}/api/v3", base_url);
+    let api_url = format!("{base_url}/api/v3");
 
     info!("Initializing GitHub client with API URL: {}", api_url);
 

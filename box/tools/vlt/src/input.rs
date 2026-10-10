@@ -12,10 +12,7 @@ pub fn handle(app: &mut App, key: KeyEvent) {
         return;
     }
     if app.show_help {
-        if matches!(
-            key.code,
-            KeyCode::Esc | KeyCode::Char('?') | KeyCode::Char('q')
-        ) {
+        if matches!(key.code, KeyCode::Esc | KeyCode::Char('?' | 'q')) {
             app.show_help = false;
         }
         return;
@@ -39,7 +36,7 @@ pub fn handle(app: &mut App, key: KeyEvent) {
     }
 }
 
-fn typing_screen(app: &App) -> bool {
+const fn typing_screen(app: &App) -> bool {
     matches!(
         app.screen,
         Screen::Setup(_) | Screen::Unlock(_) | Screen::Form(_)
@@ -112,6 +109,7 @@ fn handle_unlock(app: &mut App, key: KeyEvent) {
     }
 }
 
+#[allow(clippy::too_many_lines)]
 fn handle_list(app: &mut App, key: KeyEvent) {
     if matches!(&app.screen, Screen::List(l) if l.searching) {
         return handle_search_input(app, key);
@@ -132,11 +130,11 @@ fn handle_list(app: &mut App, key: KeyEvent) {
     match key.code {
         KeyCode::Char('q') | KeyCode::Esc => {
             if let Screen::List(l) = &mut app.screen {
-                if !l.search.is_empty() {
+                if l.search.is_empty() {
+                    app.should_quit = true;
+                } else {
                     l.search.clear();
                     l.selected = 0;
-                } else {
-                    app.should_quit = true;
                 }
             }
         }
@@ -328,7 +326,7 @@ fn handle_confirm_delete(app: &mut App, key: KeyEvent) {
     };
     let Some(id) = id else { return };
     match key.code {
-        KeyCode::Char('y') | KeyCode::Char('Y') | KeyCode::Enter => {
+        KeyCode::Char('y' | 'Y') | KeyCode::Enter => {
             match app.delete_item(&id) {
                 Ok(()) => app.set_status("deleted", StatusKind::Info),
                 Err(e) => app.set_status(e.to_string(), StatusKind::Error),
@@ -352,16 +350,13 @@ fn handle_detail(app: &mut App, key: KeyEvent) {
     };
     let id = d.id.clone();
     let pending_g = d.pending_g;
-    let item = match app
+    let Some(item) = app
         .vault
         .as_ref()
         .and_then(|v| v.find_item(&id).ok().cloned())
-    {
-        Some(it) => it,
-        None => {
-            app.back_to_list();
-            return;
-        }
+    else {
+        app.back_to_list();
+        return;
     };
 
     // Always clear the pending `g` prefix; specific handlers below set it again.
@@ -496,11 +491,11 @@ fn handle_generator(app: &mut App, key: KeyEvent) {
     };
     match key.code {
         KeyCode::Esc | KeyCode::Char('q') => app.back_to_list(),
-        KeyCode::Char('+') | KeyCode::Char('=') | KeyCode::Right | KeyCode::Char('l') => {
+        KeyCode::Char('+' | '=' | 'l') | KeyCode::Right => {
             g.length = (g.length + 1).min(128);
             g.regenerate();
         }
-        KeyCode::Char('-') | KeyCode::Left | KeyCode::Char('h') => {
+        KeyCode::Char('-' | 'h') | KeyCode::Left => {
             g.length = g.length.saturating_sub(1).max(4);
             g.regenerate();
         }
@@ -513,7 +508,7 @@ fn handle_generator(app: &mut App, key: KeyEvent) {
             g.regenerate();
         }
         KeyCode::Char('g') | KeyCode::Enter => g.regenerate(),
-        KeyCode::Char('c') | KeyCode::Char('y') => {
+        KeyCode::Char('c' | 'y') => {
             let out = g.output.clone();
             app.copy_value(&out, "password");
         }

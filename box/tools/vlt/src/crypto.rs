@@ -49,7 +49,7 @@ impl KdfParams {
 pub struct DerivedKey([u8; KEY_LEN]);
 
 impl DerivedKey {
-    fn as_bytes(&self) -> &[u8; KEY_LEN] {
+    const fn as_bytes(&self) -> &[u8; KEY_LEN] {
         &self.0
     }
 }

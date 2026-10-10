@@ -56,6 +56,7 @@ pub struct RequirePrincipal(pub Arc<Principal>);
 impl<S: Send + Sync> FromRequestParts<S> for RequirePrincipal {
     type Rejection = Response;
 
+    #[allow(clippy::unused_async_trait_impl)]
     async fn from_request_parts(
         parts: &mut http::request::Parts,
         _state: &S,
@@ -72,17 +73,18 @@ pub struct OptionalPrincipal(pub Option<Arc<Principal>>);
 impl<S: Send + Sync> FromRequestParts<S> for OptionalPrincipal {
     type Rejection = std::convert::Infallible;
 
+    #[allow(clippy::unused_async_trait_impl)]
     async fn from_request_parts(
         parts: &mut http::request::Parts,
         _state: &S,
     ) -> Result<Self, Self::Rejection> {
-        Ok(OptionalPrincipal(from_request_parts(parts)))
+        Ok(Self(from_request_parts(parts)))
     }
 }
 
 /// Middleware that allows only global administrators.
 pub async fn require_admin(req: Request, next: Next) -> Response {
-    guard(req, next, |p| p.is_admin()).await
+    guard(req, next, super::authz::Principal::is_admin).await
 }
 
 /// Middleware that allows administrators and principals holding the approve

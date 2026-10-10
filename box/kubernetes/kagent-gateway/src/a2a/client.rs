@@ -211,6 +211,7 @@ impl Client {
         poll_interval: Duration,
         metrics: Arc<Metrics>,
     ) -> Self {
+        crate::install_crypto_provider();
         Self {
             http: reqwest::Client::builder()
                 .timeout(request_timeout)

@@ -114,7 +114,8 @@ pub struct Config {
 }
 
 impl Config {
-    /// Read the configuration from the environment.
+    /// Read the configuration through `lookup`, keyed by environment
+    /// variable name.
     ///
     /// Returns `Ok(None)` when annotating is disabled, which includes the case
     /// where it was switched on but the token (or URL) is missing: annotations
@@ -124,26 +125,26 @@ impl Config {
     /// A value that is present but malformed is still an error. Silently
     /// ignoring a typo like `GRAFANA_ANNOTATE_ON=sucess` would annotate the
     /// wrong runs, which is worse than refusing to start.
-    pub fn from_env() -> Result<Option<Self>> {
-        if !env_flag("GRAFANA_ANNOTATION_ENABLED")? {
+    pub fn from_lookup(lookup: impl Fn(&str) -> Option<String>) -> Result<Option<Self>> {
+        if !flag(&lookup, "GRAFANA_ANNOTATION_ENABLED")? {
             return Ok(None);
         }
 
-        let Some(url) = env_str("GRAFANA_URL") else {
+        let Some(url) = lookup("GRAFANA_URL") else {
             warn!(
                 "Grafana annotations are enabled but GRAFANA_URL is empty, disabling annotations"
             );
             return Ok(None);
         };
-        let Some(token) = env_str("GRAFANA_API_TOKEN") else {
+        let Some(token) = lookup("GRAFANA_API_TOKEN") else {
             warn!(
                 "Grafana annotations are enabled but GRAFANA_API_TOKEN is empty, disabling annotations. Set a Grafana service account token with the annotations:create permission to record upgrade phases"
             );
             return Ok(None);
         };
 
-        let tags = parse_tags(env_str("GRAFANA_ANNOTATION_TAGS").as_deref().unwrap_or(""));
-        let annotate_on = match env_str("GRAFANA_ANNOTATE_ON") {
+        let tags = parse_tags(lookup("GRAFANA_ANNOTATION_TAGS").as_deref().unwrap_or(""));
+        let annotate_on = match lookup("GRAFANA_ANNOTATE_ON") {
             Some(raw) => AnnotateOn::parse(&raw)?,
             None => AnnotateOn::default(),
         };
@@ -510,21 +511,13 @@ fn truncate_chars(s: &str) -> String {
     format!("{kept}...")
 }
 
-/// Read a non-empty environment variable.
-fn env_str(key: &str) -> Option<String> {
-    std::env::var(key)
-        .ok()
-        .map(|v| v.trim().to_string())
-        .filter(|v| !v.is_empty())
-}
-
-/// Read a boolean environment variable, defaulting to false when unset.
+/// Read a boolean setting through the lookup, defaulting to false when unset.
 ///
 /// An unrecognised value is an error rather than a false: a typo that silently
 /// disabled annotating would be invisible until someone went looking for
 /// markers that were never posted.
-fn env_flag(key: &str) -> Result<bool> {
-    match env_str(key) {
+fn flag(lookup: impl Fn(&str) -> Option<String>, key: &str) -> Result<bool> {
+    match lookup(key) {
         None => Ok(false),
         Some(raw) => match raw.to_ascii_lowercase().as_str() {
             "true" | "1" | "yes" => Ok(true),
@@ -614,6 +607,38 @@ mod tests {
         assert_eq!(AnnotateOn::All.to_string(), "all");
         assert_eq!(AnnotateOn::Upgrade.to_string(), "upgrade");
         assert_eq!(AnnotateOn::DryRun.to_string(), "dryRun");
+    }
+
+    fn lookup_from(pairs: &[(&str, &str)]) -> impl Fn(&str) -> Option<String> {
+        let map: std::collections::HashMap<String, String> = pairs
+            .iter()
+            .map(|(k, v)| ((*k).to_string(), (*v).to_string()))
+            .collect();
+        move |key: &str| map.get(key).cloned()
+    }
+
+    #[test]
+    fn test_config_from_lookup() {
+        assert!(Config::from_lookup(lookup_from(&[])).unwrap().is_none());
+        assert!(
+            Config::from_lookup(lookup_from(&[("GRAFANA_ANNOTATION_ENABLED", "true")]))
+                .unwrap()
+                .is_none()
+        );
+        assert!(Config::from_lookup(lookup_from(&[("GRAFANA_ANNOTATION_ENABLED", "on")])).is_err());
+
+        let config = Config::from_lookup(lookup_from(&[
+            ("GRAFANA_ANNOTATION_ENABLED", "yes"),
+            ("GRAFANA_URL", "https://grafana.example.com"),
+            ("GRAFANA_API_TOKEN", "t"),
+            ("GRAFANA_ANNOTATION_TAGS", "a,b"),
+            ("GRAFANA_ANNOTATE_ON", "upgrade"),
+        ]))
+        .unwrap()
+        .unwrap();
+        assert_eq!(config.url, "https://grafana.example.com");
+        assert_eq!(config.tags, vec!["a", "b"]);
+        assert_eq!(config.annotate_on, AnnotateOn::Upgrade);
     }
 
     #[test]
@@ -814,6 +839,7 @@ mod tests {
         }
 
         fn annotator(&self, annotate_on: AnnotateOn) -> Annotator {
+            crate::install_crypto_provider();
             Annotator::new(Config {
                 url: format!("http://127.0.0.1:{}", self.port),
                 token: SecretString::from("s3cr3t"),

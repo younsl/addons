@@ -17,8 +17,8 @@ pub struct StorageHealthCollector {
 }
 
 impl StorageHealthCollector {
-    pub fn new(monitor: Arc<HealthMonitor>) -> StorageHealthCollector {
-        StorageHealthCollector {
+    pub fn new(monitor: Arc<HealthMonitor>) -> Self {
+        Self {
             monitor,
             up: desc(
                 "forklift_storage_up",

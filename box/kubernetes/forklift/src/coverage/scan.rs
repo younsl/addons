@@ -96,9 +96,8 @@ impl Scanner {
                 "coverage scanning is not configured: set the GitLab URL and token".to_string(),
             ));
         }
-        let _guard = match self.scan_mu.try_lock() {
-            Ok(g) => g,
-            Err(_) => return Err(Error::Msg("a scan is already in progress".to_string())),
+        let Ok(_guard) = self.scan_mu.try_lock() else {
+            return Err(Error::Msg("a scan is already in progress".to_string()));
         };
 
         // Settings can change between scans, so resolve them up front rather
@@ -169,7 +168,7 @@ impl Scanner {
 
         {
             let mut state = self.state.write();
-            state.excluded_projects = excluded.clone();
+            state.excluded_projects.clone_from(&excluded);
             if let Some(progress) = state.progress.as_mut() {
                 progress.phase = PHASE_SCANNING.to_string();
                 progress.total = candidates.len() as i64;
@@ -279,9 +278,8 @@ impl Scanner {
         let mut state = self.state.write();
         let (skipped, applied) = (p.skipped, p.applied);
         state.projects.push(p);
-        let progress = match state.progress.as_mut() {
-            Some(progress) => progress,
-            None => return,
+        let Some(progress) = state.progress.as_mut() else {
+            return;
         };
         progress.done += 1;
         if skipped {
@@ -675,7 +673,7 @@ pub(crate) mod tests {
     pub(crate) fn install_crypto_provider() {
         static ONCE: std::sync::Once = std::sync::Once::new();
         ONCE.call_once(|| {
-            rustls::crypto::ring::default_provider()
+            rustls::crypto::aws_lc_rs::default_provider()
                 .install_default()
                 .ok();
         });
@@ -786,7 +784,10 @@ pub(crate) mod tests {
             id,
             path: path.to_string(),
             topics: Vec::new(),
-            branches: branches.iter().map(|b| b.to_string()).collect(),
+            branches: branches
+                .iter()
+                .map(std::string::ToString::to_string)
+                .collect(),
             files: files
                 .iter()
                 .map(|(k, v)| ((*k).to_string(), v.clone()))
@@ -804,7 +805,7 @@ pub(crate) mod tests {
     }
 
     fn project_json(p: &FakeProject, topics: serde_json::Value) -> serde_json::Value {
-        let name = &p.path[p.path.rfind('/').map(|i| i + 1).unwrap_or(0)..];
+        let name = &p.path[p.path.rfind('/').map_or(0, |i| i + 1)..];
         json!({
             "id": p.id,
             "name": name,
@@ -844,13 +845,11 @@ pub(crate) mod tests {
                     .collect();
                 return json_list(json!(out));
             }
-            let rest = match path.strip_prefix("/api/v4/projects/") {
-                Some(rest) => rest,
-                None => return plain_error(404, "not found"),
+            let Some(rest) = path.strip_prefix("/api/v4/projects/") else {
+                return plain_error(404, "not found");
             };
-            let rest = match url_query_unescape(rest) {
-                Ok(rest) => rest,
-                Err(_) => return plain_error(400, "bad path"),
+            let Ok(rest) = url_query_unescape(rest) else {
+                return plain_error(400, "bad path");
             };
 
             let (id, tail) = match self.by_id.get(rest.as_str()) {
@@ -910,11 +909,10 @@ pub(crate) mod tests {
             }
             if let Some(after) = tail.strip_prefix("repository/files/") {
                 let file_path = after.strip_suffix("/raw").unwrap_or(after);
-                let decoded = match url_query_unescape(file_path) {
-                    Ok(decoded) => decoded,
-                    Err(_) => return plain_error(400, "bad path"),
+                let Ok(decoded) = url_query_unescape(file_path) else {
+                    return plain_error(400, "bad path");
                 };
-                return match p.files.get(&format!("{}:{}", r#ref, decoded)) {
+                return match p.files.get(&format!("{ref}:{decoded}")) {
                     Some(body) => ResponseTemplate::new(200).set_body_string(body.clone()),
                     None => plain_error(404, "no such file"),
                 };

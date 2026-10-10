@@ -503,7 +503,7 @@ impl Manager {
                     &res.path,
                     &art.blob_sha256,
                     "index",
-                    StatusCode::INTERNAL_SERVER_ERROR.as_u16() as i64,
+                    i64::from(StatusCode::INTERNAL_SERVER_ERROR.as_u16()),
                     &err.to_string(),
                 );
                 return Err(());
@@ -615,12 +615,9 @@ impl Manager {
                 let tarball_path = format!("{}/-/{}", res.path, path_base(&name));
                 // Decode the tarball as a stream into the blob store instead of
                 // materializing a second full copy of the attachment.
-                let decoded = match base64_decode_stream(data) {
-                    Ok(bytes) => bytes,
-                    Err(()) => {
-                        drop(slot);
-                        return http_error(StatusCode::BAD_REQUEST, "invalid attachment encoding");
-                    }
+                let Ok(decoded) = base64_decode_stream(data) else {
+                    drop(slot);
+                    return http_error(StatusCode::BAD_REQUEST, "invalid attachment encoding");
                 };
                 if self
                     .engine
@@ -720,7 +717,7 @@ pub(super) fn highest_stable_version<V>(versions: &BTreeMap<String, V>) -> Strin
             || n[0] > best_n[0]
             || (n[0] == best_n[0] && (n[1] > best_n[1] || (n[1] == best_n[1] && n[2] > best_n[2])))
         {
-            best = ver.clone();
+            best.clone_from(ver);
             best_n = n;
         }
     }
@@ -1003,7 +1000,7 @@ pub(super) fn json_field_span(obj: &[u8], key: &str) -> Option<(usize, usize)> {
     }
 }
 
-fn skip_ws(b: &[u8], mut i: usize) -> usize {
+const fn skip_ws(b: &[u8], mut i: usize) -> usize {
     while i < b.len() && matches!(b[i], b' ' | b'\t' | b'\n' | b'\r') {
         i += 1;
     }

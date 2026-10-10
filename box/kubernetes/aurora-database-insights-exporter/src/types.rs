@@ -20,9 +20,7 @@ impl AuroraInstance {
         let size = instance_class.rsplit('.').next().unwrap_or("");
 
         match size {
-            "micro" => 1,
-            "small" => 1,
-            "medium" => 1,
+            "micro" | "small" | "medium" => 1,
             "large" => 2,
             "xlarge" => 4,
             "2xlarge" => 8,
@@ -30,10 +28,8 @@ impl AuroraInstance {
             "8xlarge" => 32,
             "12xlarge" => 48,
             "16xlarge" => 64,
-            "24xlarge" => 96,
-            "metal" => 96,
+            "24xlarge" | "metal" => 96,
             // Serverless v2
-            _ if instance_class.contains("serverless") => 0,
             _ => 0,
         }
     }
@@ -48,7 +44,7 @@ pub struct InstanceLabels {
     pub engine: String,
     pub region: String,
     pub cluster: String,
-    /// Exported tag values in the same order as the config's exported_tags.
+    /// Exported tag values in the same order as the config's `exported_tags`.
     /// Label names are `tag_<lowercase_key>`.
     pub tag_values: Vec<String>,
 }
@@ -116,11 +112,11 @@ pub struct SqlTokenizedMetric {
     pub sql_tokenized_text: String,
     pub sql_tokenized_text_truncated: bool,
     pub value: f64,
-    /// Calls per second (Aurora PostgreSQL only, from pg_stat_statements)
+    /// Calls per second (Aurora PostgreSQL only, from `pg_stat_statements`)
     pub calls_per_sec: Option<f64>,
-    /// Average latency per call in ms (Aurora PostgreSQL only, from pg_stat_statements)
+    /// Average latency per call in ms (Aurora PostgreSQL only, from `pg_stat_statements`)
     pub avg_latency_per_call: Option<f64>,
-    /// Average rows per call (Aurora PostgreSQL only, from pg_stat_statements)
+    /// Average rows per call (Aurora PostgreSQL only, from `pg_stat_statements`)
     pub rows_per_call: Option<f64>,
 }
 

@@ -1,6 +1,7 @@
 //! Slack incoming webhook delivery for fired SBOM alerts.
 
 use std::collections::{BTreeMap, HashMap};
+use std::fmt::Write as _;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -79,16 +80,19 @@ pub struct FireOutcome {
 impl FireOutcome {
     /// Whether nothing got through. A rule with no Slack receiver attempted
     /// nothing, which is not a failure.
-    pub fn all_failed(&self) -> bool {
+    #[must_use]
+    pub const fn all_failed(&self) -> bool {
         self.attempted > 0 && self.succeeded == 0
     }
 }
 
 impl SlackNotifier {
+    #[must_use]
     pub fn new() -> Self {
         Self::with_external_url(None)
     }
 
+    #[must_use]
     pub fn with_external_url(external_url: Option<String>) -> Self {
         let http = HttpClient::builder()
             .timeout(Duration::from_secs(10))
@@ -133,7 +137,7 @@ impl SlackNotifier {
                 {
                     Ok(()) => outcome.succeeded += 1,
                     Err(e) => {
-                        outcome.last_error = Some(format!("receiver '{}': {}", receiver.name, e))
+                        outcome.last_error = Some(format!("receiver '{}': {}", receiver.name, e));
                     }
                 }
             }
@@ -167,7 +171,6 @@ impl SlackNotifier {
                 let outcome = self
                     .send_once(&slack.webhook_url, &payload)
                     .await
-                    .map(|_| ())
                     .map_err(|e| e.to_string());
                 results.push(TestDeliveryResult {
                     receiver_name: receiver.name.clone(),
@@ -229,9 +232,8 @@ impl SlackNotifier {
         let sem = self.semaphore_for(&slack.webhook_url).await;
         // Hold a permit for the entire retry window so 429 backoff doesn't
         // get bypassed by a parallel sender for the same URL.
-        let _permit = match sem.acquire().await {
-            Ok(p) => p,
-            Err(_) => return Err("send semaphore closed".to_string()),
+        let Ok(_permit) = sem.acquire().await else {
+            return Err("send semaphore closed".to_string());
         };
 
         for attempt in 1..=MAX_SEND_ATTEMPTS {
@@ -310,6 +312,7 @@ impl Default for SlackNotifier {
 /// The header always carries the rule name (the operator-authored alert
 /// title); component identity is rendered as a separate field so the
 /// title isn't polluted with package/version data.
+#[allow(clippy::too_many_lines)]
 fn build_payload(
     rule: &AlertRule,
     receiver_name: &str,
@@ -342,10 +345,10 @@ fn build_payload(
             urlencode(&first.name),
         )
     });
-    let title_inner = format!("[FIRING] {}", header_sentence);
+    let title_inner = format!("[FIRING] {header_sentence}");
     let header_text = match &deep_link {
-        Some(url) => format!(":rotating_light: *<{}|{}>*", url, title_inner),
-        None => format!(":rotating_light: *{}*", title_inner),
+        Some(url) => format!(":rotating_light: *<{url}|{title_inner}>*"),
+        None => format!(":rotating_light: *{title_inner}*"),
     };
 
     let mut blocks = vec![json!({
@@ -358,7 +361,7 @@ fn build_payload(
         if let Some(t) = first.pkg_type.as_deref()
             && !t.is_empty()
         {
-            detail_lines.push(format!("*Type:* {}", t));
+            detail_lines.push(format!("*Type:* {t}"));
         }
         // The rule's top-level description (filled by the operator in the
         // form) is the primary human-readable explanation; annotations are
@@ -369,13 +372,13 @@ fn build_payload(
         if let Some(summary) = rule.annotations.get("summary")
             && !summary.is_empty()
         {
-            detail_lines.push(format!("*Summary:* {}", summary));
+            detail_lines.push(format!("*Summary:* {summary}"));
         }
         if let Some(desc) = rule.annotations.get("description")
             && !desc.is_empty()
             && desc != &rule.description
         {
-            detail_lines.push(format!("*Annotation description:* {}", desc));
+            detail_lines.push(format!("*Annotation description:* {desc}"));
         }
         blocks.push(json!({
             "type": "section",
@@ -392,7 +395,7 @@ fn build_payload(
         if let Some(summary) = rule.annotations.get("summary")
             && !summary.is_empty()
         {
-            meta_lines.push(format!("*Summary:* {}", summary));
+            meta_lines.push(format!("*Summary:* {summary}"));
         }
         if !meta_lines.is_empty() {
             blocks.push(json!({
@@ -417,8 +420,7 @@ fn build_payload(
     ];
     if other_workloads > 0 {
         location_lines.push(format!(
-            "*Also matches:* {} other workload(s) in current data",
-            other_workloads,
+            "*Also matches:* {other_workloads} other workload(s) in current data",
         ));
     }
     blocks.push(json!({
@@ -477,9 +479,9 @@ fn format_footer(receiver_name: &str) -> String {
 fn format_footer_with_version(receiver_name: &str, version: Option<&str>) -> String {
     match version {
         Some(v) if !v.is_empty() => {
-            format!("trivy-collector v{} · receiver={}", v, receiver_name)
+            format!("trivy-collector v{v} · receiver={receiver_name}")
         }
-        _ => format!("trivy-collector · receiver={}", receiver_name),
+        _ => format!("trivy-collector · receiver={receiver_name}"),
     }
 }
 
@@ -497,7 +499,7 @@ fn urlencode(s: &str) -> String {
         if b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.' | b'~') {
             out.push(b as char);
         } else {
-            out.push_str(&format!("%{:02X}", b));
+            let _ = write!(out, "%{b:02X}");
         }
     }
     out
@@ -710,7 +712,7 @@ mod tests {
         let rule = sample_rule();
         let receiver = &rule.receivers[0];
         let ctxs: Vec<AlertContext> = (0..MAX_FINDINGS_PER_MESSAGE + 5)
-            .map(|i| sbom_ctx(&format!("pkg-{:03}", i), "1.0.0"))
+            .map(|i| sbom_ctx(&format!("pkg-{i:03}"), "1.0.0"))
             .collect();
         let payload = build_payload(
             &rule,
@@ -852,9 +854,8 @@ mod tests {
         let footer = format_footer("slack-default");
         let expected_version = env!("CARGO_PKG_VERSION");
         assert!(
-            footer.contains(&format!("trivy-collector v{}", expected_version)),
-            "footer = {:?}",
-            footer,
+            footer.contains(&format!("trivy-collector v{expected_version}")),
+            "footer = {footer:?}",
         );
         assert!(footer.contains("receiver=slack-default"));
     }
@@ -874,9 +875,8 @@ mod tests {
         let blocks_json = serde_json::to_string(&payload["blocks"]).unwrap();
         let expected_version = env!("CARGO_PKG_VERSION");
         assert!(
-            blocks_json.contains(&format!("trivy-collector v{}", expected_version)),
-            "blocks did not include the version footer: {}",
-            blocks_json,
+            blocks_json.contains(&format!("trivy-collector v{expected_version}")),
+            "blocks did not include the version footer: {blocks_json}",
         );
     }
 

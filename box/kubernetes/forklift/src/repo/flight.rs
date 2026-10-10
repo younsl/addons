@@ -21,8 +21,8 @@ pub(crate) struct Flight {
 }
 
 impl Flight {
-    pub(crate) fn new() -> Flight {
-        Flight {
+    pub(crate) fn new() -> Self {
+        Self {
             calls: Mutex::new(HashMap::new()),
         }
     }
@@ -38,19 +38,19 @@ impl Flight {
     {
         let role = {
             let mut calls = self.calls.lock();
-            match calls.get(key) {
-                Some(rx) => Role::Waiter(rx.clone()),
-                None => {
-                    let (tx, rx) = watch::channel(None);
-                    calls.insert(key.to_string(), rx);
-                    Role::Leader(tx)
-                }
+            if let Some(rx) = calls.get(key) {
+                Role::Waiter(rx.clone())
+            } else {
+                let (tx, rx) = watch::channel(None);
+                calls.insert(key.to_string(), rx);
+                Role::Leader(tx)
             }
         };
 
         match role {
             Role::Waiter(mut rx) => loop {
-                if let Some(out) = rx.borrow_and_update().clone() {
+                let value = rx.borrow_and_update().clone();
+                if let Some(out) = value {
                     return out;
                 }
                 if rx.changed().await.is_err() {

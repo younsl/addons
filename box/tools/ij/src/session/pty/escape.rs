@@ -14,17 +14,17 @@ pub struct EscapeDetector {
 }
 
 impl EscapeDetector {
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
             state: State::Normal,
         }
     }
 
     /// Process a byte. Returns true if disconnect sequence detected.
-    pub fn process(&mut self, byte: u8) -> bool {
+    pub const fn process(&mut self, byte: u8) -> bool {
         match (self.state, byte) {
             // Newline transitions to AfterNewline
-            (_, b'\n') | (_, b'\r') => {
+            (_, b'\n' | b'\r') => {
                 self.state = State::AfterNewline;
                 false
             }

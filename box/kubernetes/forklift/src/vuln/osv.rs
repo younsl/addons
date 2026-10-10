@@ -33,7 +33,7 @@ impl Osv {
                 .build()
                 .unwrap_or_default()
         });
-        Osv {
+        Self {
             url: base_url.trim_end_matches('/').to_string(),
             client,
         }
@@ -180,7 +180,7 @@ impl Scanner for Osv {
     }
 
     /// Names the advisory data source, recorded on each scan it produces.
-    fn source(&self) -> &str {
+    fn source(&self) -> &'static str {
         "OSV"
     }
 }
@@ -251,7 +251,7 @@ pub(crate) mod tests {
     use crate::vuln::*;
 
     fn install_crypto() {
-        rustls::crypto::ring::default_provider()
+        rustls::crypto::aws_lc_rs::default_provider()
             .install_default()
             .ok();
     }

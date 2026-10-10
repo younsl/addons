@@ -34,11 +34,11 @@ pub enum Verify {
 }
 
 impl Verify {
-    pub fn parse(mode: &str, percent: u8) -> Option<Verify> {
+    pub fn parse(mode: &str, percent: u8) -> Option<Self> {
         match mode {
-            "off" => Some(Verify::Off),
-            "sample" if (1..=100).contains(&percent) => Some(Verify::Sample { percent }),
-            "full" => Some(Verify::Full),
+            "off" => Some(Self::Off),
+            "sample" if (1..=100).contains(&percent) => Some(Self::Sample { percent }),
+            "full" => Some(Self::Full),
             _ => None,
         }
     }
@@ -47,9 +47,9 @@ impl Verify {
 impl std::fmt::Display for Verify {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Verify::Off => write!(f, "off"),
-            Verify::Sample { percent } => write!(f, "sample {percent}%"),
-            Verify::Full => write!(f, "full"),
+            Self::Off => write!(f, "off"),
+            Self::Sample { percent } => write!(f, "sample {percent}%"),
+            Self::Full => write!(f, "full"),
         }
     }
 }
@@ -199,7 +199,7 @@ async fn blob_sizes(
         latencies.push(took);
         match (got, want) {
             (Err(e), _) => {
-                error.get_or_insert(e.to_string());
+                error.get_or_insert_with(|| e.to_string());
             }
             (Ok(None), _) => missing.push(d),
             (Ok(Some(n)), Some(w)) if n != w => {
@@ -304,7 +304,7 @@ async fn blob_content(
                 }
             }
             Err(e) => {
-                error.get_or_insert(format!("{d}: {e}"));
+                error.get_or_insert_with(|| format!("{d}: {e}"));
             }
         }
     }
@@ -440,6 +440,9 @@ mod tests {
             5
         );
         assert_eq!(pick(&pool, &skipped, Verify::Full).len(), 1000);
-        assert!(pick(&pool, &skipped, Verify::Off).is_empty());
+        assert_eq!(
+            pick(&pool, &skipped, Verify::Off),
+            [] as [&std::string::String; 0]
+        );
     }
 }

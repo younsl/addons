@@ -29,7 +29,7 @@ pub struct UploadRequestKey {
 
 /// Replaces or creates a shared mutable path only when the digest observed by
 /// the planner is still current. An empty `expected_sha256` means absent.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ArtifactCAS {
     pub artifact: Artifact,
@@ -37,7 +37,7 @@ pub struct ArtifactCAS {
 }
 
 /// The complete metadata mutation for one publication.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ArtifactBatch {
     pub expected_upload_state: String,
@@ -54,7 +54,7 @@ pub struct ArtifactBatch {
 /// Applies deletion/yank mutations without creating a synthetic upload
 /// request. Every owned and aggregate precondition is checked in the same
 /// immediate transaction as blob reference updates.
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct PublicationLifecycleBatch {
     pub publication: ArtifactPublication,
     pub remove_paths: Vec<String>,
@@ -893,7 +893,7 @@ fn delete_aggregate_artifact(q: &Connection, repo_id: i64, path: &str) -> Result
         .optional()
         .map_err(|e| Error::sqlite("lookup aggregate artifact", e))?;
     let digest = match row {
-        Some((digest, owner)) if !owner.as_deref().is_some_and(|o| !o.is_empty()) => digest,
+        Some((digest, owner)) if owner.as_deref().is_none_or(str::is_empty) => digest,
         _ => return Err(Error::DerivedMetadataChanged),
     };
     q.execute(

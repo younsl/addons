@@ -14,6 +14,7 @@ use super::{Manager, NowFn};
 pub(crate) const MAX_DANGLING_TRACKED: usize = 4096;
 
 /// A metadata reference whose blob bytes were found missing from the blob store.
+///
 /// It is what the Artifacts view needs to warn a user that an artifact cannot be
 /// served: which path is affected, which digest is gone, and when it was first
 /// observed.
@@ -64,8 +65,8 @@ pub(crate) struct DanglingRegistry {
 }
 
 impl DanglingRegistry {
-    pub(crate) fn new(now: NowFn) -> DanglingRegistry {
-        DanglingRegistry {
+    pub(crate) fn new(now: NowFn) -> Self {
+        Self {
             entries: Mutex::new(HashMap::new()),
             now,
         }

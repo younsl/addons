@@ -19,7 +19,7 @@ pub const MAX_ARTIFACT_LABEL_LEN: usize = 64;
 
 /// One operator tag on a stored artifact, identified the way every format
 /// identifies an artifact: repository plus path.
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ArtifactLabel {
     pub repo_id: i64,
     pub path: String,
@@ -333,7 +333,7 @@ pub(crate) mod tests {
         Ok(())
     })
     .await
-    .expect("seed artifact")
+    .expect("seed artifact");
     }
 
     /// Removes an artifact row, which is what every removal path (delete, force
@@ -349,7 +349,7 @@ pub(crate) mod tests {
             .map_err(|e| Error::sqlite("delete artifact", e))
         })
         .await
-        .expect("delete artifact")
+        .expect("delete artifact");
     }
 
     #[tokio::test]

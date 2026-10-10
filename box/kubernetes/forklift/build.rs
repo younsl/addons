@@ -6,11 +6,10 @@ use std::process::Command;
 fn main() {
     let rustc = std::env::var("RUSTC").unwrap_or_else(|_| "rustc".into());
     let out = Command::new(rustc).arg("--version").output();
-    let v = out
-        .ok()
-        .filter(|o| o.status.success())
-        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
-        .unwrap_or_else(|| "rustc unknown".into());
+    let v = out.ok().filter(|o| o.status.success()).map_or_else(
+        || "rustc unknown".into(),
+        |o| String::from_utf8_lossy(&o.stdout).trim().to_string(),
+    );
     println!("cargo:rustc-env=FORKLIFT_RUSTC_VERSION={v}");
     // The web console build output is not committed. rust-embed needs the
     // folder to exist, and a missing rerun path would rebuild every time, so an

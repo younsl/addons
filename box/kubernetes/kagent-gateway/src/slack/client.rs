@@ -233,6 +233,7 @@ impl Client {
     /// the TLS backend is unusable.
     #[must_use]
     pub fn new(api_url: &str, token: &str, timeout: Duration, metrics: Arc<Metrics>) -> Self {
+        crate::install_crypto_provider();
         Self {
             http: reqwest::Client::builder()
                 .timeout(timeout)

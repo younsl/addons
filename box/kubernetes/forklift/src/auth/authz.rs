@@ -43,7 +43,7 @@ pub struct Scope {
 }
 
 /// An authenticated identity with resolved effective permissions.
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Principal {
     pub username: String,
     pub source: String,
@@ -197,7 +197,7 @@ pub(crate) fn match_glob(pattern: &str, name: &str) -> bool {
 
 /// A small `*`-only glob matcher using the canonical two-pointer algorithm with star
 /// backtracking.
-fn glob_match(pattern: &str, s: &str) -> bool {
+const fn glob_match(pattern: &str, s: &str) -> bool {
     let (pattern, s) = (pattern.as_bytes(), s.as_bytes());
     let (mut sx, mut px) = (0usize, 0usize);
     let (mut star_idx, mut s_tmp) = (usize::MAX, 0usize);

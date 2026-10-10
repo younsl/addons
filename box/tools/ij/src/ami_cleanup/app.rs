@@ -4,7 +4,7 @@ use super::ami::{OwnedAmi, ScanResult};
 use chrono::Utc;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AmiStatus {
     Pending,
     Deleting,
@@ -21,7 +21,7 @@ pub struct AmiRow {
     pub status: AmiStatus,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AppMode {
     SelectOwner,
     SelectConsumers,
@@ -47,7 +47,7 @@ pub struct ProfileSelector {
     pub scroll_offset: usize,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SortField {
     Default,
     Age,
@@ -56,7 +56,7 @@ pub enum SortField {
     Name,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SortOrder {
     Asc,
     Desc,
@@ -85,6 +85,7 @@ pub struct ScanLog {
 }
 
 #[derive(Default)]
+#[allow(clippy::struct_field_names)]
 pub struct ScanSummary {
     pub total_owned: usize,
     pub total_used: usize,
@@ -97,7 +98,7 @@ pub struct ScanSummary {
 impl ProfileSelector {
     pub fn new(profiles: Vec<String>) -> Self {
         let len = profiles.len();
-        ProfileSelector {
+        Self {
             profiles,
             cursor: 0,
             selected: vec![false; len],
@@ -107,7 +108,7 @@ impl ProfileSelector {
         }
     }
 
-    pub fn adjust_scroll(&mut self, visible_rows: usize) {
+    pub const fn adjust_scroll(&mut self, visible_rows: usize) {
         if self.cursor < self.scroll_offset {
             self.scroll_offset = self.cursor;
         } else if self.cursor >= self.scroll_offset + visible_rows {
@@ -118,7 +119,7 @@ impl ProfileSelector {
 
 impl App {
     pub fn new_select_profile(profiles: Vec<String>) -> Self {
-        App {
+        Self {
             rows: Vec::new(),
             cursor: 0,
             mode: AppMode::SelectOwner,
@@ -136,7 +137,7 @@ impl App {
     }
 
     pub fn new_scanning(header: String) -> Self {
-        App {
+        Self {
             rows: Vec::new(),
             cursor: 0,
             mode: AppMode::Scanning,
@@ -166,11 +167,11 @@ impl App {
         }
     }
 
-    pub fn tick_spinner(&mut self) {
+    pub const fn tick_spinner(&mut self) {
         self.scan_spinner_frame = self.scan_spinner_frame.wrapping_add(1);
     }
 
-    pub fn spinner_char(&self) -> char {
+    pub const fn spinner_char(&self) -> char {
         const FRAMES: &[char] = &['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
         FRAMES[self.scan_spinner_frame % FRAMES.len()]
     }
@@ -276,7 +277,7 @@ impl App {
             }
             AppMode::Browse => self.handle_browse(key),
             AppMode::Confirm => self.handle_confirm(key),
-            AppMode::Done => self.handle_done(key),
+            AppMode::Done => Self::handle_done(key),
         }
     }
 
@@ -411,24 +412,21 @@ impl App {
     }
 
     fn handle_confirm(&mut self, key: KeyEvent) -> AppAction {
-        match key.code {
-            KeyCode::Char('y') | KeyCode::Char('Y') => {
-                for row in &mut self.rows {
-                    if row.selected && row.status == AmiStatus::Pending {
-                        row.status = AmiStatus::Deleting;
-                    }
+        if let KeyCode::Char('y' | 'Y') = key.code {
+            for row in &mut self.rows {
+                if row.selected && row.status == AmiStatus::Pending {
+                    row.status = AmiStatus::Deleting;
                 }
-                self.mode = AppMode::Browse;
-                AppAction::Delete
             }
-            _ => {
-                self.mode = AppMode::Browse;
-                AppAction::None
-            }
+            self.mode = AppMode::Browse;
+            AppAction::Delete
+        } else {
+            self.mode = AppMode::Browse;
+            AppAction::None
         }
     }
 
-    fn handle_done(&mut self, key: KeyEvent) -> AppAction {
+    const fn handle_done(key: KeyEvent) -> AppAction {
         match key.code {
             KeyCode::Char('q') | KeyCode::Esc | KeyCode::Enter => AppAction::Quit,
             _ => AppAction::None,
@@ -508,7 +506,7 @@ impl App {
         }
     }
 
-    pub fn sort_label(&self) -> &'static str {
+    pub const fn sort_label(&self) -> &'static str {
         match (self.sort_field, self.sort_order) {
             (SortField::Default, _) => "",
             (SortField::Age, SortOrder::Desc) => " Age↓",
@@ -522,7 +520,7 @@ impl App {
         }
     }
 
-    pub fn adjust_scroll(&mut self, visible_rows: usize) {
+    pub const fn adjust_scroll(&mut self, visible_rows: usize) {
         if self.cursor < self.scroll_offset {
             self.scroll_offset = self.cursor;
         } else if self.cursor >= self.scroll_offset + visible_rows {
@@ -583,14 +581,14 @@ mod tests {
         assert_eq!(ps.cursor, 0);
         assert_eq!(ps.selected, vec![false, false, false]);
         assert!(ps.owner_profile.is_none());
-        assert!(ps.consumer_profiles.is_empty());
+        assert_eq!(ps.consumer_profiles, Vec::<String>::new());
         assert_eq!(ps.scroll_offset, 0);
     }
 
     #[test]
     fn test_profile_selector_empty() {
         let ps = ProfileSelector::new(vec![]);
-        assert!(ps.profiles.is_empty());
+        assert_eq!(ps.profiles, Vec::<String>::new());
         assert_eq!(ps.selected.len(), 0);
     }
 

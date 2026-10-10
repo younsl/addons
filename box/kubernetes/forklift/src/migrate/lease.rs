@@ -24,7 +24,7 @@ pub struct LeaseHold {
 }
 
 impl LeaseHold {
-    pub async fn acquire(cfg: HAConfig, wait: Duration) -> Result<LeaseHold, String> {
+    pub async fn acquire(cfg: HAConfig, wait: Duration) -> Result<Self, String> {
         let name = cfg.lease_name.clone();
         let elector = Elector::new(cfg).map_err(|e| format!("lease {name}: {e}"))?;
         let cancel = CancellationToken::new();
@@ -40,8 +40,11 @@ impl LeaseHold {
                 move || lost.store(true, Ordering::SeqCst),
             )
         });
-        let acquired = tokio::time::timeout(wait, rx.wait_for(|held| *held)).await;
-        if !matches!(acquired, Ok(Ok(_))) {
+        let acquired = matches!(
+            tokio::time::timeout(wait, rx.wait_for(|held| *held)).await,
+            Ok(Ok(_))
+        );
+        if !acquired {
             cancel.cancel();
             let _ = task.await;
             return Err(format!(
@@ -49,7 +52,7 @@ impl LeaseHold {
                 wait.as_secs()
             ));
         }
-        Ok(LeaseHold { cancel, lost, task })
+        Ok(Self { cancel, lost, task })
     }
 
     pub fn held(&self) -> bool {

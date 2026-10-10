@@ -45,25 +45,25 @@ pub const LEGACY_SELF_SECRET_NAME: &str = "cluster-in-cluster-kubernetes.default
 /// Build the canonical self-secret name for a given `clusterName`. Returns
 /// `None` when `cluster_name` is empty so callers can skip the apply instead
 /// of producing a DNS-1123-invalid name like `cluster--kubernetes.default.svc`.
+#[must_use]
 pub fn self_secret_name(cluster_name: &str) -> Option<String> {
     let trimmed = cluster_name.trim();
     if trimmed.is_empty() {
         return None;
     }
-    Some(format!("cluster-{}-kubernetes.default.svc", trimmed))
+    Some(format!("cluster-{trimmed}-kubernetes.default.svc"))
 }
 
 /// Does this Secret name identify a self-secret for `cluster_name`?
 ///
 /// Matches either the canonical form or the legacy fixed name. The watcher
 /// uses this to decide whether a Delete event should trigger a recreate.
+#[must_use]
 pub fn is_managed_self_secret_name(name: &str, cluster_name: &str) -> bool {
     if name == LEGACY_SELF_SECRET_NAME {
         return true;
     }
-    self_secret_name(cluster_name)
-        .map(|canonical| canonical == name)
-        .unwrap_or(false)
+    self_secret_name(cluster_name).is_some_and(|canonical| canonical == name)
 }
 
 /// Ensure a Secret representing the Hub's own cluster exists in `hub_ns`.
@@ -168,14 +168,14 @@ pub async fn ensure_local_cluster_secret(
 }
 
 /// Does this Secret carry the `in-cluster=true` marker?
+#[must_use]
 pub fn is_in_cluster(secret: &Secret) -> bool {
     secret
         .metadata
         .labels
         .as_ref()
         .and_then(|m| m.get(IN_CLUSTER_LABEL))
-        .map(|v| v == "true")
-        .unwrap_or(false)
+        .is_some_and(|v| v == "true")
 }
 
 #[cfg(test)]

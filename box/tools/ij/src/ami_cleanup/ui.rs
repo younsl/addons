@@ -233,6 +233,7 @@ fn draw_header(frame: &mut Frame, app: &App, area: Rect) {
     frame.render_widget(paragraph, area);
 }
 
+#[allow(clippy::too_many_lines)]
 fn draw_table(frame: &mut Frame, app: &mut App, area: Rect) {
     let title = if app.mode == AppMode::Done && app.rows.is_empty() {
         " No unused AMIs found ".to_string()
@@ -297,13 +298,12 @@ fn draw_table(frame: &mut Frame, app: &mut App, area: Rect) {
                 let days_ago = row
                     .ami
                     .last_launched
-                    .map(|d| (now - d).num_days())
-                    .unwrap_or(i64::MAX);
+                    .map_or(i64::MAX, |d| (now - d).num_days());
                 (i, days_ago)
             })
             .collect();
         indexed.sort_by_key(|b| std::cmp::Reverse(b.1));
-        let count = ((app.rows.len() as f64) * 0.25).ceil() as usize;
+        let count = app.rows.len().div_ceil(4);
         indexed.iter().take(count).map(|(i, _)| *i).collect()
     } else {
         HashSet::new()
@@ -320,13 +320,11 @@ fn draw_table(frame: &mut Frame, app: &mut App, area: Rect) {
             let age = row
                 .ami
                 .creation_date
-                .map(format_elapsed)
-                .unwrap_or_else(|| "-".to_string());
+                .map_or_else(|| "-".to_string(), format_elapsed);
             let launched = row
                 .ami
                 .last_launched
-                .map(format_elapsed)
-                .unwrap_or_else(|| "never".to_string());
+                .map_or_else(|| "never".to_string(), format_elapsed);
             let snaps = row.ami.snapshot_ids.len().to_string();
             let status = match &row.status {
                 AmiStatus::Pending => String::new(),
@@ -407,15 +405,15 @@ fn draw_help(frame: &mut Frame, app: &App, area: Rect) {
 
     let keys = match app.mode {
         AppMode::SelectOwner | AppMode::SelectConsumers => "",
-        AppMode::Scanning => " q Quit",
+        AppMode::Scanning | AppMode::Done => " q Quit",
         AppMode::Browse => " j/k Navigate  Space Toggle  a Select All  s Sort  d Delete  q Quit",
         AppMode::Confirm => " y Confirm  any other key Cancel",
-        AppMode::Done => " q Quit",
     };
     let help = Paragraph::new(Line::from(keys)).style(Style::default().fg(Color::DarkGray));
     frame.render_widget(help, chunks[0]);
 
     if app.mode == AppMode::Browse || app.mode == AppMode::Confirm {
+        #[allow(clippy::cast_precision_loss)]
         let monthly = app.selected_size_gb() as f64 * 0.05;
         let yearly = monthly * 12.0;
 

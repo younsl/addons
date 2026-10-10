@@ -10,21 +10,24 @@ use std::fmt;
 
 use tracing::field::{Field, Visit};
 use tracing::{Event, Level, Subscriber};
+use tracing_subscriber::EnvFilter;
 use tracing_subscriber::fmt::format::Writer;
 use tracing_subscriber::fmt::{FmtContext, FormatEvent, FormatFields};
 use tracing_subscriber::registry::LookupSpan;
 
 /// Initialises the global subscriber for `level` (debug, info, warn, error) and `format` (json,
-/// text).
+/// text). A valid `RUST_LOG` overrides `level`.
 pub fn init_logging(level: &str, format: &str) {
-    let filter = match level.to_ascii_lowercase().as_str() {
+    let level = match level.to_ascii_lowercase().as_str() {
         "debug" => Level::DEBUG,
         "warn" => Level::WARN,
         "error" => Level::ERROR,
         _ => Level::INFO,
     };
+    let filter = EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| EnvFilter::default().add_directive(level.into()));
     let builder = tracing_subscriber::fmt()
-        .with_max_level(filter)
+        .with_env_filter(filter)
         .with_writer(std::io::stdout);
     if format.eq_ignore_ascii_case("text") {
         let _ = builder.event_format(SlogFormat::Text).try_init();
@@ -65,8 +68,8 @@ where
             component: component(&target),
         };
         let line = match self {
-            SlogFormat::Json => format_json(&head, &visitor.message, &visitor.fields),
-            SlogFormat::Text => format_text(&head, &visitor.message, &visitor.fields),
+            Self::Json => format_json(&head, &visitor.message, &visitor.fields),
+            Self::Text => format_text(&head, &visitor.message, &visitor.fields),
         };
         writeln!(writer, "{line}")
     }
@@ -104,7 +107,7 @@ fn bridged_target(fields: &mut Vec<(String, FieldValue)>) -> Option<String> {
 }
 
 /// slog's level names.
-fn level_text(level: Level) -> &'static str {
+const fn level_text(level: Level) -> &'static str {
     match level {
         Level::ERROR => "ERROR",
         Level::WARN => "WARN",
@@ -283,7 +286,7 @@ pub(crate) mod tests {
     }
 
     impl<'a> MakeWriter<'a> for BufWriter {
-        type Writer = BufWriter;
+        type Writer = Self;
 
         fn make_writer(&'a self) -> Self::Writer {
             self.clone()

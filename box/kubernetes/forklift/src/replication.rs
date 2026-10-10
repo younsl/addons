@@ -49,14 +49,14 @@ pub enum Error {
 impl Error {
     /// Builds a bare message error.
     pub fn msg(msg: impl Into<String>) -> Self {
-        Error::Message(msg.into())
+        Self::Message(msg.into())
     }
 
     pub fn wrap<E>(context: impl Into<String>, source: E) -> Self
     where
         E: Into<Box<dyn std::error::Error + Send + Sync + 'static>>,
     {
-        Error::Wrapped {
+        Self::Wrapped {
             context: context.into(),
             source: source.into(),
         }
@@ -85,7 +85,7 @@ pub trait LeaderLookup: Send + Sync {
 #[async_trait]
 impl LeaderLookup for crate::cluster::Elector {
     async fn leader_identity(&self) -> anyhow::Result<String> {
-        Ok(crate::cluster::Elector::leader_identity(self).await?)
+        Ok(Self::leader_identity(self).await?)
     }
 }
 
@@ -188,7 +188,7 @@ enum MergeStep {
 
 impl Replicator {
     /// Builds a `Replicator` and registers its metrics.
-    pub fn new(o: Options) -> Arc<Replicator> {
+    pub fn new(o: Options) -> Arc<Self> {
         let syncs = CounterVec::new(
             Opts::new(
                 "replication_syncs_total",
@@ -244,7 +244,7 @@ impl Replicator {
                 .expect("register forklift_replication_snapshot_bytes");
         }
 
-        Arc::new(Replicator {
+        Arc::new(Self {
             store: o.store,
             blobs: o.blobs,
             data_dir: o.data_dir,
@@ -252,7 +252,7 @@ impl Replicator {
             interval: o.interval,
             leader_url: o.leader_url,
             client: reqwest::Client::builder()
-                .timeout(Duration::from_secs(5 * 60))
+                .timeout(Duration::from_mins(5))
                 .build()
                 .expect("build replication http client"),
             is_leader: AtomicBool::new(false),
@@ -284,7 +284,7 @@ impl Replicator {
         ticker.tick().await;
         loop {
             tokio::select! {
-                _ = cancel.cancelled() => return,
+                () = cancel.cancelled() => return,
                 _ = ticker.tick() => {
                     if self.is_leader.load(Ordering::SeqCst) {
                         continue;
@@ -535,7 +535,7 @@ impl RemotePages {
     async fn next(&mut self, r: &Replicator, leader: &str) -> Result<Option<String>> {
         loop {
             if let Some(d) = self.buf.next() {
-                self.after = d.clone();
+                self.after.clone_from(&d);
                 return Ok(Some(d));
             }
             if self.done {
@@ -571,7 +571,7 @@ pub(crate) mod tests {
     fn install_crypto_provider() {
         static ONCE: std::sync::Once = std::sync::Once::new();
         ONCE.call_once(|| {
-            let _ = rustls::crypto::ring::default_provider().install_default();
+            let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
         });
     }
 

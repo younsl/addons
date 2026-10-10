@@ -1,69 +1,38 @@
 //! Custom error types for better error handling.
 
-use std::fmt;
-
 /// Application-specific errors.
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 #[allow(dead_code)]
 pub enum Error {
     /// AWS SDK error.
+    #[error("AWS error: {0}")]
     Aws(String),
     /// PTY operation failed.
+    #[error("PTY error: {0}")]
     Pty(String),
     /// Session connection failed.
+    #[error("Session error: {0}")]
     Session(String),
     /// Configuration error.
+    #[error("Config error: {0}")]
     Config(String),
     /// User cancelled operation.
+    #[error("Operation cancelled")]
     Cancelled,
     /// No instances found.
+    #[error("No instances found")]
     NoInstances,
     /// IO error.
-    Io(std::io::Error),
+    #[error("IO error: {0}")]
+    Io(#[from] std::io::Error),
     /// Other errors.
-    Other(anyhow::Error),
-}
-
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Error::Aws(msg) => write!(f, "AWS error: {}", msg),
-            Error::Pty(msg) => write!(f, "PTY error: {}", msg),
-            Error::Session(msg) => write!(f, "Session error: {}", msg),
-            Error::Config(msg) => write!(f, "Config error: {}", msg),
-            Error::Cancelled => write!(f, "Operation cancelled"),
-            Error::NoInstances => write!(f, "No instances found"),
-            Error::Io(e) => write!(f, "IO error: {}", e),
-            Error::Other(e) => write!(f, "{}", e),
-        }
-    }
-}
-
-impl std::error::Error for Error {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            Error::Io(e) => Some(e),
-            Error::Other(e) => e.source(),
-            _ => None,
-        }
-    }
-}
-
-impl From<std::io::Error> for Error {
-    fn from(e: std::io::Error) -> Self {
-        Error::Io(e)
-    }
-}
-
-impl From<anyhow::Error> for Error {
-    fn from(e: anyhow::Error) -> Self {
-        Error::Other(e)
-    }
+    #[error(transparent)]
+    Other(Box<dyn std::error::Error + Send + Sync>),
 }
 
 impl From<serde_yaml::Error> for Error {
     fn from(e: serde_yaml::Error) -> Self {
-        Error::Config(e.to_string())
+        Self::Config(e.to_string())
     }
 }
 
@@ -120,7 +89,7 @@ mod tests {
 
     #[test]
     fn display_other_error() {
-        let e = Error::Other(anyhow::anyhow!("boom"));
+        let e = Error::Other("boom".into());
         assert_eq!(e.to_string(), "boom");
     }
 
@@ -135,10 +104,9 @@ mod tests {
     }
 
     #[test]
-    fn from_anyhow_error() {
+    fn other_from_anyhow_error() {
         let anyhow_err = anyhow::anyhow!("something went wrong");
-        let e: Error = anyhow_err.into();
-        assert!(matches!(e, Error::Other(_)));
+        let e = Error::Other(anyhow_err.into());
         assert_eq!(e.to_string(), "something went wrong");
     }
 
@@ -165,10 +133,8 @@ mod tests {
 
     #[test]
     fn source_other_delegates() {
-        let anyhow_err = anyhow::anyhow!("no source");
-        let e = Error::Other(anyhow_err);
-        // anyhow::Error from anyhow!() has no source
-        let _ = e.source(); // exercises the Error::Other(e) => e.source() branch
+        let e = Error::Other(Box::new(std::io::Error::other("no source")));
+        assert!(e.source().is_none());
     }
 
     #[test]

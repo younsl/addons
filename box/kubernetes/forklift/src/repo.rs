@@ -101,7 +101,7 @@ pub(crate) use router::Resolved;
 pub(crate) const DEFAULT_UPSTREAM_COOLDOWN: Duration = Duration::from_secs(15);
 /// Caps a Retry-After-derived cooldown so a hostile or buggy upstream cannot
 /// park a coordinate for an unbounded time.
-pub(crate) const MAX_UPSTREAM_COOLDOWN: Duration = Duration::from_secs(5 * 60);
+pub(crate) const MAX_UPSTREAM_COOLDOWN: Duration = Duration::from_mins(5);
 /// Bounds how many metadata parse/rewrite operations (packument and
 /// simple-index documents decoded into generic maps) run at once. Decoding a
 /// large index into a dynamic value costs several times the document size, so an
@@ -123,7 +123,7 @@ pub(crate) const MAX_METADATA_BYTES: i64 = 64 << 20;
 /// cache-TTL and multi-day scales, so skipping the UPDATE while the stored value
 /// is this recent keeps hot-path serving read-only without changing either
 /// consumer's behavior.
-pub(crate) const TOUCH_INTERVAL: Duration = Duration::from_secs(5 * 60);
+pub(crate) const TOUCH_INTERVAL: Duration = Duration::from_mins(5);
 
 /// Classifies a request target, which selects the cache freshness policy.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -234,8 +234,8 @@ pub struct Engine {
 
 impl Engine {
     /// Builds an engine and registers its metrics.
-    pub fn new(store: Arc<Store>, blobs: Arc<dyn BlobStore>, registry: &Registry) -> Arc<Engine> {
-        let e = Engine {
+    pub fn new(store: Arc<Store>, blobs: Arc<dyn BlobStore>, registry: &Registry) -> Arc<Self> {
+        let e = Self {
             store,
             blobs,
             client: reqwest::Client::builder()
@@ -565,7 +565,7 @@ impl Engine {
             );
             return FetchOutcome {
                 kind: FetchKind::Retry,
-                status: status.as_u16() as i64,
+                status: i64::from(status.as_u16()),
                 retry_after: retry_after_seconds(d),
             };
         }
@@ -857,6 +857,7 @@ impl Engine {
 
     /// Tells the client to back off, relaying the upstream's status (429/503)
     /// and a Retry-After hint so build tools wait instead of hammering.
+    #[allow(clippy::unused_self)]
     pub(crate) fn write_retry(&self, status: StatusCode, retry_after: &str) -> Response {
         let status = if status != StatusCode::TOO_MANY_REQUESTS
             && status != StatusCode::SERVICE_UNAVAILABLE
@@ -1057,7 +1058,7 @@ impl Engine {
                     &art.path,
                     &art.blob_sha256,
                     &art.artifact_role,
-                    StatusCode::INTERNAL_SERVER_ERROR.as_u16() as i64,
+                    i64::from(StatusCode::INTERNAL_SERVER_ERROR.as_u16()),
                     &err.to_string(),
                 );
                 return (
@@ -1211,8 +1212,8 @@ pub(crate) struct FetchSpec {
 
 impl FetchSpec {
     /// `Config` cannot derive it because its `Default` is the populated repository default.
-    pub(crate) fn blank() -> FetchSpec {
-        FetchSpec {
+    pub(crate) fn blank() -> Self {
+        Self {
             repo: Repository::default(),
             cfg: Config::default(),
             path: String::new(),
@@ -1231,8 +1232,8 @@ impl FetchSpec {
     /// A copy for the detached single-flight fetch: the final gate holds a
     /// request-scoped closure that must not outlive the request, and
     /// `fetch_and_store` never calls it.
-    fn detached(&self) -> FetchSpec {
-        FetchSpec {
+    fn detached(&self) -> Self {
+        Self {
             final_gate: None,
             ..self.clone()
         }
@@ -1267,12 +1268,12 @@ pub(crate) struct FetchOutcome {
 }
 
 impl FetchOutcome {
-    pub(crate) fn stored() -> FetchOutcome {
-        FetchOutcome::default()
+    pub(crate) fn stored() -> Self {
+        Self::default()
     }
 
-    pub(crate) fn error() -> FetchOutcome {
-        FetchOutcome {
+    pub(crate) fn error() -> Self {
+        Self {
             kind: FetchKind::Error,
             ..Default::default()
         }
@@ -1933,7 +1934,7 @@ pub(crate) mod tests {
             let mut cfg = repoconfig::default();
             cfg.age_policy = AgePolicyConfig {
                 enabled: true,
-                min_age: Duration::from_std(std::time::Duration::from_secs(30 * 24 * 60 * 60)),
+                min_age: Duration::from_std(std::time::Duration::from_hours(720)),
                 action: ACTION_BLOCK.to_string(),
                 ..Default::default()
             };
@@ -2105,6 +2106,7 @@ pub(crate) mod tests {
                 (&["0.0.10", "0.0.9"], "0.0.10"),
             ];
             for (versions, want) in cases {
+                #[allow(clippy::zero_sized_map_values)]
                 let map: BTreeMap<String, ()> =
                     versions.iter().map(|v| ((*v).to_string(), ())).collect();
                 assert_eq!(
@@ -2672,6 +2674,7 @@ pub(crate) mod tests {
 
         /// Polls until `want` is observed, so the test never depends on how fast the
         /// queued task reaches the semaphore.
+        #[allow(clippy::float_cmp)]
         async fn wait_for_gauge(read: impl Fn() -> f64, want: f64) {
             let deadline = Instant::now() + Duration::from_secs(2);
             while Instant::now() < deadline {
@@ -2706,6 +2709,7 @@ pub(crate) mod tests {
                 "capacity"
             );
 
+            #[allow(clippy::collection_is_never_read)]
             let mut slots = Vec::with_capacity(MAX_CONCURRENT_REWRITES);
             for _ in 0..MAX_CONCURRENT_REWRITES {
                 slots.push(

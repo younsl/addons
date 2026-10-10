@@ -102,14 +102,14 @@ pub async fn export_state(request: ExportRequest) -> Result<()> {
 /// Open the legacy database without creating or migrating anything: the Job
 /// mounts the PVC read-only and must not write to it.
 async fn open_read_only(db_path: &str) -> Result<SqlitePool> {
-    let options = SqliteConnectOptions::from_str(&format!("sqlite:{}", db_path))?
+    let options = SqliteConnectOptions::from_str(&format!("sqlite:{db_path}"))?
         .read_only(true)
         .create_if_missing(false);
     SqlitePoolOptions::new()
         .max_connections(1)
         .connect_with(options)
         .await
-        .with_context(|| format!("Failed to open {} read-only", db_path))
+        .with_context(|| format!("Failed to open {db_path} read-only"))
 }
 
 /// Read `api_tokens` rows into their Secret form, keyed by token prefix.
@@ -266,7 +266,13 @@ async fn write_notes(
 /// cannot drop state written since.
 async fn upsert<K>(api: &Api<K>, name: &str, object: &K, patch: serde_json::Value) -> Result<()>
 where
-    K: kube::Resource + Clone + serde::de::DeserializeOwned + serde::Serialize + std::fmt::Debug,
+    K: kube::Resource
+        + Clone
+        + serde::de::DeserializeOwned
+        + serde::Serialize
+        + std::fmt::Debug
+        + Send
+        + Sync,
 {
     match api.create(&PostParams::default(), object).await {
         Ok(_) => Ok(()),
@@ -304,10 +310,7 @@ async fn column_exists(pool: &SqlitePool, table: &str, column: &str) -> Result<b
     if !table_exists(pool, table).await? {
         return Ok(false);
     }
-    let query = format!(
-        "SELECT COUNT(*) > 0 FROM pragma_table_info('{}') WHERE name=$1",
-        table
-    );
+    let query = format!("SELECT COUNT(*) > 0 FROM pragma_table_info('{table}') WHERE name=$1");
     // SAFETY: `table` is a hardcoded literal at every call site, never user input.
     let (exists,): (bool,) = sqlx::query_as(sqlx::AssertSqlSafe(query))
         .bind(column)
@@ -329,7 +332,7 @@ mod tests {
             .await
             .unwrap();
         sqlx::raw_sql(
-            r#"
+            r"
             CREATE TABLE api_tokens (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_sub TEXT NOT NULL,
@@ -353,7 +356,7 @@ mod tests {
                 notes_created_at TEXT,
                 notes_updated_at TEXT
             );
-            "#,
+            ",
         )
         .execute(&pool)
         .await
@@ -430,7 +433,7 @@ mod tests {
         insert_token(&pool, "tc_aaaaaaaa", "ci", "not json").await;
 
         let (tokens, _) = read_tokens(&pool).await.unwrap();
-        assert!(tokens["tc_aaaaaaaa"].groups.is_empty());
+        assert_eq!(tokens["tc_aaaaaaaa"].groups, [] as [std::string::String; 0]);
     }
 
     #[tokio::test]

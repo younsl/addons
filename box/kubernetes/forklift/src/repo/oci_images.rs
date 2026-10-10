@@ -134,7 +134,7 @@ pub(crate) fn oci_artifact_kind(doc: &OciManifestDoc) -> String {
 /// Sums the descriptor sizes a manifest references (config plus layers), the
 /// number Harbor reports as the artifact size.
 pub(crate) fn manifest_content_size(doc: &OciManifestDoc) -> i64 {
-    let mut n = doc.config.as_ref().map(|c| c.size).unwrap_or(0);
+    let mut n = doc.config.as_ref().map_or(0, |c| c.size);
     for layer in &doc.layers {
         n += layer.size;
     }

@@ -43,6 +43,7 @@ pub struct Readiness {
 /// rule watching a package nobody runs is correct and ready, it simply has
 /// nothing to fire on. Reporting that as not-ready would be wrong, and
 /// reporting nothing at all is what this replaced.
+#[must_use]
 pub fn readiness_for(rule: &AlertRule) -> Readiness {
     if !rule.enabled {
         return Readiness {
@@ -79,6 +80,7 @@ pub fn readiness_for(rule: &AlertRule) -> Readiness {
 /// re-acknowledged even when the verdict is unchanged, and left out of it
 /// nothing would ever move `observedGeneration` forward for a rule that stays
 /// valid across edits.
+#[must_use]
 pub fn already_recorded(rule: &AlertRule, readiness: &Readiness) -> bool {
     rule.status
         .as_ref()
@@ -113,12 +115,11 @@ pub async fn run_watch(store: AlertStore, mut shutdown: tokio::sync::watch::Rece
             }
             ev = stream.next() => {
                 match ev {
-                    Some(Ok(Event::Apply(cr))) | Some(Ok(Event::InitApply(cr))) => {
+                    Some(Ok(Event::Apply(cr) | Event::InitApply(cr))) => {
                         reconcile(&store, &cr.to_api()).await;
                     }
                     // A deleted rule has nothing left to report on.
-                    Some(Ok(Event::Delete(_))) => {}
-                    Some(Ok(Event::Init)) | Some(Ok(Event::InitDone)) => {}
+                    Some(Ok(Event::Delete(_) | Event::Init | Event::InitDone)) => {}
                     Some(Err(e)) => error!(error = %e, "Alert rule readiness watcher error"),
                     None => {
                         warn!("Alert rule readiness watcher stream ended");
@@ -173,6 +174,7 @@ mod tests {
     use super::*;
     use crate::alerts::crd::AlertRuleStatus;
     use crate::alerts::types::{Matchers, Receiver};
+    use std::collections::BTreeMap;
 
     fn rule(version_expr: Option<&str>) -> AlertRule {
         AlertRule {
@@ -185,8 +187,8 @@ mod tests {
                 clusters: vec![],
                 namespace: None,
             },
-            labels: Default::default(),
-            annotations: Default::default(),
+            labels: BTreeMap::default(),
+            annotations: BTreeMap::default(),
             receivers: vec![Receiver {
                 name: "noop".to_string(),
                 slack: None,
@@ -228,7 +230,7 @@ mod tests {
         let readiness = readiness_for(&r);
         assert!(readiness.ready);
         assert_eq!(readiness.reason, "Validated");
-        assert!(readiness.message.is_empty());
+        assert_eq!(readiness.message, "");
     }
 
     #[test]

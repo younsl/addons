@@ -25,7 +25,7 @@ pub struct GarageAdmin {
 }
 
 impl GarageAdmin {
-    pub fn new(cfg: &AdminConfig) -> Result<GarageAdmin> {
+    pub fn new(cfg: &AdminConfig) -> Result<Self> {
         if cfg.admin_endpoint.trim().is_empty() {
             return Err(Error::AdminUnavailable(
                 "garage needs the admin endpoint (port 3903)".into(),
@@ -36,7 +36,7 @@ impl GarageAdmin {
                 "garage needs an admin token".into(),
             ));
         }
-        Ok(GarageAdmin {
+        Ok(Self {
             base: base_url(&cfg.admin_endpoint)?,
             token: cfg.admin_token.clone(),
             client: http_client()?,
@@ -79,7 +79,7 @@ fn summarize(status: ClusterStatus) -> ClusterInfo {
         if out.version.is_empty()
             && let Some(v) = &n.garage_version
         {
-            out.version = v.clone();
+            out.version.clone_from(v);
         }
         let is_storage = n
             .role

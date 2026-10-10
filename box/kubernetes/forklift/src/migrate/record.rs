@@ -4,6 +4,7 @@
 //! finish time. A run that cannot write to the target leaves no record; its
 //! Job log is then the only trace.
 
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -40,7 +41,7 @@ pub struct MigrationCheck {
 
 impl From<&Check> for MigrationCheck {
     fn from(c: &Check) -> Self {
-        MigrationCheck {
+        Self {
             id: c.id.to_string(),
             name: c.name.to_string(),
             status: serde_json::to_value(c.status)
@@ -63,7 +64,7 @@ pub struct MigrationCheckStatus {
 
 impl From<&MigrationCheck> for MigrationCheckStatus {
     fn from(c: &MigrationCheck) -> Self {
-        MigrationCheckStatus {
+        Self {
             id: c.id.clone(),
             name: c.name.clone(),
             status: c.status.clone(),
@@ -105,7 +106,7 @@ impl MigrationStoredAt {
         id: &str,
     ) -> Self {
         let key = key(bucket_prefix, id);
-        MigrationStoredAt {
+        Self {
             provider: provider.to_string(),
             endpoint: endpoint.to_string(),
             region: region.to_string(),
@@ -180,7 +181,7 @@ pub struct MigrationSummary {
 
 impl From<&MigrationRecord> for MigrationSummary {
     fn from(r: &MigrationRecord) -> Self {
-        MigrationSummary {
+        Self {
             id: r.id.clone(),
             outcome: r.outcome.clone(),
             failed_stage: r.failed_stage.clone(),
@@ -318,7 +319,7 @@ pub async fn write(
             key: key(bucket_prefix, &record.id),
             content_length: body.len() as i64,
             body: PutBody::Bytes(body),
-            metadata: Default::default(),
+            metadata: HashMap::default(),
             if_match: None,
             if_none_match: None,
         })
@@ -342,8 +343,8 @@ pub struct S3History {
 }
 
 impl S3History {
-    pub fn new(client: aws_sdk_s3::Client, bucket: &str, bucket_prefix: &str) -> Arc<S3History> {
-        Arc::new(S3History {
+    pub fn new(client: aws_sdk_s3::Client, bucket: &str, bucket_prefix: &str) -> Arc<Self> {
+        Arc::new(Self {
             client,
             bucket: bucket.to_string(),
             prefix: prefix(bucket_prefix),
@@ -550,7 +551,7 @@ pub(crate) mod tests {
     async fn s3_history_lists_newest_first_and_gets_by_id() {
         use wiremock::matchers::{method, path, path_regex, query_param};
         use wiremock::{Mock, MockServer, ResponseTemplate};
-        let _ = rustls::crypto::ring::default_provider().install_default();
+        let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
         let server = MockServer::start().await;
         let list = r#"<?xml version="1.0" encoding="UTF-8"?>
 <ListBucketResult><Name>b</Name><Prefix>meta/migrations/</Prefix><KeyCount>3</KeyCount><IsTruncated>false</IsTruncated>

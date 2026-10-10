@@ -83,7 +83,7 @@ pub(super) struct StatusCountDTO {
     pub(super) count: i64,
 }
 
-fn is_zero(v: &i64) -> bool {
+const fn is_zero(v: &i64) -> bool {
     *v == 0
 }
 
@@ -127,7 +127,7 @@ struct ClusterStats {
 
 impl From<storage::ClusterInfo> for ClusterStats {
     fn from(info: storage::ClusterInfo) -> Self {
-        ClusterStats {
+        Self {
             total_capacity_bytes: info.total_capacity_bytes,
             used_bytes: info.used_bytes,
             available_bytes: info.available_bytes,
@@ -312,18 +312,17 @@ pub(super) async fn dangling_refs(h: &Arc<Handler>, repo_id: i64) -> Vec<Danglin
         {
             continue;
         }
-        let name = match names.get(&reference.repo_id) {
-            Some(name) => name.clone(),
-            None => {
-                let name = h
-                    .store
-                    .get_repository(reference.repo_id)
-                    .await
-                    .map(|repo| repo.name)
-                    .unwrap_or_default();
-                names.insert(reference.repo_id, name.clone());
-                name
-            }
+        let name = if let Some(name) = names.get(&reference.repo_id) {
+            name.clone()
+        } else {
+            let name = h
+                .store
+                .get_repository(reference.repo_id)
+                .await
+                .map(|repo| repo.name)
+                .unwrap_or_default();
+            names.insert(reference.repo_id, name.clone());
+            name
         };
         out.push(DanglingRefDTO {
             repository: name,

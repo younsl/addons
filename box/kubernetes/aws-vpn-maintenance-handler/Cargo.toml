@@ -56,7 +56,7 @@ croner = "3"
 humantime = "2"
 
 # CLI
-clap = { version = "4", features = ["derive"] }
+clap = { version = "4", features = ["derive", "env"] }
 
 # Error handling
 anyhow = "1"

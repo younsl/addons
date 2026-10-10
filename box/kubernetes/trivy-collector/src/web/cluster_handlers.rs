@@ -130,18 +130,13 @@ fn sanitize_name(name: &str) -> Result<String, String> {
 
 /// Extract the hostname (lowercased, no scheme/port/path) from a server URL.
 fn server_host(server: &str) -> String {
-    let after_scheme = server
-        .split_once("://")
-        .map(|(_, rest)| rest)
-        .unwrap_or(server);
+    let after_scheme = server.split_once("://").map_or(server, |(_, rest)| rest);
     let host_with_path = after_scheme
         .split_once('/')
-        .map(|(h, _)| h)
-        .unwrap_or(after_scheme);
+        .map_or(after_scheme, |(h, _)| h);
     let host = host_with_path
         .split_once(':')
-        .map(|(h, _)| h)
-        .unwrap_or(host_with_path);
+        .map_or(host_with_path, |(h, _)| h);
     host.to_lowercase()
 }
 
@@ -160,9 +155,9 @@ fn truncate_dns_subdomain(name: &str, limit: usize) -> String {
 fn secret_name(cluster: &str, server: &str) -> String {
     let host = server_host(server);
     let raw = if host.is_empty() {
-        format!("cluster-{}", cluster)
+        format!("cluster-{cluster}")
     } else {
-        format!("cluster-{}-{}", cluster, host)
+        format!("cluster-{cluster}-{host}")
     };
     truncate_dns_subdomain(&raw, 253)
 }
@@ -185,9 +180,9 @@ fn build_secret(namespace: &str, req: &RegisterClusterRequest) -> Result<Secret,
         },
     };
     let config_json = serde_json::to_string(&credentials)
-        .map_err(|e| format!("failed to serialize credentials: {}", e))?;
+        .map_err(|e| format!("failed to serialize credentials: {e}"))?;
     let namespaces_json = serde_json::to_string(&req.namespaces)
-        .map_err(|e| format!("failed to serialize namespaces: {}", e))?;
+        .map_err(|e| format!("failed to serialize namespaces: {e}"))?;
 
     let mut labels = BTreeMap::new();
     labels.insert(SECRET_TYPE_LABEL.to_string(), SECRET_TYPE_VALUE.to_string());
@@ -244,13 +239,13 @@ async fn probe_cluster(parsed: &ClusterSecret) -> (bool, String, u64) {
         Ok(c) => c,
         Err(e) => {
             let ms = started.elapsed().as_millis() as u64;
-            return (false, format!("client build failed: {}", e), ms);
+            return (false, format!("client build failed: {e}"), ms);
         }
     };
 
     let (reachable, msg) = match tokio::time::timeout(TIMEOUT, client.apiserver_version()).await {
         Ok(Ok(v)) => (true, format!("Kubernetes v{}.{}", v.major, v.minor)),
-        Ok(Err(e)) => (false, format!("API error: {}", e)),
+        Ok(Err(e)) => (false, format!("API error: {e}")),
         Err(_) => (false, format!("timed out after {}s", TIMEOUT.as_secs())),
     };
     let ms = started.elapsed().as_millis() as u64;
@@ -273,38 +268,35 @@ pub async fn list_registered_clusters(State(state): State<AppState>) -> impl Int
         Err(e) => return e.into_response(),
     };
     let lp = kube::api::ListParams::default()
-        .labels(&format!("{}={}", SECRET_TYPE_LABEL, SECRET_TYPE_VALUE));
+        .labels(&format!("{SECRET_TYPE_LABEL}={SECRET_TYPE_VALUE}"));
 
     match api.list(&lp).await {
         Ok(list) => {
             // Parse all Secrets first so we can decide which ones need a
             // probe, then fire the probes in parallel.
-            let parsed_all: Vec<(bool, ClusterSecret)> = list
-                .items
-                .iter()
-                .filter_map(|s| {
-                    let in_cluster = is_in_cluster(s);
-                    parse_cluster_secret(s).ok().map(|p| (in_cluster, p))
-                })
-                .collect();
-
             let items: Vec<RegisteredCluster> = futures::future::join_all(
-                parsed_all.into_iter().map(|(in_cluster, p)| async move {
-                    // In-cluster: we are currently running inside it, so the
-                    // concept of "reachable" is trivially true; skip the probe
-                    // to save latency.
-                    if in_cluster {
-                        return to_registered(
-                            &p,
-                            true,
-                            Some(true),
-                            Some("in-cluster (pod's own SA)".to_string()),
-                            None,
-                        );
-                    }
-                    let (reachable, msg, ms) = probe_cluster(&p).await;
-                    to_registered(&p, false, Some(reachable), Some(msg), Some(ms))
-                }),
+                list.items
+                    .iter()
+                    .filter_map(|s| {
+                        let in_cluster = is_in_cluster(s);
+                        parse_cluster_secret(s).ok().map(|p| (in_cluster, p))
+                    })
+                    .map(|(in_cluster, p)| async move {
+                        // In-cluster: we are currently running inside it, so the
+                        // concept of "reachable" is trivially true; skip the probe
+                        // to save latency.
+                        if in_cluster {
+                            return to_registered(
+                                &p,
+                                true,
+                                Some(true),
+                                Some("in-cluster (pod's own SA)".to_string()),
+                                None,
+                            );
+                        }
+                        let (reachable, msg, ms) = probe_cluster(&p).await;
+                        to_registered(&p, false, Some(reachable), Some(msg), Some(ms))
+                    }),
             )
             .await;
 
@@ -382,7 +374,7 @@ pub async fn register_cluster(
                 return (
                     StatusCode::INTERNAL_SERVER_ERROR,
                     Json(ErrorResponse {
-                        error: format!("failed to update cluster: {}", e),
+                        error: format!("failed to update cluster: {e}"),
                     }),
                 )
                     .into_response();
@@ -394,7 +386,7 @@ pub async fn register_cluster(
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(ErrorResponse {
-                    error: format!("failed to register cluster: {}", e),
+                    error: format!("failed to register cluster: {e}"),
                 }),
             )
                 .into_response();
@@ -447,7 +439,7 @@ pub async fn delete_registered_cluster(
     // Look up the matching Secret by label + `name` field, then delete by its
     // actual metadata.name.
     let lp = kube::api::ListParams::default()
-        .labels(&format!("{}={}", SECRET_TYPE_LABEL, SECRET_TYPE_VALUE));
+        .labels(&format!("{SECRET_TYPE_LABEL}={SECRET_TYPE_VALUE}"));
     let list = match api.list(&lp).await {
         Ok(list) => list,
         Err(e) => {
@@ -455,24 +447,23 @@ pub async fn delete_registered_cluster(
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(ErrorResponse {
-                    error: format!("failed to look up cluster: {}", e),
+                    error: format!("failed to look up cluster: {e}"),
                 }),
             )
                 .into_response();
         }
     };
 
-    let matching = list.items.iter().find(|s| {
-        parse_cluster_secret(s)
-            .map(|p| p.name == name)
-            .unwrap_or(false)
-    });
+    let matching = list
+        .items
+        .iter()
+        .find(|s| parse_cluster_secret(s).is_ok_and(|p| p.name == name));
 
     let Some(secret) = matching else {
         return (
             StatusCode::NOT_FOUND,
             Json(ErrorResponse {
-                error: format!("cluster '{}' not found", name),
+                error: format!("cluster '{name}' not found"),
             }),
         )
             .into_response();
@@ -523,7 +514,7 @@ pub async fn delete_registered_cluster(
         Err(kube::Error::Api(e)) if e.code == 404 => (
             StatusCode::NOT_FOUND,
             Json(ErrorResponse {
-                error: format!("cluster '{}' not found", name),
+                error: format!("cluster '{name}' not found"),
             }),
         )
             .into_response(),
@@ -532,7 +523,7 @@ pub async fn delete_registered_cluster(
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(ErrorResponse {
-                    error: format!("failed to delete cluster: {}", e),
+                    error: format!("failed to delete cluster: {e}"),
                 }),
             )
                 .into_response()
@@ -576,7 +567,7 @@ pub async fn validate_cluster(
                 StatusCode::OK,
                 Json(ValidationResponse {
                     reachable: false,
-                    message: format!("failed to build client: {}", e),
+                    message: format!("failed to build client: {e}"),
                 }),
             )
                 .into_response();
@@ -597,7 +588,7 @@ pub async fn validate_cluster(
             StatusCode::OK,
             Json(ValidationResponse {
                 reachable: false,
-                message: format!("connection failed: {}", e),
+                message: format!("connection failed: {e}"),
             }),
         )
             .into_response(),

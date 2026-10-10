@@ -11,7 +11,7 @@ use http::{Method, Request};
 use prometheus::Registry;
 use tower::ServiceExt;
 
-use crate::server::*;
+use crate::server::Server;
 
 pub(crate) async fn new_test_server() -> (Server, Registry, tempfile::TempDir) {
     let (store, dir) = crate::meta::Store::open_temp().await.expect("open store");

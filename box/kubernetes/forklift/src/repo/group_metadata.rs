@@ -462,7 +462,7 @@ pub(crate) fn merge_npm_group(values: &[&[u8]]) -> Option<(Vec<u8>, String)> {
     for value in values {
         let document: JsonObject = serde_json::from_slice(value).ok()?;
         if merged.is_empty() {
-            merged = document.clone();
+            merged.clone_from(&document);
         }
         for (key, target) in [
             ("versions", &mut versions),
@@ -497,7 +497,7 @@ pub(crate) fn merge_cargo_group(values: &[&[u8]]) -> Option<(Vec<u8>, String)> {
     let mut lines: Vec<String> = Vec::new();
     for value in values {
         let text = String::from_utf8_lossy(value);
-        for line in text.trim().split('\n') {
+        for line in text.lines() {
             let entry: Entry = serde_json::from_str(line).ok()?;
             if entry.version.is_empty() {
                 return None;
@@ -513,6 +513,7 @@ pub(crate) fn merge_cargo_group(values: &[&[u8]]) -> Option<(Vec<u8>, String)> {
     ))
 }
 
+#[allow(clippy::unnecessary_wraps)]
 pub(crate) fn merge_go_list_group(values: &[&[u8]]) -> Option<(Vec<u8>, String)> {
     let mut seen: HashSet<String> = HashSet::new();
     let mut versions: Vec<String> = Vec::new();
@@ -590,7 +591,7 @@ pub(crate) fn merge_pypi_group(values: &[&[u8]], content_type: &str) -> Option<(
         for anchor in find_anchors(&String::from_utf8_lossy(value)) {
             let mut key = unescape_html(&strip_html_tags(&anchor)).trim().to_string();
             if key.is_empty() {
-                key = anchor.clone();
+                key.clone_from(&anchor);
             }
             if seen.insert(key) {
                 anchors.push(anchor);
@@ -700,7 +701,7 @@ fn merge_oci_tags_group(values: &[&[u8]]) -> Option<(Vec<u8>, String)> {
     for value in values {
         let doc: OciTagsDoc = serde_json::from_slice(value).ok()?;
         if merged.name.is_empty() {
-            merged.name = doc.name.clone();
+            merged.name.clone_from(&doc.name);
         }
         if !doc.name.is_empty() && doc.name != merged.name {
             return None;
@@ -748,7 +749,7 @@ pub(crate) fn go_semver_canonical(v: &str) -> String {
 
 pub(crate) fn go_semver_major(v: &str) -> String {
     match go_semver_parse(v) {
-        Some(p) => v[..1 + p.major.len()].to_string(),
+        Some(p) => v[..=p.major.len()].to_string(),
         None => String::new(),
     }
 }
@@ -878,7 +879,7 @@ fn parse_build(v: &str) -> Option<(&str, &str)> {
     Some((&v[..i], &v[i..]))
 }
 
-fn is_ident_char(c: u8) -> bool {
+const fn is_ident_char(c: u8) -> bool {
     c.is_ascii_alphanumeric() || c == b'-'
 }
 
@@ -997,8 +998,8 @@ pub(crate) mod tests {
     #[test]
     fn merge_maven_group_unions_versions() {
         let (body, _) = merge_maven_group(&[
-        br#"<metadata><groupId>com.acme</groupId><artifactId>widget</artifactId><versioning><versions><version>1.0.0</version></versions></versioning></metadata>"#,
-        br#"<metadata><groupId>com.acme</groupId><artifactId>widget</artifactId><versioning><versions><version>2.0.0</version></versions></versioning></metadata>"#,
+        br"<metadata><groupId>com.acme</groupId><artifactId>widget</artifactId><versioning><versions><version>1.0.0</version></versions></versioning></metadata>",
+        br"<metadata><groupId>com.acme</groupId><artifactId>widget</artifactId><versioning><versions><version>2.0.0</version></versions></versioning></metadata>",
     ])
     .expect("merge");
         let text = String::from_utf8_lossy(&body).to_string();

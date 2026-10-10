@@ -504,6 +504,7 @@ fn spawn_gauge_refresh(
 }
 
 /// Build the router with conditional auth middleware
+#[allow(clippy::too_many_lines)]
 pub(crate) fn build_router(
     state: AppState,
     auth_mode: auth::AuthMode,
@@ -735,15 +736,13 @@ async fn serve_api_docs() -> impl IntoResponse {
 </head>
 <body>
 <div id="app"></div>
-<script src="{bundle}"></script>
+<script src="{SCALAR_BUNDLE_PATH}"></script>
 <script>
   window.Scalar.createApiReference('#app', {configuration});
 </script>
 </body>
 </html>
 "#,
-        bundle = SCALAR_BUNDLE_PATH,
-        configuration = configuration,
     );
 
     (
@@ -860,11 +859,6 @@ mod tests {
     /// box rather than an error. Resolve every `$ref` instead.
     #[test]
     fn the_openapi_document_has_no_dangling_schema_references() {
-        let doc = serde_json::to_value(ApiDoc::openapi()).expect("the document serializes");
-        let schemas = doc["components"]["schemas"]
-            .as_object()
-            .expect("components.schemas");
-
         fn collect_refs(node: &serde_json::Value, out: &mut Vec<String>) {
             match node {
                 serde_json::Value::Object(map) => {
@@ -886,6 +880,11 @@ mod tests {
                 _ => {}
             }
         }
+
+        let doc = serde_json::to_value(ApiDoc::openapi()).expect("the document serializes");
+        let schemas = doc["components"]["schemas"]
+            .as_object()
+            .expect("components.schemas");
 
         let mut refs = Vec::new();
         collect_refs(&doc, &mut refs);

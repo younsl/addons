@@ -130,7 +130,7 @@ pub(crate) fn inspect(path: &Path) -> Result<Inspected> {
     Ok((out, total - recorded))
 }
 
-fn io(op: &'static str, source: std::io::Error) -> Error {
+const fn io(op: &'static str, source: std::io::Error) -> Error {
     Error::Io { op, source }
 }
 
@@ -139,7 +139,7 @@ pub(crate) mod tests {
     use crate::migrate::snapshot::*;
 
     pub(crate) fn digest(n: u8) -> String {
-        format!("{:064x}", n)
+        format!("{n:064x}")
     }
 
     pub(crate) fn database(path: &Path, blobs: &[(String, i64)], dangling: &[String]) {

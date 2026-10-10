@@ -9,7 +9,6 @@ use axum::body::Body;
 use axum::response::{IntoResponse, Response};
 use http::request::Parts;
 use http::{HeaderValue, Method, StatusCode};
-use once_cell::sync::Lazy;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use sha2::Digest as _;
@@ -31,8 +30,8 @@ pub(crate) const DEFAULT_OCI_MAX_MANIFEST_BYTES: i64 = 4 << 20;
 
 /// Validates a session id before it is used as a file name, so a crafted id
 /// cannot traverse out of the upload directory.
-static OCI_SESSION_ID_RE: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"^[a-f0-9]{32}$").expect("valid regex"));
+static OCI_SESSION_ID_RE: std::sync::LazyLock<Regex> =
+    std::sync::LazyLock::new(|| Regex::new(r"^[a-f0-9]{32}$").expect("valid regex"));
 
 /// The subset of an OCI content descriptor needed for reference verification.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -303,8 +302,7 @@ impl Manager {
         if !content_range.is_empty() {
             let start = content_range
                 .split_once('-')
-                .map(|(s, _)| s.trim().parse::<i64>().ok())
-                .unwrap_or(None);
+                .and_then(|(s, _)| s.trim().parse::<i64>().ok());
             if start != Some(sess.offset) {
                 let mut resp = write_oci_error(
                     StatusCode::RANGE_NOT_SATISFIABLE,
@@ -317,15 +315,12 @@ impl Manager {
                 return resp;
             }
         }
-        let n = match self.oci_append_session(&sess, body).await {
-            Ok(n) => n,
-            Err(_) => {
-                return write_oci_error(
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "BLOB_UPLOAD_INVALID",
-                    "append failed",
-                );
-            }
+        let Ok(n) = self.oci_append_session(&sess, body).await else {
+            return write_oci_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "BLOB_UPLOAD_INVALID",
+                "append failed",
+            );
         };
         if self
             .store
@@ -432,15 +427,12 @@ impl Manager {
             }
             Ok(_) => {}
         }
-        let file = match tokio::fs::File::open(self.oci_session_file(&sess.id)).await {
-            Ok(file) => file,
-            Err(_) => {
-                return write_oci_error(
-                    StatusCode::NOT_FOUND,
-                    "BLOB_UPLOAD_UNKNOWN",
-                    "upload session unknown",
-                );
-            }
+        let Ok(file) = tokio::fs::File::open(self.oci_session_file(&sess.id)).await else {
+            return write_oci_error(
+                StatusCode::NOT_FOUND,
+                "BLOB_UPLOAD_UNKNOWN",
+                "upload session unknown",
+            );
         };
         let resp = self
             .oci_store_blob(parts, res, req, &digest, Box::pin(file))
@@ -471,15 +463,12 @@ impl Manager {
             body
         };
         let _gc = self.engine.gc_mu.read().await;
-        let (stored, size) = match self.engine.blobs.put(body).await {
-            Ok(v) => v,
-            Err(_) => {
-                return write_oci_error(
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "BLOB_UPLOAD_INVALID",
-                    "store failed",
-                );
-            }
+        let Ok((stored, size)) = self.engine.blobs.put(body).await else {
+            return write_oci_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "BLOB_UPLOAD_INVALID",
+                "store failed",
+            );
         };
         if cap > 0 && size > cap {
             self.engine.abandon_blob(&stored, size).await;

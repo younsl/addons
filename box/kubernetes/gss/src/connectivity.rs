@@ -42,7 +42,7 @@ impl ConnectivityChecker {
                 Ok(_) => {
                     let elapsed = start.elapsed();
                     info!(
-                        response_time_ms = elapsed.as_millis() as u64,
+                        response_time_ms = u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX),
                         "Successfully connected to GitHub Enterprise Server"
                     );
                     return Ok(());
@@ -53,7 +53,7 @@ impl ConnectivityChecker {
                         warn!(
                             attempt = attempt,
                             max_retries = self.max_retries,
-                            response_time_ms = elapsed.as_millis() as u64,
+                            response_time_ms = u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX),
                             retry_interval_secs = self.retry_interval.as_secs(),
                             error = %e,
                             "Connectivity check failed, retrying"
@@ -105,6 +105,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_connectivity_checker_creation() {
+        crate::install_crypto_provider();
         let config = Config::new_for_test(
             "test-token".to_string(),
             "test-org".to_string(),
@@ -116,6 +117,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_verify_connectivity_success() {
+        crate::install_crypto_provider();
         let mock_server = MockServer::start().await;
         Mock::given(method("GET"))
             .and(path("/api/v3/meta"))
@@ -137,6 +139,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_verify_connectivity_non_success_status() {
+        crate::install_crypto_provider();
         let mock_server = MockServer::start().await;
         Mock::given(method("GET"))
             .and(path("/api/v3/meta"))
@@ -158,6 +161,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_verify_connectivity_all_retries_fail() {
+        crate::install_crypto_provider();
         let mock_server = MockServer::start().await;
         Mock::given(method("GET"))
             .and(path("/api/v3/meta"))

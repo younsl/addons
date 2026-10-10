@@ -172,7 +172,7 @@ fn scan_receiver(row: &Row<'_>) -> rusqlite::Result<Receiver> {
 
 /// Reports whether `err` is a SQLite UNIQUE (or PRIMARY KEY, which SQLite reports with the same
 /// "UNIQUE constraint failed" message) violation.
-pub(crate) fn is_unique_violation(err: &rusqlite::Error) -> bool {
+pub(crate) const fn is_unique_violation(err: &rusqlite::Error) -> bool {
     matches!(
         err,
         rusqlite::Error::SqliteFailure(e, _)

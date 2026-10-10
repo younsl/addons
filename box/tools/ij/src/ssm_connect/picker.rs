@@ -15,7 +15,7 @@ use crate::ec2::{ColumnWidths, Instance};
 use super::Overlay;
 
 /// Fuzzy picker state.
-pub(crate) struct PickerState {
+pub struct PickerState {
     pub query: String,
     pub selected: usize,
     pub filtered_indices: Vec<(usize, u32)>, // (original_index, score)
@@ -30,7 +30,7 @@ impl PickerState {
         }
     }
 
-    pub(crate) fn move_up(&mut self) {
+    pub(crate) const fn move_up(&mut self) {
         if self.filtered_indices.is_empty() {
             return;
         }
@@ -41,7 +41,7 @@ impl PickerState {
         }
     }
 
-    pub(crate) fn move_down(&mut self) {
+    pub(crate) const fn move_down(&mut self) {
         if self.filtered_indices.is_empty() {
             return;
         }
@@ -52,7 +52,7 @@ impl PickerState {
         }
     }
 
-    pub(crate) fn move_page_up(&mut self, page_size: usize) {
+    pub(crate) const fn move_page_up(&mut self, page_size: usize) {
         self.selected = self.selected.saturating_sub(page_size);
     }
 
@@ -61,11 +61,11 @@ impl PickerState {
         self.selected = (self.selected + page_size).min(max);
     }
 
-    pub(crate) fn move_to_start(&mut self) {
+    pub(crate) const fn move_to_start(&mut self) {
         self.selected = 0;
     }
 
-    pub(crate) fn move_to_end(&mut self) {
+    pub(crate) const fn move_to_end(&mut self) {
         self.selected = self.filtered_indices.len().saturating_sub(1);
     }
 
@@ -83,7 +83,7 @@ impl PickerState {
 }
 
 /// Update filtered indices based on current query.
-pub(crate) fn update_filter(items: &[String], state: &mut PickerState, matcher: &mut Matcher) {
+pub fn update_filter(items: &[String], state: &mut PickerState, matcher: &mut Matcher) {
     if state.query.is_empty() {
         state.filtered_indices = (0..items.len()).map(|i| (i, 0)).collect();
     } else {
@@ -113,7 +113,7 @@ pub(crate) fn update_filter(items: &[String], state: &mut PickerState, matcher: 
 
 /// Draw the instance picker into the given area.
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn draw_picker(
+pub fn draw_picker(
     frame: &mut Frame,
     area: Rect,
     items: &[String],
@@ -142,12 +142,12 @@ pub(crate) fn draw_picker(
 
     let search_line = Line::from(vec![
         Span::styled("Profile: ", Style::default().fg(Color::White)),
-        Span::styled(format!("{} ", profile), Style::default().fg(Color::Cyan)),
+        Span::styled(format!("{profile} "), Style::default().fg(Color::Cyan)),
         Span::styled("| ", Style::default().fg(Color::DarkGray)),
         Span::styled("Region: ", Style::default().fg(Color::White)),
-        Span::styled(format!("{} ", region), Style::default().fg(Color::Cyan)),
+        Span::styled(format!("{region} "), Style::default().fg(Color::Cyan)),
         Span::styled(
-            format!("[{}/{}] ", filtered, total),
+            format!("[{filtered}/{total}] "),
             Style::default().fg(Color::Yellow),
         ),
         Span::styled("> ", Style::default().fg(Color::Green)),
@@ -156,13 +156,9 @@ pub(crate) fn draw_picker(
     frame.render_widget(Paragraph::new(search_line), chunks[0]);
 
     // Set cursor position at end of query
-    let cursor_x = chunks[0].x
-        + format!(
-            "Profile: {} | Region: {} [{}/{}] > ",
-            profile, region, filtered, total
-        )
-        .len() as u16
-        + state.query.len() as u16;
+    let cursor_len = format!("Profile: {profile} | Region: {region} [{filtered}/{total}] > ").len()
+        + state.query.len();
+    let cursor_x = chunks[0].x + u16::try_from(cursor_len).unwrap_or(u16::MAX);
     frame.set_cursor_position((cursor_x, chunks[0].y));
 
     // Header
@@ -200,25 +196,28 @@ pub(crate) fn draw_picker(
     frame.render_stateful_widget(list, chunks[2], &mut list_state);
 
     // Hint / status line
-    let hint_line = if let Some(msg) = status {
-        Line::from(Span::styled(
-            format!(" {msg}"),
-            Style::default().fg(Color::Yellow),
-        ))
-    } else {
-        Line::from(vec![
-            Span::styled(" ↑↓ ", Style::default().fg(Color::DarkGray)),
-            Span::styled("Move  ", Style::default().fg(Color::White)),
-            Span::styled("Enter ", Style::default().fg(Color::DarkGray)),
-            Span::styled("Connect  ", Style::default().fg(Color::White)),
-            Span::styled("Ctrl+S ", Style::default().fg(Color::DarkGray)),
-            Span::styled("Stop  ", Style::default().fg(Color::White)),
-            Span::styled("Ctrl+B ", Style::default().fg(Color::DarkGray)),
-            Span::styled("Start  ", Style::default().fg(Color::White)),
-            Span::styled("Esc ", Style::default().fg(Color::DarkGray)),
-            Span::styled("Quit", Style::default().fg(Color::White)),
-        ])
-    };
+    let hint_line = status.map_or_else(
+        || {
+            Line::from(vec![
+                Span::styled(" ↑↓ ", Style::default().fg(Color::DarkGray)),
+                Span::styled("Move  ", Style::default().fg(Color::White)),
+                Span::styled("Enter ", Style::default().fg(Color::DarkGray)),
+                Span::styled("Connect  ", Style::default().fg(Color::White)),
+                Span::styled("Ctrl+S ", Style::default().fg(Color::DarkGray)),
+                Span::styled("Stop  ", Style::default().fg(Color::White)),
+                Span::styled("Ctrl+B ", Style::default().fg(Color::DarkGray)),
+                Span::styled("Start  ", Style::default().fg(Color::White)),
+                Span::styled("Esc ", Style::default().fg(Color::DarkGray)),
+                Span::styled("Quit", Style::default().fg(Color::White)),
+            ])
+        },
+        |msg| {
+            Line::from(Span::styled(
+                format!(" {msg}"),
+                Style::default().fg(Color::Yellow),
+            ))
+        },
+    );
     frame.render_widget(Paragraph::new(hint_line), chunks[3]);
 
     // Overlay (confirmation modal or in-progress message)
@@ -306,7 +305,7 @@ fn draw_overlay(frame: &mut Frame, area: Rect, overlay: &Overlay, instances: &[I
     };
 
     let width: u16 = 56;
-    let height: u16 = body.len() as u16 + 2; // border
+    let height: u16 = u16::try_from(body.len() + 2).unwrap_or(u16::MAX); // border
     let x = area.x + area.width.saturating_sub(width) / 2;
     let y = area.y + area.height.saturating_sub(height) / 2;
     let modal_area = Rect::new(
@@ -334,7 +333,7 @@ fn draw_overlay(frame: &mut Frame, area: Rect, overlay: &Overlay, instances: &[I
 }
 
 /// Create a new nucleo matcher with default config.
-pub(crate) fn new_matcher() -> Matcher {
+pub fn new_matcher() -> Matcher {
     Matcher::new(NucleoConfig::DEFAULT)
 }
 
@@ -353,7 +352,7 @@ mod tests {
         let state = PickerState::new(5);
         assert_eq!(state.filtered_indices.len(), 5);
         assert_eq!(state.selected, 0);
-        assert!(state.query.is_empty());
+        assert_eq!(state.query, "");
         let indices: Vec<usize> = state.filtered_indices.iter().map(|&(i, _)| i).collect();
         assert_eq!(indices, vec![0, 1, 2, 3, 4]);
     }
@@ -361,7 +360,7 @@ mod tests {
     #[test]
     fn new_zero_items() {
         let state = PickerState::new(0);
-        assert!(state.filtered_indices.is_empty());
+        assert_eq!(state.filtered_indices, [] as [(usize, u32); 0]);
         assert_eq!(state.selected, 0);
     }
 
@@ -480,7 +479,7 @@ mod tests {
     fn delete_char_empty_no_panic() {
         let mut state = PickerState::new(1);
         state.delete_char();
-        assert!(state.query.is_empty());
+        assert_eq!(state.query, "");
     }
 
     #[test]
@@ -488,7 +487,7 @@ mod tests {
         let mut state = PickerState::new(1);
         state.query = "test".to_string();
         state.clear_query();
-        assert!(state.query.is_empty());
+        assert_eq!(state.query, "");
     }
 
     // --- update_filter tests ---
@@ -568,7 +567,7 @@ mod tests {
 
         state.query = "web".to_string();
         update_filter(&items, &mut state, &mut matcher);
-        assert!(!state.filtered_indices.is_empty());
+        assert_ne!(state.filtered_indices, [] as [(usize, u32); 0]);
         assert_eq!(state.filtered_indices[0].0, 0);
     }
 
@@ -581,7 +580,7 @@ mod tests {
 
         state.query = "zzzznonexistent".to_string();
         update_filter(&items, &mut state, &mut matcher);
-        assert!(state.filtered_indices.is_empty());
+        assert_eq!(state.filtered_indices, [] as [(usize, u32); 0]);
     }
 
     #[test]
@@ -648,7 +647,7 @@ mod tests {
                     &instances,
                     None,
                     None,
-                )
+                );
             })
             .unwrap();
     }
@@ -678,7 +677,7 @@ mod tests {
                     &instances,
                     None,
                     None,
-                )
+                );
             })
             .unwrap();
     }
@@ -705,7 +704,7 @@ mod tests {
                     &instances,
                     None,
                     None,
-                )
+                );
             })
             .unwrap();
     }
@@ -741,7 +740,7 @@ mod tests {
                     &instances,
                     None,
                     None,
-                )
+                );
             })
             .unwrap();
     }
@@ -768,7 +767,7 @@ mod tests {
                     &instances,
                     None,
                     None,
-                )
+                );
             })
             .unwrap();
     }
@@ -795,7 +794,7 @@ mod tests {
                     &instances,
                     None,
                     None,
-                )
+                );
             })
             .unwrap();
     }
@@ -830,7 +829,7 @@ mod tests {
                     &instances,
                     None,
                     None,
-                )
+                );
             })
             .unwrap();
     }
@@ -857,7 +856,7 @@ mod tests {
                     &instances,
                     None,
                     None,
-                )
+                );
             })
             .unwrap();
     }

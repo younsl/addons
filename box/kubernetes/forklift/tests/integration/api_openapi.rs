@@ -145,15 +145,12 @@ fn normalise_route(method: &str, path: &str) -> String {
     let mut rest = path;
     while let Some(open) = rest.find('{') {
         out.push_str(&rest[..open]);
-        match rest[open..].find('}') {
-            Some(close) => {
-                out.push_str("{}");
-                rest = &rest[open + close + 1..];
-            }
-            None => {
-                rest = &rest[open..];
-                break;
-            }
+        if let Some(close) = rest[open..].find('}') {
+            out.push_str("{}");
+            rest = &rest[open + close + 1..];
+        } else {
+            rest = &rest[open..];
+            break;
         }
     }
     out.push_str(rest);

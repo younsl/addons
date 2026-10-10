@@ -24,7 +24,12 @@ use tokio::sync::Semaphore;
 use tracing::info;
 
 use super::authz;
-use super::params::*;
+use super::params::{
+    GetAlertRuleParams, GetSbomReportParams, GetVulnerabilityReportParams, ListAlertRulesParams,
+    ListNamespacesParams, ListReportsParams, MAX_ITEM_LIMIT, MAX_LIST_LIMIT,
+    SearchSbomComponentsParams, SearchVulnerabilitiesParams, clamp_limit, clamp_offset,
+    normalize_severities,
+};
 use crate::metrics::{McpToolDurationLabels, McpToolLabels};
 use crate::storage::QueryParams;
 use crate::web::AppState;
@@ -43,15 +48,18 @@ pub struct ToolLimiter(Option<Arc<Semaphore>>);
 
 impl ToolLimiter {
     /// `0` disables the limit.
+    #[must_use]
     pub fn new(max_concurrency: usize) -> Self {
         Self((max_concurrency > 0).then(|| Arc::new(Semaphore::new(max_concurrency))))
     }
 
-    pub fn unlimited() -> Self {
+    #[must_use]
+    pub const fn unlimited() -> Self {
         Self(None)
     }
 
     /// Slots currently free, or `None` when unlimited.
+    #[must_use]
     pub fn available(&self) -> Option<usize> {
         self.0.as_ref().map(|s| s.available_permits())
     }
@@ -78,6 +86,7 @@ pub struct TrivyMcp {
 }
 
 impl TrivyMcp {
+    #[must_use]
     pub fn new(state: AppState, limiter: ToolLimiter) -> Self {
         Self {
             state,
@@ -190,6 +199,7 @@ impl TrivyMcp {
         Ok(CallToolResult::success(vec![ContentBlock::json(value)?]))
     }
 
+    #[allow(clippy::needless_pass_by_value)]
     fn db_error(e: anyhow::Error) -> McpError {
         McpError::internal_error(format!("database error: {e}"), None)
     }
@@ -204,7 +214,7 @@ impl TrivyMcp {
 
 /// Uniform paged envelope for list-style tools.
 #[derive(Serialize)]
-struct Page<T: Serialize> {
+struct Page<T> {
     items: Vec<T>,
     total: i64,
     limit: i64,
@@ -213,7 +223,7 @@ struct Page<T: Serialize> {
 }
 
 impl<T: Serialize> Page<T> {
-    fn new(items: Vec<T>, total: i64, limit: i64, offset: i64) -> Self {
+    const fn new(items: Vec<T>, total: i64, limit: i64, offset: i64) -> Self {
         let truncated = offset + (items.len() as i64) < total;
         Self {
             items,
@@ -242,7 +252,7 @@ fn str_field<'a>(v: &'a Value, key: &str) -> &'a str {
 }
 
 /// Bucket a tool error for the `result` metric label. Cardinality stays fixed.
-fn error_class(e: &McpError) -> &'static str {
+const fn error_class(e: &McpError) -> &'static str {
     match e.code {
         ErrorCode::INVALID_REQUEST => "denied",
         ErrorCode::INVALID_PARAMS => "invalid_params",
@@ -252,7 +262,7 @@ fn error_class(e: &McpError) -> &'static str {
 }
 
 /// HTTP-style status for the audit log so MCP rows sort with REST rows.
-fn status_for(result: &Result<CallToolResult, McpError>) -> u16 {
+const fn status_for(result: &Result<CallToolResult, McpError>) -> u16 {
     match result {
         Ok(_) => 200,
         Err(e) => match e.code {
@@ -775,6 +785,7 @@ impl TrivyMcp {
 }
 
 #[tool_handler(router = self.tool_router)]
+#[allow(clippy::unused_async_trait_impl)]
 impl ServerHandler for TrivyMcp {
     fn get_info(&self) -> ServerInfo {
         ServerInfo::new(ServerCapabilities::builder().enable_tools().build())
@@ -815,7 +826,7 @@ fn alert_rule_summary(rule: &crate::alerts::AlertRule) -> Value {
         "receivers": rule.receivers.len(),
         "ready": rule_is_ready(rule),
         "last_fired_at": status.and_then(|s| s.last_fired_at.clone()),
-        "fired_count": status.map(|s| s.fired_count).unwrap_or(0),
+        "fired_count": status.map_or(0, |s| s.fired_count),
     })
 }
 
@@ -864,8 +875,9 @@ mod tests {
     use crate::collector::types::ReportPayload;
     use crate::storage::Database;
     use crate::web::test_support;
+    use std::collections::BTreeMap;
 
-    async fn state_with(db: Database, rbac_csv: &str, default_policy: &str) -> AppState {
+    fn state_with(db: Database, rbac_csv: &str, default_policy: &str) -> AppState {
         test_support::state_with(db, rbac_csv, default_policy)
     }
 
@@ -931,11 +943,11 @@ mod tests {
         db.upsert_report(&sbom_payload("prod", "default", "replicaset-api-xyz"))
             .await
             .unwrap();
-        let state = state_with(db, RbacPolicy::default_csv(), "role:readonly").await;
+        let state = state_with(db, RbacPolicy::default_csv(), "role:readonly");
         TrivyMcp::new(state, ToolLimiter::unlimited())
     }
 
-    fn body(result: CallToolResult) -> Value {
+    fn body(result: &CallToolResult) -> Value {
         assert_ne!(result.is_error, Some(true));
         let text = match &result.content[0] {
             ContentBlock::Text(t) => t.text.clone(),
@@ -956,10 +968,9 @@ mod tests {
 
     #[test]
     fn json_array_handles_missing_path_and_bad_json() {
-        assert!(
-            json_array("{}", "/report/vulnerabilities")
-                .unwrap()
-                .is_empty()
+        assert_eq!(
+            json_array("{}", "/report/vulnerabilities").unwrap(),
+            [] as [serde_json::Value; 0]
         );
         assert!(json_array("not json", "/x").is_err());
     }
@@ -995,11 +1006,7 @@ mod tests {
             .unwrap()
             .block_on(Database::new(":memory:"))
             .unwrap();
-        let state = tokio::runtime::Runtime::new().unwrap().block_on(state_with(
-            db,
-            RbacPolicy::default_csv(),
-            "role:readonly",
-        ));
+        let state = state_with(db, RbacPolicy::default_csv(), "role:readonly");
         let info = TrivyMcp::new(state, ToolLimiter::unlimited()).get_info();
         assert!(info.capabilities.tools.is_some());
         assert_eq!(info.server_info.name, "trivy-collector");
@@ -1009,11 +1016,11 @@ mod tests {
     #[tokio::test]
     async fn clusters_and_namespaces() {
         let mcp = seeded().await;
-        let v = body(mcp.list_clusters(Extensions::new()).await.unwrap());
+        let v = body(&mcp.list_clusters(Extensions::new()).await.unwrap());
         assert_eq!(v["total"], 2);
 
         let v = body(
-            mcp.list_namespaces(
+            &mcp.list_namespaces(
                 Extensions::new(),
                 Parameters(ListNamespacesParams {
                     cluster: Some("stage".into()),
@@ -1036,8 +1043,8 @@ mod tests {
                 clusters: vec!["prod".to_string()],
                 namespace: None,
             },
-            labels: Default::default(),
-            annotations: Default::default(),
+            labels: BTreeMap::default(),
+            annotations: BTreeMap::default(),
             receivers: vec![crate::alerts::Receiver {
                 name: "sec".to_string(),
                 slack: Some(crate::alerts::SlackReceiver {
@@ -1151,7 +1158,7 @@ mod tests {
     #[tokio::test]
     async fn stats() {
         let mcp = seeded().await;
-        let v = body(mcp.get_stats(Extensions::new()).await.unwrap());
+        let v = body(&mcp.get_stats(Extensions::new()).await.unwrap());
         assert_eq!(v["total_vuln_reports"], 2);
         assert_eq!(v["total_sbom_reports"], 1);
     }
@@ -1160,7 +1167,7 @@ mod tests {
     async fn list_vulnerability_reports_filters_and_pages() {
         let mcp = seeded().await;
         let v = body(
-            mcp.list_vulnerability_reports(
+            &mcp.list_vulnerability_reports(
                 Extensions::new(),
                 Parameters(ListReportsParams {
                     severity: Some(vec!["critical".into()]),
@@ -1177,7 +1184,7 @@ mod tests {
         assert_eq!(v["limit"], 1);
 
         let v = body(
-            mcp.list_vulnerability_reports(
+            &mcp.list_vulnerability_reports(
                 Extensions::new(),
                 Parameters(ListReportsParams {
                     cluster: Some("nope".into()),
@@ -1195,7 +1202,7 @@ mod tests {
     async fn list_sbom_reports_by_component() {
         let mcp = seeded().await;
         let v = body(
-            mcp.list_sbom_reports(
+            &mcp.list_sbom_reports(
                 Extensions::new(),
                 Parameters(ListReportsParams {
                     component: Some("log4j".into()),
@@ -1225,7 +1232,7 @@ mod tests {
         };
 
         let v = body(
-            mcp.get_vulnerability_report(Extensions::new(), Parameters(base(None, None)))
+            &mcp.get_vulnerability_report(Extensions::new(), Parameters(base(None, None)))
                 .await
                 .unwrap(),
         );
@@ -1235,7 +1242,7 @@ mod tests {
         assert_eq!(v["vulnerabilities"]["items"][0]["package"], "openssl");
 
         let v = body(
-            mcp.get_vulnerability_report(
+            &mcp.get_vulnerability_report(
                 Extensions::new(),
                 Parameters(base(Some(vec!["high".into(), "LOW".into()]), None)),
             )
@@ -1245,7 +1252,7 @@ mod tests {
         assert_eq!(v["vulnerabilities"]["total"], 2);
 
         let v = body(
-            mcp.get_vulnerability_report(Extensions::new(), Parameters(base(None, Some(true))))
+            &mcp.get_vulnerability_report(Extensions::new(), Parameters(base(None, Some(true))))
                 .await
                 .unwrap(),
         );
@@ -1258,7 +1265,7 @@ mod tests {
         paged.limit = Some(2);
         paged.offset = Some(2);
         let v = body(
-            mcp.get_vulnerability_report(Extensions::new(), Parameters(paged))
+            &mcp.get_vulnerability_report(Extensions::new(), Parameters(paged))
                 .await
                 .unwrap(),
         );
@@ -1291,7 +1298,7 @@ mod tests {
     async fn get_sbom_report_filters() {
         let mcp = seeded().await;
         let v = body(
-            mcp.get_sbom_report(
+            &mcp.get_sbom_report(
                 Extensions::new(),
                 Parameters(GetSbomReportParams {
                     cluster: "prod".into(),
@@ -1336,7 +1343,7 @@ mod tests {
     async fn search_vulnerabilities_by_cve_and_package() {
         let mcp = seeded().await;
         let v = body(
-            mcp.search_vulnerabilities(
+            &mcp.search_vulnerabilities(
                 Extensions::new(),
                 Parameters(SearchVulnerabilitiesParams {
                     query: "CVE-2024-0001".into(),
@@ -1351,7 +1358,7 @@ mod tests {
         assert_eq!(v["items"][0]["vulnerability_id"], "CVE-2024-0001");
 
         let v = body(
-            mcp.search_vulnerabilities(
+            &mcp.search_vulnerabilities(
                 Extensions::new(),
                 Parameters(SearchVulnerabilitiesParams {
                     query: "zlib".into(),
@@ -1384,7 +1391,7 @@ mod tests {
     async fn search_sbom_components_with_and_without_version() {
         let mcp = seeded().await;
         let v = body(
-            mcp.search_sbom_components(
+            &mcp.search_sbom_components(
                 Extensions::new(),
                 Parameters(SearchSbomComponentsParams {
                     component: "log4j".into(),
@@ -1399,7 +1406,7 @@ mod tests {
         assert_eq!(v["total"], 2);
 
         let v = body(
-            mcp.search_sbom_components(
+            &mcp.search_sbom_components(
                 Extensions::new(),
                 Parameters(SearchSbomComponentsParams {
                     component: "log4j".into(),
@@ -1417,7 +1424,7 @@ mod tests {
         assert!(v.get("scan_truncated").is_none());
 
         let v = body(
-            mcp.search_sbom_components(
+            &mcp.search_sbom_components(
                 Extensions::new(),
                 Parameters(SearchSbomComponentsParams {
                     component: "log4j".into(),
@@ -1435,7 +1442,7 @@ mod tests {
             .search_sbom_components(
                 Extensions::new(),
                 Parameters(SearchSbomComponentsParams {
-                    component: "".into(),
+                    component: String::new(),
                     version: None,
                     limit: None,
                     offset: None,
@@ -1465,7 +1472,7 @@ mod tests {
 
     #[test]
     fn audit_records_read_session_and_headers() {
-        let (mut parts, _) = axum::http::Request::builder()
+        let (mut parts, ()) = axum::http::Request::builder()
             .header("user-agent", "kagent/1.0")
             .header("x-forwarded-for", "10.0.0.9")
             .body(())
@@ -1498,7 +1505,7 @@ mod tests {
             1,
         );
         assert_eq!(anon.status, 403);
-        assert!(anon.user_sub.is_empty());
+        assert_eq!(anon.user_sub, "");
     }
 
     #[test]
@@ -1511,7 +1518,7 @@ mod tests {
     #[tokio::test]
     async fn limiter_bounds_concurrent_tool_calls() {
         let db = Database::new(":memory:").await.unwrap();
-        let state = state_with(db, RbacPolicy::default_csv(), "role:readonly").await;
+        let state = state_with(db, RbacPolicy::default_csv(), "role:readonly");
         let limiter = ToolLimiter::new(1);
         let mcp = TrivyMcp::new(state, limiter.clone());
 
@@ -1579,8 +1586,9 @@ mod tests {
     }
 
     #[tokio::test]
+    #[allow(clippy::too_many_lines)]
     async fn tools_refuse_to_answer_while_the_fleet_rebuilds() {
-        use crate::storage::{HydrationStatus, ReportStore};
+        use crate::storage::{ClusterSync, HydrationStatus, ReportStore};
         use async_trait::async_trait;
 
         /// A store whose report data is still being rebuilt.
@@ -1678,7 +1686,7 @@ mod tests {
                 let mut status = HydrationStatus::default();
                 status
                     .clusters
-                    .insert("prod".to_string(), Default::default());
+                    .insert("prod".to_string(), ClusterSync::default());
                 Ok(status)
             }
             async fn upsert_report(
@@ -1734,7 +1742,7 @@ mod tests {
     async fn rbac_denies_without_permission() {
         let db = Database::new(":memory:").await.unwrap();
         // Default policy grants nothing, no groups on the (absent) session.
-        let state = state_with(db, "p, role:admin, *, *, allow\n", "").await;
+        let state = state_with(db, "p, role:admin, *, *, allow\n", "");
         let mcp = TrivyMcp::new(state, ToolLimiter::unlimited());
         let err = mcp.get_stats(Extensions::new()).await.unwrap_err();
         assert!(err.message.contains("RBAC denied: stats:get"));

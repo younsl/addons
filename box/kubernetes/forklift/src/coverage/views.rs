@@ -73,7 +73,7 @@ pub(crate) fn split_path(full: &str) -> (String, String) {
 
 /// nonNil keeps a slice out of JSON as `[]` rather than `null`, so the console never has to
 /// guard for a missing array.
-pub(crate) fn non_nil(v: Vec<String>) -> Vec<String> {
+pub(crate) const fn non_nil(v: Vec<String>) -> Vec<String> {
     v
 }
 
@@ -83,13 +83,14 @@ pub(crate) fn parse_gitlab_time(s: &str) -> DateTime<Utc> {
     if s.is_empty() {
         return crate::coverage::types::zero_time();
     }
-    DateTime::parse_from_rfc3339(s)
-        .map(|t| t.with_timezone(&Utc))
-        .unwrap_or_else(|_| crate::coverage::types::zero_time())
+    DateTime::parse_from_rfc3339(s).map_or_else(
+        |_| crate::coverage::types::zero_time(),
+        |t| t.with_timezone(&Utc),
+    )
 }
 
 /// inScope is a project that counts toward coverage: it has CI and no exclusion.
-pub(crate) fn in_scope(p: &Project) -> bool {
+pub(crate) const fn in_scope(p: &Project) -> bool {
     !p.skipped && p.exclude_reason.is_empty()
 }
 
@@ -114,13 +115,13 @@ pub(crate) fn summarize(projects: &[Project], excluded_projects: &[ExcludedProje
     }
     out.excluded += excluded_projects.len() as i64;
     if out.target > 0 {
-        out.percent = (out.applied as f64 / out.target as f64 * 100.0 + 0.5) as i64;
+        out.percent = (out.applied as f64 / out.target as f64).mul_add(100.0, 0.5) as i64;
     }
     out
 }
 
 /// Overview is everything the coverage dashboard reads in one call.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Overview {
     #[serde(flatten)]
     pub summary: Summary,
@@ -163,7 +164,7 @@ pub struct Overview {
 
 /// ProjectDetail is one project plus whether the last scan actually produced a
 /// verdict for it.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ProjectDetail {
     #[serde(flatten)]
     pub project: Project,
@@ -258,7 +259,7 @@ impl Scanner {
             .map(|mut entry| {
                 if entry.target > 0 {
                     entry.percent =
-                        (entry.applied as f64 / entry.target as f64 * 100.0 + 0.5) as i64;
+                        (entry.applied as f64 / entry.target as f64).mul_add(100.0, 0.5) as i64;
                 }
                 entry
             })

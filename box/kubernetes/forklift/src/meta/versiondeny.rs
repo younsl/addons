@@ -11,7 +11,7 @@ use super::{Error, Result, Store};
 /// package string follows the same canonical per-format convention as
 /// [`super::PackageApproval`]; the version is the exact string seen in request
 /// paths (go modules keep the "v" prefix).
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct VersionDeny {
     pub id: i64,
     pub repo_name: String,

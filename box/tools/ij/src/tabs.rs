@@ -61,7 +61,7 @@ enum ActiveTab {
 }
 
 impl ActiveTab {
-    fn index(self) -> usize {
+    const fn index(self) -> usize {
         match self {
             Self::Ec2Connect => 0,
             Self::AmiCleanup => 1,
@@ -69,7 +69,7 @@ impl ActiveTab {
         }
     }
 
-    fn from_index(i: usize) -> Self {
+    const fn from_index(i: usize) -> Self {
         match i {
             0 => Self::Ec2Connect,
             1 => Self::AmiCleanup,
@@ -79,7 +79,7 @@ impl ActiveTab {
 }
 
 /// Result of the tabbed TUI session.
-pub(crate) enum TabResult {
+pub enum TabResult {
     Connect(Instance),
     Quit,
 }
@@ -97,7 +97,8 @@ struct TabApp {
 }
 
 /// Run the tabbed TUI. Returns the selected instance or Quit.
-pub(crate) async fn run_tabbed(config: Config) -> Result<TabResult> {
+#[allow(clippy::too_many_lines)]
+pub async fn run_tabbed(config: Config) -> Result<TabResult> {
     enable_raw_mode().map_err(|e| Error::Other(e.into()))?;
     stdout()
         .execute(EnterAlternateScreen)
@@ -115,10 +116,10 @@ pub(crate) async fn run_tabbed(config: Config) -> Result<TabResult> {
     };
 
     // Use scan_regions from file config; fall back to single --region if set
-    let ami_regions = if !config.scan_regions.is_empty() {
-        config.scan_regions.clone()
-    } else {
+    let ami_regions = if config.scan_regions.is_empty() {
         config.region.iter().cloned().collect()
+    } else {
+        config.scan_regions.clone()
     };
 
     let ami_args = AmiCleanupArgs {
@@ -188,130 +189,126 @@ pub(crate) async fn run_tabbed(config: Config) -> Result<TabResult> {
             biased;
 
             event = reader.next() => {
-                match event {
-                    Some(Ok(Event::Key(key))) => {
-                        if key.kind != KeyEventKind::Press {
-                            continue;
-                        }
+                if let Some(Ok(Event::Key(key))) = event {
+                    if key.kind != KeyEventKind::Press {
+                        continue;
+                    }
 
-                        // Ctrl+C quits from anywhere
-                        if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
-                            break TabResult::Quit;
-                        }
+                    // Ctrl+C quits from anywhere
+                    if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
+                        break TabResult::Quit;
+                    }
 
-                        // Menu is open: handle menu navigation
-                        if app.menu_open {
-                            match key.code {
-                                KeyCode::Up | KeyCode::Char('k')
-                                    if app.menu_cursor > 0 => {
-                                        app.menu_cursor -= 1;
-                                    }
-                                KeyCode::Down | KeyCode::Char('j')
-                                    if app.menu_cursor + 1 < TAB_LABELS.len() => {
-                                        app.menu_cursor += 1;
-                                    }
-                                KeyCode::Enter => {
-                                    app.active_tab = ActiveTab::from_index(app.menu_cursor);
-                                    app.menu_open = false;
+                    // Menu is open: handle menu navigation
+                    if app.menu_open {
+                        match key.code {
+                            KeyCode::Up | KeyCode::Char('k')
+                                if app.menu_cursor > 0 => {
+                                    app.menu_cursor -= 1;
                                 }
-                                KeyCode::Esc | KeyCode::Tab => {
-                                    app.menu_open = false;
+                            KeyCode::Down | KeyCode::Char('j')
+                                if app.menu_cursor + 1 < TAB_LABELS.len() => {
+                                    app.menu_cursor += 1;
                                 }
-                                _ => {}
+                            KeyCode::Enter => {
+                                app.active_tab = ActiveTab::from_index(app.menu_cursor);
+                                app.menu_open = false;
                             }
-                            continue;
+                            KeyCode::Esc | KeyCode::Tab => {
+                                app.menu_open = false;
+                            }
+                            _ => {}
                         }
+                        continue;
+                    }
 
-                        // Tab key opens dropdown menu (but not when ASG tab is in text-input modes)
-                        if key.code == KeyCode::Tab {
-                            // In ASG InputAbsolute/Preview mode, Tab should not open menu
-                            if app.active_tab == ActiveTab::AsgScaling
-                                && matches!(
-                                    app.asg_app.mode,
-                                    AsgMode::InputAbsolute | AsgMode::Preview
-                                )
-                            {
-                                app.asg_app.handle_key(key);
-                            } else {
-                                app.menu_open = true;
-                                app.menu_cursor = app.active_tab.index();
-                            }
-                            continue;
+                    // Tab key opens dropdown menu (but not when ASG tab is in text-input modes)
+                    if key.code == KeyCode::Tab {
+                        // In ASG InputAbsolute/Preview mode, Tab should not open menu
+                        if app.active_tab == ActiveTab::AsgScaling
+                            && matches!(
+                                app.asg_app.mode,
+                                AsgMode::InputAbsolute | AsgMode::Preview
+                            )
+                        {
+                            app.asg_app.handle_key(key);
+                        } else {
+                            app.menu_open = true;
+                            app.menu_cursor = app.active_tab.index();
                         }
+                        continue;
+                    }
 
-                        // Delegate to active tab
-                        match app.active_tab {
-                            ActiveTab::Ec2Connect => {
-                                match app.ec2.handle_key(key) {
-                                    Ec2Action::Select(instance) => {
-                                        break TabResult::Connect(instance);
-                                    }
-                                    Ec2Action::Stop(instance) => {
-                                        spawn_state_change(
-                                            &app.config,
-                                            instance,
-                                            false,
-                                            ec2_state_tx.clone(),
-                                        );
-                                    }
-                                    Ec2Action::Start(instance) => {
-                                        spawn_state_change(
-                                            &app.config,
-                                            instance,
-                                            true,
-                                            ec2_state_tx.clone(),
-                                        );
-                                    }
-                                    Ec2Action::Quit => break TabResult::Quit,
-                                    Ec2Action::None => {}
+                    // Delegate to active tab
+                    match app.active_tab {
+                        ActiveTab::Ec2Connect => {
+                            match app.ec2.handle_key(key) {
+                                Ec2Action::Select(instance) => {
+                                    break TabResult::Connect(instance);
                                 }
+                                Ec2Action::Stop(instance) => {
+                                    spawn_state_change(
+                                        &app.config,
+                                        instance,
+                                        false,
+                                        ec2_state_tx.clone(),
+                                    );
+                                }
+                                Ec2Action::Start(instance) => {
+                                    spawn_state_change(
+                                        &app.config,
+                                        instance,
+                                        true,
+                                        ec2_state_tx.clone(),
+                                    );
+                                }
+                                Ec2Action::Quit => break TabResult::Quit,
+                                Ec2Action::None => {}
                             }
-                            ActiveTab::AmiCleanup => {
-                                match app.ami_app.handle_key(key) {
-                                    AppAction::Quit => break TabResult::Quit,
-                                    AppAction::Delete => {
-                                        let profile = app.ami_app.profile_selector.owner_profile.clone()
-                                            .or_else(|| app.ami_args.profile.clone())
-                                            .unwrap_or_default();
-                                        ami_cleanup::run_deletions(&mut terminal, &mut app.ami_app, &profile).await
-                                            .map_err(Error::Other)?;
-                                    }
-                                    AppAction::StartScan => {
-                                        let profile = app.ami_app.profile_selector.owner_profile.clone()
-                                            .unwrap_or_default();
-                                        let base_config = ami_cleanup::aws::build_config(&profile, None).await;
-                                        let account_id = ami_cleanup::aws::get_account_id(&base_config)
-                                            .await.unwrap_or_else(|_| "unknown".to_string());
-                                        app.ami_app.header = format!("{account_id} (profile: {profile})");
-                                        ami_cleanup::start_scan(&mut app.ami_app, &app.ami_args, ami_tx.clone()).await;
-                                    }
-                                    AppAction::None => {}
+                        }
+                        ActiveTab::AmiCleanup => {
+                            match app.ami_app.handle_key(key) {
+                                AppAction::Quit => break TabResult::Quit,
+                                AppAction::Delete => {
+                                    let profile = app.ami_app.profile_selector.owner_profile.clone()
+                                        .or_else(|| app.ami_args.profile.clone())
+                                        .unwrap_or_default();
+                                    ami_cleanup::run_deletions(&mut terminal, &mut app.ami_app, &profile).await
+                                        .map_err(|e| Error::Other(e.into()))?;
                                 }
+                                AppAction::StartScan => {
+                                    let profile = app.ami_app.profile_selector.owner_profile.clone()
+                                        .unwrap_or_default();
+                                    let base_config = ami_cleanup::aws::build_config(&profile, None).await;
+                                    let account_id = ami_cleanup::aws::get_account_id(&base_config)
+                                        .await.unwrap_or_else(|_| "unknown".to_string());
+                                    app.ami_app.header = format!("{account_id} (profile: {profile})");
+                                    ami_cleanup::start_scan(&app.ami_app, &app.ami_args, ami_tx.clone());
+                                }
+                                AppAction::None => {}
                             }
-                            ActiveTab::AsgScaling => {
-                                match app.asg_app.handle_key(key) {
-                                    AsgAction::Quit => break TabResult::Quit,
-                                    AsgAction::Apply => {
-                                        // Collect updates from selected rows
-                                        let updates: Vec<_> = app.asg_app.rows.iter()
-                                            .filter(|r| r.selected && r.has_changes())
-                                            .map(|r| (
-                                                r.info.name.clone(),
-                                                r.info.region.clone(),
-                                                r.new_min.unwrap_or(r.info.min_size),
-                                                r.new_max.unwrap_or(r.info.max_size),
-                                                r.new_desired.unwrap_or(r.info.desired_capacity),
-                                            ))
-                                            .collect();
-                                        asg_scaling::spawn_apply(&app.config, updates, asg_tx.clone());
-                                    }
-                                    AsgAction::None => {}
+                        }
+                        ActiveTab::AsgScaling => {
+                            match app.asg_app.handle_key(key) {
+                                AsgAction::Quit => break TabResult::Quit,
+                                AsgAction::Apply => {
+                                    // Collect updates from selected rows
+                                    let updates: Vec<_> = app.asg_app.rows.iter()
+                                        .filter(|r| r.selected && r.has_changes())
+                                        .map(|r| (
+                                            r.info.name.clone(),
+                                            r.info.region.clone(),
+                                            r.new_min.unwrap_or(r.info.min_size),
+                                            r.new_max.unwrap_or(r.info.max_size),
+                                            r.new_desired.unwrap_or(r.info.desired_capacity),
+                                        ))
+                                        .collect();
+                                    asg_scaling::spawn_apply(&app.config, updates, asg_tx.clone());
                                 }
+                                AsgAction::None => {}
                             }
                         }
                     }
-                    Some(Ok(Event::Resize(_, _))) => {}
-                    _ => {}
                 }
             }
 
@@ -387,10 +384,10 @@ pub(crate) async fn run_tabbed(config: Config) -> Result<TabResult> {
                     Some(ScanMsg::Done(text)) => {
                         // In parallel scan, Done replaces the last undone log if possible,
                         // otherwise appends as already-done entry.
-                        if !app.ami_app.scan_logs.iter().rev().any(|l| !l.done) {
-                            app.ami_app.scan_logs.push(ami_cleanup::app::ScanLog { text, done: true });
-                        } else {
+                        if app.ami_app.scan_logs.iter().rev().any(|l| !l.done) {
                             app.ami_app.finish_scan_log(text);
+                        } else {
+                            app.ami_app.scan_logs.push(ami_cleanup::app::ScanLog { text, done: true });
                         }
                     }
                     Some(ScanMsg::Error(text)) => {
@@ -460,7 +457,7 @@ fn draw_frame(frame: &mut Frame, app: &mut TabApp) {
         ActiveTab::AmiCleanup => ami_cleanup::ui::draw(frame, &mut app.ami_app, chunks[1]),
         ActiveTab::AsgScaling => {
             let profile = app.config.profile_display().to_string();
-            asg_scaling::ui::draw(frame, &mut app.asg_app, chunks[1], &profile);
+            asg_scaling::ui::draw(frame, &app.asg_app, chunks[1], &profile);
         }
     }
 
@@ -503,7 +500,7 @@ fn draw_menu_bar(frame: &mut Frame, area: Rect, active: ActiveTab) {
 fn draw_dropdown(frame: &mut Frame, bar_area: Rect, cursor: usize, _active: ActiveTab) {
     let width = 52u16;
     // Each menu item = label line + description line → 2 lines per item, +2 for border
-    let height = TAB_LABELS.len() as u16 * 2 + 2;
+    let height = u16::try_from(TAB_LABELS.len() * 2 + 2).unwrap_or(u16::MAX);
 
     // Position below the bar, aligned to the right side of the version text
     let x = bar_area.x + 2;
@@ -545,7 +542,7 @@ fn draw_dropdown(frame: &mut Frame, bar_area: Rect, cursor: usize, _active: Acti
         let desc_style = Style::default().fg(Color::DarkGray).bg(Color::Black);
 
         let label_text = format!("{prefix}{label}");
-        let padded_label = format!("{:<width$}", label_text, width = inner_width);
+        let padded_label = format!("{label_text:<inner_width$}");
         lines.push(Line::from(Span::styled(padded_label, label_style)));
         lines.push(Line::from(Span::styled(format!("   {desc}"), desc_style)));
     }

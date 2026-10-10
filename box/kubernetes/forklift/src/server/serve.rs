@@ -36,7 +36,7 @@ pub(crate) async fn serve(
 
     loop {
         let (stream, peer) = tokio::select! {
-            _ = cancel.cancelled() => break,
+            () = cancel.cancelled() => break,
             accepted = listener.accept() => match accepted {
                 Ok(v) => v,
                 Err(e) => {

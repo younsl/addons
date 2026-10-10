@@ -1,78 +1,80 @@
-use anyhow::{Context, Result, anyhow};
-use std::env;
+use anyhow::{Result, anyhow};
+use clap::Parser;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Parser)]
+#[command(name = "ghes-schedule-scanner", version, about)]
 pub struct Config {
     // Slack Configuration
+    /// Slack Bot User OAuth Token starting with xoxb-
+    #[arg(
+        long = "slack-token",
+        env = "SLACK_TOKEN",
+        value_name = "SLACK_TOKEN",
+        hide_env_values = true
+    )]
     pub slack_bot_token: Option<String>,
+    /// Slack channel ID that holds the canvas
+    #[arg(long, env = "SLACK_CHANNEL_ID")]
     pub slack_channel_id: Option<String>,
+    /// Slack canvas ID to update
+    #[arg(long, env = "SLACK_CANVAS_ID")]
     pub slack_canvas_id: Option<String>,
 
     // GitHub Configuration
+    /// GitHub personal access token
+    #[arg(long, env = "GITHUB_TOKEN", hide_env_values = true)]
     pub github_token: String,
+    /// GitHub organization to scan
+    #[arg(long = "github-org", env = "GITHUB_ORG", value_name = "GITHUB_ORG")]
     pub github_organization: String,
+    /// GitHub Enterprise Server base URL without /api/v3
+    #[arg(long, env = "GITHUB_BASE_URL")]
     pub github_base_url: String,
 
     // Application Configuration
+    /// Log level: trace, debug, info, warn, error
+    #[arg(long, env = "LOG_LEVEL", default_value = "INFO")]
     pub log_level: String,
+    /// Log format: json or text
+    #[arg(long, env = "LOG_FORMAT", default_value = "json")]
+    pub log_format: String,
+    /// Timeout in seconds for each GitHub API request
+    #[arg(long, env = "REQUEST_TIMEOUT", default_value_t = 60)]
     pub request_timeout: u64,
+    /// Number of repositories scanned in parallel
+    #[arg(long, env = "CONCURRENT_SCANS", default_value_t = 10)]
     pub concurrent_scans: usize,
+    /// Publisher: console or slack-canvas
+    #[arg(long, env = "PUBLISHER_TYPE", default_value = "console")]
     pub publisher_type: String,
 
     // Connectivity Configuration
+    /// Connectivity check attempts before giving up
+    #[arg(long, env = "CONNECTIVITY_MAX_RETRIES", default_value_t = 3)]
     pub connectivity_max_retries: u32,
+    /// Seconds between connectivity check attempts
+    #[arg(long, env = "CONNECTIVITY_RETRY_INTERVAL", default_value_t = 5)]
     pub connectivity_retry_interval: u64,
+    /// Timeout in seconds for each connectivity check
+    #[arg(long, env = "CONNECTIVITY_TIMEOUT", default_value_t = 5)]
     pub connectivity_timeout: u64,
 }
 
 impl Config {
     pub fn load() -> Result<Self> {
-        // Load required GitHub configuration
-        let github_token = get_env_required("GITHUB_TOKEN")?;
-        let github_organization = get_env_required("GITHUB_ORG")?;
-        let github_base_url = get_env_required("GITHUB_BASE_URL")?;
+        Self::parse().checked()
+    }
 
-        // Load optional Slack configuration
-        let slack_bot_token = get_env_optional("SLACK_TOKEN");
-        let slack_channel_id = get_env_optional("SLACK_CHANNEL_ID");
-        let slack_canvas_id = get_env_optional("SLACK_CANVAS_ID");
-
+    fn checked(self) -> Result<Self> {
         // Validate Slack token format if provided
-        if let Some(ref token) = slack_bot_token
+        if let Some(ref token) = self.slack_bot_token
             && !token.starts_with("xoxb-")
         {
             return Err(anyhow!(
                 "SLACK_TOKEN must start with 'xoxb-' (Bot User OAuth Token)"
             ));
         }
-
-        // Load application configuration with defaults
-        let log_level = get_env_with_default("LOG_LEVEL", "INFO");
-        let request_timeout = get_env_u64_with_default("REQUEST_TIMEOUT", 60);
-        let concurrent_scans = get_env_usize_with_default("CONCURRENT_SCANS", 10);
-        let publisher_type = get_env_with_default("PUBLISHER_TYPE", "console");
-
-        // Load connectivity configuration with defaults
-        let connectivity_max_retries = get_env_u32_with_default("CONNECTIVITY_MAX_RETRIES", 3);
-        let connectivity_retry_interval =
-            get_env_u64_with_default("CONNECTIVITY_RETRY_INTERVAL", 5);
-        let connectivity_timeout = get_env_u64_with_default("CONNECTIVITY_TIMEOUT", 5);
-
-        Ok(Config {
-            slack_bot_token,
-            slack_channel_id,
-            slack_canvas_id,
-            github_token,
-            github_organization,
-            github_base_url,
-            log_level,
-            request_timeout,
-            concurrent_scans,
-            publisher_type,
-            connectivity_max_retries,
-            connectivity_retry_interval,
-            connectivity_timeout,
-        })
+        Ok(self)
     }
 
     pub fn validate(&self) -> Result<()> {
@@ -110,39 +112,6 @@ impl Config {
     }
 }
 
-fn get_env_required(key: &str) -> Result<String> {
-    env::var(key).with_context(|| format!("Environment variable {} is required but not set", key))
-}
-
-fn get_env_optional(key: &str) -> Option<String> {
-    env::var(key).ok()
-}
-
-fn get_env_with_default(key: &str, default: &str) -> String {
-    env::var(key).unwrap_or_else(|_| default.to_string())
-}
-
-fn get_env_u64_with_default(key: &str, default: u64) -> u64 {
-    env::var(key)
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(default)
-}
-
-fn get_env_usize_with_default(key: &str, default: usize) -> usize {
-    env::var(key)
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(default)
-}
-
-fn get_env_u32_with_default(key: &str, default: u32) -> u32 {
-    env::var(key)
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(default)
-}
-
 #[cfg(test)]
 impl Config {
     pub fn new_for_test(github_token: String, github_org: String, github_base_url: String) -> Self {
@@ -151,6 +120,7 @@ impl Config {
             github_organization: github_org,
             github_base_url,
             log_level: "INFO".to_string(),
+            log_format: "json".to_string(),
             request_timeout: 60,
             concurrent_scans: 10,
             publisher_type: "console".to_string(),
@@ -167,6 +137,61 @@ impl Config {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const REQUIRED_ARGS: [&str; 7] = [
+        "gss",
+        "--github-token",
+        "test-token",
+        "--github-org",
+        "test-org",
+        "--github-base-url",
+        "https://github.example.com",
+    ];
+
+    #[test]
+    fn test_parse_flags() {
+        let config = Config::try_parse_from(REQUIRED_ARGS.iter().copied().chain([
+            "--log-format",
+            "text",
+            "--request-timeout",
+            "30",
+            "--concurrent-scans",
+            "4",
+            "--slack-token",
+            "xoxb-valid-token",
+        ]))
+        .unwrap();
+
+        assert_eq!(config.github_token, "test-token");
+        assert_eq!(config.github_organization, "test-org");
+        assert_eq!(config.log_format, "text");
+        assert_eq!(config.request_timeout, 30);
+        assert_eq!(config.concurrent_scans, 4);
+        assert!(config.checked().is_ok());
+    }
+
+    #[test]
+    fn test_parse_rejects_invalid_number() {
+        let result = Config::try_parse_from(
+            REQUIRED_ARGS
+                .iter()
+                .copied()
+                .chain(["--concurrent-scans", "many"]),
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_checked_rejects_non_bot_slack_token() {
+        let mut config = Config::new_for_test(
+            "test-token".to_string(),
+            "test-org".to_string(),
+            "https://github.example.com".to_string(),
+        );
+        config.slack_bot_token = Some("xapp-token".to_string());
+        let err = config.checked().unwrap_err();
+        assert!(err.to_string().contains("must start with 'xoxb-'"));
+    }
 
     #[test]
     fn test_config_creation() {

@@ -28,7 +28,7 @@ pub struct Metrics {
 impl Metrics {
     /// Builds and registers the forklift-mcp collectors.
     ///
-    pub fn new(registry: &Registry) -> Arc<Metrics> {
+    pub fn new(registry: &Registry) -> Arc<Self> {
         let tool_calls = CounterVec::new(
             Opts::new(
                 "forklift_mcp_tool_calls_total",
@@ -67,7 +67,7 @@ impl Metrics {
             .register(Box::new(upstream.clone()))
             .expect("register forklift_mcp_upstream_requests_total");
 
-        Arc::new(Metrics {
+        Arc::new(Self {
             tool_calls,
             tool_duration,
             upstream,

@@ -10,7 +10,7 @@ const BUILD_DATE: &str = env!("BUILD_DATE");
 const RUSTC_VERSION: &str = env!("BUILD_RUSTC_VERSION");
 
 /// Subcommands.
-#[derive(Subcommand, Debug, Clone, PartialEq)]
+#[derive(Subcommand, Debug, Clone, PartialEq, Eq)]
 pub enum Command {
     /// Initialize configuration file interactively
     Init,
@@ -199,8 +199,8 @@ mod tests {
         assert_eq!(config.profile, None);
         assert_eq!(config.aws_config_file, None);
         assert_eq!(config.region, None);
-        assert!(config.scan_regions.is_empty());
-        assert!(config.tag_filters.is_empty());
+        assert_eq!(config.scan_regions, Vec::<String>::new());
+        assert_eq!(config.tag_filters, Vec::<String>::new());
         assert!(config.running_only);
         assert_eq!(config.log_level, "info");
         assert_eq!(config.forward, None);
@@ -328,7 +328,7 @@ mod tests {
             ..FileConfig::default()
         };
         let config = Config::from_args_and_file(empty_args(), Some(fc));
-        assert!(config.shell_commands.is_empty());
+        assert_eq!(config.shell_commands, Vec::<String>::new());
     }
 
     #[test]

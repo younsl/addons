@@ -20,7 +20,7 @@ pub struct VulnAdvisory {
 }
 
 /// A stored vulnerability scan result for one package coordinate.
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct VulnScan {
     pub ecosystem: String,
     pub package: String,

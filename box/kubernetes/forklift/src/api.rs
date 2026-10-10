@@ -106,8 +106,8 @@ impl Handler {
         store: Arc<Store>,
         authz: Option<Arc<auth_service::Service>>,
         rec: Option<Arc<audit::Recorder>>,
-    ) -> Arc<Handler> {
-        Arc::new(Handler {
+    ) -> Arc<Self> {
+        Arc::new(Self {
             store,
             authz,
             client: reqwest::Client::builder()
@@ -212,7 +212,7 @@ impl Handler {
         let mut username = String::new();
         let mut detail = String::new();
         if let Some(p) = auth_service::from_request_parts(parts) {
-            username = p.username.clone();
+            username.clone_from(&p.username);
             // An impersonated session acts as the target user, so the event
             // stays attributed to them; the administrator behind it is recorded
             // alongside so the trail never loses the real operator.

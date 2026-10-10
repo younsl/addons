@@ -10,7 +10,7 @@ use ratatui::{
 
 use super::app::{App, AppMode, InputField, RowStatus};
 
-pub fn draw(frame: &mut Frame, app: &mut App, area: Rect, profile: &str) {
+pub fn draw(frame: &mut Frame, app: &App, area: Rect, profile: &str) {
     match &app.mode {
         AppMode::Scanning => draw_scanning(frame, app, area, profile),
         AppMode::Error(msg) => draw_error(frame, &msg.clone(), area),
@@ -124,6 +124,7 @@ fn draw_done(frame: &mut Frame, app: &App, area: Rect) {
 // Browse (main table view)
 // ---------------------------------------------------------------------------
 
+#[allow(clippy::too_many_lines)]
 fn draw_browse(frame: &mut Frame, app: &App, area: Rect, profile: &str) {
     let chunks = Layout::vertical([
         Constraint::Length(1), // Search line
@@ -169,7 +170,7 @@ fn draw_browse(frame: &mut Frame, app: &App, area: Rect, profile: &str) {
         }
     )
     .len();
-    let cursor_x = chunks[0].x + prefix_len as u16 + app.query.len() as u16;
+    let cursor_x = chunks[0].x + saturating_u16(prefix_len + app.query.len());
     frame.set_cursor_position((cursor_x, chunks[0].y));
 
     // Header — prefix width must match row prefix: cursor(2) + checkbox(4) = 6 chars
@@ -206,7 +207,7 @@ fn draw_browse(frame: &mut Frame, app: &App, area: Rect, profile: &str) {
             let status_marker = match &row.status {
                 RowStatus::Applied => " [OK]",
                 RowStatus::Failed(_) => " [FAIL]",
-                _ => "",
+                RowStatus::Pending => "",
             };
 
             let style = if i == app.cursor {
@@ -219,7 +220,7 @@ fn draw_browse(frame: &mut Frame, app: &App, area: Rect, profile: &str) {
                 match &row.status {
                     RowStatus::Applied => Style::default().fg(Color::DarkGray),
                     RowStatus::Failed(_) => Style::default().fg(Color::Red),
-                    _ => Style::default(),
+                    RowStatus::Pending => Style::default(),
                 }
             };
 
@@ -359,6 +360,7 @@ fn draw_input_absolute(frame: &mut Frame, app: &App, area: Rect) {
 // Preview overlay (before/after + "yes" confirmation)
 // ---------------------------------------------------------------------------
 
+#[allow(clippy::too_many_lines)]
 fn draw_preview(frame: &mut Frame, app: &App, area: Rect) {
     let selected: Vec<_> = app
         .rows
@@ -414,8 +416,10 @@ fn draw_preview(frame: &mut Frame, app: &App, area: Rect) {
     let min_width = content_w.max(confirm_line_w) + 4; // +4 for border
 
     let row_count = selected.len();
-    let height = (row_count as u16 + 8).min(area.height.saturating_sub(4));
-    let width = (min_width as u16).max(40).min(area.width.saturating_sub(4));
+    let height = saturating_u16(row_count + 8).min(area.height.saturating_sub(4));
+    let width = saturating_u16(min_width)
+        .max(40)
+        .min(area.width.saturating_sub(4));
     let popup = centered_rect(width, height, area);
 
     frame.render_widget(Clear, popup);
@@ -496,7 +500,7 @@ fn format_change(old: i32, new: i32) -> String {
 
 fn draw_applying(frame: &mut Frame, app: &App, area: Rect) {
     let log_count = app.apply_logs.len();
-    let height = (log_count as u16 + 5).min(area.height.saturating_sub(4));
+    let height = saturating_u16(log_count + 5).min(area.height.saturating_sub(4));
     let width = 60u16.min(area.width.saturating_sub(4));
     let popup = centered_rect(width, height, area);
 
@@ -534,6 +538,10 @@ fn draw_applying(frame: &mut Frame, app: &App, area: Rect) {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+fn saturating_u16(n: usize) -> u16 {
+    u16::try_from(n).unwrap_or(u16::MAX)
+}
 
 fn centered_rect(width: u16, height: u16, area: Rect) -> Rect {
     let x = area.x + area.width.saturating_sub(width) / 2;
@@ -574,22 +582,18 @@ mod tests {
 
     #[test]
     fn draw_browse_no_panic() {
-        let mut app = make_app();
+        let app = make_app();
         let backend = TestBackend::new(120, 20);
         let mut terminal = Terminal::new(backend).unwrap();
-        terminal
-            .draw(|f| draw(f, &mut app, f.area(), "test"))
-            .unwrap();
+        terminal.draw(|f| draw(f, &app, f.area(), "test")).unwrap();
     }
 
     #[test]
     fn draw_scanning_no_panic() {
-        let mut app = App::new_scanning("us-east-1".into());
+        let app = App::new_scanning("us-east-1".into());
         let backend = TestBackend::new(120, 20);
         let mut terminal = Terminal::new(backend).unwrap();
-        terminal
-            .draw(|f| draw(f, &mut app, f.area(), "test"))
-            .unwrap();
+        terminal.draw(|f| draw(f, &app, f.area(), "test")).unwrap();
     }
 
     #[test]
@@ -599,9 +603,7 @@ mod tests {
         app.mode = AppMode::ScaleMenu;
         let backend = TestBackend::new(120, 20);
         let mut terminal = Terminal::new(backend).unwrap();
-        terminal
-            .draw(|f| draw(f, &mut app, f.area(), "test"))
-            .unwrap();
+        terminal.draw(|f| draw(f, &app, f.area(), "test")).unwrap();
     }
 
     #[test]
@@ -613,9 +615,7 @@ mod tests {
         app.mode = AppMode::Preview;
         let backend = TestBackend::new(120, 20);
         let mut terminal = Terminal::new(backend).unwrap();
-        terminal
-            .draw(|f| draw(f, &mut app, f.area(), "test"))
-            .unwrap();
+        terminal.draw(|f| draw(f, &app, f.area(), "test")).unwrap();
     }
 
     #[test]
@@ -624,9 +624,7 @@ mod tests {
         app.mode = AppMode::InputAbsolute;
         let backend = TestBackend::new(120, 20);
         let mut terminal = Terminal::new(backend).unwrap();
-        terminal
-            .draw(|f| draw(f, &mut app, f.area(), "test"))
-            .unwrap();
+        terminal.draw(|f| draw(f, &app, f.area(), "test")).unwrap();
     }
 
     #[test]
@@ -636,9 +634,7 @@ mod tests {
         app.apply_logs = vec!["web-asg: OK".into(), "api-asg: OK".into()];
         let backend = TestBackend::new(120, 20);
         let mut terminal = Terminal::new(backend).unwrap();
-        terminal
-            .draw(|f| draw(f, &mut app, f.area(), "test"))
-            .unwrap();
+        terminal.draw(|f| draw(f, &app, f.area(), "test")).unwrap();
     }
 
     #[test]
@@ -647,9 +643,7 @@ mod tests {
         app.mode = AppMode::Error("test error".into());
         let backend = TestBackend::new(120, 20);
         let mut terminal = Terminal::new(backend).unwrap();
-        terminal
-            .draw(|f| draw(f, &mut app, f.area(), "test"))
-            .unwrap();
+        terminal.draw(|f| draw(f, &app, f.area(), "test")).unwrap();
     }
 
     #[test]

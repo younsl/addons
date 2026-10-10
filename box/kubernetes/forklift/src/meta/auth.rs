@@ -8,7 +8,7 @@ use rusqlite::{Row, params, params_from_iter};
 use super::time::{format_time_opt, now_rfc3339, parse_time, parse_time_opt};
 use super::{Error, GroupMapping, Permission, Result, Role, SOURCE_LOCAL, Store, Token, User};
 
-fn ensure_affected(n: usize) -> Result<()> {
+const fn ensure_affected(n: usize) -> Result<()> {
     if n == 0 {
         return Err(Error::NotFound);
     }

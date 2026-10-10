@@ -15,12 +15,12 @@ use ratatui::widgets::Paragraph;
 use crate::config::Config;
 use crate::ec2::{ColumnWidths, Instance};
 
-pub(crate) use picker::PickerState;
+pub use picker::PickerState;
 
 const SPINNER_FRAMES: &[char] = &['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 
 /// Overlay state shown on top of the picker in the Ready phase.
-pub(crate) enum Overlay {
+pub enum Overlay {
     /// Confirmation modal before stopping an instance.
     ConfirmStop { index: usize },
     /// Confirmation modal before starting an instance.
@@ -30,7 +30,7 @@ pub(crate) enum Overlay {
 }
 
 /// EC2 Connect tab phase.
-pub(crate) enum Ec2Phase {
+pub enum Ec2Phase {
     Scanning {
         start: Instant,
         spinner_frame: usize,
@@ -49,7 +49,7 @@ pub(crate) enum Ec2Phase {
 }
 
 /// Action returned from EC2 tab key handling.
-pub(crate) enum Ec2Action {
+pub enum Ec2Action {
     None,
     Select(Instance),
     Stop(Instance),
@@ -66,7 +66,7 @@ impl Ec2Phase {
         }
     }
 
-    pub(crate) fn tick_spinner(&mut self) {
+    pub(crate) const fn tick_spinner(&mut self) {
         if let Self::Scanning { spinner_frame, .. } = self {
             *spinner_frame = spinner_frame.wrapping_add(1);
         }
@@ -120,6 +120,7 @@ impl Ec2Phase {
         }
     }
 
+    #[allow(clippy::too_many_lines)]
     pub(crate) fn handle_key(&mut self, key: KeyEvent) -> Ec2Action {
         if key.kind != KeyEventKind::Press {
             return Ec2Action::None;
@@ -127,8 +128,9 @@ impl Ec2Phase {
 
         match self {
             Self::Scanning { .. } => match (key.code, key.modifiers) {
-                (KeyCode::Esc, _) | (KeyCode::Char('c'), KeyModifiers::CONTROL) => Ec2Action::Quit,
-                (KeyCode::Char('q'), KeyModifiers::NONE) => Ec2Action::Quit,
+                (KeyCode::Esc, _)
+                | (KeyCode::Char('c'), KeyModifiers::CONTROL)
+                | (KeyCode::Char('q'), KeyModifiers::NONE) => Ec2Action::Quit,
                 _ => Ec2Action::None,
             },
             Self::Ready {
@@ -153,7 +155,7 @@ impl Ec2Phase {
                 // Handle confirmation modal keys.
                 if let Some(ov) = overlay {
                     match (key.code, key.modifiers) {
-                        (KeyCode::Char('y'), _) | (KeyCode::Char('Y'), _) | (KeyCode::Enter, _) => {
+                        (KeyCode::Char('y' | 'Y') | KeyCode::Enter, _) => {
                             let (action, msg) = match ov {
                                 Overlay::ConfirmStop { index } => {
                                     let inst = instances[*index].clone();
@@ -171,10 +173,7 @@ impl Ec2Phase {
                             *status = None;
                             return action;
                         }
-                        (KeyCode::Esc, _)
-                        | (KeyCode::Char('n'), _)
-                        | (KeyCode::Char('N'), _)
-                        | (KeyCode::Char('q'), _) => {
+                        (KeyCode::Esc | KeyCode::Char('n' | 'N' | 'q'), _) => {
                             *overlay = None;
                             return Ec2Action::None;
                         }
@@ -217,11 +216,11 @@ impl Ec2Phase {
                         picker.move_down();
                         Ec2Action::None
                     }
-                    (KeyCode::PageUp, _) | (KeyCode::Left, _) => {
+                    (KeyCode::PageUp | KeyCode::Left, _) => {
                         picker.move_page_up(10);
                         Ec2Action::None
                     }
-                    (KeyCode::PageDown, _) | (KeyCode::Right, _) => {
+                    (KeyCode::PageDown | KeyCode::Right, _) => {
                         picker.move_page_down(10);
                         Ec2Action::None
                     }

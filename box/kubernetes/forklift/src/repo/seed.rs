@@ -241,7 +241,7 @@ pub(crate) async fn rename_seeded_repo(
             continue;
         };
         let mut changed = false;
-        for member in cfg.group.members.iter_mut() {
+        for member in &mut cfg.group.members {
             if member == old_name {
                 *member = new_name.to_string();
                 changed = true;
@@ -289,10 +289,14 @@ pub async fn seed_defaults(store: &Arc<Store>) -> Result<(), meta::Error> {
                     && cfg.group.members
                         == r.members[..cfg.group.members.len()]
                             .iter()
-                            .map(|s| s.to_string())
+                            .map(std::string::ToString::to_string)
                             .collect::<Vec<_>>()
                 {
-                    cfg.group.members = r.members.iter().map(|s| s.to_string()).collect();
+                    cfg.group.members = r
+                        .members
+                        .iter()
+                        .map(std::string::ToString::to_string)
+                        .collect();
                     if let Ok(cfg_json) = cfg.json() {
                         store
                             .update_repository_config(
@@ -313,7 +317,11 @@ pub async fn seed_defaults(store: &Arc<Store>) -> Result<(), meta::Error> {
             Err(e) => return Err(e),
         }
         let mut cfg = repoconfig::Config::default();
-        cfg.group.members = r.members.iter().map(|s| s.to_string()).collect();
+        cfg.group.members = r
+            .members
+            .iter()
+            .map(std::string::ToString::to_string)
+            .collect();
         let cfg_json = cfg.json().map_err(|e| meta::Error::Other(e.to_string()))?;
         match store
             .create_repository(Repository {

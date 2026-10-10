@@ -49,8 +49,8 @@ pub(crate) struct OciTokenCache {
 }
 
 impl OciTokenCache {
-    pub(crate) fn new() -> OciTokenCache {
-        OciTokenCache {
+    pub(crate) fn new() -> Self {
+        Self {
             tokens: parking_lot::Mutex::new(HashMap::new()),
         }
     }
@@ -123,13 +123,11 @@ impl Manager {
             {
                 headers.insert(http::header::ACCEPT, v);
             }
-            if !token.is_empty() {
-                if let Ok(v) = HeaderValue::from_str(&format!("Bearer {token}")) {
-                    headers.insert(http::header::AUTHORIZATION, v);
-                }
-            } else {
+            if token.is_empty() {
                 let (auth_headers, _) = self.engine.new_upstream_request(&res.cfg.upstream_auth);
                 headers.extend(auth_headers);
+            } else if let Ok(v) = HeaderValue::from_str(&format!("Bearer {token}")) {
+                headers.insert(http::header::AUTHORIZATION, v);
             }
             headers
         };
@@ -291,22 +289,19 @@ impl Manager {
             .with_label_values(&[&res.repo.name])
             .inc();
         let url = oci_upstream_url(res, &req.name, &format!("manifests/{}", req.reference));
-        let resp = match self
+        let Ok(resp) = self
             .oci_upstream_do(res, Method::GET, &url, OCI_MANIFEST_ACCEPT)
             .await
-        {
-            Ok(resp) => resp,
-            Err(_) => {
-                self.engine
-                    .upstream_err
-                    .with_label_values(&[&res.repo.name])
-                    .inc();
-                return write_oci_error(
-                    StatusCode::BAD_GATEWAY,
-                    "UNSUPPORTED",
-                    "upstream unreachable",
-                );
-            }
+        else {
+            self.engine
+                .upstream_err
+                .with_label_values(&[&res.repo.name])
+                .inc();
+            return write_oci_error(
+                StatusCode::BAD_GATEWAY,
+                "UNSUPPORTED",
+                "upstream unreachable",
+            );
         };
         let media_type = header_str(resp.headers(), "Content-Type").to_string();
         let published = last_modified(&resp);
@@ -505,15 +500,12 @@ impl Manager {
             return FetchOutcome::stored();
         }
         let url = oci_upstream_url(res, &req.name, &format!("blobs/{}", req.reference));
-        let resp = match self.oci_upstream_do(res, Method::GET, &url, "").await {
-            Ok(resp) => resp,
-            Err(_) => {
-                self.engine
-                    .upstream_err
-                    .with_label_values(&[&res.repo.name])
-                    .inc();
-                return FetchOutcome::error();
-            }
+        let Ok(resp) = self.oci_upstream_do(res, Method::GET, &url, "").await else {
+            self.engine
+                .upstream_err
+                .with_label_values(&[&res.repo.name])
+                .inc();
+            return FetchOutcome::error();
         };
         let status = resp.status();
         if status == StatusCode::NOT_FOUND
@@ -537,7 +529,7 @@ impl Manager {
                 .inc();
             return FetchOutcome {
                 kind: FetchKind::Retry,
-                status: status.as_u16() as i64,
+                status: i64::from(status.as_u16()),
                 retry_after: retry_after_seconds(d),
             };
         }
@@ -617,19 +609,16 @@ impl Manager {
             suffix.push_str(query);
         }
         let url = oci_upstream_url(res, &req.name, &suffix);
-        let resp = match self.oci_upstream_do(res, Method::GET, &url, "").await {
-            Ok(resp) => resp,
-            Err(_) => {
-                self.engine
-                    .upstream_err
-                    .with_label_values(&[&res.repo.name])
-                    .inc();
-                return write_oci_error(
-                    StatusCode::BAD_GATEWAY,
-                    "UNSUPPORTED",
-                    "upstream unreachable",
-                );
-            }
+        let Ok(resp) = self.oci_upstream_do(res, Method::GET, &url, "").await else {
+            self.engine
+                .upstream_err
+                .with_label_values(&[&res.repo.name])
+                .inc();
+            return write_oci_error(
+                StatusCode::BAD_GATEWAY,
+                "UNSUPPORTED",
+                "upstream unreachable",
+            );
         };
         let key = format!("{}/{}/tags/list", res.repo.name, req.name);
         if let Err(response) = self
@@ -656,7 +645,11 @@ impl Manager {
     /// Handles the shared upstream error statuses (404, 429, 503, other
     /// non-2xx). `Err(response)` means the caller must not proceed with the
     /// body.
-    #[allow(clippy::result_large_err)]
+    #[allow(
+        clippy::result_large_err,
+        clippy::unused_async,
+        clippy::unused_async_trait_impl
+    )]
     async fn oci_relay_upstream_status(
         &self,
         res: &Resolved,

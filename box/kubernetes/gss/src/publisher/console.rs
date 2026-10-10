@@ -9,7 +9,7 @@ pub struct ConsolePublisher {
 }
 
 impl ConsolePublisher {
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
             formatter: ConsoleFormatter::new(),
         }
@@ -26,11 +26,11 @@ impl Default for ConsolePublisher {
 impl Publisher for ConsolePublisher {
     async fn publish(&self, result: &ScanResult) -> Result<()> {
         let output = self.formatter.format(result)?;
-        println!("{}", output);
+        println!("{output}");
         Ok(())
     }
 
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "console"
     }
 }

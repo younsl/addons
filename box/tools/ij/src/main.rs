@@ -34,6 +34,7 @@ fn init_logging(config: &Config) {
 }
 
 #[tokio::main]
+#[allow(clippy::too_many_lines)]
 async fn main() {
     let args = Args::parse();
 
@@ -41,14 +42,11 @@ async fn main() {
     match args.command {
         Some(Command::Init) => {
             if let Err(e) = wizard::run_wizard() {
-                match e {
-                    Error::Cancelled => {
-                        println!("\n{}", "Configuration cancelled.".yellow());
-                    }
-                    _ => {
-                        eprintln!("{} {}", "Error:".red().bold(), e);
-                        std::process::exit(1);
-                    }
+                if matches!(e, Error::Cancelled) {
+                    println!("\n{}", "Configuration cancelled.".yellow());
+                } else {
+                    eprintln!("{} {}", "Error:".red().bold(), e);
+                    std::process::exit(1);
                 }
             }
             return;

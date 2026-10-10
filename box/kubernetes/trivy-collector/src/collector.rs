@@ -100,9 +100,22 @@ pub async fn run(
         })
     });
 
-    let local_handle =
-        spawn_local_watcher(&config, &db, &watcher_status, &alerts, &scope, &shutdown);
-    let hub_handle = spawn_hub_watcher(&config, &db, &watcher_status, &alerts, &scope, &shutdown);
+    let local_handle = spawn_local_watcher(
+        &config,
+        &db,
+        &watcher_status,
+        alerts.as_ref(),
+        &scope,
+        &shutdown,
+    );
+    let hub_handle = spawn_hub_watcher(
+        &config,
+        &db,
+        &watcher_status,
+        alerts.as_ref(),
+        &scope,
+        &shutdown,
+    );
 
     // Readiness follows hydration: until every registered cluster has replayed
     // its initial list, the report set is legitimately incomplete and the
@@ -141,7 +154,7 @@ fn spawn_local_watcher(
     config: &Config,
     db: &Arc<Database>,
     watcher_status: &Arc<WatcherStatus>,
-    alerts: &Option<Arc<AlertEvaluator>>,
+    alerts: Option<&Arc<AlertEvaluator>>,
     scope: &WatchScope,
     shutdown: &tokio::sync::watch::Receiver<bool>,
 ) -> Option<tokio::task::JoinHandle<()>> {
@@ -151,7 +164,7 @@ fn spawn_local_watcher(
 
     let db = db.clone();
     let status = watcher_status.clone();
-    let alerts = alerts.clone();
+    let alerts = alerts.cloned();
     let scope = scope.clone();
     let cluster_name = config.cluster_name.clone();
     let shutdown_rx = shutdown.clone();
@@ -175,7 +188,7 @@ fn spawn_hub_watcher(
     config: &Config,
     db: &Arc<Database>,
     watcher_status: &Arc<WatcherStatus>,
-    alerts: &Option<Arc<AlertEvaluator>>,
+    alerts: Option<&Arc<AlertEvaluator>>,
     scope: &WatchScope,
     shutdown: &tokio::sync::watch::Receiver<bool>,
 ) -> Option<tokio::task::JoinHandle<()>> {
@@ -195,7 +208,7 @@ fn spawn_hub_watcher(
     };
     let db = db.clone();
     let status = watcher_status.clone();
-    let alerts = alerts.clone();
+    let alerts = alerts.cloned();
     let scope = scope.clone();
     let shutdown_rx = shutdown.clone();
     let watch_local = config.watch_local;

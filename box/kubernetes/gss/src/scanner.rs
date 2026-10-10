@@ -1,5 +1,7 @@
 use crate::models::{ScanResult, WorkflowFile, WorkflowInfo};
 use anyhow::{Context, Result};
+use base64::Engine;
+use base64::engine::general_purpose::STANDARD;
 use chrono::Utc;
 use octocrab::Octocrab;
 use octocrab::models::{Repository, workflows::WorkFlow};
@@ -41,15 +43,14 @@ impl Scanner {
             return Ok(HashSet::new());
         }
 
-        let content = fs::read_to_string(path).with_context(|| {
-            format!("Failed to read exclude repos file: {}", EXCLUDE_REPOS_PATH)
-        })?;
+        let content = fs::read_to_string(path)
+            .with_context(|| format!("Failed to read exclude repos file: {EXCLUDE_REPOS_PATH}"))?;
 
         let repos: HashSet<String> = content
             .lines()
-            .map(|line| line.trim())
+            .map(str::trim)
             .filter(|line| !line.is_empty() && !line.starts_with('#'))
-            .map(|line| line.to_string())
+            .map(ToString::to_string)
             .collect();
 
         Ok(repos)
@@ -125,16 +126,12 @@ impl Scanner {
                 }
                 Ok(Err(e)) => {
                     return Err(anyhow::anyhow!(
-                        "Failed to list repositories on page {}: {}. This may be caused by: \
+                        "Failed to list repositories on page {page}: {e}. This may be caused by: \
                         1) Invalid or expired GitHub token \
                         2) Insufficient token permissions (needs 'repo' or 'read:org' scope) \
-                        3) Organization '{}' not found \
+                        3) Organization '{org}' not found \
                         4) Network connectivity issues. \
-                        Original error: {}",
-                        page,
-                        e,
-                        org,
-                        e
+                        Original error: {e}"
                     ));
                 }
                 Err(_) => {
@@ -244,23 +241,18 @@ impl Scanner {
                 }
 
                 let mut workflow_info = WorkflowInfo::new(
-                    repo_name.to_string(),
+                    repo_name.clone(),
                     workflow.name.clone(),
-                    workflow.id.0 as i64,
+                    workflow.id.0,
                     workflow.path.clone(),
                 );
 
                 workflow_info.cron_schedules = schedules;
 
                 // Get last workflow run status with timeout
-                if let Ok(last_status) = Self::get_last_run_status(
-                    &client,
-                    org,
-                    repo_name,
-                    workflow.id.0 as i64,
-                    timeout_secs,
-                )
-                .await
+                if let Ok(last_status) =
+                    Self::get_last_run_status(&client, org, repo_name, workflow.id.0, timeout_secs)
+                        .await
                 {
                     workflow_info.last_status = last_status;
                 }
@@ -319,8 +311,6 @@ impl Scanner {
         };
 
         // Decode base64 content
-        use base64::Engine;
-        use base64::engine::general_purpose::STANDARD;
         let decoded = match STANDARD.decode(file_content.replace('\n', "")) {
             Ok(d) => d,
             Err(e) => {
@@ -352,7 +342,7 @@ impl Scanner {
         client: &Arc<Octocrab>,
         org: &str,
         repo: &str,
-        workflow_id: i64,
+        workflow_id: u64,
         timeout_secs: u64,
     ) -> Result<String> {
         let runs = tokio::time::timeout(
@@ -371,7 +361,7 @@ impl Scanner {
             .items
             .first()
             .and_then(|run| run.conclusion.as_ref())
-            .map(|c| c.to_string())
+            .cloned()
             .unwrap_or_else(|| "never_run".to_string());
 
         Ok(status)
@@ -403,8 +393,7 @@ impl Scanner {
         let author_login = last_commit
             .author
             .as_ref()
-            .map(|a| a.login.clone())
-            .unwrap_or_else(|| "Unknown".to_string());
+            .map_or_else(|| "Unknown".to_string(), |a| a.login.clone());
 
         // Try to determine if user is active by checking if we can fetch their profile
         let is_active = if let Some(author) = &last_commit.author {
@@ -453,12 +442,12 @@ on:
 
     #[test]
     fn test_workflow_yaml_parsing_without_schedule() {
-        let yaml = r#"
+        let yaml = r"
 on:
   push:
     branches:
       - main
-"#;
+";
 
         let workflow: WorkflowFile = serde_yaml::from_str(yaml).unwrap();
         assert!(workflow.on.unwrap().schedule.is_none());
@@ -473,10 +462,10 @@ on:
 
     #[test]
     fn test_workflow_yaml_parsing_empty_schedule() {
-        let yaml = r#"
+        let yaml = r"
 on:
   schedule: []
-"#;
+";
         let workflow: WorkflowFile = serde_yaml::from_str(yaml).unwrap();
         let schedules = workflow.on.unwrap().schedule.unwrap();
         assert!(schedules.is_empty());
@@ -581,6 +570,7 @@ on:
     }
 
     #[tokio::test]
+    #[allow(clippy::too_many_lines)]
     async fn test_scan_repo_with_scheduled_workflow() {
         let mock_server = MockServer::start().await;
         let base_url = mock_server.uri();

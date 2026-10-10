@@ -24,6 +24,7 @@ pub enum AuthMode {
 }
 
 impl AuthMode {
+    #[must_use]
     pub fn from_str_lossy(s: &str) -> Self {
         match s.to_lowercase().as_str() {
             "keycloak" => Self::Keycloak,

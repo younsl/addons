@@ -591,6 +591,7 @@ struct CoverageAlarmPreviewDTO {
 impl Handler {
     /// Turns the current picture into the alarm input, or the sample when no scan
     /// has completed yet.
+    #[allow(clippy::unused_self)]
     fn coverage_report(&self, scanner: &coverage::Scanner) -> (notify::CoverageReport, bool) {
         let overview = scanner.overview();
         if overview.last_scanned_at.is_none() {

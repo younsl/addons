@@ -36,7 +36,7 @@ colored = "3.1"
 tabled = "0.20"
 
 # Async runtime
-tokio = { version = "1.41", features = ["full"] }
+tokio = { version = "1.41", features = ["macros", "rt-multi-thread", "sync", "time"] }
 futures = "0.3"
 
 # Error handling
@@ -48,8 +48,10 @@ chrono = "0.4"
 
 # Unix process control (for proper Ctrl+C handling in SSM sessions)
 [target.'cfg(unix)'.dependencies]
-nix = { version = "0.29", features = ["process", "poll", "signal", "term"] }
-libc = "0.2"
+nix = { version = "0.29", features = ["poll", "term"] }
+pty-process = "0.5"
+rustix = { version = "1", features = ["termios"] }
+signal-hook = "0.3"
 
 # Logging
 tracing = "0.1"
@@ -60,12 +62,19 @@ const_format = "0.2"
 
 [dev-dependencies]
 tempfile = "3.25"
-serial_test = "3"
 aws-sdk-ec2 = { version = "1.87", features = ["test-util"] }
 aws-sdk-autoscaling = { version = "1", features = ["test-util"] }
 aws-smithy-http-client = { version = "1", features = ["test-util"] }
 aws-smithy-types = "1"
 http = "1"
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+all = "warn"
+pedantic = "warn"
+nursery = "warn"
 
 [profile.release]
 opt-level = 3

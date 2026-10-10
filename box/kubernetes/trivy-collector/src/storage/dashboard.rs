@@ -60,6 +60,7 @@ impl Database {
     }
 
     /// Get current live statistics (directly from reports table)
+    #[allow(clippy::too_many_lines)]
     pub async fn get_live_trends(
         &self,
         start_date: &str,
@@ -88,7 +89,7 @@ impl Database {
                 ""
             };
             let sql = format!(
-                r#"
+                r"
                 WITH baseline AS (
                     -- Step 1: Calculate totals BEFORE the 24-hour window (baseline)
                     SELECT
@@ -101,7 +102,7 @@ impl Database {
                         SUM(CASE WHEN report_type = 'vulnerabilityreport' THEN unknown_count ELSE 0 END) as unknown,
                         SUM(COALESCE(components_count, 0)) as components
                     FROM reports
-                    WHERE received_at < datetime('now', '-23 hours'){}
+                    WHERE received_at < datetime('now', '-23 hours'){cluster_filter}
                 ),
                 hourly_agg AS (
                     -- Step 2: Aggregate increments within the 24-hour window
@@ -119,7 +120,7 @@ impl Database {
                         SUM(CASE WHEN report_type = 'vulnerabilityreport' THEN unknown_count ELSE 0 END) as unknown,
                         SUM(COALESCE(components_count, 0)) as components
                     FROM reports
-                    WHERE received_at >= datetime('now', '-23 hours'){}
+                    WHERE received_at >= datetime('now', '-23 hours'){cluster_filter}
                     GROUP BY strftime('%Y-%m-%d %H:00', received_at, 'localtime')
                 ),
                 all_hours AS (
@@ -146,8 +147,7 @@ impl Database {
                 FROM all_hours h
                 LEFT JOIN hourly_agg a ON strftime('%Y-%m-%d %H:00', h.hour) = a.hour
                 ORDER BY h.hour ASC
-                "#,
-                cluster_filter, cluster_filter
+                "
             );
 
             // SAFETY: the only interpolated fragment is `cluster_filter`, a static literal.
@@ -183,7 +183,7 @@ impl Database {
                 ""
             };
             let sql = format!(
-                r#"
+                r"
                 WITH baseline AS (
                     -- Step 1: Calculate totals BEFORE the date range (baseline)
                     SELECT
@@ -196,7 +196,7 @@ impl Database {
                         SUM(CASE WHEN report_type = 'vulnerabilityreport' THEN unknown_count ELSE 0 END) as unknown,
                         SUM(COALESCE(components_count, 0)) as components
                     FROM reports
-                    WHERE date(received_at, 'localtime') < date($1){}
+                    WHERE date(received_at, 'localtime') < date($1){cluster_filter}
                 ),
                 daily_agg AS (
                     -- Step 2: Aggregate increments within the date range
@@ -214,7 +214,7 @@ impl Database {
                         SUM(COALESCE(components_count, 0)) as components
                     FROM reports
                     WHERE date(received_at, 'localtime') >= date($1)
-                      AND date(received_at, 'localtime') <= date($2){}
+                      AND date(received_at, 'localtime') <= date($2){cluster_filter}
                     GROUP BY date(received_at, 'localtime')
                 ),
                 all_days AS (
@@ -240,8 +240,7 @@ impl Database {
                 FROM all_days d
                 LEFT JOIN daily_agg a ON d.day = a.day
                 ORDER BY d.day ASC
-                "#,
-                cluster_filter, cluster_filter
+                "
             );
 
             // SAFETY: the only interpolated fragment is `cluster_filter`, a static literal.

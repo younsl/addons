@@ -47,7 +47,7 @@ pub struct HAStatus {
     pub runtime: String,
 }
 
-fn is_zero(v: &i64) -> bool {
+const fn is_zero(v: &i64) -> bool {
     *v == 0
 }
 

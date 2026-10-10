@@ -33,7 +33,7 @@ fn extract_metadata_from_value(data: &Value) -> (String, String, String) {
             if tag.is_empty() {
                 repo.to_string()
             } else {
-                format!("{}:{}", repo, tag)
+                format!("{repo}:{tag}")
             }
         })
         .unwrap_or_default();
@@ -62,11 +62,21 @@ fn extract_vuln_summary_from_value(data: &Value) -> (i64, i64, i64, i64, i64) {
     let summary = data.get("report").and_then(|r| r.get("summary"));
     if let Some(s) = summary {
         (
-            s.get("criticalCount").and_then(|v| v.as_i64()).unwrap_or(0),
-            s.get("highCount").and_then(|v| v.as_i64()).unwrap_or(0),
-            s.get("mediumCount").and_then(|v| v.as_i64()).unwrap_or(0),
-            s.get("lowCount").and_then(|v| v.as_i64()).unwrap_or(0),
-            s.get("unknownCount").and_then(|v| v.as_i64()).unwrap_or(0),
+            s.get("criticalCount")
+                .and_then(serde_json::Value::as_i64)
+                .unwrap_or(0),
+            s.get("highCount")
+                .and_then(serde_json::Value::as_i64)
+                .unwrap_or(0),
+            s.get("mediumCount")
+                .and_then(serde_json::Value::as_i64)
+                .unwrap_or(0),
+            s.get("lowCount")
+                .and_then(serde_json::Value::as_i64)
+                .unwrap_or(0),
+            s.get("unknownCount")
+                .and_then(serde_json::Value::as_i64)
+                .unwrap_or(0),
         )
     } else {
         (0, 0, 0, 0, 0)
@@ -86,7 +96,7 @@ fn extract_components_count_from_value(data: &Value) -> i64 {
     data.get("report")
         .and_then(|r| r.get("summary"))
         .and_then(|s| s.get("componentsCount"))
-        .and_then(|v| v.as_i64())
+        .and_then(serde_json::Value::as_i64)
         .unwrap_or(0)
 }
 

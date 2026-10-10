@@ -60,17 +60,17 @@ impl RbacPolicy {
                 continue;
             }
 
-            let parts: Vec<&str> = line.split(',').map(|s| s.trim()).collect();
+            let parts: Vec<&str> = line.split(',').map(str::trim).collect();
 
             match parts.first().copied() {
                 Some("p") => {
                     if parts.len() < 5 {
-                        return Err(format!("Invalid policy rule (need 5 fields): {}", line));
+                        return Err(format!("Invalid policy rule (need 5 fields): {line}"));
                     }
                     let effect = match parts[4].to_lowercase().as_str() {
                         "allow" => Effect::Allow,
                         "deny" => Effect::Deny,
-                        other => return Err(format!("Invalid effect '{}': {}", other, line)),
+                        other => return Err(format!("Invalid effect '{other}': {line}")),
                     };
                     rules.push(PolicyRule {
                         subject: parts[1].to_string(),
@@ -81,7 +81,7 @@ impl RbacPolicy {
                 }
                 Some("g") => {
                     if parts.len() < 3 {
-                        return Err(format!("Invalid group binding (need 3 fields): {}", line));
+                        return Err(format!("Invalid group binding (need 3 fields): {line}"));
                     }
                     groups.push(GroupBinding {
                         group: parts[1].to_string(),
@@ -109,14 +109,15 @@ impl RbacPolicy {
     }
 
     /// Built-in default policy CSV
-    pub fn default_csv() -> &'static str {
-        r#"p, role:readonly, reports, get, allow
+    #[must_use]
+    pub const fn default_csv() -> &'static str {
+        r"p, role:readonly, reports, get, allow
 p, role:readonly, clusters, get, allow
 p, role:readonly, stats, get, allow
 p, role:readonly, tokens, get, allow
 p, role:readonly, tokens, create, allow
 p, role:readonly, alerts, get, allow
-p, role:admin, *, *, allow"#
+p, role:admin, *, *, allow"
     }
 
     /// Resolve roles for user groups (including default policy)
@@ -139,6 +140,7 @@ p, role:admin, *, *, allow"#
     }
 
     /// Check if user with given groups is allowed to access resource/action
+    #[must_use]
     pub fn is_allowed(&self, user_groups: &[String], resource: &str, action: &str) -> bool {
         let roles = self.resolve_roles(user_groups);
 
@@ -156,11 +158,13 @@ p, role:admin, *, *, allow"#
     }
 
     /// Get the default policy name
+    #[must_use]
     pub fn default_policy_name(&self) -> &str {
         &self.default_policy
     }
 
     /// Get the effective RBAC policy for a user's groups
+    #[must_use]
     pub fn get_effective_policy(&self, user_groups: &[String]) -> EffectivePolicy {
         let resolved_roles = self.resolve_roles(user_groups);
 
@@ -198,6 +202,7 @@ p, role:admin, *, *, allow"#
     }
 
     /// Get all permissions for frontend UI rendering
+    #[must_use]
     pub fn get_permissions(&self, user_groups: &[String]) -> UserPermissions {
         UserPermissions {
             can_admin: self.is_allowed(user_groups, "admin", "get"),
@@ -255,6 +260,7 @@ fn matches_wildcard(pattern: &str, value: &str) -> bool {
 }
 
 /// Map an API endpoint (method, path) to (resource, action)
+#[must_use]
 pub fn resolve_endpoint(method: &str, path: &str) -> Option<(&'static str, &'static str)> {
     match method {
         "GET" => resolve_get(path),
@@ -273,6 +279,7 @@ fn is_mcp_path(path: &str) -> bool {
 
 /// API paths without a `(resource, action)` mapping are denied rather than
 /// passed through, so a new route cannot ship without a permission.
+#[must_use]
 pub fn is_api_path(path: &str) -> bool {
     path.starts_with("/api/")
 }
@@ -378,7 +385,7 @@ mod tests {
     use super::*;
 
     fn test_policy() -> RbacPolicy {
-        let csv = r#"
+        let csv = r"
 p, role:readonly, reports, get, allow
 p, role:readonly, clusters, get, allow
 p, role:readonly, stats, get, allow
@@ -389,7 +396,7 @@ p, role:admin, *, *, allow
 
 g, security-team, role:readonly
 g, platform-team, role:admin
-"#;
+";
         RbacPolicy::from_csv(csv, "role:readonly").unwrap()
     }
 
@@ -409,12 +416,12 @@ g, platform-team, role:admin
 
     #[test]
     fn test_parse_comments_and_blank_lines() {
-        let csv = r#"
+        let csv = r"
 # This is a comment
 
 p, role:admin, *, *, allow
 # Another comment
-"#;
+";
         let policy = RbacPolicy::from_csv(csv, "").unwrap();
         assert_eq!(policy.rules.len(), 1);
     }
@@ -478,10 +485,10 @@ p, role:admin, *, *, allow
 
     #[test]
     fn test_no_default_policy_denies_all() {
-        let csv = r#"
+        let csv = r"
 p, role:admin, *, *, allow
 g, platform-team, role:admin
-"#;
+";
         let policy = RbacPolicy::from_csv(csv, "").unwrap();
         let groups = vec!["unknown-team".to_string()];
         assert!(!policy.is_allowed(&groups, "reports", "get"));
@@ -489,10 +496,10 @@ g, platform-team, role:admin
 
     #[test]
     fn test_deny_effect() {
-        let csv = r#"
+        let csv = r"
 p, role:test, reports, delete, deny
 p, role:test, reports, get, allow
-"#;
+";
         let policy = RbacPolicy::from_csv(csv, "role:test").unwrap();
         let groups: Vec<String> = vec![];
         assert!(!policy.is_allowed(&groups, "reports", "delete"));
@@ -578,26 +585,26 @@ p, role:test, reports, get, allow
 
     #[test]
     fn test_effective_policy_no_default_no_match() {
-        let csv = r#"
+        let csv = r"
 p, role:admin, *, *, allow
 g, platform-team, role:admin
-"#;
+";
         let policy = RbacPolicy::from_csv(csv, "").unwrap();
         let groups = vec!["unknown-team".to_string()];
         let ep = policy.get_effective_policy(&groups);
 
-        assert!(ep.resolved_roles.is_empty());
+        assert_eq!(ep.resolved_roles, [] as [std::string::String; 0]);
         assert!(ep.bindings.is_empty());
         assert!(ep.rules.is_empty());
     }
 
     #[test]
     fn test_effective_policy_deny_effect() {
-        let csv = r#"
+        let csv = r"
 p, role:mixed, reports, delete, deny
 p, role:mixed, reports, get, allow
 g, test-team, role:mixed
-"#;
+";
         let policy = RbacPolicy::from_csv(csv, "").unwrap();
         let groups = vec!["test-team".to_string()];
         let ep = policy.get_effective_policy(&groups);
@@ -612,12 +619,12 @@ g, test-team, role:mixed
 
     #[test]
     fn test_effective_policy_multiple_groups() {
-        let csv = r#"
+        let csv = r"
 p, role:viewer, reports, get, allow
 p, role:editor, reports, update, allow
 g, viewers, role:viewer
 g, editors, role:editor
-"#;
+";
         let policy = RbacPolicy::from_csv(csv, "").unwrap();
         let groups = vec!["viewers".to_string(), "editors".to_string()];
         let ep = policy.get_effective_policy(&groups);
@@ -631,11 +638,11 @@ g, editors, role:editor
 
     #[test]
     fn test_effective_policy_duplicate_role_binding() {
-        let csv = r#"
+        let csv = r"
 p, role:readonly, reports, get, allow
 g, team-a, role:readonly
 g, team-b, role:readonly
-"#;
+";
         let policy = RbacPolicy::from_csv(csv, "").unwrap();
         let groups = vec!["team-a".to_string(), "team-b".to_string()];
         let ep = policy.get_effective_policy(&groups);

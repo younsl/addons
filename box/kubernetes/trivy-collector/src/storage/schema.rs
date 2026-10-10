@@ -105,10 +105,7 @@ async fn table_exists_check(pool: &SqlitePool, table_name: &str) -> Result<bool>
 /// Check if a column exists in the given table
 #[cfg(test)]
 async fn column_exists(pool: &SqlitePool, table_name: &str, column_name: &str) -> Result<bool> {
-    let query = format!(
-        "SELECT COUNT(*) > 0 FROM pragma_table_info('{}') WHERE name=$1",
-        table_name
-    );
+    let query = format!("SELECT COUNT(*) > 0 FROM pragma_table_info('{table_name}') WHERE name=$1");
     // SAFETY: `table_name` is a hardcoded literal at every call site, never user input.
     let (exists,): (bool,) = sqlx::query_as(sqlx::AssertSqlSafe(query))
         .bind(column_name)

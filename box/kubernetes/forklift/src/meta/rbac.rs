@@ -8,10 +8,11 @@ use super::time::now_rfc3339;
 use super::{Error, Permission, Result, SOURCE_LOCAL, SOURCE_OIDC, Store};
 
 /// The desired declarative RBAC state parsed from the chart policy.
+///
 /// [`Store::apply_managed_rbac`] reconciles the database to match it, owning
 /// every row it writes via the managed flag and leaving interactively-created
 /// (unmanaged) rows untouched.
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ManagedRBAC {
     pub roles: Vec<ManagedRole>,
     /// Keycloak group name -> role name
@@ -23,7 +24,7 @@ pub struct ManagedRBAC {
 }
 
 /// A declaratively-defined role and its permissions.
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ManagedRole {
     pub name: String,
     pub description: String,
@@ -32,7 +33,7 @@ pub struct ManagedRole {
 }
 
 /// Assigns a subject (group or username) to a role by name.
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ManagedGrant {
     pub subject: String,
     pub role: String,
@@ -41,7 +42,7 @@ pub struct ManagedGrant {
 /// A local (password) account to provision. `password_hash` is applied only
 /// when the user is first created; an existing account's password is never
 /// overwritten by reconciliation.
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ManagedLocalUser {
     pub username: String,
     pub password_hash: String,

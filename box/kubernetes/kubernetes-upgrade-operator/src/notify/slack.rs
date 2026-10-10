@@ -206,6 +206,7 @@ mod tests {
 
     #[test]
     fn test_slack_notifier_new() {
+        crate::install_crypto_provider();
         let notifier = SlackNotifier::new("https://hooks.slack.com/services/T/B/X".to_string());
         assert_eq!(
             notifier.webhook_url,

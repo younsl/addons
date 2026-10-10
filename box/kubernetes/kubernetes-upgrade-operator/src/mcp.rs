@@ -37,24 +37,14 @@ pub struct Config {
 }
 
 impl Config {
-    /// Read the configuration from the environment.
+    /// Read the configuration through `lookup`, keyed by environment
+    /// variable name.
     ///
     /// Returns `Ok(None)` when `MCP_ENABLED` is unset or false. A missing
     /// `MCP_TOKEN_FILE` while enabled is an error rather than a degraded
     /// mode: mutating tools are always registered, so an unauthenticated
     /// endpoint is never acceptable.
-    pub fn from_env() -> Result<Option<Self>> {
-        Self::from_lookup(|key| {
-            std::env::var(key)
-                .ok()
-                .map(|v| v.trim().to_string())
-                .filter(|v| !v.is_empty())
-        })
-    }
-
-    /// The environment-independent core of [`Self::from_env`], taking the
-    /// variable lookup as a function so tests need no process-global state.
-    fn from_lookup(lookup: impl Fn(&str) -> Option<String>) -> Result<Option<Self>> {
+    pub fn from_lookup(lookup: impl Fn(&str) -> Option<String>) -> Result<Option<Self>> {
         if !flag(&lookup, "MCP_ENABLED")? {
             return Ok(None);
         }

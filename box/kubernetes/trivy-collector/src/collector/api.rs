@@ -47,7 +47,7 @@ pub struct InternalApi {
 }
 
 impl InternalApi {
-    pub fn new(db: Arc<Database>, status: Arc<WatcherStatus>, token: String) -> Self {
+    pub const fn new(db: Arc<Database>, status: Arc<WatcherStatus>, token: String) -> Self {
         Self { db, status, token }
     }
 
@@ -133,7 +133,7 @@ async fn require_internal_token(
 }
 
 /// Map a storage failure onto a 500 without leaking the query shape.
-fn storage_error(context: &str, e: anyhow::Error) -> Response {
+fn storage_error(context: &str, e: &anyhow::Error) -> Response {
     error!(error = %e, context = context, "Internal API storage error");
     (
         StatusCode::INTERNAL_SERVER_ERROR,
@@ -204,7 +204,7 @@ async fn query_reports(
         .await
     {
         Ok((items, total)) => paged(items, total),
-        Err(e) => storage_error("query_reports", e),
+        Err(e) => storage_error("query_reports", &e),
     }
 }
 
@@ -223,7 +223,7 @@ async fn get_report(
             Json(serde_json::json!({"error": "Report not found"})),
         )
             .into_response(),
-        Err(e) => storage_error("get_report", e),
+        Err(e) => storage_error("get_report", &e),
     }
 }
 
@@ -246,7 +246,7 @@ async fn ingest_report(
                 );
                 Json(serde_json::json!({"status": "ok"})).into_response()
             }
-            Err(e) => storage_error("upsert_report", e),
+            Err(e) => storage_error("upsert_report", &e),
         },
         ReportEventType::Delete => match state
             .db
@@ -261,7 +261,7 @@ async fn ingest_report(
             Ok(deleted) => {
                 Json(serde_json::json!({"status": "ok", "deleted": deleted})).into_response()
             }
-            Err(e) => storage_error("delete_report", e),
+            Err(e) => storage_error("delete_report", &e),
         },
     }
 }
@@ -281,7 +281,7 @@ async fn delete_report(
             Json(serde_json::json!({"error": "Report not found"})),
         )
             .into_response(),
-        Err(e) => storage_error("delete_report", e),
+        Err(e) => storage_error("delete_report", &e),
     }
 }
 
@@ -291,21 +291,21 @@ async fn delete_cluster_reports(
 ) -> Response {
     match state.db.delete_reports_for_cluster(&cluster).await {
         Ok(deleted) => Json(serde_json::json!({"deleted": deleted})).into_response(),
-        Err(e) => storage_error("delete_reports_for_cluster", e),
+        Err(e) => storage_error("delete_reports_for_cluster", &e),
     }
 }
 
 async fn get_stats(State(state): State<InternalApi>) -> Response {
     match state.db.get_stats().await {
-        Ok(stats) => Json(stats).into_response(),
-        Err(e) => storage_error("get_stats", e),
+        Ok(body) => Json(body).into_response(),
+        Err(e) => storage_error("get_stats", &e),
     }
 }
 
 async fn list_clusters(State(state): State<InternalApi>) -> Response {
     match state.db.list_clusters().await {
         Ok(items) => paged_all(items),
-        Err(e) => storage_error("list_clusters", e),
+        Err(e) => storage_error("list_clusters", &e),
     }
 }
 
@@ -320,7 +320,7 @@ async fn list_namespaces(
 ) -> Response {
     match state.db.list_namespaces(query.cluster.as_deref()).await {
         Ok(items) => paged_all(items),
-        Err(e) => storage_error("list_namespaces", e),
+        Err(e) => storage_error("list_namespaces", &e),
     }
 }
 
@@ -358,7 +358,7 @@ async fn search_vulnerabilities(
         .await
     {
         Ok((items, total)) => paged(items, total),
-        Err(e) => storage_error("search_vulnerabilities", e),
+        Err(e) => storage_error("search_vulnerabilities", &e),
     }
 }
 
@@ -372,7 +372,7 @@ async fn search_components(
         .await
     {
         Ok((items, total)) => paged(items, total),
-        Err(e) => storage_error("search_sbom_components", e),
+        Err(e) => storage_error("search_sbom_components", &e),
     }
 }
 
@@ -386,7 +386,7 @@ async fn suggest_vulnerability_ids(
         .await
     {
         Ok(items) => paged_all(items),
-        Err(e) => storage_error("suggest_vulnerability_ids", e),
+        Err(e) => storage_error("suggest_vulnerability_ids", &e),
     }
 }
 
@@ -400,7 +400,7 @@ async fn suggest_component_names(
         .await
     {
         Ok(items) => paged_all(items),
-        Err(e) => storage_error("suggest_component_names", e),
+        Err(e) => storage_error("suggest_component_names", &e),
     }
 }
 
@@ -427,7 +427,7 @@ async fn list_component_matches(
         .await
     {
         Ok(items) => paged_all(items),
-        Err(e) => storage_error("list_sbom_component_matches", e),
+        Err(e) => storage_error("list_sbom_component_matches", &e),
     }
 }
 
@@ -454,14 +454,14 @@ async fn get_trends(
         .await
     {
         Ok(trends) => Json(trends).into_response(),
-        Err(e) => storage_error("get_live_trends", e),
+        Err(e) => storage_error("get_live_trends", &e),
     }
 }
 
 async fn get_data_range(State(state): State<InternalApi>) -> Response {
     match state.db.get_reports_data_range().await {
         Ok((data_from, data_to)) => Json(DataRangeResponse { data_from, data_to }).into_response(),
-        Err(e) => storage_error("get_reports_data_range", e),
+        Err(e) => storage_error("get_reports_data_range", &e),
     }
 }
 
@@ -501,8 +501,8 @@ mod tests {
     fn split_csv_drops_blanks() {
         assert_eq!(split_csv("a,b"), vec!["a", "b"]);
         assert_eq!(split_csv(" a , ,b ,"), vec!["a", "b"]);
-        assert!(split_csv("").is_empty());
-        assert!(split_csv(",,").is_empty());
+        assert_eq!(split_csv(""), [] as [std::string::String; 0]);
+        assert_eq!(split_csv(",,"), [] as [std::string::String; 0]);
     }
 
     #[test]
@@ -637,8 +637,8 @@ mod tests {
 
     #[tokio::test]
     async fn hydration_flips_once_every_cluster_syncs() {
-        let state = api().await;
         use crate::collector::status::ReportKind;
+        let state = api().await;
         state.status.register_cluster("prod");
         state
             .status

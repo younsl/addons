@@ -69,8 +69,8 @@ pub struct CoverageCollector {
 impl CoverageCollector {
     /// Builds a collector over a function that reads the scanner's current
     /// state. The read is in-memory, so it is safe on the scrape path.
-    pub fn new(stats: Arc<dyn Fn() -> CoverageStats + Send + Sync>) -> CoverageCollector {
-        CoverageCollector {
+    pub fn new(stats: Arc<dyn Fn() -> CoverageStats + Send + Sync>) -> Self {
+        Self {
             stats,
             enabled: desc(
                 "forklift_coverage_enabled",
@@ -184,7 +184,7 @@ impl Collector for CoverageCollector {
     }
 }
 
-fn bool_value(b: bool) -> f64 {
+const fn bool_value(b: bool) -> f64 {
     if b { 1.0 } else { 0.0 }
 }
 
@@ -294,10 +294,10 @@ forklift_coverage_target 4
         let reg = Registry::new();
         reg.register(Box::new(collector)).unwrap();
 
-        let want = r#"# HELP forklift_coverage_last_scan_timestamp_seconds When the last scan completed, as a Unix timestamp. Zero before the first one. Alert on its age: a scan that stopped running looks healthy from outside.
+        let want = r"# HELP forklift_coverage_last_scan_timestamp_seconds When the last scan completed, as a Unix timestamp. Zero before the first one. Alert on its age: a scan that stopped running looks healthy from outside.
 # TYPE forklift_coverage_last_scan_timestamp_seconds gauge
 forklift_coverage_last_scan_timestamp_seconds 0
-"#;
+";
         assert_eq!(
             encode_filtered(&reg, &["forklift_coverage_last_scan_timestamp_seconds"]),
             want
@@ -312,10 +312,10 @@ forklift_coverage_last_scan_timestamp_seconds 0
         let reg = Registry::new();
         reg.register(Box::new(collector)).unwrap();
 
-        let want = r#"# HELP forklift_coverage_enabled 1 when coverage scanning is switched on and has a GitLab connection, else 0.
+        let want = r"# HELP forklift_coverage_enabled 1 when coverage scanning is switched on and has a GitLab connection, else 0.
 # TYPE forklift_coverage_enabled gauge
 forklift_coverage_enabled 0
-"#;
+";
         assert_eq!(encode_filtered(&reg, &["forklift_coverage_enabled"]), want);
     }
 }

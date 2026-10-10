@@ -63,14 +63,11 @@ pub(crate) async fn grouped(m: Arc<Manager>, req: Request, h: HandlerFn) -> Resp
             "group repositories are read-only",
         );
     }
-    let cfg = match repoconfig::parse(&repo.config_json) {
-        Ok(cfg) => cfg,
-        Err(_) => {
-            return http_error(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "invalid repository config",
-            );
-        }
+    let Ok(cfg) = repoconfig::parse(&repo.config_json) else {
+        return http_error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "invalid repository config",
+        );
     };
     let (mut parts, body) = req.into_parts();
     if let Err(resp) = m.authorize(&parts, &name, auth::ACTION_READ, cfg.public) {
@@ -192,7 +189,10 @@ pub(crate) mod tests {
     /// Creates a group repository over the given members.
     pub(crate) async fn mk_group(store: &Arc<Store>, name: &str, members: &[&str]) -> Repository {
         let mut cfg = repoconfig::default();
-        cfg.group.members = members.iter().map(|s| s.to_string()).collect();
+        cfg.group.members = members
+            .iter()
+            .map(std::string::ToString::to_string)
+            .collect();
         mk_repo(store, name, meta::TYPE_GROUP, "", cfg).await
     }
 
@@ -364,7 +364,10 @@ pub(crate) mod tests {
             ),
         ];
         for (name, format, members, want_err) in cases {
-            let members: Vec<String> = members.iter().map(|s| s.to_string()).collect();
+            let members: Vec<String> = members
+                .iter()
+                .map(std::string::ToString::to_string)
+                .collect();
             let err = validate_group_members(&tm.store, format, &members).await;
             if want_err.is_empty() {
                 assert!(err.is_ok(), "{name}: unexpected error {err:?}");

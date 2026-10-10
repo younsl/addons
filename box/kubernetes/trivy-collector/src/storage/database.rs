@@ -26,9 +26,8 @@ impl Database {
         let db_exists = Path::new(db_path).exists();
         if db_exists {
             let metadata = std::fs::metadata(db_path).ok();
-            let size = metadata
-                .map(|m| Self::format_bytes(m.len()))
-                .unwrap_or_else(|| "unknown".to_string());
+            let size =
+                metadata.map_or_else(|| "unknown".to_string(), |m| Self::format_bytes(m.len()));
             info!(path = %db_path, size = %size, "Found existing database file");
         } else if db_path != ":memory:" {
             info!(path = %db_path, "Creating new database file");
@@ -48,7 +47,7 @@ impl Database {
         let connect_options = if db_path == ":memory:" {
             SqliteConnectOptions::from_str("sqlite::memory:")?
         } else {
-            SqliteConnectOptions::from_str(&format!("sqlite:{}", db_path))?
+            SqliteConnectOptions::from_str(&format!("sqlite:{db_path}"))?
         }
         .journal_mode(SqliteJournalMode::Wal)
         .busy_timeout(std::time::Duration::from_millis(5000))
@@ -142,7 +141,7 @@ impl Database {
         } else if bytes >= KB {
             format!("{:.2} KB", bytes as f64 / KB as f64)
         } else {
-            format!("{} B", bytes)
+            format!("{bytes} B")
         }
     }
 }
@@ -222,6 +221,6 @@ mod tests {
             .list_namespaces(None)
             .await
             .expect("Failed to list namespaces");
-        assert!(namespaces.is_empty());
+        assert_eq!(namespaces, [] as [std::string::String; 0]);
     }
 }

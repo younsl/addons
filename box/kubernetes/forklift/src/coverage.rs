@@ -74,14 +74,14 @@ pub enum Error {
 impl Error {
     /// True for either not-found variant, which is what `errors.Is(err,
     /// ErrNotFound)` tested.
-    pub fn is_not_found(&self) -> bool {
-        matches!(self, Error::NotFound | Error::NotFoundAt { .. })
+    pub const fn is_not_found(&self) -> bool {
+        matches!(self, Self::NotFound | Self::NotFoundAt { .. })
     }
 }
 
 impl From<crate::meta::Error> for Error {
     fn from(e: crate::meta::Error) -> Self {
-        Error::Store(e.to_string())
+        Self::Store(e.to_string())
     }
 }
 
@@ -110,19 +110,19 @@ pub trait Store: Send + Sync {
 #[async_trait]
 impl Store for crate::meta::Store {
     async fn read_coverage_settings(&self) -> Res<Option<Settings>> {
-        Ok(crate::meta::Store::read_coverage_settings(self).await?)
+        Ok(Self::read_coverage_settings(self).await?)
     }
     async fn read_coverage_result(&self) -> Res<Option<Result>> {
-        Ok(crate::meta::Store::read_coverage_result(self).await?)
+        Ok(Self::read_coverage_result(self).await?)
     }
     async fn write_coverage_result(&self, r: Result) -> Res<()> {
-        Ok(crate::meta::Store::write_coverage_result(self, r).await?)
+        Ok(Self::write_coverage_result(self, r).await?)
     }
     async fn add_coverage_snapshot(&self, s: Snapshot) -> Res<()> {
-        Ok(crate::meta::Store::add_coverage_snapshot(self, s).await?)
+        Ok(Self::add_coverage_snapshot(self, s).await?)
     }
     async fn list_coverage_muted(&self) -> Res<Vec<MutedProject>> {
-        Ok(crate::meta::Store::list_coverage_muted(self).await?)
+        Ok(Self::list_coverage_muted(self).await?)
     }
     async fn add_coverage_muted(
         &self,
@@ -130,16 +130,16 @@ impl Store for crate::meta::Store {
         by: &str,
         scopes: MuteScopes,
     ) -> Res<()> {
-        Ok(crate::meta::Store::add_coverage_muted(self, project_path, by, scopes).await?)
+        Ok(Self::add_coverage_muted(self, project_path, by, scopes).await?)
     }
     async fn remove_coverage_muted(&self, project_path: &str) -> Res<()> {
-        Ok(crate::meta::Store::remove_coverage_muted(self, project_path).await?)
+        Ok(Self::remove_coverage_muted(self, project_path).await?)
     }
 }
 
 /// Result is a completed scan as it is persisted, so a restart shows the
 /// previous result instead of an empty page.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Result {
     // Rows written by earlier releases store an empty list as `null`.
     #[serde(default, deserialize_with = "crate::repoconfig::null_default")]
@@ -157,7 +157,7 @@ pub struct Result {
 
 impl Default for Result {
     fn default() -> Self {
-        Result {
+        Self {
             projects: Vec::new(),
             excluded_projects: Vec::new(),
             scanned_at: types::zero_time(),
@@ -233,8 +233,8 @@ pub struct Scanner {
 impl Scanner {
     /// NewScanner builds a scanner. Call [`Scanner::load`] before serving to
     /// bring the stored settings, exclusions and last result into memory.
-    pub fn new(o: ScannerOptions) -> Arc<Scanner> {
-        Arc::new(Scanner {
+    pub fn new(o: ScannerOptions) -> Arc<Self> {
+        Arc::new(Self {
             store: o.store,
             enabled: o.enabled,
             gitlab_url: normalize_gitlab_url(&o.gitlab_url),
@@ -347,9 +347,8 @@ impl Scanner {
     }
 
     pub(crate) async fn restore_last_result(&self) -> Res<()> {
-        let stored = match self.store.read_coverage_result().await? {
-            Some(stored) => stored,
-            None => return Ok(()),
+        let Some(stored) = self.store.read_coverage_result().await? else {
+            return Ok(());
         };
         let projects_len = stored.projects.len();
         let scanned_at = stored.scanned_at;
@@ -399,9 +398,8 @@ impl Scanner {
     pub(crate) async fn persist(&self) -> Res<()> {
         let r = {
             let state = self.state.read();
-            let scanned_at = match state.last_scanned_at {
-                Some(t) => t,
-                None => return Ok(()),
+            let Some(scanned_at) = state.last_scanned_at else {
+                return Ok(());
             };
             Result {
                 projects: state.projects.clone(),

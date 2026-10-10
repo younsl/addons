@@ -37,8 +37,7 @@ fn timestamp(value: &Value) -> DateTime<Utc> {
     value
         .as_str()
         .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
-        .map(|t| t.with_timezone(&Utc))
-        .unwrap_or_else(|| panic!("timestamp: {value}"))
+        .map_or_else(|| panic!("timestamp: {value}"), |t| t.with_timezone(&Utc))
 }
 
 /// The per-repository broken-artifact listing is what the audit log marks its

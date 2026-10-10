@@ -139,7 +139,7 @@ impl Notifier {
                 self.repo_field(
                     r,
                     repo_id.get(r).copied().unwrap_or(0),
-                    repo_format.get(r).map(String::as_str).unwrap_or(""),
+                    repo_format.get(r).map_or("", String::as_str),
                 )
             })
             .collect();

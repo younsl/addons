@@ -3,13 +3,14 @@
 //! Loads and saves YAML configuration from `$XDG_CONFIG_HOME/ij/config.yaml`
 //! (defaults to `~/.config/ij/config.yaml`).
 
+use std::fmt::Write as _;
 use std::path::PathBuf;
 
 use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::error::{Error, Result};
 
-/// Field documentation: (yaml_key, type_label, description).
+/// Field documentation: (`yaml_key`, `type_label`, description).
 const FIELD_DOCS: &[(&str, &str, &str)] = &[
     ("aws_profile", "string", "AWS profile name"),
     ("aws_config_file", "string", "AWS CLI config file path"),
@@ -54,9 +55,9 @@ fn insert_comments(yaml: &str) -> String {
         {
             let indent = &line[..line.len() - trimmed.len()];
             if typ.is_empty() {
-                out.push_str(&format!("{indent}# {desc}\n"));
+                let _ = writeln!(out, "{indent}# {desc}");
             } else {
-                out.push_str(&format!("{indent}# ({typ}) {desc}\n"));
+                let _ = writeln!(out, "{indent}# ({typ}) {desc}");
             }
         }
         // Indent root-level list items
@@ -195,7 +196,7 @@ impl FileConfig {
     /// Load config from a specific path.
     pub fn load(path: &PathBuf) -> Result<Self> {
         let contents = std::fs::read_to_string(path)?;
-        let config: FileConfig = serde_yaml::from_str(&contents)?;
+        let config: Self = serde_yaml::from_str(&contents)?;
         Ok(config)
     }
 
@@ -231,8 +232,8 @@ mod tests {
         let fc = FileConfig::default();
         assert_eq!(fc.aws_profile, None);
         assert_eq!(fc.aws_config_file, "~/.aws/config");
-        assert!(fc.scan_regions.is_empty());
-        assert!(fc.tag_filters.is_empty());
+        assert_eq!(fc.scan_regions, Vec::<String>::new());
+        assert_eq!(fc.tag_filters, Vec::<String>::new());
         assert_eq!(fc.running_only, None);
         assert_eq!(fc.log_level, None);
     }
@@ -278,7 +279,7 @@ mod tests {
 
     #[test]
     fn deserialize_full_yaml() {
-        let yaml = r#"
+        let yaml = r"
 aws_profile: dev
 aws_config_file: /tmp/aws-config
 scan_regions:
@@ -287,7 +288,7 @@ tag_filters:
   - Team=platform
 running_only: false
 log_level: warn
-"#;
+";
         let fc: FileConfig = serde_yaml::from_str(yaml).unwrap();
         assert_eq!(fc.aws_profile.as_deref(), Some("dev"));
         assert_eq!(fc.aws_config_file, "/tmp/aws-config");
@@ -303,8 +304,8 @@ log_level: warn
         let fc: FileConfig = serde_yaml::from_str(yaml).unwrap();
         assert_eq!(fc.aws_profile, None);
         assert_eq!(fc.aws_config_file, "~/.aws/config");
-        assert!(fc.scan_regions.is_empty());
-        assert!(fc.tag_filters.is_empty());
+        assert_eq!(fc.scan_regions, Vec::<String>::new());
+        assert_eq!(fc.tag_filters, Vec::<String>::new());
         assert_eq!(fc.running_only, None);
         assert_eq!(fc.log_level, None);
     }
@@ -315,7 +316,7 @@ log_level: warn
         let fc: FileConfig = serde_yaml::from_str(yaml).unwrap();
         assert_eq!(fc.aws_profile.as_deref(), Some("staging"));
         assert_eq!(fc.aws_config_file, "~/.aws/config");
-        assert!(fc.scan_regions.is_empty());
+        assert_eq!(fc.scan_regions, Vec::<String>::new());
     }
 
     #[test]
@@ -482,7 +483,7 @@ shell_commands:
         let yaml = "{}";
         let fc: FileConfig = serde_yaml::from_str(yaml).unwrap();
         assert!(!fc.shell_commands.enabled);
-        assert!(fc.shell_commands.commands.is_empty());
+        assert_eq!(fc.shell_commands.commands, Vec::<String>::new());
     }
 
     #[test]

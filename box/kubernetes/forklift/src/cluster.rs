@@ -1,4 +1,5 @@
 //! Active/standby high availability via Kubernetes Lease-based leader election.
+//!
 //! Only the elected leader becomes Ready (so the Service routes to a single
 //! active instance) and runs the background blob sweeper, which guarantees a
 //! single writer to the shared SQLite database.
@@ -38,8 +39,8 @@ pub enum Error {
     /// Listing leader-labelled pods failed.
     #[error("list leader pods: {0}")]
     ListLeaderPods(#[source] kube::Error),
-    #[error("{}", .0.iter().map(|e| e.to_string()).collect::<Vec<_>>().join("\n"))]
-    Multiple(Vec<Error>),
+    #[error("{}", .0.iter().map(std::string::ToString::to_string).collect::<Vec<_>>().join("\n"))]
+    Multiple(Vec<Self>),
 }
 
 /// Result alias used throughout the module.
@@ -69,15 +70,15 @@ pub struct Elector {
 impl Elector {
     /// Builds an Elector using the in-cluster Kubernetes config. Outside a
     /// cluster this fails cleanly (no service-account environment or token).
-    pub fn new(cfg: HAConfig) -> Result<Arc<Elector>> {
+    pub fn new(cfg: HAConfig) -> Result<Arc<Self>> {
         let rest_cfg = kube::Config::incluster().map_err(Error::InClusterConfig)?;
         let client = kube::Client::try_from(rest_cfg).map_err(Error::KubernetesClient)?;
         Ok(Self::new_with_client(cfg, client))
     }
 
     /// Builds an Elector with an injected Kubernetes client (tests).
-    pub fn new_with_client(cfg: HAConfig, client: kube::Client) -> Arc<Elector> {
-        Arc::new(Elector {
+    pub fn new_with_client(cfg: HAConfig, client: kube::Client) -> Arc<Self> {
+        Arc::new(Self {
             cfg,
             client,
             state: parking_lot::Mutex::new(TermState::default()),
@@ -85,7 +86,7 @@ impl Elector {
     }
 
     /// The Kubernetes client the elector talks through.
-    pub fn client(&self) -> &kube::Client {
+    pub const fn client(&self) -> &kube::Client {
         &self.client
     }
 
@@ -119,8 +120,7 @@ impl Elector {
             Ok(lease) => Ok(lease
                 .spec
                 .and_then(|s| s.lease_transitions)
-                .map(i64::from)
-                .unwrap_or(0)),
+                .map_or(0, i64::from)),
             Err(e) if is_not_found(&e) => Ok(0),
             Err(e) => Err(Error::GetLease(e)),
         }
@@ -201,8 +201,8 @@ impl Elector {
             };
 
             tokio::select! {
-                _ = cancel.cancelled() => {}
-                _ = tokio::time::sleep(backoff) => {}
+                () = cancel.cancelled() => {}
+                () = tokio::time::sleep(backoff) => {}
             }
         }
     }
@@ -303,10 +303,10 @@ fn lease_spec_to_record(spec: Option<&LeaseSpec>) -> LeaderElectionRecord {
     };
     LeaderElectionRecord {
         holder_identity: spec.holder_identity.clone().unwrap_or_default(),
-        lease_duration_seconds: spec.lease_duration_seconds.map(i64::from).unwrap_or(0),
+        lease_duration_seconds: spec.lease_duration_seconds.map_or(0, i64::from),
         acquire_time: spec.acquire_time.as_ref().and_then(micro_time_to_chrono),
         renew_time: spec.renew_time.as_ref().and_then(micro_time_to_chrono),
-        leader_transitions: spec.lease_transitions.map(i64::from).unwrap_or(0),
+        leader_transitions: spec.lease_transitions.map_or(0, i64::from),
     }
 }
 
@@ -430,18 +430,18 @@ impl<'a> LeaderElector<'a> {
         let mut succeeded = false;
         while !ctx.is_cancelled() {
             succeeded = tokio::select! {
-                _ = ctx.cancelled() => false,
+                () = ctx.cancelled() => false,
                 ok = self.try_acquire_or_renew() => ok,
             };
-            if !succeeded {
-                tracing::debug!("failed to acquire lease {desc}");
-            } else {
+            if succeeded {
                 tracing::info!("successfully acquired lease {desc}");
                 ctx.cancel();
+            } else {
+                tracing::debug!("failed to acquire lease {desc}");
             }
             tokio::select! {
-                _ = ctx.cancelled() => break,
-                _ = tokio::time::sleep(jitter(self.config.retry_period)) => {}
+                () = ctx.cancelled() => break,
+                () = tokio::time::sleep(jitter(self.config.retry_period)) => {}
             }
         }
         succeeded
@@ -459,17 +459,17 @@ impl<'a> LeaderElector<'a> {
             let deadline = tokio::time::Instant::now() + self.config.renew_deadline;
             let err: Option<&str> = loop {
                 let renewed = tokio::select! {
-                    _ = ctx.cancelled() => break Some("context canceled"),
-                    _ = tokio::time::sleep_until(deadline) => break Some("context deadline exceeded"),
+                    () = ctx.cancelled() => break Some("context canceled"),
+                    () = tokio::time::sleep_until(deadline) => break Some("context deadline exceeded"),
                     ok = self.try_acquire_or_renew() => ok,
                 };
                 if renewed {
                     break None;
                 }
                 tokio::select! {
-                    _ = ctx.cancelled() => break Some("context canceled"),
-                    _ = tokio::time::sleep_until(deadline) => break Some("context deadline exceeded"),
-                    _ = tokio::time::sleep(self.config.retry_period) => {}
+                    () = ctx.cancelled() => break Some("context canceled"),
+                    () = tokio::time::sleep_until(deadline) => break Some("context deadline exceeded"),
+                    () = tokio::time::sleep(self.config.retry_period) => {}
                 }
             };
             match err {
@@ -480,8 +480,8 @@ impl<'a> LeaderElector<'a> {
                 }
             }
             tokio::select! {
-                _ = ctx.cancelled() => break,
-                _ = tokio::time::sleep(self.config.retry_period) => {}
+                () = ctx.cancelled() => break,
+                () = tokio::time::sleep(self.config.retry_period) => {}
             }
         }
 
@@ -626,7 +626,7 @@ impl<'a> LeaderElector<'a> {
 /// `wait.Jitter(duration, JITTER_FACTOR)`.
 fn jitter(d: Duration) -> Duration {
     let f: f64 = rand::random_range(0.0..1.0);
-    d.mul_f64(1.0 + f * JITTER_FACTOR)
+    d.mul_f64(f.mul_add(JITTER_FACTOR, 1.0))
 }
 
 #[cfg(test)]

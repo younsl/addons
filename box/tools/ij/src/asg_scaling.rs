@@ -1,8 +1,8 @@
 //! ASG Scaling tab: scan and scale Auto Scaling Groups.
 
-pub(crate) mod app;
-pub(crate) mod aws;
-pub(crate) mod ui;
+pub mod app;
+pub mod aws;
+pub mod ui;
 
 use tokio::sync::mpsc;
 use tracing::warn;
@@ -13,7 +13,7 @@ use crate::config::{AWS_REGIONS, Config};
 use self::aws::AsgInfo;
 
 /// Messages sent from background scan/apply tasks to the TUI loop.
-pub(crate) enum Msg {
+pub enum Msg {
     /// ASG scan completed for all regions.
     ScanFinished(Vec<AsgInfo>),
     /// ASG scan failed.
@@ -27,14 +27,15 @@ pub(crate) enum Msg {
 }
 
 /// Spawn background ASG scan across regions.
-pub(crate) fn spawn_scan(config: &Config, tx: mpsc::UnboundedSender<Msg>) {
+pub fn spawn_scan(config: &Config, tx: mpsc::UnboundedSender<Msg>) {
     let profile = config.profile.clone().unwrap_or_else(|| "default".into());
-    let regions: Vec<String> = if let Some(ref r) = config.region {
-        vec![r.clone()]
-    } else if !config.scan_regions.is_empty() {
-        config.scan_regions.clone()
-    } else {
-        AWS_REGIONS.iter().map(|s| s.to_string()).collect()
+    let regions: Vec<String> = match &config.region {
+        Some(r) => vec![r.clone()],
+        None if !config.scan_regions.is_empty() => config.scan_regions.clone(),
+        None => AWS_REGIONS
+            .iter()
+            .map(std::string::ToString::to_string)
+            .collect(),
     };
 
     tokio::spawn(async move {
@@ -66,7 +67,7 @@ pub(crate) fn spawn_scan(config: &Config, tx: mpsc::UnboundedSender<Msg>) {
 }
 
 /// Spawn background apply operations for selected ASGs.
-pub(crate) fn spawn_apply(
+pub fn spawn_apply(
     config: &Config,
     updates: Vec<(String, String, i32, i32, i32)>, // (name, region, min, max, desired)
     tx: mpsc::UnboundedSender<Msg>,

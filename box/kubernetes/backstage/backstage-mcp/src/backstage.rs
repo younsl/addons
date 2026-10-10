@@ -79,6 +79,8 @@ impl Client {
             value.set_sensitive(true);
             headers.insert(AUTHORIZATION, value);
         }
+        // reqwest has no bundled provider, and installing is idempotent.
+        let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
         let http = reqwest::Client::builder()
             .default_headers(headers)
             .timeout(timeout)

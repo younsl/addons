@@ -475,7 +475,7 @@ impl Uploader {
                 created_output = Vec::new();
                 for (index, artifact) in create.iter().enumerate() {
                     let mut artifact = artifact.clone();
-                    artifact.publication_id = publication.id.clone();
+                    artifact.publication_id.clone_from(&publication.id);
                     planned_paths.insert(artifact.path.clone());
                     if existing_paths.contains(&artifact.path) {
                         replace_batch.push(artifact);
@@ -808,7 +808,7 @@ impl Uploader {
             }
         }
         match commit_err {
-            Err(meta::Error::ArtifactConflict) | Err(meta::Error::DerivedMetadataChanged) => {
+            Err(meta::Error::ArtifactConflict | meta::Error::DerivedMetadataChanged) => {
                 let mut p = upload_problem(
                     409,
                     "conflict_plan_changed",
@@ -917,7 +917,7 @@ impl Uploader {
                 "The uploaded file is not a valid Maven project POM",
             )
         };
-        let pom = parse_maven_pom(&value).map_err(|_| pom_invalid())?;
+        let pom = parse_maven_pom(&value).map_err(|()| pom_invalid())?;
         if pom.root != "project" {
             return Err(pom_invalid());
         }
@@ -1017,7 +1017,7 @@ impl Uploader {
                 "The JAR must contain META-INF/maven/plugin.xml",
             ));
         }
-        let mut descriptor = parse_plugin_descriptor(&descriptor_bytes).map_err(|_| {
+        let mut descriptor = parse_plugin_descriptor(&descriptor_bytes).map_err(|()| {
             upload_problem(
                 422,
                 "maven_plugin_descriptor_invalid",
@@ -1050,7 +1050,7 @@ impl Uploader {
             ));
         }
         if descriptor.name.is_empty() {
-            descriptor.name = manifest.artifact_id.clone();
+            descriptor.name.clone_from(&manifest.artifact_id);
         }
         Ok(descriptor)
     }
@@ -1087,7 +1087,7 @@ impl Uploader {
                 if contains_xml_directive(&value) || !valid_maven_plugin_metadata_xml(&value) {
                     return Err(unsupported());
                 }
-                document = parse_maven_plugin_metadata(&value).map_err(|_| unsupported())?;
+                document = parse_maven_plugin_metadata(&value).map_err(|()| unsupported())?;
                 if document.group_id != manifest.group_id {
                     return Err(unsupported());
                 }
@@ -1103,6 +1103,7 @@ impl Uploader {
             }
         }
         let mut found = false;
+        #[allow(clippy::suspicious_operation_groupings)]
         for plugin in &mut document.plugins {
             if plugin.prefix == descriptor.goal_prefix && plugin.artifact_id != manifest.artifact_id
             {
@@ -1114,8 +1115,8 @@ impl Uploader {
                 ));
             }
             if plugin.artifact_id == manifest.artifact_id {
-                plugin.name = descriptor.name.clone();
-                plugin.prefix = descriptor.goal_prefix.clone();
+                plugin.name.clone_from(&descriptor.name);
+                plugin.prefix.clone_from(&descriptor.goal_prefix);
                 found = true;
             }
         }
@@ -1334,7 +1335,7 @@ impl Uploader {
                 if contains_xml_directive(&value) || !valid_maven_metadata_xml(&value) {
                     return Err(unsupported());
                 }
-                metadata = parse_maven_metadata(&value).map_err(|_| unsupported())?;
+                metadata = parse_maven_metadata(&value).map_err(|()| unsupported())?;
                 if metadata.group_id != m.group_id || metadata.artifact_id != m.artifact_id {
                     return Err(upload_problem(
                         409,
@@ -1676,7 +1677,7 @@ pub(crate) fn parse_maven_metadata(value: &[u8]) -> Result<MavenMetadata, ()> {
             "metadata/versioning/release" => out.versioning.release = text.to_string(),
             "metadata/versioning/lastUpdated" => out.versioning.last_updated = text.to_string(),
             "metadata/versioning/versions/version" => {
-                out.versioning.versions.push(text.to_string())
+                out.versioning.versions.push(text.to_string());
             }
             _ => {}
         },

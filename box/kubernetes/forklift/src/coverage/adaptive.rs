@@ -150,7 +150,7 @@ impl AdaptiveLimiter {
                 RequestOutcome::Ok => {
                     let seconds = rtt.as_secs_f64();
                     if state.has_rtt
-                        && seconds > state.rtt_mean + RTT_DEVIATION_SCALE * state.rtt_dev
+                        && seconds > RTT_DEVIATION_SCALE.mul_add(state.rtt_dev, state.rtt_mean)
                     {
                         // Latency has climbed clear of its own recent spread, which
                         // is what a service does on the way to refusing requests.
@@ -223,8 +223,8 @@ fn observe_rtt_locked(state: &mut LimiterState, seconds: f64) {
         return;
     }
     let deviation = (seconds - state.rtt_mean).abs();
-    state.rtt_mean += EWMA_ALPHA * (seconds - state.rtt_mean);
-    state.rtt_dev += EWMA_ALPHA * (deviation - state.rtt_dev);
+    state.rtt_mean = EWMA_ALPHA.mul_add(seconds - state.rtt_mean, state.rtt_mean);
+    state.rtt_dev = EWMA_ALPHA.mul_add(deviation - state.rtt_dev, state.rtt_dev);
 }
 
 /// Sleeps for `d`, returning early when the scan is cancelled.

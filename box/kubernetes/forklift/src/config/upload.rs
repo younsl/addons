@@ -12,7 +12,7 @@ pub const DEFAULT_UI_UPLOAD_MAX_FILE_BYTES: i64 = 256 << 20;
 /// Bounds browser/API artifact publication. Parser limits that are
 /// intentionally fixed in v1 are still carried here so the uploader has one
 /// immutable configuration value and tests can assert every boundary.
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct UploadConfig {
     pub enabled: bool,
     pub max_duration: Duration,

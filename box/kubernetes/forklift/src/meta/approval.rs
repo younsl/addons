@@ -14,7 +14,7 @@ use super::{Error, Result, Store};
 /// repository. The package string is the canonical per-format name (npm
 /// package, normalized PyPI project, maven group:artifact, crate name, go
 /// module path).
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct PackageApproval {
     pub id: i64,
     pub repo_name: String,

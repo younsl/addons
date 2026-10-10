@@ -152,12 +152,9 @@ impl Manager {
             accept: PYPI_JSON_TYPE.to_string(),
             ..FetchSpec::blank()
         };
-        let resp = match e.upstream_get(&spec).await {
-            Ok(resp) => resp,
-            Err(_) => {
-                e.upstream_err.with_label_values(&[&res.repo.name]).inc();
-                return http_error(StatusCode::BAD_GATEWAY, "upstream unreachable");
-            }
+        let Ok(resp) = e.upstream_get(&spec).await else {
+            e.upstream_err.with_label_values(&[&res.repo.name]).inc();
+            return http_error(StatusCode::BAD_GATEWAY, "upstream unreachable");
         };
         if resp.status() == StatusCode::NOT_FOUND {
             e.neg.set(&neg_key, res.cfg.cache.negative_ttl.d());
@@ -225,9 +222,8 @@ impl Manager {
         // `Engine::gc_mu`).
         let _gc = e.gc_mu.read().await;
         let limited = tokio::io::AsyncReadExt::take(reader, MAX_METADATA_BYTES as u64);
-        let (digest, size) = match e.blobs.put(Box::pin(limited)).await {
-            Ok(v) => v,
-            Err(_) => return http_error(StatusCode::INTERNAL_SERVER_ERROR, "cache write failed"),
+        let Ok((digest, size)) = e.blobs.put(Box::pin(limited)).await else {
+            return http_error(StatusCode::INTERNAL_SERVER_ERROR, "cache write failed");
         };
         // The bytes are written but not yet referenced. Giving up here (the
         // client is gone) leaves them for the sweeper to reclaim, which is why
@@ -353,14 +349,13 @@ impl Manager {
         res: &Resolved,
         project: &str,
     ) -> Response {
-        let arts = match self
+        let Ok(arts) = self
             .engine
             .store
             .list_artifacts(res.repo.id, &format!("packages/{project}/"))
             .await
-        {
-            Ok(arts) => arts,
-            Err(_) => return http_error(StatusCode::INTERNAL_SERVER_ERROR, "metadata error"),
+        else {
+            return http_error(StatusCode::INTERNAL_SERVER_ERROR, "metadata error");
         };
         if arts.is_empty() {
             return not_found();
@@ -441,14 +436,13 @@ impl Manager {
         parts: &Arc<Parts>,
         res: &Resolved,
     ) -> Response {
-        let artifacts = match self
+        let Ok(artifacts) = self
             .engine
             .store
             .list_artifacts(res.repo.id, "packages/")
             .await
-        {
-            Ok(artifacts) => artifacts,
-            Err(_) => return http_error(StatusCode::INTERNAL_SERVER_ERROR, "metadata error"),
+        else {
+            return http_error(StatusCode::INTERNAL_SERVER_ERROR, "metadata error");
         };
         let mut seen = std::collections::HashSet::new();
         let mut projects: Vec<String> = Vec::new();
@@ -611,9 +605,8 @@ impl Manager {
         let max_request = max_file + MAX_METADATA_BYTES;
         let mut request = Request::from_parts((*parts).clone(), body);
         DefaultBodyLimit::max(max_request as usize).apply(&mut request);
-        let mut multipart = match Multipart::from_request(request, &()).await {
-            Ok(multipart) => multipart,
-            Err(_) => return http_error(StatusCode::BAD_REQUEST, "invalid multipart form"),
+        let Ok(mut multipart) = Multipart::from_request(request, &()).await else {
+            return http_error(StatusCode::BAD_REQUEST, "invalid multipart form");
         };
         let e = &self.engine;
         // Hold the GC read lock across the whole upload: the distribution bytes
@@ -724,7 +717,7 @@ impl Manager {
                 .entry(form_name)
                 .or_insert_with(|| String::from_utf8_lossy(&val).to_string());
         }
-        let name = normalize_pypi(fields.get("name").map(String::as_str).unwrap_or(""));
+        let name = normalize_pypi(fields.get("name").map_or("", String::as_str));
         if name.is_empty() || !have_content {
             if have_content {
                 e.abandon_blob(&digest, size).await;
@@ -739,7 +732,7 @@ impl Manager {
         if e.record_upload(
             &res.repo,
             &p,
-            fields.get("version").map(String::as_str).unwrap_or(""),
+            fields.get("version").map_or("", String::as_str),
             "application/octet-stream",
             &digest,
             size,
@@ -1156,7 +1149,7 @@ pub(crate) mod tests {
         let mut cfg = repoconfig::default();
         cfg.age_policy = AgePolicyConfig {
             enabled: true,
-            min_age: Duration::from_std(std::time::Duration::from_secs(30 * 24 * 60 * 60)),
+            min_age: Duration::from_std(std::time::Duration::from_hours(720)),
             action: ACTION_BLOCK.to_string(),
             ..Default::default()
         };

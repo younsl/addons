@@ -11,7 +11,7 @@ const SPINNER_FRAMES: &[char] = &['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦
 // Row status
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RowStatus {
     Pending,
     Applied,
@@ -33,7 +33,7 @@ pub struct AsgRow {
 }
 
 impl AsgRow {
-    pub fn from_info(info: AsgInfo) -> Self {
+    pub const fn from_info(info: AsgInfo) -> Self {
         Self {
             info,
             selected: false,
@@ -64,28 +64,28 @@ impl AsgRow {
     }
 
     /// Clear any pending changes.
-    pub fn clear_changes(&mut self) {
+    pub const fn clear_changes(&mut self) {
         self.new_min = None;
         self.new_max = None;
         self.new_desired = None;
     }
 
     /// Apply multiplier to this row's values.
-    pub fn apply_multiplier(&mut self, multiplier: i32) {
+    pub const fn apply_multiplier(&mut self, multiplier: i32) {
         self.new_min = Some(self.info.min_size * multiplier);
         self.new_max = Some(self.info.max_size * multiplier);
         self.new_desired = Some(self.info.desired_capacity * multiplier);
     }
 
     /// Apply absolute values.
-    pub fn apply_absolute(&mut self, min: i32, max: i32, desired: i32) {
+    pub const fn apply_absolute(&mut self, min: i32, max: i32, desired: i32) {
         self.new_min = Some(min);
         self.new_max = Some(max);
         self.new_desired = Some(desired);
     }
 
     /// Whether this row has pending changes.
-    pub fn has_changes(&self) -> bool {
+    pub const fn has_changes(&self) -> bool {
         self.new_min.is_some() || self.new_max.is_some() || self.new_desired.is_some()
     }
 }
@@ -120,14 +120,16 @@ impl ColWidths {
                 w.min = w.min.max(digit_width(r.info.min_size));
                 w.max = w.max.max(digit_width(r.info.max_size));
                 w.desired = w.desired.max(digit_width(r.info.desired_capacity));
-                w.instances = w.instances.max(digit_width(r.info.instances_count as i32));
+                w.instances = w.instances.max(digit_width(
+                    i32::try_from(r.info.instances_count).unwrap_or(i32::MAX),
+                ));
                 w.region = w.region.max(r.info.region.len());
                 w
             },
         )
     }
 
-    /// Build header columns as (formatted_text, is_sorted) pairs
+    /// Build header columns as (`formatted_text`, `is_sorted`) pairs
     /// so the UI can apply distinct styles to the sorted column.
     pub fn header_columns(
         &self,
@@ -167,12 +169,12 @@ impl ColWidths {
     }
 }
 
-fn digit_width(n: i32) -> usize {
+const fn digit_width(n: i32) -> usize {
     if n == 0 {
         return 1;
     }
     let abs = n.unsigned_abs();
-    let digits = (abs as f64).log10().floor() as usize + 1;
+    let digits = abs.ilog10() as usize + 1;
     if n < 0 { digits + 1 } else { digits }
 }
 
@@ -180,7 +182,7 @@ fn digit_width(n: i32) -> usize {
 // Sort
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SortField {
     Default,
     Name,
@@ -191,7 +193,7 @@ pub enum SortField {
     Region,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SortOrder {
     Asc,
     Desc,
@@ -200,7 +202,7 @@ pub enum SortOrder {
 impl SortField {
     /// Cycle: Default → Name↑ → Name↓ → Instances↓ → Instances↑ → Desired↓ → Desired↑
     ///        → Min↓ → Min↑ → Max↓ → Max↑ → Region↑ → Region↓ → Default
-    fn cycle(self, order: SortOrder) -> (SortField, SortOrder) {
+    const fn cycle(self, order: SortOrder) -> (Self, SortOrder) {
         match (self, order) {
             (Self::Default, _) => (Self::Name, SortOrder::Asc),
             (Self::Name, SortOrder::Asc) => (Self::Name, SortOrder::Desc),
@@ -223,7 +225,7 @@ impl SortField {
 // Input field for absolute value entry
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InputField {
     Min,
     Max,
@@ -231,7 +233,7 @@ pub enum InputField {
 }
 
 impl InputField {
-    pub fn next(self) -> Self {
+    pub const fn next(self) -> Self {
         match self {
             Self::Min => Self::Max,
             Self::Max => Self::Desired,
@@ -239,7 +241,7 @@ impl InputField {
         }
     }
 
-    pub fn prev(self) -> Self {
+    pub const fn prev(self) -> Self {
         match self {
             Self::Min => Self::Desired,
             Self::Max => Self::Min,
@@ -247,7 +249,7 @@ impl InputField {
         }
     }
 
-    pub fn label(self) -> &'static str {
+    pub const fn label(self) -> &'static str {
         match self {
             Self::Min => "Min",
             Self::Max => "Max",
@@ -260,7 +262,7 @@ impl InputField {
 // App mode
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AppMode {
     Scanning,
     Browse,
@@ -359,16 +361,16 @@ impl App {
         }
     }
 
-    pub fn tick_spinner(&mut self) {
+    pub const fn tick_spinner(&mut self) {
         self.scan_spinner_frame = self.scan_spinner_frame.wrapping_add(1);
     }
 
-    pub fn spinner_char(&self) -> char {
+    pub const fn spinner_char(&self) -> char {
         SPINNER_FRAMES[self.scan_spinner_frame % SPINNER_FRAMES.len()]
     }
 
     pub fn scan_elapsed_secs(&self) -> u64 {
-        self.scan_start.map(|s| s.elapsed().as_secs()).unwrap_or(0)
+        self.scan_start.map_or(0, |s| s.elapsed().as_secs())
     }
 
     /// Load ASG scan results into the app.
@@ -566,17 +568,17 @@ impl App {
         }
 
         match &self.mode {
-            AppMode::Scanning => self.handle_key_scanning(key),
+            AppMode::Scanning => Self::handle_key_scanning(key),
             AppMode::Browse => self.handle_key_browse(key),
             AppMode::ScaleMenu => self.handle_key_scale_menu(key),
             AppMode::InputAbsolute => self.handle_key_input_absolute(key),
             AppMode::Preview => self.handle_key_preview(key),
             AppMode::Applying => AppAction::None,
-            AppMode::Done | AppMode::Error(_) => self.handle_key_done(key),
+            AppMode::Done | AppMode::Error(_) => Self::handle_key_done(key),
         }
     }
 
-    fn handle_key_scanning(&mut self, key: KeyEvent) -> AppAction {
+    const fn handle_key_scanning(key: KeyEvent) -> AppAction {
         match key.code {
             KeyCode::Esc | KeyCode::Char('q') => AppAction::Quit,
             _ => AppAction::None,
@@ -586,13 +588,13 @@ impl App {
     fn handle_key_browse(&mut self, key: KeyEvent) -> AppAction {
         match (key.code, key.modifiers) {
             (KeyCode::Esc, _) => {
-                if !self.query.is_empty() {
+                if self.query.is_empty() {
+                    AppAction::Quit
+                } else {
                     self.query.clear();
                     self.cursor = 0;
                     self.update_filter();
                     AppAction::None
-                } else {
-                    AppAction::Quit
                 }
             }
             (KeyCode::Char('q'), KeyModifiers::NONE) if self.query.is_empty() => AppAction::Quit,
@@ -618,11 +620,11 @@ impl App {
                 self.move_down();
                 AppAction::None
             }
-            (KeyCode::PageUp, _) | (KeyCode::Left, _) => {
+            (KeyCode::PageUp | KeyCode::Left, _) => {
                 self.cursor = self.cursor.saturating_sub(10);
                 AppAction::None
             }
-            (KeyCode::PageDown, _) | (KeyCode::Right, _) => {
+            (KeyCode::PageDown | KeyCode::Right, _) => {
                 let max = self.filtered_indices.len().saturating_sub(1);
                 self.cursor = (self.cursor + 10).min(max);
                 AppAction::None
@@ -680,7 +682,6 @@ impl App {
                 AppAction::None
             }
 
-            (KeyCode::Enter, _) => AppAction::None,
             _ => AppAction::None,
         }
     }
@@ -785,7 +786,7 @@ impl App {
         }
     }
 
-    fn handle_key_done(&mut self, key: KeyEvent) -> AppAction {
+    const fn handle_key_done(key: KeyEvent) -> AppAction {
         match key.code {
             KeyCode::Esc | KeyCode::Char('q') | KeyCode::Enter => AppAction::Quit,
             _ => AppAction::None,
@@ -796,7 +797,7 @@ impl App {
     // Navigation helpers
     // -----------------------------------------------------------------------
 
-    fn move_up(&mut self) {
+    const fn move_up(&mut self) {
         if self.filtered_indices.is_empty() {
             return;
         }
@@ -807,7 +808,7 @@ impl App {
         }
     }
 
-    fn move_down(&mut self) {
+    const fn move_down(&mut self) {
         if self.filtered_indices.is_empty() {
             return;
         }
@@ -832,7 +833,7 @@ impl App {
         }
     }
 
-    fn current_input_buf_mut(&mut self) -> &mut String {
+    const fn current_input_buf_mut(&mut self) -> &mut String {
         match self.input_field {
             InputField::Min => &mut self.input_min,
             InputField::Max => &mut self.input_max,
@@ -878,7 +879,7 @@ mod tests {
             min_size: min,
             max_size: max,
             desired_capacity: desired,
-            instances_count: desired as usize,
+            instances_count: usize::try_from(desired).unwrap(),
             region: "us-east-1".into(),
         }
     }
@@ -1043,7 +1044,7 @@ mod tests {
         let mut app = make_app();
         app.query = "web".into();
         app.update_filter();
-        assert!(!app.filtered_indices.is_empty());
+        assert_ne!(app.filtered_indices, [] as [(usize, u32); 0]);
         assert_eq!(app.filtered_indices[0].0, 0);
     }
 
@@ -1142,7 +1143,7 @@ mod tests {
             app.handle_key(press(KeyCode::Esc)),
             AppAction::None
         ));
-        assert!(app.query.is_empty());
+        assert_eq!(app.query, "");
     }
 
     #[test]
@@ -1244,7 +1245,7 @@ mod tests {
         let mut app = make_app();
         app.query = "test".into();
         app.handle_key(press_mod(KeyCode::Char('u'), KeyModifiers::CONTROL));
-        assert!(app.query.is_empty());
+        assert_eq!(app.query, "");
     }
 
     #[test]
@@ -1409,7 +1410,7 @@ mod tests {
         app.confirm_input = "no".into();
         let action = app.handle_key(press(KeyCode::Enter));
         assert!(matches!(action, AppAction::None));
-        assert!(app.confirm_input.is_empty());
+        assert_eq!(app.confirm_input, "");
     }
 
     #[test]

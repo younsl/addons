@@ -28,7 +28,7 @@ const OCI_PRUNE_BATCH: usize = 512;
 /// may delete it. It protects the push window: blobs upload before the manifest
 /// that will reference them, so a row must never be collected merely because its
 /// manifest has not arrived yet.
-pub(crate) const OCI_PRUNE_GRACE: Duration = Duration::from_secs(24 * 60 * 60);
+pub(crate) const OCI_PRUNE_GRACE: Duration = Duration::from_hours(24);
 
 impl Manager {
     /// Periodically prunes unreachable OCI objects and expired upload sessions.
@@ -45,7 +45,7 @@ impl Manager {
         ticker.tick().await;
         loop {
             tokio::select! {
-                _ = cancel.cancelled() => return,
+                () = cancel.cancelled() => return,
                 _ = ticker.tick() => {
                     if let Err(err) = self.prune_oci_once(session_ttl).await {
                         tracing::error!(err = %err, "oci prune failed");
@@ -68,7 +68,6 @@ impl Manager {
                 Ok(n) => total += n,
                 Err(err) => {
                     tracing::error!(repo = %repo.name, err = %err, "oci prune repo failed");
-                    continue;
                 }
             }
         }

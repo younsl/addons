@@ -1,7 +1,7 @@
 //! Every check a migration must pass before its first write. All of them run
 //! and are reported together, so one rerun fixes every problem at once.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::time::{Duration, Instant};
 
 use futures_util::{StreamExt, stream};
@@ -41,8 +41,7 @@ fn id_of(name: &str) -> &'static str {
         .iter()
         .chain(super::postflight::CHECKS)
         .find(|(_, n)| *n == name)
-        .map(|(id, _)| *id)
-        .unwrap_or("PF??")
+        .map_or("PF??", |(id, _)| *id)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -57,8 +56,8 @@ pub struct Check {
 }
 
 impl Check {
-    pub(crate) fn new(name: &'static str, status: Status, detail: impl Into<String>) -> Check {
-        Check {
+    pub(crate) fn new(name: &'static str, status: Status, detail: impl Into<String>) -> Self {
+        Self {
             id: id_of(name),
             name,
             status,
@@ -67,31 +66,32 @@ impl Check {
         }
     }
 
-    pub fn took(mut self, elapsed: Duration) -> Check {
+    #[must_use]
+    pub const fn took(mut self, elapsed: Duration) -> Self {
         self.latency_us = Some(elapsed.as_micros() as u64);
         self
     }
 
-    pub fn pass(name: &'static str, detail: impl Into<String>) -> Check {
-        Check::new(name, Status::Pass, detail)
+    pub fn pass(name: &'static str, detail: impl Into<String>) -> Self {
+        Self::new(name, Status::Pass, detail)
     }
 
-    pub fn warn(name: &'static str, detail: impl Into<String>) -> Check {
-        Check::new(name, Status::Warn, detail)
+    pub fn warn(name: &'static str, detail: impl Into<String>) -> Self {
+        Self::new(name, Status::Warn, detail)
     }
 
-    pub fn fail(name: &'static str, detail: impl Into<String>) -> Check {
-        Check::new(name, Status::Fail, detail)
+    pub fn fail(name: &'static str, detail: impl Into<String>) -> Self {
+        Self::new(name, Status::Fail, detail)
     }
 }
 
 impl Status {
-    pub(crate) fn tag(self) -> &'static str {
+    pub(crate) const fn tag(self) -> &'static str {
         match self {
-            Status::Pass => "PASS",
-            Status::Warn => "WARN",
-            Status::Fail => "FAIL",
-            Status::Skip => "SKIP",
+            Self::Pass => "PASS",
+            Self::Warn => "WARN",
+            Self::Fail => "FAIL",
+            Self::Skip => "SKIP",
         }
     }
 }
@@ -496,7 +496,7 @@ async fn target_write(dst: &Endpoint) -> Check {
                 key: key.clone(),
                 body: PutBody::Bytes(body.clone()),
                 content_length: body.len() as i64,
-                metadata: Default::default(),
+                metadata: HashMap::default(),
                 if_match: None,
                 if_none_match: None,
             })
@@ -677,10 +677,10 @@ mod tests {
     #[test]
     fn units_are_human_readable() {
         assert_eq!(bytes(512), "512 B");
-        assert_eq!(bytes(344064), "336.0 KiB");
-        assert_eq!(bytes(29794553856), "27.7 GiB");
+        assert_eq!(bytes(344_064), "336.0 KiB");
+        assert_eq!(bytes(29_794_553_856), "27.7 GiB");
         assert_eq!(duration(Duration::from_micros(340)), "0.3 ms");
-        assert_eq!(duration(Duration::from_micros(34_000)), "34 ms");
+        assert_eq!(duration(Duration::from_millis(34)), "34 ms");
         assert_eq!(
             per_request(&[Duration::from_millis(1), Duration::from_millis(3)]),
             ", 2 HEAD requests, avg 2.0 ms, max 3.0 ms"
@@ -831,7 +831,7 @@ mod tests {
             (
                 b"definitely not sqlite, 32 bytes!".to_vec(),
                 "\"e\"".into(),
-                Default::default(),
+                HashMap::default(),
             ),
         );
         let staging = tempfile::tempdir().unwrap();
@@ -872,7 +872,7 @@ mod tests {
         let dst = side("http://dst");
         dst.objects.items.lock().insert(
             "meta/forklift.db".into(),
-            (b"x".to_vec(), "\"x\"".into(), Default::default()),
+            (b"x".to_vec(), "\"x\"".into(), HashMap::default()),
         );
         let staging = tempfile::tempdir().unwrap();
         let checks = preflight_of(&src, &dst, &opts(staging.path())).await;

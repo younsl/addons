@@ -27,10 +27,9 @@ pub async fn require_auth(
     mut request: Request<Body>,
     next: Next,
 ) -> Response {
-    let auth_state = match &state.auth {
-        Some(auth) => auth,
+    let Some(auth_state) = &state.auth else {
         // Should not reach here if routing is set up correctly
-        None => return next.run(request).await,
+        return next.run(request).await;
     };
 
     // 1. Check session cookie
@@ -104,7 +103,7 @@ pub async fn require_auth(
     } else {
         // Browser requests get redirected to login
         let return_to = urlencoding::encode(&path);
-        Redirect::temporary(&format!("/auth/login?return_to={}", return_to)).into_response()
+        Redirect::temporary(&format!("/auth/login?return_to={return_to}")).into_response()
     }
 }
 
@@ -169,20 +168,20 @@ async fn validate_bearer_token(
 ) -> Result<AuthSession, String> {
     // Decode the JWT header to get the key ID
     let header =
-        jsonwebtoken::decode_header(token).map_err(|e| format!("Invalid JWT header: {}", e))?;
+        jsonwebtoken::decode_header(token).map_err(|e| format!("Invalid JWT header: {e}"))?;
 
     let kid = header.kid.ok_or("JWT missing kid")?;
 
     // Fetch JWKS from the provider
     let jwks_response = reqwest::get(auth_state.oidc_client.jwks_uri())
         .await
-        .map_err(|e| format!("Failed to fetch JWKS: {}", e))?
+        .map_err(|e| format!("Failed to fetch JWKS: {e}"))?
         .text()
         .await
-        .map_err(|e| format!("Failed to read JWKS response: {}", e))?;
+        .map_err(|e| format!("Failed to read JWKS response: {e}"))?;
 
     let jwks: serde_json::Value =
-        serde_json::from_str(&jwks_response).map_err(|e| format!("Invalid JWKS JSON: {}", e))?;
+        serde_json::from_str(&jwks_response).map_err(|e| format!("Invalid JWKS JSON: {e}"))?;
 
     // Find the matching key
     let keys = jwks["keys"].as_array().ok_or("JWKS missing keys array")?;
@@ -190,14 +189,14 @@ async fn validate_bearer_token(
     let jwk = keys
         .iter()
         .find(|k| k["kid"].as_str() == Some(&kid))
-        .ok_or_else(|| format!("No matching key found for kid: {}", kid))?;
+        .ok_or_else(|| format!("No matching key found for kid: {kid}"))?;
 
     // Build the decoding key from the JWK
     let n = jwk["n"].as_str().ok_or("JWK missing 'n' field")?;
     let e = jwk["e"].as_str().ok_or("JWK missing 'e' field")?;
 
     let decoding_key = jsonwebtoken::DecodingKey::from_rsa_components(n, e)
-        .map_err(|e| format!("Invalid RSA components: {}", e))?;
+        .map_err(|e| format!("Invalid RSA components: {e}"))?;
 
     // Validate the token
     let mut validation = jsonwebtoken::Validation::new(jsonwebtoken::Algorithm::RS256);
@@ -205,7 +204,7 @@ async fn validate_bearer_token(
     validation.set_audience(&[auth_state.oidc_client.client_id()]);
 
     let token_data = jsonwebtoken::decode::<serde_json::Value>(token, &decoding_key, &validation)
-        .map_err(|e| format!("JWT validation failed: {}", e))?;
+        .map_err(|e| format!("JWT validation failed: {e}"))?;
 
     let claims = &token_data.claims;
 

@@ -19,6 +19,7 @@ use tokio_util::sync::CancellationToken;
 const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(15);
 
 fn main() -> std::process::ExitCode {
+    let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
     if std::env::args()
         .skip(1)
         .any(|a| a == "-version" || a == "--version")
@@ -47,10 +48,6 @@ fn main() -> std::process::ExitCode {
 }
 
 async fn run() -> anyhow::Result<()> {
-    // reqwest is built with `rustls-no-provider`, so the process-wide crypto
-    // provider has to be installed before the first HTTPS upstream call.
-    let _ = rustls::crypto::ring::default_provider().install_default();
-
     let addr = env_or("FORKLIFT_MCP_ADDR", ":8080");
     // Metrics are always served on their own listener, never on the MCP
     // traffic port, so the Service can keep /metrics off the client-facing
@@ -145,7 +142,7 @@ async fn run() -> anyhow::Result<()> {
     tokio::select! {
         res = wait(&mut http) => return res,
         res = wait(&mut metrics_http) => return res,
-        _ = signals() => {}
+        () = signals() => {}
     }
 
     tracing::info!("shutting down");
@@ -170,12 +167,9 @@ async fn signals() {
     #[cfg(unix)]
     {
         use tokio::signal::unix::{SignalKind, signal};
-        let mut term = match signal(SignalKind::terminate()) {
-            Ok(s) => s,
-            Err(_) => {
-                let _ = tokio::signal::ctrl_c().await;
-                return;
-            }
+        let Ok(mut term) = signal(SignalKind::terminate()) else {
+            let _ = tokio::signal::ctrl_c().await;
+            return;
         };
         tokio::select! {
             _ = tokio::signal::ctrl_c() => {}

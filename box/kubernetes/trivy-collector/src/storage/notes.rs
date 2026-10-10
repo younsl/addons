@@ -12,7 +12,7 @@
 //! projected into list and detail responses — so the whole object is watched
 //! into memory and merged after the store call returns.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::sync::{Arc, RwLock};
 
 use futures::StreamExt;
@@ -64,6 +64,7 @@ pub struct Note {
 }
 
 /// Stable ConfigMap key for a report identity.
+#[must_use]
 pub fn note_key(cluster: &str, report_type: &str, namespace: &str, name: &str) -> String {
     let mut hasher = Sha256::new();
     for part in [cluster, report_type, namespace, name] {
@@ -81,6 +82,7 @@ pub struct NotesCache {
 }
 
 impl NotesCache {
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
@@ -122,7 +124,7 @@ impl NotesCache {
     pub fn bytes(&self) -> usize {
         self.read()
             .iter()
-            .map(|(k, v)| k.len() + serde_json::to_string(v).map(|s| s.len()).unwrap_or(0))
+            .map(|(k, v)| k.len() + serde_json::to_string(v).map_or(0, |s| s.len()))
             .sum()
     }
 
@@ -177,6 +179,7 @@ pub struct NotesStore {
 }
 
 impl NotesStore {
+    #[must_use]
     pub fn new(client: Client, namespace: String, configmap_name: String) -> Self {
         Self {
             client,
@@ -186,14 +189,17 @@ impl NotesStore {
         }
     }
 
+    #[must_use]
     pub fn namespace(&self) -> &str {
         &self.namespace
     }
 
+    #[must_use]
     pub fn configmap_name(&self) -> &str {
         &self.configmap_name
     }
 
+    #[must_use]
     pub fn cache(&self) -> &NotesCache {
         &self.cache
     }
@@ -216,7 +222,7 @@ impl NotesStore {
                 labels: Some(super::managed_labels("trivy-collector-notes")),
                 ..Default::default()
             },
-            data: Some(Default::default()),
+            data: Some(BTreeMap::default()),
             ..Default::default()
         };
         match api.create(&PostParams::default(), &cm).await {
@@ -330,14 +336,14 @@ impl NotesStore {
                 }
                 ev = stream.next() => {
                     match ev {
-                        Some(Ok(Event::Apply(cm))) | Some(Ok(Event::InitApply(cm))) => {
+                        Some(Ok(Event::Apply(cm) | Event::InitApply(cm))) => {
                             self.cache.absorb(&cm);
                         }
                         Some(Ok(Event::Delete(_))) => {
                             warn!("Notes ConfigMap deleted — clearing cache");
                             self.cache.clear();
                         }
-                        Some(Ok(Event::Init)) | Some(Ok(Event::InitDone)) => {}
+                        Some(Ok(Event::Init | Event::InitDone)) => {}
                         Some(Err(e)) => error!(error = %e, "Notes ConfigMap watcher error"),
                         None => {
                             warn!("Notes ConfigMap watcher stream ended");
@@ -379,8 +385,7 @@ fn build_note(
 fn projected_bytes(current: usize, new_json: &str, existing: Option<&Note>) -> usize {
     let replaced = existing
         .and_then(|n| serde_json::to_string(n).ok())
-        .map(|s| s.len())
-        .unwrap_or(0);
+        .map_or(0, |s| s.len());
     current
         .saturating_sub(replaced)
         .saturating_add(new_json.len())
@@ -454,7 +459,7 @@ mod tests {
 
         let mut other = meta("prod", "sbomreport", "default", "redis");
         cache.merge_meta(&mut other);
-        assert!(other.notes.is_empty());
+        assert_eq!(other.notes, "");
     }
 
     #[test]
@@ -462,7 +467,7 @@ mod tests {
         let cache = NotesCache::new();
         let mut metas = vec![meta("prod", "sbomreport", "default", "nginx")];
         cache.merge_all(&mut metas);
-        assert!(metas[0].notes.is_empty());
+        assert_eq!(metas[0].notes, "");
     }
 
     #[test]
@@ -478,7 +483,7 @@ mod tests {
         ];
         cache.merge_all(&mut metas);
         assert_eq!(metas[0].notes, "first");
-        assert!(metas[1].notes.is_empty());
+        assert_eq!(metas[1].notes, "");
     }
 
     #[test]

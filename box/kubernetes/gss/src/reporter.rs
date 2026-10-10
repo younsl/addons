@@ -1,5 +1,6 @@
 use crate::models::ScanResult;
 use anyhow::Result;
+use std::fmt::Write as _;
 
 const KST_OFFSET_HOURS: i32 = 9;
 
@@ -10,7 +11,7 @@ pub trait ReportFormatter: Send + Sync {
 pub struct ConsoleFormatter;
 
 impl ConsoleFormatter {
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self
     }
 
@@ -35,8 +36,7 @@ impl ConsoleFormatter {
                 .map(|h| {
                     h.parse::<i32>()
                         .map(|h| (h + KST_OFFSET_HOURS) % 24)
-                        .map(|h| h.to_string())
-                        .unwrap_or_else(|_| h.to_string())
+                        .map_or_else(|_| h.to_string(), |h| h.to_string())
                 })
                 .collect();
             (
@@ -56,7 +56,7 @@ impl ConsoleFormatter {
                 let kst_end = (end + KST_OFFSET_HOURS) % 24;
                 (
                     minute.to_string(),
-                    format!("{}-{}", kst_start, kst_end),
+                    format!("{kst_start}-{kst_end}"),
                     day.to_string(),
                     month.to_string(),
                     dow.to_string(),
@@ -87,12 +87,12 @@ impl ConsoleFormatter {
             match hour.parse::<i32>() {
                 Ok(h) => {
                     let kst_hour = (h + KST_OFFSET_HOURS) % 24;
-                    let mut kst_dow = dow.to_string();
-
                     // Adjust day of week if hour wraps to next day
-                    if h + KST_OFFSET_HOURS >= 24 && dow != "*" {
-                        kst_dow = Self::adjust_day_of_week(dow);
-                    }
+                    let kst_dow = if h + KST_OFFSET_HOURS >= 24 && dow != "*" {
+                        Self::adjust_day_of_week(dow)
+                    } else {
+                        dow.to_string()
+                    };
 
                     (
                         minute.to_string(),
@@ -134,10 +134,8 @@ impl ConsoleFormatter {
     }
 
     fn increment_day(day: &str) -> String {
-        match day.parse::<i32>() {
-            Ok(d) => ((d % 7) + 1).to_string(),
-            Err(_) => day.to_string(),
-        }
+        day.parse::<i32>()
+            .map_or_else(|_| day.to_string(), |d| ((d % 7) + 1).to_string())
     }
 }
 
@@ -152,23 +150,27 @@ impl ReportFormatter for ConsoleFormatter {
         let mut output = String::new();
 
         // Build info
-        output.push_str(&format!("Version: {}\n", env!("CARGO_PKG_VERSION")));
-        output.push_str(&format!(
-            "Build Date: {}\n",
+        let _ = writeln!(output, "Version: {}", env!("CARGO_PKG_VERSION"));
+        let _ = writeln!(
+            output,
+            "Build Date: {}",
             option_env!("BUILD_DATE").unwrap_or("unknown")
-        ));
-        output.push_str(&format!(
-            "Git Commit: {}\n",
+        );
+        let _ = writeln!(
+            output,
+            "Git Commit: {}",
             option_env!("GIT_COMMIT").unwrap_or("unknown")
-        ));
-        output.push_str(&format!(
+        );
+        let _ = write!(
+            output,
             "Rust Version: {}\n\n",
             option_env!("RUSTC_VERSION").unwrap_or(env!("CARGO_PKG_RUST_VERSION"))
-        ));
+        );
 
         // Table header
-        output.push_str(&format!(
-            "{:<4} {:<30} {:<40} {:<20} {:<20} {:<25} {:<15}\n",
+        let _ = writeln!(
+            output,
+            "{:<4} {:<30} {:<40} {:<20} {:<20} {:<25} {:<15}",
             "NO",
             "REPOSITORY",
             "WORKFLOW",
@@ -176,7 +178,7 @@ impl ReportFormatter for ConsoleFormatter {
             "KST SCHEDULE",
             "WORKFLOW LAST AUTHOR",
             "LAST STATUS"
-        ));
+        );
         output.push_str(&"-".repeat(175));
         output.push('\n');
 
@@ -196,8 +198,9 @@ impl ReportFormatter for ConsoleFormatter {
                 format!("{} (inactive)", workflow.workflow_last_author)
             };
 
-            output.push_str(&format!(
-                "{:<4} {:<30} {:<40} {:<20} {:<20} {:<25} {:<15}\n",
+            let _ = writeln!(
+                output,
+                "{:<4} {:<30} {:<40} {:<20} {:<20} {:<25} {:<15}",
                 idx + 1,
                 truncate(&workflow.repo_name, 30),
                 truncate(&workflow.workflow_name, 40),
@@ -205,17 +208,18 @@ impl ReportFormatter for ConsoleFormatter {
                 truncate(&kst_schedule, 20),
                 truncate(&author, 25),
                 truncate(&workflow.last_status, 15)
-            ));
+            );
         }
 
         output.push('\n');
-        output.push_str(&format!(
-            "Total: {} scheduled workflows found in {} repositories ({} excluded)\n",
+        let _ = writeln!(
+            output,
+            "Total: {} scheduled workflows found in {} repositories ({} excluded)",
             result.workflows.len(),
             result.total_repos,
             result.excluded_repos_count
-        ));
-        output.push_str(&format!("Scan duration: {:?}\n", result.scan_duration));
+        );
+        let _ = writeln!(output, "Scan duration: {:?}", result.scan_duration);
 
         Ok(output)
     }

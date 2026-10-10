@@ -135,7 +135,7 @@ pub(crate) fn rank_crates(
         }
     }
     let exact = terms.join("-");
-    let first = terms.first().map(String::as_str).unwrap_or("");
+    let first = terms.first().map_or("", String::as_str);
     let mut hits: Vec<(u8, String, CrateHit)> = crates
         .into_iter()
         .map(|(canonical, (name, version))| {

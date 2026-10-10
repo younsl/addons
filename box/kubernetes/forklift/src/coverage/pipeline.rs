@@ -177,9 +177,8 @@ impl Scanner {
             Err(e) if e.is_not_found() => return Ok(None),
             Err(e) => return Err(e),
         };
-        let c = match commits.first() {
-            Some(c) => c,
-            None => return Ok(None),
+        let Some(c) = commits.first() else {
+            return Ok(None);
         };
         Ok(Some(LastCommit {
             ref_: r#ref,

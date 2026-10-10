@@ -421,7 +421,7 @@ pub async fn list_clusters(State(state): State<AppState>) -> impl IntoResponse {
 )]
 pub async fn get_stats(State(state): State<AppState>) -> impl IntoResponse {
     match state.store.get_stats().await {
-        Ok(stats) => (StatusCode::OK, Json(stats)),
+        Ok(body) => (StatusCode::OK, Json(body)),
         Err(e) => {
             error!(error = %e, "Failed to get stats");
             (
@@ -717,8 +717,7 @@ pub async fn get_status(State(state): State<AppState>) -> impl IntoResponse {
         .store
         .list_clusters()
         .await
-        .map(|c| c.len() as i64)
-        .unwrap_or(0);
+        .map_or(0, |c| c.len() as i64);
 
     let status = StatusResponse {
         hostname: state.runtime.hostname.clone(),
@@ -757,16 +756,16 @@ pub async fn get_config(State(state): State<AppState>) -> impl IntoResponse {
         ConfigItem::public(env::MODE, &c.mode),
         ConfigItem::public(env::CLUSTER_NAME, &c.cluster_name),
         ConfigItem::public(env::NAMESPACES, &namespaces_str),
-        ConfigItem::public(env::SERVER_PORT, c.server_port),
-        ConfigItem::public(env::HEALTH_PORT, c.health_port),
+        ConfigItem::public(env::SERVER_PORT, &c.server_port),
+        ConfigItem::public(env::HEALTH_PORT, &c.health_port),
         ConfigItem::public(env::SCRAPER_URL, &c.scraper_url),
         ConfigItem::public(env::LOG_LEVEL, &c.log_level),
         ConfigItem::public(env::LOG_FORMAT, &c.log_format),
-        ConfigItem::public(env::WATCH_LOCAL, c.watch_local),
-        ConfigItem::public(env::COLLECT_VULN, c.collect_vulnerability_reports),
-        ConfigItem::public(env::COLLECT_SBOM, c.collect_sbom_reports),
+        ConfigItem::public(env::WATCH_LOCAL, &c.watch_local),
+        ConfigItem::public(env::COLLECT_VULN, &c.collect_vulnerability_reports),
+        ConfigItem::public(env::COLLECT_SBOM, &c.collect_sbom_reports),
         ConfigItem::public(env::AUTH_MODE, auth_mode_str),
-        ConfigItem::public(env::MCP_ENABLED, c.mcp_enabled),
+        ConfigItem::public(env::MCP_ENABLED, &c.mcp_enabled),
     ];
 
     (StatusCode::OK, Json(ConfigResponse { items }))
@@ -1000,7 +999,7 @@ mod tests {
         assert_eq!(response.status(), StatusCode::OK);
         let json = response_json(response).await;
         assert_eq!(json["total"], 0);
-        assert!(json["items"].as_array().unwrap().is_empty());
+        assert_eq!(json["items"], serde_json::json!([]));
     }
 
     #[tokio::test]
@@ -1467,9 +1466,9 @@ mod tests {
 
         assert_eq!(response.status(), StatusCode::OK);
         let json = response_json(response).await;
-        assert!(!json["version"].as_str().unwrap().is_empty());
-        assert!(!json["commit"].as_str().unwrap().is_empty());
-        assert!(!json["platform"].as_str().unwrap().is_empty());
+        assert_ne!(json["version"].as_str().unwrap(), "");
+        assert_ne!(json["commit"].as_str().unwrap(), "");
+        assert_ne!(json["platform"].as_str().unwrap(), "");
     }
 
     // ===== get_status =====
@@ -1515,7 +1514,7 @@ mod tests {
         assert_eq!(response.status(), StatusCode::OK);
         let json = response_json(response).await;
         let items = json["items"].as_array().unwrap();
-        assert!(!items.is_empty());
+        assert_ne!(items.as_slice(), &[] as &[serde_json::Value]);
 
         let env_names: Vec<&str> = items.iter().map(|i| i["env"].as_str().unwrap()).collect();
         assert!(env_names.contains(&"MODE"));

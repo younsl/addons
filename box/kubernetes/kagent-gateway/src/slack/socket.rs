@@ -145,6 +145,7 @@ impl Client {
     /// the TLS backend is unusable.
     #[must_use]
     pub fn new(api_url: &str, app_token: &str, metrics: Arc<Metrics>) -> Self {
+        crate::install_crypto_provider();
         Self {
             // The connection open call is a normal Web API request; the
             // WebSocket itself is not bounded by this timeout.

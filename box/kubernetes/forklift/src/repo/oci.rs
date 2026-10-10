@@ -23,7 +23,6 @@ use axum::response::{IntoResponse, Response};
 use http::header::{CONTENT_TYPE, ETAG};
 use http::request::Parts;
 use http::{HeaderValue, Method, StatusCode};
-use once_cell::sync::Lazy;
 use regex::Regex;
 
 use crate::meta::{self, Artifact, OCITag};
@@ -34,19 +33,20 @@ use super::{FetchSpec, Manager, header_str, itoa, username_from_context};
 
 /// The spec grammar for an OCI repository name (the image name inside a
 /// Forklift repository).
-pub(crate) static OCI_NAME_RE: Lazy<Regex> = Lazy::new(|| {
+pub(crate) static OCI_NAME_RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
     Regex::new(r"^[a-z0-9]+(?:[._-][a-z0-9]+)*(?:/[a-z0-9]+(?:[._-][a-z0-9]+)*)*$")
         .expect("valid regex")
 });
 
 /// Accepts the only algorithm Forklift stores by: the blob store is keyed by
 /// SHA-256, so a digest in another algorithm is unresolvable.
-pub(crate) static OCI_DIGEST_RE: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"^sha256:[a-f0-9]{64}$").expect("valid regex"));
+pub(crate) static OCI_DIGEST_RE: std::sync::LazyLock<Regex> =
+    std::sync::LazyLock::new(|| Regex::new(r"^sha256:[a-f0-9]{64}$").expect("valid regex"));
 
 /// The spec grammar for a tag reference.
-pub(crate) static OCI_TAG_RE: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"^[a-zA-Z0-9_][a-zA-Z0-9._-]{0,127}$").expect("valid regex"));
+pub(crate) static OCI_TAG_RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
+    Regex::new(r"^[a-zA-Z0-9_][a-zA-Z0-9._-]{0,127}$").expect("valid regex")
+});
 
 // Manifest media types accepted on push and requested on proxy pull. Docker
 // schema 1 is deliberately absent: it is signed, path-dependent and long
@@ -129,6 +129,7 @@ pub(crate) fn write_oci_error(status: StatusCode, code: &str, message: &str) -> 
 /// makes podman/docker drop their credentials entirely and then fail every
 /// push. Anonymous readers ignore the challenge and proceed; per-request
 /// authorization still governs access.
+#[allow(clippy::unused_async)]
 pub(crate) async fn handle_oci_base(m: Arc<Manager>, req: Request) -> Response {
     let (parts, _) = req.into_parts();
     if parts.method != Method::GET && parts.method != Method::HEAD {
@@ -356,22 +357,19 @@ impl Manager {
             }
         }
 
-        let art = match self
+        let Ok(art) = self
             .store
             .get_artifact(res.repo.id, &oci_manifest_path(&req.name, &digest))
             .await
-        {
-            Ok(art) => art,
-            Err(_) => {
-                if res.repo.r#type == meta::TYPE_PROXY {
-                    return self.oci_proxy_manifest(parts, res, req).await;
-                }
-                return write_oci_error(
-                    StatusCode::NOT_FOUND,
-                    "MANIFEST_UNKNOWN",
-                    "manifest unknown",
-                );
+        else {
+            if res.repo.r#type == meta::TYPE_PROXY {
+                return self.oci_proxy_manifest(parts, res, req).await;
             }
+            return write_oci_error(
+                StatusCode::NOT_FOUND,
+                "MANIFEST_UNKNOWN",
+                "manifest unknown",
+            );
         };
         let spec = FetchSpec {
             repo: res.repo.clone(),
@@ -425,22 +423,15 @@ impl Manager {
                 // policy gates for (name, reference); the blob request carries
                 // no version, so gates that need one no-op here exactly like
                 // versionless package paths.
-                let art = match self
+                let Ok(art) = self
                     .store
                     .get_artifact(res.repo.id, &oci_blob_path(&req.name, &req.reference))
                     .await
-                {
-                    Ok(art) => art,
-                    Err(_) => {
-                        if res.repo.r#type == meta::TYPE_PROXY {
-                            return self.oci_proxy_blob(&parts, &res, &req).await;
-                        }
-                        return write_oci_error(
-                            StatusCode::NOT_FOUND,
-                            "BLOB_UNKNOWN",
-                            "blob unknown",
-                        );
+                else {
+                    if res.repo.r#type == meta::TYPE_PROXY {
+                        return self.oci_proxy_blob(&parts, &res, &req).await;
                     }
+                    return write_oci_error(StatusCode::NOT_FOUND, "BLOB_UNKNOWN", "blob unknown");
                 };
                 if res.repo.r#type == meta::TYPE_PROXY {
                     self.engine
@@ -565,7 +556,7 @@ impl Manager {
             if artifact_type.is_empty()
                 && let Some(config) = &doc.config
             {
-                artifact_type = config.media_type.clone();
+                artifact_type.clone_from(&config.media_type);
             }
             if !filter.is_empty() && artifact_type != filter {
                 continue;
@@ -969,20 +960,26 @@ pub(crate) mod tests {
                 "blobs",
                 sha.clone(),
             ),
-            ("a/b/c/tags/list".into(), true, "a/b/c", "tags", "".into()),
+            (
+                "a/b/c/tags/list".into(),
+                true,
+                "a/b/c",
+                "tags",
+                String::new(),
+            ),
             (
                 "nginx/blobs/uploads/".into(),
                 true,
                 "nginx",
                 "uploads",
-                "".into(),
+                String::new(),
             ),
             (
                 "nginx/blobs/uploads".into(),
                 true,
                 "nginx",
                 "uploads",
-                "".into(),
+                String::new(),
             ),
             (
                 "nginx/blobs/uploads/0123456789abcdef0123456789abcdef".into(),
@@ -1000,15 +997,15 @@ pub(crate) mod tests {
                 "manifests",
                 "v1".into(),
             ),
-            ("UPPER/manifests/v1".into(), false, "", "", "".into()),
+            ("UPPER/manifests/v1".into(), false, "", "", String::new()),
             (
                 format!("nginx/referrers/{sha}"),
                 true,
                 "nginx",
                 "referrers",
-                sha.clone(),
+                sha,
             ),
-            ("nginx".into(), false, "", "", "".into()),
+            ("nginx".into(), false, "", "", String::new()),
         ];
         for (wildcard, ok, name, endpoint, reference) in cases {
             let got = parse_oci_path(&wildcard);

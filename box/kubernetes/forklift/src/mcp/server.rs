@@ -32,12 +32,13 @@ use crate::mcp::metrics::{Metrics, OUTCOME_ERROR, OUTCOME_OK, OUTCOME_TOOL_ERROR
 pub struct Query(BTreeMap<String, String>);
 
 impl Query {
-    pub fn new() -> Query {
-        Query(BTreeMap::new())
+    pub const fn new() -> Self {
+        Self(BTreeMap::new())
     }
 
     /// Sets `key` unless `value` is empty.
-    pub fn str(mut self, key: &str, value: &str) -> Query {
+    #[must_use]
+    pub fn str(mut self, key: &str, value: &str) -> Self {
         if !value.is_empty() {
             self.0.insert(key.to_string(), value.to_string());
         }
@@ -45,7 +46,8 @@ impl Query {
     }
 
     /// Sets `key` unless `value` is zero.
-    pub fn num(mut self, key: &str, value: i64) -> Query {
+    #[must_use]
+    pub fn num(mut self, key: &str, value: i64) -> Self {
         if value != 0 {
             self.0.insert(key.to_string(), value.to_string());
         }
@@ -53,7 +55,8 @@ impl Query {
     }
 
     /// Sets `key` to `"true"` when `value` is true; false is left out.
-    pub fn boolean(mut self, key: &str, value: bool) -> Query {
+    #[must_use]
+    pub fn boolean(mut self, key: &str, value: bool) -> Self {
         if value {
             self.0.insert(key.to_string(), "true".to_string());
         }
@@ -87,12 +90,13 @@ pub struct Body(BTreeMap<String, Value>);
 
 impl Body {
     /// An empty body. Unlike a missing body this is still sent, as `{}`.
-    pub fn new() -> Body {
-        Body(BTreeMap::new())
+    pub const fn new() -> Self {
+        Self(BTreeMap::new())
     }
 
     /// Sets `key` unless `value` is empty.
-    pub fn str(mut self, key: &str, value: &str) -> Body {
+    #[must_use]
+    pub fn str(mut self, key: &str, value: &str) -> Self {
         if !value.is_empty() {
             self.0
                 .insert(key.to_string(), Value::String(value.to_string()));
@@ -101,13 +105,14 @@ impl Body {
     }
 
     /// Sets `key` unconditionally.
-    pub fn set(mut self, key: &str, value: impl Into<Value>) -> Body {
+    #[must_use]
+    pub fn set(mut self, key: &str, value: impl Into<Value>) -> Self {
         self.0.insert(key.to_string(), value.into());
         self
     }
 
     /// The underlying object, for serialization.
-    pub fn as_map(&self) -> &BTreeMap<String, Value> {
+    pub const fn as_map(&self) -> &BTreeMap<String, Value> {
         &self.0
     }
 }
@@ -681,10 +686,10 @@ pub struct Server {
 impl Server {
     /// Builds the MCP server. `metrics` may be `None` to disable tool-call
     /// instrumentation.
-    pub fn new(client: Arc<Client>, version: &str, metrics: Option<Arc<Metrics>>) -> Arc<Server> {
-        let mut tools = Server::tool_definitions();
+    pub fn new(client: Arc<Client>, version: &str, metrics: Option<Arc<Metrics>>) -> Arc<Self> {
+        let mut tools = Self::tool_definitions();
         tools.sort_by(|a, b| a.name.cmp(&b.name));
-        Arc::new(Server {
+        Arc::new(Self {
             client,
             version: version.to_string(),
             metrics,
@@ -2037,7 +2042,7 @@ fn auth_header(context: &RequestContext<RoleServer>) -> Option<String> {
         .get::<http::request::Parts>()
         .and_then(|parts| parts.headers.get(http::header::AUTHORIZATION))
         .and_then(|v| v.to_str().ok())
-        .map(|v| v.to_string())
+        .map(std::string::ToString::to_string)
 }
 
 impl ServerHandler for Server {
@@ -2099,7 +2104,7 @@ pub(crate) mod tests {
     /// reqwest is built with `rustls-no-provider`; the binary installs the process
     /// default, so tests have to do it themselves before building a [`Client`].
     pub(crate) fn install_crypto_provider() {
-        let _ = rustls::crypto::ring::default_provider().install_default();
+        let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
     }
 
     pub(crate) async fn spawn_upstream(app: Router) -> String {
@@ -2121,6 +2126,7 @@ pub(crate) mod tests {
         }
     }
 
+    #[allow(clippy::unnecessary_wraps)]
     pub(crate) fn no_args() -> Option<rmcp::model::JsonObject> {
         Some(rmcp::model::JsonObject::new())
     }
@@ -2362,11 +2368,11 @@ pub(crate) mod tests {
         }
 
         impl Case {
-            fn query(mut self, q: &'static str) -> Case {
+            fn query(mut self, q: &'static str) -> Self {
                 self.query = q;
                 self
             }
-            fn body(mut self, b: Value) -> Case {
+            fn body(mut self, b: Value) -> Self {
                 self.body = Some(b);
                 self
             }

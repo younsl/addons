@@ -24,6 +24,7 @@ pub struct AuthSession {
 
 impl AuthSession {
     /// Check if the session has expired
+    #[must_use]
     pub fn is_expired(&self) -> bool {
         chrono::Utc::now().timestamp() >= self.expires_at
     }

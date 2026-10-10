@@ -163,7 +163,7 @@ pub struct UploadProblem {
     pub retryable: bool,
 }
 
-fn is_false(b: &bool) -> bool {
+const fn is_false(b: &bool) -> bool {
     !*b
 }
 
@@ -243,10 +243,10 @@ pub struct Uploader {
 }
 
 impl Uploader {
-    pub fn new(engine: Arc<Engine>, cfg: UploadConfig) -> Arc<Uploader> {
+    pub fn new(engine: Arc<Engine>, cfg: UploadConfig) -> Arc<Self> {
         let store = Arc::clone(&engine.store);
         let permits = cfg.max_concurrent.max(1) as usize;
-        Arc::new(Uploader {
+        Arc::new(Self {
             engine,
             store,
             cfg,
@@ -334,7 +334,7 @@ impl Uploader {
         }
     }
 
-    pub fn enabled(&self) -> bool {
+    pub const fn enabled(&self) -> bool {
         self.cfg.enabled
     }
 
@@ -559,6 +559,7 @@ impl Uploader {
     }
 
     /// Renders the outcome for an idempotency key that is already taken.
+    #[allow(clippy::unused_self)]
     fn replay_outcome(&self, existing: ArtifactUploadRequest) -> ReceiveOutcome {
         match existing.state.as_str() {
             UPLOAD_COMMITTED => {
@@ -983,8 +984,8 @@ pub struct ReceiveOutcome {
 }
 
 impl ReceiveOutcome {
-    fn problem(problem: Box<UploadProblem>) -> ReceiveOutcome {
-        ReceiveOutcome {
+    fn problem(problem: Box<UploadProblem>) -> Self {
+        Self {
             result: ArtifactUploadResult::default(),
             replay: false,
             problem: Some(*problem),
@@ -1053,6 +1054,7 @@ async fn read_at_most(
     Ok(Some(out))
 }
 
+#[allow(clippy::unnecessary_wraps)]
 pub(crate) fn random_upload_id() -> Option<String> {
     let mut value = [0u8; 16];
     rand::fill(&mut value);
@@ -1111,7 +1113,7 @@ pub(crate) mod tests {
             engine,
             UploadConfig {
                 enabled: true,
-                max_duration: std::time::Duration::from_secs(30 * 60),
+                max_duration: std::time::Duration::from_mins(30),
                 max_concurrent: 4,
                 max_concurrent_user: 2,
                 max_assets: 16,
@@ -1122,7 +1124,7 @@ pub(crate) mod tests {
                 go_max_zip_bytes: 500 << 20,
                 archive_max_entries: 100_000,
                 archive_max_meta_bytes: 16 << 20,
-                idempotency_ttl: std::time::Duration::from_secs(24 * 60 * 60),
+                idempotency_ttl: std::time::Duration::from_hours(24),
             },
         );
         let fixed = Utc.with_ymd_and_hms(2026, 7, 22, 12, 34, 56).unwrap();
@@ -1824,7 +1826,7 @@ pub(crate) mod tests {
             .get_artifact(repository.id, "native-widget/-/native-widget-2.0.0.tgz")
             .await
             .expect("tarball");
-        assert!(!artifact.publication_id.is_empty());
+        assert_ne!(artifact.publication_id, "");
         let packument = h
             .store
             .get_artifact(repository.id, "native-widget")
@@ -2045,7 +2047,7 @@ pub(crate) mod tests {
             .get_artifact(repository.id, "@acme/widget/-/widget-1.2.3.tgz")
             .await
             .expect("scoped tarball");
-        assert!(!artifact.publication_id.is_empty());
+        assert_ne!(artifact.publication_id, "");
     }
 
     #[tokio::test]
@@ -2081,7 +2083,7 @@ pub(crate) mod tests {
             )
             .await
             .expect("distribution");
-        assert!(!artifact.publication_id.is_empty());
+        assert_ne!(artifact.publication_id, "");
         assert_eq!(artifact.version, "3.1.4");
     }
 
@@ -2160,7 +2162,7 @@ pub(crate) mod tests {
             .get_artifact(repository.id, "api/v1/crates/widget/1.0.0/download")
             .await
             .expect("crate");
-        assert!(!artifact.publication_id.is_empty());
+        assert_ne!(artifact.publication_id, "");
         let index = h
             .store
             .get_artifact(repository.id, "wi/dg/widget")
@@ -2748,13 +2750,13 @@ pub(crate) mod tests {
     fn maven_metadata_xml_rejects_unknown_elements() {
         assert!(
         valid_maven_metadata_xml(
-            br#"<metadata><groupId>com.acme</groupId><artifactId>widget</artifactId><versioning><versions><version>1.0.0</version></versions></versioning></metadata>"#
+            br"<metadata><groupId>com.acme</groupId><artifactId>widget</artifactId><versioning><versions><version>1.0.0</version></versions></versioning></metadata>"
         ),
         "standard Maven metadata was rejected"
     );
         assert!(
             !valid_maven_metadata_xml(
-                br#"<metadata><groupId>com.acme</groupId><plugins/></metadata>"#
+                br"<metadata><groupId>com.acme</groupId><plugins/></metadata>"
             ),
             "unknown Maven metadata element was accepted"
         );
@@ -3352,7 +3354,7 @@ unix-extra = ["serde?/derive", "dep:serde"]
     #[tokio::test]
     async fn maven_supplied_pom_publishes() {
         let h = new_upload_test_harness().await;
-        let pom = r#"<project><modelVersion>4.0.0</modelVersion><groupId>com.acme</groupId><artifactId>widget</artifactId><version>1.0.0</version><packaging>jar</packaging></project>"#;
+        let pom = r"<project><modelVersion>4.0.0</modelVersion><groupId>com.acme</groupId><artifactId>widget</artifactId><version>1.0.0</version><packaging>jar</packaging></project>";
         let (content_type, body) = maven_jar_plus_pom_body(pom);
         let outcome = receive(
             &h.uploader,
@@ -3377,7 +3379,7 @@ unix-extra = ["serde?/derive", "dep:serde"]
     async fn maven_supplied_pom_mismatch_rejected() {
         let h = new_upload_test_harness().await;
         // The version differs from the manifest -> pom_coordinate_mismatch.
-        let pom = r#"<project><modelVersion>4.0.0</modelVersion><groupId>com.acme</groupId><artifactId>widget</artifactId><version>9.9.9</version></project>"#;
+        let pom = r"<project><modelVersion>4.0.0</modelVersion><groupId>com.acme</groupId><artifactId>widget</artifactId><version>9.9.9</version></project>";
         let (content_type, body) = maven_jar_plus_pom_body(pom);
         let outcome = receive(
             &h.uploader,

@@ -70,7 +70,10 @@ impl OidcClient {
             .await
             .context("Failed to parse OIDC discovery document")?;
 
-        let scopes: Vec<String> = scopes.split_whitespace().map(|s| s.to_string()).collect();
+        let scopes: Vec<String> = scopes
+            .split_whitespace()
+            .map(std::string::ToString::to_string)
+            .collect();
 
         info!(
             authorization_endpoint = %discovery.authorization_endpoint,
@@ -152,10 +155,10 @@ impl OidcClient {
         // Decode ID token claims (header + payload)
         let claims = decode_id_token_claims(id_token)?;
 
-        let expires_at = response
-            .expires_in
-            .map(|d| chrono::Utc::now().timestamp() + d as i64)
-            .unwrap_or_else(|| chrono::Utc::now().timestamp() + 3600);
+        let expires_at = response.expires_in.map_or_else(
+            || chrono::Utc::now().timestamp() + 3600,
+            |d| chrono::Utc::now().timestamp() + d as i64,
+        );
 
         let session = AuthSession {
             sub: claims.sub,
@@ -177,16 +180,19 @@ impl OidcClient {
     }
 
     /// Get the JWKS URI for Bearer token validation
+    #[must_use]
     pub fn jwks_uri(&self) -> &str {
         &self.jwks_uri
     }
 
     /// Get the issuer URL for token validation
+    #[must_use]
     pub fn issuer_url(&self) -> &str {
         &self.issuer
     }
 
     /// Get the client ID for audience validation
+    #[must_use]
     pub fn client_id(&self) -> &str {
         &self.client_id
     }

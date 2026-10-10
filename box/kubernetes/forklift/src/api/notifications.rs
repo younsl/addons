@@ -242,7 +242,7 @@ impl Handler {
                 continue;
             };
             let mut changed = false;
-            for name in cfg.notify.receivers.iter_mut() {
+            for name in &mut cfg.notify.receivers {
                 if name == old_name {
                     *name = new_name.to_string();
                     changed = true;

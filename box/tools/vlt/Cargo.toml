@@ -44,6 +44,8 @@ unsafe_code = "forbid"
 
 [lints.clippy]
 all = "warn"
+pedantic = "warn"
+nursery = "warn"
 
 [profile.release]
 opt-level = 3

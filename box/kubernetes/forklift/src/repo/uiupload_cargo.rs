@@ -278,7 +278,10 @@ impl Uploader {
                 .stage_generated(&index_path, "index", "text/plain; charset=utf-8", &value)
                 .await
                 .map_err(|_| stage_failed("The Cargo index could not be staged"))?;
-            batch.mutable_cas[0].artifact.blob_sha256 = staged_index.digest.clone();
+            batch.mutable_cas[0]
+                .artifact
+                .blob_sha256
+                .clone_from(&staged_index.digest);
             batch.mutable_cas[0].artifact.size = staged_index.size;
             batch.mutable_cas[0].expected_sha256 = expected;
             result.derived = vec![uploaded_result(&staged_index)];

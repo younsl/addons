@@ -34,7 +34,7 @@ impl DepsDev {
                 .build()
                 .unwrap_or_default()
         });
-        DepsDev {
+        Self {
             url: base_url.trim_end_matches('/').to_string(),
             client,
         }
@@ -114,7 +114,7 @@ impl Resolver for DepsDev {
     }
 
     /// Names the data source, recorded on each resolution it produces.
-    fn source(&self) -> &str {
+    fn source(&self) -> &'static str {
         "deps.dev"
     }
 }
@@ -147,7 +147,7 @@ pub(crate) mod tests {
     use crate::license::*;
 
     fn install_crypto() {
-        rustls::crypto::ring::default_provider()
+        rustls::crypto::aws_lc_rs::default_provider()
             .install_default()
             .ok();
     }

@@ -109,15 +109,17 @@ async fn detect_mfa_profile(profile: &str, aws_config_file: Option<&str>) -> Opt
     use aws_config::profile::load;
 
     #[allow(deprecated)]
-    let profile_files = match aws_config_file {
-        Some(path) => ProfileFiles::builder()
-            .with_file(ProfileFileKind::Config, path)
-            .include_default_credentials_file(true)
-            .build(),
+    let profile_files = aws_config_file.map_or_else(
         // `EnvConfigFiles::default()` includes both `~/.aws/config` and
         // `~/.aws/credentials`. The empty builder panics on `build()`.
-        None => ProfileFiles::default(),
-    };
+        ProfileFiles::default,
+        |path| {
+            ProfileFiles::builder()
+                .with_file(ProfileFileKind::Config, path)
+                .include_default_credentials_file(true)
+                .build()
+        },
+    );
 
     let profile_set = match load(
         &Fs::real(),
@@ -223,7 +225,8 @@ async fn resolve_mfa_credentials(
         .credentials
         .ok_or_else(|| Error::Aws("AssumeRole returned no credentials".into()))?;
 
-    let expiry = SystemTime::UNIX_EPOCH + Duration::from_secs(aws_creds.expiration.secs() as u64);
+    let expiry =
+        SystemTime::UNIX_EPOCH + Duration::from_secs(aws_creds.expiration.secs().cast_unsigned());
     let creds = Credentials::new(
         aws_creds.access_key_id,
         aws_creds.secret_access_key,

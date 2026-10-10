@@ -64,7 +64,7 @@ pub struct AlertRule {
     pub status: Option<crate::alerts::crd::AlertRuleStatus>,
 }
 
-fn default_true() -> bool {
+const fn default_true() -> bool {
     true
 }
 

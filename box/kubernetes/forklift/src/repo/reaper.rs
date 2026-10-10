@@ -28,7 +28,7 @@ impl Manager {
         ticker.tick().await;
         loop {
             tokio::select! {
-                _ = cancel.cancelled() => return,
+                () = cancel.cancelled() => return,
                 _ = ticker.tick() => {
                     if let Err(err) = self.reap_once().await {
                         tracing::error!(err = %err, "idle reaper failed");
@@ -89,7 +89,7 @@ impl Manager {
                             action: meta::EVENT_TTL_EXPIRE.to_string(),
                             path: art.path.clone(),
                             username: "system".to_string(),
-                            status: StatusCode::OK.as_u16() as i64,
+                            status: i64::from(StatusCode::OK.as_u16()),
                             ..Default::default()
                         });
                     }

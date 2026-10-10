@@ -25,6 +25,7 @@ const BUILD_DATE: &str = env!("BUILD_DATE");
 const RUSTC_VERSION: &str = env!("BUILD_RUSTC_VERSION");
 
 #[tokio::main]
+#[allow(clippy::too_many_lines)]
 async fn main() {
     if let Err(e) = rustls::crypto::aws_lc_rs::default_provider().install_default() {
         eprintln!("Failed to install default CryptoProvider: {e:?}");
@@ -196,7 +197,7 @@ async fn main() {
     );
 
     tracing::info!(
-        duration_ms = init_start.elapsed().as_millis() as u64,
+        duration_ms = u64::try_from(init_start.elapsed().as_millis()).unwrap_or(u64::MAX),
         "Initialization complete. Waiting for first discovery cycle"
     );
 
@@ -266,6 +267,7 @@ async fn discovery_loop(
             Ok(result) => {
                 let duration = start.elapsed();
 
+                #[allow(clippy::cast_precision_loss)]
                 metrics.discovery_instances_total.set(result.total as f64);
                 metrics
                     .discovery_duration_seconds
@@ -277,7 +279,7 @@ async fn discovery_loop(
                     instances_found = result.total,
                     instances_added = result.added,
                     instances_removed = result.removed_instances.len(),
-                    duration_ms = duration.as_millis() as u64,
+                    duration_ms = u64::try_from(duration.as_millis()).unwrap_or(u64::MAX),
                     "Discovery cycle completed"
                 );
 
@@ -379,7 +381,7 @@ async fn collection_loop_with_leader(
             cycle,
             instances_collected = collected,
             instances_failed = failed,
-            total_duration_ms = duration.as_millis() as u64,
+            total_duration_ms = u64::try_from(duration.as_millis()).unwrap_or(u64::MAX),
             "Collection cycle completed"
         );
 

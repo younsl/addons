@@ -22,6 +22,7 @@ pub struct HealthServer {
 }
 
 impl HealthServer {
+    #[must_use]
     pub fn new(registry: Arc<Registry>) -> Self {
         Self {
             ready: Arc::new(AtomicBool::new(false)),
@@ -33,6 +34,7 @@ impl HealthServer {
         self.ready.store(ready, Ordering::SeqCst);
     }
 
+    #[must_use]
     pub fn is_ready(&self) -> bool {
         self.ready.load(Ordering::SeqCst)
     }
@@ -57,9 +59,8 @@ impl HealthServer {
 
             tokio::spawn(async move {
                 let service = service_fn(move |req| {
-                    let ready = ready.clone();
-                    let registry = registry.clone();
-                    async move { handle_request(req, ready, registry).await }
+                    let response = handle_request(&req, &ready, &registry);
+                    std::future::ready(Ok::<_, Infallible>(response))
                 });
 
                 if let Err(err) = http1::Builder::new().serve_connection(io, service).await {
@@ -74,12 +75,12 @@ impl HealthServer {
     }
 }
 
-async fn handle_request(
-    req: Request<hyper::body::Incoming>,
-    ready: Arc<AtomicBool>,
-    registry: Arc<Registry>,
-) -> Result<Response<Full<Bytes>>, Infallible> {
-    let response = match (req.method(), req.uri().path()) {
+fn handle_request(
+    req: &Request<hyper::body::Incoming>,
+    ready: &AtomicBool,
+    registry: &Registry,
+) -> Response<Full<Bytes>> {
+    match (req.method(), req.uri().path()) {
         (&Method::GET, "/healthz") => {
             // Liveness probe - always return OK if the server is running
             Response::builder()
@@ -106,7 +107,7 @@ async fn handle_request(
         }
         (&Method::GET, "/metrics") => {
             let mut buf = String::new();
-            match encode(&mut buf, &registry) {
+            match encode(&mut buf, registry) {
                 Ok(()) => Response::builder()
                     .status(StatusCode::OK)
                     .header(
@@ -127,9 +128,7 @@ async fn handle_request(
             .header("Content-Type", "text/plain")
             .body(Full::new(Bytes::from("not found")))
             .unwrap(),
-    };
-
-    Ok(response)
+    }
 }
 
 #[cfg(test)]
@@ -137,10 +136,10 @@ mod tests {
     use super::*;
     use http_body_util::BodyExt;
 
-    async fn handle_request_test(
+    fn handle_request_test(
         path: &str,
-        ready: Arc<AtomicBool>,
-        registry: Arc<Registry>,
+        ready: &AtomicBool,
+        registry: &Registry,
     ) -> Response<Full<Bytes>> {
         // Simulate handle_request logic for testing
         match (Method::GET, path) {
@@ -166,7 +165,7 @@ mod tests {
             }
             (_, "/metrics") => {
                 let mut buf = String::new();
-                match prometheus_client::encoding::text::encode(&mut buf, &registry) {
+                match prometheus_client::encoding::text::encode(&mut buf, registry) {
                     Ok(()) => Response::builder()
                         .status(StatusCode::OK)
                         .header(
@@ -192,7 +191,7 @@ mod tests {
     async fn test_healthz() {
         let ready = Arc::new(AtomicBool::new(false));
         let registry = Arc::new(Registry::default());
-        let resp = handle_request_test("/healthz", ready, registry).await;
+        let resp = handle_request_test("/healthz", &ready, &registry);
         assert_eq!(resp.status(), StatusCode::OK);
         let body = resp.into_body().collect().await.unwrap().to_bytes();
         assert_eq!(&body[..], b"ok");
@@ -202,7 +201,7 @@ mod tests {
     async fn test_readyz_ready() {
         let ready = Arc::new(AtomicBool::new(true));
         let registry = Arc::new(Registry::default());
-        let resp = handle_request_test("/readyz", ready, registry).await;
+        let resp = handle_request_test("/readyz", &ready, &registry);
         assert_eq!(resp.status(), StatusCode::OK);
         let body = resp.into_body().collect().await.unwrap().to_bytes();
         assert_eq!(&body[..], b"ok");
@@ -212,7 +211,7 @@ mod tests {
     async fn test_readyz_not_ready() {
         let ready = Arc::new(AtomicBool::new(false));
         let registry = Arc::new(Registry::default());
-        let resp = handle_request_test("/readyz", ready, registry).await;
+        let resp = handle_request_test("/readyz", &ready, &registry);
         assert_eq!(resp.status(), StatusCode::SERVICE_UNAVAILABLE);
         let body = resp.into_body().collect().await.unwrap().to_bytes();
         assert_eq!(&body[..], b"not ready");
@@ -227,7 +226,7 @@ mod tests {
         counter.inc();
         let registry = Arc::new(registry);
 
-        let resp = handle_request_test("/metrics", ready, registry).await;
+        let resp = handle_request_test("/metrics", &ready, &registry);
         assert_eq!(resp.status(), StatusCode::OK);
         let body = resp.into_body().collect().await.unwrap().to_bytes();
         let text = String::from_utf8(body.to_vec()).unwrap();
@@ -239,7 +238,7 @@ mod tests {
     async fn test_not_found() {
         let ready = Arc::new(AtomicBool::new(true));
         let registry = Arc::new(Registry::default());
-        let resp = handle_request_test("/unknown", ready, registry).await;
+        let resp = handle_request_test("/unknown", &ready, &registry);
         assert_eq!(resp.status(), StatusCode::NOT_FOUND);
     }
 

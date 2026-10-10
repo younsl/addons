@@ -32,8 +32,8 @@ pub struct HeadBucketProbe {
 }
 
 impl HeadBucketProbe {
-    pub fn new(client: aws_sdk_s3::Client, bucket: &str) -> HeadBucketProbe {
-        HeadBucketProbe {
+    pub fn new(client: aws_sdk_s3::Client, bucket: &str) -> Self {
+        Self {
             client,
             bucket: bucket.to_string(),
         }
@@ -58,7 +58,7 @@ impl Probe for HeadBucketProbe {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct HealthCheck {
     pub at: DateTime<Utc>,
     pub ok: bool,
@@ -75,8 +75,8 @@ pub struct HealthMonitor {
 }
 
 impl HealthMonitor {
-    pub fn new(probe: Arc<dyn Probe>) -> Arc<HealthMonitor> {
-        Arc::new(HealthMonitor {
+    pub fn new(probe: Arc<dyn Probe>) -> Arc<Self> {
+        Arc::new(Self {
             probe,
             history: Mutex::new(VecDeque::with_capacity(HISTORY_LEN)),
         })
@@ -87,7 +87,7 @@ impl HealthMonitor {
         ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         loop {
             tokio::select! {
-                _ = cancel.cancelled() => return,
+                () = cancel.cancelled() => return,
                 _ = ticker.tick() => self.check_once().await,
             }
         }

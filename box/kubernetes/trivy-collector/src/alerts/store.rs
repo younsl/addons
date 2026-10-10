@@ -9,7 +9,7 @@
 
 use kube::{
     Client,
-    api::{Api, DeleteParams, Patch, PatchParams},
+    api::{Api, DeleteParams, ListParams, Patch, PatchParams},
 };
 use thiserror::Error;
 use tracing::{debug, info, warn};
@@ -42,26 +42,31 @@ pub struct AlertStore {
 }
 
 impl AlertStore {
-    pub fn new(client: Client, namespace: String) -> Self {
+    #[must_use]
+    pub const fn new(client: Client, namespace: String) -> Self {
         Self { client, namespace }
     }
 
+    #[must_use]
     pub fn namespace(&self) -> &str {
         &self.namespace
     }
 
     /// `group/version` of the resource the rules are stored as, so the API and
     /// the UI can name what they are reading rather than hardcoding it.
+    #[must_use]
     pub fn api_version(&self) -> String {
         format!("{}/{}", crd::API_GROUP, crd::API_VERSION)
     }
 
-    pub fn resource(&self) -> &'static str {
+    #[must_use]
+    pub const fn resource(&self) -> &'static str {
         crd::PLURAL
     }
 
     /// The typed API for the rules. Public so `alerts::readiness` can watch
     /// them without being handed a second client.
+    #[must_use]
     pub fn api(&self) -> Api<crd::AlertRule> {
         Api::namespaced(self.client.clone(), &self.namespace)
     }
@@ -71,7 +76,7 @@ impl AlertStore {
     /// startup rather than a 404 on the operator's first write.
     pub async fn preflight(&self) -> Result<(), AlertStoreError> {
         self.api()
-            .list_metadata(&Default::default())
+            .list_metadata(&ListParams::default())
             .await
             .map(|_| ())
             .map_err(collection_error)
@@ -80,7 +85,7 @@ impl AlertStore {
     pub async fn list(&self) -> Result<Vec<AlertRule>, AlertStoreError> {
         let list = self
             .api()
-            .list(&Default::default())
+            .list(&ListParams::default())
             .await
             .map_err(collection_error)?;
         let mut rules: Vec<AlertRule> = list.items.iter().map(crd::AlertRule::to_api).collect();
@@ -125,7 +130,7 @@ impl AlertStore {
                     match self.patch_status(&rule.name, &patch).await {
                         Ok(updated) => api = updated.to_api(),
                         Err(e) => {
-                            warn!(rule = %rule.name, error = %e, "Failed to record alert rule authorship")
+                            warn!(rule = %rule.name, error = %e, "Failed to record alert rule authorship");
                         }
                     }
                 }
@@ -306,7 +311,7 @@ fn validate(rule: &AlertRule) -> Result<(), AlertStoreError> {
     }
     if let Some(expr) = &rule.matchers.version_expr {
         super::expr::VersionExpr::parse(expr)
-            .map_err(|e| AlertStoreError::Invalid(format!("version_expr: {}", e)))?;
+            .map_err(|e| AlertStoreError::Invalid(format!("version_expr: {e}")))?;
     }
     Ok(())
 }
@@ -325,6 +330,7 @@ fn collection_error(err: kube::Error) -> AlertStoreError {
 mod tests {
     use super::*;
     use crate::alerts::types::{Matchers, Receiver, SlackReceiver};
+    use std::collections::BTreeMap;
 
     fn rule(name: &str) -> AlertRule {
         AlertRule {
@@ -337,8 +343,8 @@ mod tests {
                 clusters: vec![],
                 namespace: None,
             },
-            labels: Default::default(),
-            annotations: Default::default(),
+            labels: BTreeMap::default(),
+            annotations: BTreeMap::default(),
             receivers: vec![Receiver {
                 name: "sec".to_string(),
                 slack: Some(SlackReceiver {

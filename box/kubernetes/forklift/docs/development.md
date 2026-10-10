@@ -43,7 +43,7 @@ first build. The container image and `make cross` link the Linux binaries with
 `aarch64-unknown-linux-musl`, so both architectures build on one machine
 without QEMU. Install it with `pip install cargo-zigbuild` (ships zig) or
 `cargo install cargo-zigbuild` plus a zig on `PATH`. The bundled SQLite and the
-`ring` crypto backend are the only C code in the build.
+`aws-lc-rs` crypto backend are the only C code in the build.
 
 Release binaries are cross-compiled by
 `.github/workflows/_release-rust-scratch-containers.yml`, which pins the same

@@ -275,6 +275,7 @@ mod tests {
     use super::*;
 
     fn client(base_url: &str) -> Client {
+        crate::install_crypto_provider();
         Client::new(
             base_url,
             SecretString::from("token"),
@@ -443,6 +444,7 @@ mod tests {
         }
 
         fn client(&self) -> Client {
+            crate::install_crypto_provider();
             Client::new(
                 &format!("http://127.0.0.1:{}", self.port),
                 SecretString::from("s3cr3t"),
@@ -529,6 +531,7 @@ mod tests {
             axum::serve(listener, app).await.unwrap();
         });
 
+        crate::install_crypto_provider();
         let client = Client::new(
             &format!("http://127.0.0.1:{port}"),
             SecretString::from("t"),
@@ -552,6 +555,7 @@ mod tests {
     async fn test_transport_failure_is_reported_with_its_endpoint() {
         // Port 1 on loopback has nothing listening, so the connection is
         // refused before any status exists.
+        crate::install_crypto_provider();
         let client = Client::new("http://127.0.0.1:1", SecretString::from("t"), vec![]).unwrap();
         let err = client.post(&annotation()).await.unwrap_err();
         assert!(!err.is_permission_denied());

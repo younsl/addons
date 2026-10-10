@@ -3,7 +3,7 @@
 use crate::error::{Error, Result};
 
 /// SSM port forwarding specification.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PortForward {
     /// Forward local port to the same or different port on the instance.
     Instance { local_port: u16, remote_port: u16 },
@@ -21,15 +21,15 @@ impl PortForward {
     /// Supported formats:
     /// - `80`                      → Instance { local: 80, remote: 80 }
     /// - `8080:80`                 → Instance { local: 8080, remote: 80 }
-    /// - `rds.example.com:3306`    → RemoteHost { local: 3306, host: rds.example.com, remote: 3306 }
-    /// - `3306:rds.example.com:3306` → RemoteHost { local: 3306, host: rds.example.com, remote: 3306 }
+    /// - `rds.example.com:3306`    → `RemoteHost` { local: 3306, host: rds.example.com, remote: 3306 }
+    /// - `3306:rds.example.com:3306` → `RemoteHost` { local: 3306, host: rds.example.com, remote: 3306 }
     pub fn parse(spec: &str) -> Result<Self> {
         let parts: Vec<&str> = spec.splitn(3, ':').collect();
 
         match parts.len() {
             1 => {
                 let port = parse_port(parts[0])?;
-                Ok(PortForward::Instance {
+                Ok(Self::Instance {
                     local_port: port,
                     remote_port: port,
                 })
@@ -40,7 +40,7 @@ impl PortForward {
                     // Both numeric: local_port:remote_port (Instance)
                     let local = parse_port(parts[0])?;
                     let remote = parse_port(parts[1])?;
-                    Ok(PortForward::Instance {
+                    Ok(Self::Instance {
                         local_port: local,
                         remote_port: remote,
                     })
@@ -48,7 +48,7 @@ impl PortForward {
                     // First is hostname: host:port (RemoteHost, local = remote)
                     let host = parts[0].to_string();
                     let port = parse_port(parts[1])?;
-                    Ok(PortForward::RemoteHost {
+                    Ok(Self::RemoteHost {
                         local_port: port,
                         remote_host: host,
                         remote_port: port,
@@ -59,44 +59,40 @@ impl PortForward {
                 let local = parse_port(parts[0])?;
                 let host = parts[1].to_string();
                 let remote = parse_port(parts[2])?;
-                Ok(PortForward::RemoteHost {
+                Ok(Self::RemoteHost {
                     local_port: local,
                     remote_host: host,
                     remote_port: remote,
                 })
             }
-            _ => Err(Error::Session(format!("Invalid forward spec: {}", spec))),
+            _ => Err(Error::Session(format!("Invalid forward spec: {spec}"))),
         }
     }
 
     /// SSM document name for this forwarding type.
-    pub fn document_name(&self) -> &str {
+    pub const fn document_name(&self) -> &str {
         match self {
-            PortForward::Instance { .. } => "AWS-StartPortForwardingSession",
-            PortForward::RemoteHost { .. } => "AWS-StartPortForwardingSessionToRemoteHost",
+            Self::Instance { .. } => "AWS-StartPortForwardingSession",
+            Self::RemoteHost { .. } => "AWS-StartPortForwardingSessionToRemoteHost",
         }
     }
 
     /// Generate `--parameters` JSON for the SSM session.
     pub fn parameters_json(&self) -> String {
         match self {
-            PortForward::Instance {
+            Self::Instance {
                 local_port,
                 remote_port,
             } => {
-                format!(
-                    r#"{{"portNumber":["{}"],"localPortNumber":["{}"]}}"#,
-                    remote_port, local_port,
-                )
+                format!(r#"{{"portNumber":["{remote_port}"],"localPortNumber":["{local_port}"]}}"#)
             }
-            PortForward::RemoteHost {
+            Self::RemoteHost {
                 local_port,
                 remote_host,
                 remote_port,
             } => {
                 format!(
-                    r#"{{"host":["{}"],"portNumber":["{}"],"localPortNumber":["{}"]}}"#,
-                    remote_host, remote_port, local_port,
+                    r#"{{"host":["{remote_host}"],"portNumber":["{remote_port}"],"localPortNumber":["{local_port}"]}}"#,
                 )
             }
         }
@@ -105,21 +101,18 @@ impl PortForward {
     /// Human-readable description for display.
     pub fn display_info(&self) -> String {
         match self {
-            PortForward::Instance {
+            Self::Instance {
                 local_port,
                 remote_port,
             } => {
-                format!("localhost:{} -> instance:{}", local_port, remote_port)
+                format!("localhost:{local_port} -> instance:{remote_port}")
             }
-            PortForward::RemoteHost {
+            Self::RemoteHost {
                 local_port,
                 remote_host,
                 remote_port,
             } => {
-                format!(
-                    "localhost:{} -> {}:{}",
-                    local_port, remote_host, remote_port,
-                )
+                format!("localhost:{local_port} -> {remote_host}:{remote_port}")
             }
         }
     }
@@ -129,7 +122,7 @@ impl PortForward {
 fn parse_port(s: &str) -> Result<u16> {
     let port: u16 = s
         .parse()
-        .map_err(|_| Error::Session(format!("Invalid port number: {}", s)))?;
+        .map_err(|_| Error::Session(format!("Invalid port number: {s}")))?;
     if port == 0 {
         return Err(Error::Session("Port number cannot be 0".to_string()));
     }

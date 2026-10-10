@@ -108,6 +108,7 @@ mod tests {
     }
 
     async fn status_for(port: u16, auth: Option<&str>) -> u16 {
+        crate::install_crypto_provider();
         let client = reqwest::Client::new();
         let mut request = client.get(format!("http://127.0.0.1:{port}/mcp"));
         if let Some(value) = auth {

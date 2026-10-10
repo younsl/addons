@@ -59,12 +59,12 @@ pub struct Recorder {
 impl Recorder {
     /// Builds a Recorder and starts its background writer.
     ///
-    pub fn new(store: Arc<meta::Store>, registry: &Registry) -> Arc<Recorder> {
+    pub fn new(store: Arc<meta::Store>, registry: &Registry) -> Arc<Self> {
         Self::with_clock(store, registry, Arc::new(Utc::now))
     }
 
     /// [`Recorder::new`] with an injected clock.
-    pub fn with_clock(store: Arc<meta::Store>, registry: &Registry, now: Clock) -> Arc<Recorder> {
+    pub fn with_clock(store: Arc<meta::Store>, registry: &Registry, now: Clock) -> Arc<Self> {
         let dropped = IntCounter::with_opts(
             Opts::new(
                 "audit_events_dropped_total",
@@ -80,7 +80,7 @@ impl Recorder {
         let (tx, rx) = mpsc::channel(BUFFER_SIZE);
         let worker_store = Arc::clone(&store);
         let handle = tokio::spawn(Self::run(worker_store, rx));
-        Arc::new(Recorder {
+        Arc::new(Self {
             store,
             tx: parking_lot::Mutex::new(Some(tx)),
             done: tokio::sync::Mutex::new(Some(handle)),
@@ -179,7 +179,7 @@ impl Recorder {
         loop {
             self.prune_once(retention).await;
             tokio::select! {
-                _ = cancel.cancelled() => return,
+                () = cancel.cancelled() => return,
                 _ = ticker.tick() => {}
             }
         }
@@ -337,7 +337,7 @@ pub(crate) mod tests {
         });
         rec.close().await;
 
-        rec.prune_once(Duration::from_secs(24 * 3600)).await;
+        rec.prune_once(Duration::from_hours(24)).await;
         let n = store.count_audit_logs("r", "").await.expect("count");
         assert_eq!(n, 1, "remaining = {n}, want 1");
     }
@@ -349,7 +349,7 @@ pub(crate) mod tests {
         let task = tokio::spawn(Arc::clone(&rec).run_retention(
             cancel.clone(),
             Duration::from_secs(3600),
-            Duration::from_secs(24 * 3600),
+            Duration::from_hours(24),
         ));
         cancel.cancel();
         tokio::time::timeout(Duration::from_secs(2), task)

@@ -35,7 +35,8 @@ pub struct ClusterSync {
 impl ClusterSync {
     /// A cluster is hydrated once both of its watchers have replayed their
     /// initial list. Until then its slice of `reports` is legitimately partial.
-    pub fn is_hydrated(&self) -> bool {
+    #[must_use]
+    pub const fn is_hydrated(&self) -> bool {
         self.vuln_initial_sync_done && self.sbom_initial_sync_done
     }
 }
@@ -64,7 +65,7 @@ pub struct HydrationStatus {
     pub clusters: BTreeMap<String, ClusterSync>,
 }
 
-fn default_true() -> bool {
+const fn default_true() -> bool {
     true
 }
 
@@ -81,7 +82,8 @@ impl Default for HydrationStatus {
 impl HydrationStatus {
     /// A store that is its own source of truth (a direct `Database`) has no
     /// separate scraper to wait on.
-    pub fn complete() -> Self {
+    #[must_use]
+    pub const fn complete() -> Self {
         Self {
             hydrated: true,
             watching: true,
@@ -184,7 +186,7 @@ impl ReportStore for Database {
         report_type: &str,
         params: &QueryParams,
     ) -> Result<(Vec<ReportMeta>, i64)> {
-        Database::query_reports(self, report_type, params).await
+        Self::query_reports(self, report_type, params).await
     }
 
     async fn get_report(
@@ -194,19 +196,19 @@ impl ReportStore for Database {
         name: &str,
         report_type: &str,
     ) -> Result<Option<FullReport>> {
-        Database::get_report(self, cluster, namespace, name, report_type).await
+        Self::get_report(self, cluster, namespace, name, report_type).await
     }
 
     async fn get_stats(&self) -> Result<Stats> {
-        Database::get_stats(self).await
+        Self::get_stats(self).await
     }
 
     async fn list_clusters(&self) -> Result<Vec<ClusterInfo>> {
-        Database::list_clusters(self).await
+        Self::list_clusters(self).await
     }
 
     async fn list_namespaces(&self, cluster: Option<&str>) -> Result<Vec<String>> {
-        Database::list_namespaces(self, cluster).await
+        Self::list_namespaces(self, cluster).await
     }
 
     async fn search_vulnerabilities(
@@ -215,7 +217,7 @@ impl ReportStore for Database {
         limit: i64,
         offset: i64,
     ) -> Result<(Vec<VulnSearchResult>, i64)> {
-        Database::search_vulnerabilities(self, query, limit, offset).await
+        Self::search_vulnerabilities(self, query, limit, offset).await
     }
 
     async fn search_sbom_components(
@@ -224,15 +226,15 @@ impl ReportStore for Database {
         limit: i64,
         offset: i64,
     ) -> Result<(Vec<ComponentSearchResult>, i64)> {
-        Database::search_sbom_components(self, component, limit, offset).await
+        Self::search_sbom_components(self, component, limit, offset).await
     }
 
     async fn suggest_vulnerability_ids(&self, query: &str, limit: i64) -> Result<Vec<String>> {
-        Database::suggest_vulnerability_ids(self, query, limit).await
+        Self::suggest_vulnerability_ids(self, query, limit).await
     }
 
     async fn suggest_component_names(&self, query: &str, limit: i64) -> Result<Vec<String>> {
-        Database::suggest_component_names(self, query, limit).await
+        Self::suggest_component_names(self, query, limit).await
     }
 
     async fn list_sbom_component_matches(
@@ -241,7 +243,7 @@ impl ReportStore for Database {
         namespace: Option<&str>,
         package_name: Option<&str>,
     ) -> Result<Vec<SbomComponentMatch>> {
-        Database::list_sbom_component_matches(self, clusters, namespace, package_name).await
+        Self::list_sbom_component_matches(self, clusters, namespace, package_name).await
     }
 
     async fn get_live_trends(
@@ -251,11 +253,11 @@ impl ReportStore for Database {
         cluster: Option<&str>,
         granularity: &str,
     ) -> Result<TrendResponse> {
-        Database::get_live_trends(self, start_date, end_date, cluster, granularity).await
+        Self::get_live_trends(self, start_date, end_date, cluster, granularity).await
     }
 
     async fn get_reports_data_range(&self) -> Result<(Option<String>, Option<String>)> {
-        Database::get_reports_data_range(self).await
+        Self::get_reports_data_range(self).await
     }
 
     async fn hydration(&self) -> Result<HydrationStatus> {
@@ -263,7 +265,7 @@ impl ReportStore for Database {
     }
 
     async fn upsert_report(&self, payload: &ReportPayload) -> Result<()> {
-        Database::upsert_report(self, payload).await
+        Self::upsert_report(self, payload).await
     }
 
     async fn delete_report(
@@ -273,11 +275,11 @@ impl ReportStore for Database {
         name: &str,
         report_type: &str,
     ) -> Result<bool> {
-        Database::delete_report(self, cluster, namespace, name, report_type).await
+        Self::delete_report(self, cluster, namespace, name, report_type).await
     }
 
     async fn delete_reports_for_cluster(&self, cluster: &str) -> Result<u64> {
-        Database::delete_reports_for_cluster(self, cluster).await
+        Self::delete_reports_for_cluster(self, cluster).await
     }
 }
 

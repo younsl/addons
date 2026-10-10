@@ -39,7 +39,7 @@ pub struct PreviewResult {
 
 pub async fn run(db: &dyn ReportStore, matchers: &Matchers) -> Result<PreviewResult, String> {
     let expr = match matchers.version_expr.as_deref() {
-        Some(s) => Some(VersionExpr::parse(s).map_err(|e| format!("version_expr: {}", e))?),
+        Some(s) => Some(VersionExpr::parse(s).map_err(|e| format!("version_expr: {e}"))?),
         None => None,
     };
 
@@ -98,7 +98,7 @@ mod tests {
         cluster: &str,
         namespace: &str,
         name: &str,
-        components: serde_json::Value,
+        components: &serde_json::Value,
     ) -> ReportPayload {
         ReportPayload {
             cluster: cluster.to_string(),
@@ -131,7 +131,7 @@ mod tests {
             "prod",
             "default",
             "node-app",
-            json!([
+            &json!([
                 {"type": "library", "name": "axios", "version": "1.6.0"},
                 {"type": "library", "name": "axios", "version": "0.27.2"},
             ]),
@@ -142,7 +142,7 @@ mod tests {
             "prod",
             "team-a",
             "other-app",
-            json!([{"type": "library", "name": "axios", "version": "1.6.0"}]),
+            &json!([{"type": "library", "name": "axios", "version": "1.6.0"}]),
         ))
         .await
         .unwrap();
@@ -150,7 +150,7 @@ mod tests {
             "prod",
             "default",
             "no-axios",
-            json!([{"type": "library", "name": "lodash", "version": "4.17.21"}]),
+            &json!([{"type": "library", "name": "lodash", "version": "4.17.21"}]),
         ))
         .await
         .unwrap();
@@ -230,7 +230,7 @@ mod tests {
             "prod",
             "default",
             "fat-app",
-            json!(components),
+            &json!(components),
         ))
         .await
         .unwrap();

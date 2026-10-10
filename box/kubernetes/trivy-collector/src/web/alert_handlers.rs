@@ -40,7 +40,7 @@ pub struct AlertRuleInput {
     pub cooldown_secs: Option<u64>,
 }
 
-fn default_true() -> bool {
+const fn default_true() -> bool {
     true
 }
 
@@ -84,9 +84,8 @@ pub struct AlertTestResponse {
     )
 )]
 pub async fn list_alerts(State(state): State<AppState>) -> impl IntoResponse {
-    let store = match get_store(&state) {
-        Some(s) => s,
-        None => return unavailable(),
+    let Some(store) = get_store(&state) else {
+        return unavailable();
     };
     match store.list().await {
         Ok(rules) => Json(AlertListResponse {
@@ -121,9 +120,8 @@ pub async fn get_alert(
     State(state): State<AppState>,
     Path(name): Path<String>,
 ) -> impl IntoResponse {
-    let store = match get_store(&state) {
-        Some(s) => s,
-        None => return unavailable(),
+    let Some(store) = get_store(&state) else {
+        return unavailable();
     };
     match store.get(&name).await {
         Ok(rule) => Json(rule).into_response(),
@@ -160,9 +158,8 @@ pub async fn create_alert(
     cookie_jar: PrivateCookieJar,
     Json(input): Json<AlertRuleInput>,
 ) -> impl IntoResponse {
-    let store = match get_store(&state) {
-        Some(s) => s,
-        None => return unavailable(),
+    let Some(store) = get_store(&state) else {
+        return unavailable();
     };
     if let Err((name, msg)) = validate_receivers(&input.receivers) {
         return webhook_validation_error(&name, msg);
@@ -231,9 +228,8 @@ pub async fn update_alert(
         )
             .into_response();
     }
-    let store = match get_store(&state) {
-        Some(s) => s,
-        None => return unavailable(),
+    let Some(store) = get_store(&state) else {
+        return unavailable();
     };
     if let Err((name, msg)) = validate_receivers(&input.receivers) {
         return webhook_validation_error(&name, msg);
@@ -290,9 +286,8 @@ pub async fn delete_alert(
     cookie_jar: PrivateCookieJar,
     Path(name): Path<String>,
 ) -> impl IntoResponse {
-    let store = match get_store(&state) {
-        Some(s) => s,
-        None => return unavailable(),
+    let Some(store) = get_store(&state) else {
+        return unavailable();
     };
     let user = current_user(&cookie_jar);
     match store.delete(&name).await {
@@ -367,9 +362,8 @@ pub async fn test_alert_draft(
     cookie_jar: PrivateCookieJar,
     Json(input): Json<AlertRuleInput>,
 ) -> impl IntoResponse {
-    let evaluator = match get_evaluator(&state) {
-        Some(e) => e,
-        None => return unavailable(),
+    let Some(evaluator) = get_evaluator(&state) else {
+        return unavailable();
     };
     if input.receivers.iter().all(|r| r.slack.is_none()) {
         return (
@@ -476,7 +470,7 @@ fn get_store(state: &AppState) -> Option<&AlertStore> {
 }
 
 fn get_evaluator(state: &AppState) -> Option<&AlertEvaluator> {
-    state.alerts.as_ref().map(|e| e.as_ref())
+    state.alerts.as_ref().map(std::convert::AsRef::as_ref)
 }
 
 fn unavailable() -> axum::response::Response {

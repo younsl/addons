@@ -18,8 +18,8 @@ pub(crate) struct NegCache {
 }
 
 impl NegCache {
-    pub(crate) fn new() -> NegCache {
-        NegCache {
+    pub(crate) fn new() -> Self {
+        Self {
             entries: Mutex::new(HashMap::new()),
             now: super::system_clock(),
         }

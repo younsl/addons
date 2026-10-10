@@ -6,6 +6,7 @@
 
 mod annotate;
 mod aws;
+mod cli;
 mod controller;
 mod crd;
 mod eks;
@@ -21,11 +22,15 @@ mod telemetry;
 use std::sync::Arc;
 
 use anyhow::Result;
+use clap::Parser;
 use futures::StreamExt;
 use kube::Api;
 use kube::runtime::Controller;
 use kube::runtime::watcher::Config;
+use tokio::signal;
+use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn};
+use tracing_subscriber::{EnvFilter, fmt, prelude::*};
 
 use controller::Context;
 use crd::{EKSUpgrade, EKSUpgradeSpec};
@@ -38,11 +43,10 @@ pub const ARCH: &str = env!("BUILD_ARCH");
 
 #[tokio::main]
 async fn main() {
-    // Initialize logging
-    if let Err(e) = init_tracing() {
-        eprintln!("Failed to initialize logging: {e}");
-        std::process::exit(1);
-    }
+    install_crypto_provider();
+
+    let cli = cli::Cli::parse();
+    init_tracing(&cli.log_level, &cli.log_format);
 
     info!(
         version = VERSION,
@@ -53,31 +57,69 @@ async fn main() {
         "Starting kuo"
     );
 
-    if let Err(e) = run().await {
+    let shutdown = CancellationToken::new();
+    let signal_token = shutdown.clone();
+    tokio::spawn(async move {
+        wait_for_signal().await;
+        info!("Shutdown signal received, stopping");
+        signal_token.cancel();
+    });
+
+    if let Err(e) = run(cli, shutdown).await {
         error!("Operator failed: {}", e);
         std::process::exit(1);
     }
+    info!("kuo stopped");
 }
 
-/// Initialize tracing subscriber with JSON format for production.
-fn init_tracing() -> Result<()> {
-    use tracing_subscriber::{EnvFilter, fmt};
-
-    let filter = EnvFilter::try_from_default_env()
-        .or_else(|_| EnvFilter::try_new("info"))
-        .map_err(|e| anyhow::anyhow!("Failed to initialize log filter: {e}"))?;
-
-    fmt()
-        .with_env_filter(filter)
-        .json()
-        .with_target(true)
-        .init();
-
-    Ok(())
+fn install_crypto_provider() {
+    let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
 }
 
-/// Main operator loop.
-async fn run() -> Result<()> {
+/// Initialize the tracing subscriber. `RUST_LOG` overrides `level`.
+fn init_tracing(level: &str, format: &str) {
+    let filter =
+        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(log_level(level)));
+    let registry = tracing_subscriber::registry().with(filter);
+    if format.eq_ignore_ascii_case("text") {
+        registry.with(fmt::layer().with_target(true)).init();
+    } else {
+        registry.with(fmt::layer().json().with_target(true)).init();
+    }
+}
+
+fn log_level(level: &str) -> &'static str {
+    match level.to_ascii_lowercase().as_str() {
+        "trace" => "trace",
+        "debug" => "debug",
+        "warn" => "warn",
+        "error" => "error",
+        _ => "info",
+    }
+}
+
+async fn wait_for_signal() {
+    let ctrl_c = async {
+        let _ = signal::ctrl_c().await;
+    };
+    #[cfg(unix)]
+    let terminate = async {
+        if let Ok(mut sig) = signal::unix::signal(signal::unix::SignalKind::terminate()) {
+            sig.recv().await;
+        }
+    };
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        () = ctrl_c => {},
+        () = terminate => {},
+    }
+}
+
+/// Main operator loop. Returns once `shutdown` is cancelled and the
+/// controller and HTTP servers have drained.
+async fn run(cli: cli::Cli, shutdown: CancellationToken) -> Result<()> {
     // Build in-cluster Kubernetes client
     let client = kube::Client::try_default().await?;
 
@@ -112,44 +154,45 @@ async fn run() -> Result<()> {
     // Start health server (port 8080)
     let health_state = telemetry::health::HealthState::new();
     let health_state_clone = health_state.clone();
-    tokio::spawn(async move {
-        if let Err(e) = telemetry::health::serve(8080, health_state_clone).await {
+    let mut servers = Vec::new();
+    let health_shutdown = shutdown.clone();
+    servers.push(tokio::spawn(async move {
+        if let Err(e) = telemetry::health::serve(8080, health_state_clone, health_shutdown).await {
             error!("Health server failed: {}", e);
         }
-    });
+    }));
 
     // Start metrics server (port 8081)
     let registry_clone = registry.clone();
-    tokio::spawn(async move {
-        if let Err(e) = telemetry::metrics::serve(8081, registry_clone).await {
+    let metrics_shutdown = shutdown.clone();
+    servers.push(tokio::spawn(async move {
+        if let Err(e) = telemetry::metrics::serve(8081, registry_clone, metrics_shutdown).await {
             error!("Metrics server failed: {}", e);
         }
-    });
+    }));
 
     // Initialize Slack notifier (if webhook URL is configured)
-    let slack = std::env::var("SLACK_WEBHOOK_URL")
-        .ok()
-        .filter(|url| !url.is_empty())
-        .map(|url| {
-            info!("Slack notifications enabled");
-            Arc::new(notify::SlackNotifier::new(url))
-        });
+    let slack = cli.lookup("SLACK_WEBHOOK_URL").map(|url| {
+        info!("Slack notifications enabled");
+        Arc::new(notify::SlackNotifier::new(url))
+    });
 
     // Start the MCP server for kagent (if enabled). A half-configured MCP
     // endpoint (enabled but tokenless) is fatal rather than silently open:
     // mutating tools are always registered, so authentication is not optional.
-    if let Some(mcp_config) = mcp::Config::from_env()? {
+    if let Some(mcp_config) = mcp::Config::from_lookup(|key| cli.lookup(key))? {
         let mcp_ctx = Arc::new(mcp::tools::McpContext::new(
             client.clone(),
             mcp::cache::Cache::new(mcp_config.cache_ttl),
             slack.clone(),
             mcp_metrics,
         ));
-        tokio::spawn(async move {
-            if let Err(e) = mcp::server::serve(mcp_config, mcp_ctx).await {
+        let mcp_shutdown = shutdown.clone();
+        servers.push(tokio::spawn(async move {
+            if let Err(e) = mcp::server::serve(mcp_config, mcp_ctx, mcp_shutdown).await {
                 error!("MCP server failed: {}", e);
             }
-        });
+        }));
     } else {
         info!("MCP server disabled");
     }
@@ -157,7 +200,7 @@ async fn run() -> Result<()> {
     // Initialize the Grafana annotator (if annotating is enabled). A
     // half-configured annotator is fatal here rather than silently dropping
     // every marker at runtime; a disabled one is simply absent.
-    let grafana = if let Some(config) = annotate::Config::from_env()? {
+    let grafana = if let Some(config) = annotate::Config::from_lookup(|key| cli.lookup(key))? {
         let annotator = Arc::new(annotate::Annotator::new(config)?);
         annotator.preflight().await;
         Some(annotator)
@@ -185,6 +228,7 @@ async fn run() -> Result<()> {
 
     info!("Starting EKSUpgrade controller");
     Controller::new(api, Config::default())
+        .graceful_shutdown_on(shutdown.clone().cancelled_owned())
         .run(controller::reconcile, controller::error_policy, ctx)
         .for_each(|res| async move {
             match res {
@@ -193,6 +237,13 @@ async fn run() -> Result<()> {
             }
         })
         .await;
+    info!("EKSUpgrade controller stopped");
+
+    health_state.set_ready(false);
+    shutdown.cancel();
+    for server in servers {
+        let _ = server.await;
+    }
 
     Ok(())
 }

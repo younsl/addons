@@ -35,10 +35,12 @@ pub struct AlertEvaluator {
 }
 
 impl AlertEvaluator {
+    #[must_use]
     pub fn new(store: AlertStore) -> Self {
         Self::with_external_url(store, None)
     }
 
+    #[must_use]
     pub fn with_external_url(store: AlertStore, external_url: Option<String>) -> Self {
         Self {
             store,
@@ -47,7 +49,8 @@ impl AlertEvaluator {
         }
     }
 
-    pub fn store(&self) -> &AlertStore {
+    #[must_use]
+    pub const fn store(&self) -> &AlertStore {
         &self.store
     }
 
@@ -443,6 +446,7 @@ pub(crate) fn extract_finding_keys(data_json: &str) -> HashSet<String> {
 mod tests {
     use super::*;
     use crate::storage::Database;
+    use std::collections::BTreeMap;
 
     #[test]
     fn extract_sbom_keys_roundtrip() {
@@ -470,7 +474,7 @@ mod tests {
         cluster: &str,
         namespace: &str,
         name: &str,
-        components: serde_json::Value,
+        components: &serde_json::Value,
     ) -> ReportPayload {
         ReportPayload {
             cluster: cluster.to_string(),
@@ -502,12 +506,12 @@ mod tests {
             enabled: true,
             matchers: Matchers {
                 package_name: Some("axios".to_string()),
-                version_expr: version_expr.map(|s| s.to_string()),
+                version_expr: version_expr.map(std::string::ToString::to_string),
                 clusters: vec![],
                 namespace: None,
             },
-            labels: Default::default(),
-            annotations: Default::default(),
+            labels: BTreeMap::default(),
+            annotations: BTreeMap::default(),
             receivers: vec![Receiver {
                 name: "noop".to_string(),
                 slack: None,
@@ -532,7 +536,7 @@ mod tests {
             "prod",
             "default",
             "node-app-a",
-            json!([
+            &json!([
                 {"type": "library", "name": "axios", "version": "1.6.0"},
                 {"type": "library", "name": "axios", "version": "1.6.0"},
                 {"type": "library", "name": "axios", "version": "0.27.2"},
@@ -545,7 +549,7 @@ mod tests {
             "prod",
             "team-b",
             "node-app-b",
-            json!([{"type": "library", "name": "axios", "version": "1.6.0"}]),
+            &json!([{"type": "library", "name": "axios", "version": "1.6.0"}]),
         ))
         .await
         .unwrap();
@@ -554,7 +558,7 @@ mod tests {
             "prod",
             "team-c",
             "no-axios",
-            json!([{"type": "library", "name": "lodash", "version": "4.17.21"}]),
+            &json!([{"type": "library", "name": "lodash", "version": "4.17.21"}]),
         ))
         .await
         .unwrap();
@@ -596,7 +600,7 @@ mod tests {
             "prod",
             "default",
             "dup-app",
-            json!([
+            &json!([
                 {"type": "library", "name": "axios", "version": "1.6.0"},
                 {"type": "library", "name": "axios", "version": "1.6.0"},
                 {"type": "library", "name": "axios", "version": "1.6.0"},
@@ -616,7 +620,7 @@ mod tests {
             "prod",
             "default",
             "no-axios",
-            json!([{"type": "library", "name": "lodash", "version": "4.17.21"}]),
+            &json!([{"type": "library", "name": "lodash", "version": "4.17.21"}]),
         ))
         .await
         .unwrap();

@@ -52,6 +52,7 @@ pub const COMPONENT_LABEL: &str = "app.kubernetes.io/component";
 
 /// Labels stamped on every Kubernetes object this crate creates, so an
 /// operator can tell app-managed state from hand-written manifests.
+#[must_use]
 pub fn managed_labels(component: &str) -> BTreeMap<String, String> {
     BTreeMap::from([
         (MANAGED_BY_LABEL.to_string(), "trivy-collector".to_string()),

@@ -219,7 +219,7 @@ fn scan_repository(row: &Row<'_>) -> rusqlite::Result<Repository> {
 
 /// Turns a zero rows-affected count into [`Error::NotFound`], the way every
 /// targeted UPDATE/DELETE reports a missing row.
-pub(crate) fn ensure_affected(n: usize) -> Result<()> {
+pub(crate) const fn ensure_affected(n: usize) -> Result<()> {
     if n == 0 {
         return Err(Error::NotFound);
     }

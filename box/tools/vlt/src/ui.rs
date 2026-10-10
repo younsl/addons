@@ -74,7 +74,7 @@ fn render_topbar(f: &mut Frame, area: Rect, app: &App) {
 
     let layout = Layout::horizontal([
         Constraint::Min(0),
-        Constraint::Length(right.len() as u16 + 2),
+        Constraint::Length(u16::try_from(right.len() + 2).unwrap_or(u16::MAX)),
     ])
     .split(area);
     f.render_widget(Paragraph::new(Line::from(left)), layout[0]);
@@ -141,7 +141,7 @@ fn centered(width: u16, height: u16, area: Rect) -> Rect {
     }
 }
 
-fn input_block<'a>(title: &'a str, focused: bool) -> Block<'a> {
+fn input_block(title: &str, focused: bool) -> Block<'_> {
     let style = if focused {
         Style::default().fg(ACCENT)
     } else {
@@ -260,6 +260,7 @@ fn masked(value: &str, reveal: bool) -> Line<'_> {
 // List
 // =====================================================================
 
+#[allow(clippy::too_many_lines)]
 fn render_list(f: &mut Frame, area: Rect, app: &App, l: &AppListState) {
     let block = Block::default()
         .borders(Borders::ALL)
@@ -428,6 +429,7 @@ fn short_date(iso: &str) -> String {
 // Detail
 // =====================================================================
 
+#[allow(clippy::too_many_lines)]
 fn render_detail(f: &mut Frame, area: Rect, app: &App, id: &str, reveal: bool) {
     let item = app
         .vault

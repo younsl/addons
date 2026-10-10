@@ -193,7 +193,7 @@ pub(crate) mod tests {
 
     #[test]
     fn parse_policy_cases() {
-        let policy = r#"
+        let policy = r"
 # comment line
 p, readonly, repo, read, *, allow
 p, dev, repo, read, team-a-*, allow
@@ -203,7 +203,7 @@ p, super, *, *, *
 g, group:/platform, readonly
 g, user:alice, dev
 g, bob, dev
-"#;
+";
         let got = parse_policy(policy).expect("parse_policy");
 
         // Roles are sorted by name: dev, readonly, super.

@@ -43,7 +43,7 @@ pub(crate) struct GoInfo {
 
 impl Default for GoInfo {
     fn default() -> Self {
-        GoInfo {
+        Self {
             version: String::new(),
             time: zero_time(),
         }
@@ -614,7 +614,7 @@ impl Uploader {
             .await?;
         let text = String::from_utf8_lossy(&value);
         let mut versions = Vec::new();
-        for line in text.trim().split('\n') {
+        for line in text.lines() {
             let line = line.trim();
             if line.is_empty() {
                 continue;
@@ -971,7 +971,7 @@ pub(crate) fn go_path_base(path: &str) -> String {
 
 fn go_path_dir(path: &str) -> String {
     match path.rfind('/') {
-        Some(i) => go_path_clean(&path[..i + 1]),
+        Some(i) => go_path_clean(&path[..=i]),
         None => go_path_clean(""),
     }
 }
@@ -1003,7 +1003,7 @@ fn check_path(path: &str) -> Result<(), ()> {
         return Err(());
     }
     let (_, _, ok) = split_path_version(path);
-    if !ok { Err(()) } else { Ok(()) }
+    if ok { Ok(()) } else { Err(()) }
 }
 
 /// `module.CheckFilePath`: the same element rules, relaxed for file names.
@@ -1072,12 +1072,12 @@ fn check_path_element(elem: &str, kind: PathKind) -> Result<(), ()> {
 }
 
 /// `module.firstPathOK`: the restricted set the leading (domain) element allows.
-fn first_path_ok(r: char) -> bool {
+const fn first_path_ok(r: char) -> bool {
     r == '-' || r == '.' || r.is_ascii_digit() || r.is_ascii_lowercase()
 }
 
 /// `module.modPathOK`.
-fn mod_path_ok(r: char) -> bool {
+const fn mod_path_ok(r: char) -> bool {
     r == '-' || r == '.' || r == '_' || r == '~' || r.is_ascii_alphanumeric()
 }
 
@@ -1300,7 +1300,7 @@ fn pseudo_stamp_ok(tail: &str) -> bool {
         && revision.bytes().all(|b| b.is_ascii_alphanumeric())
 }
 
-fn is_build_char(b: u8) -> bool {
+const fn is_build_char(b: u8) -> bool {
     b.is_ascii_alphanumeric() || b == b'-'
 }
 

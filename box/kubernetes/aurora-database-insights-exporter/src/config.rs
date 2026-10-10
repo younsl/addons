@@ -68,7 +68,7 @@ pub struct DiscoveryConfig {
     pub require_pi_enabled: bool,
     pub include: FilterConfig,
     pub exclude: FilterConfig,
-    /// AWS tags to export as additional Prometheus labels (YACE-style exported_tags).
+    /// AWS tags to export as additional Prometheus labels (YACE-style `exported_tags`).
     pub exported_tags: Vec<String>,
 }
 
@@ -213,7 +213,7 @@ impl Config {
                 path = %args.config.display(),
                 "Config file not found. Using defaults"
             );
-            Config::default()
+            Self::default()
         };
 
         // CLI overrides
@@ -221,13 +221,13 @@ impl Config {
             config.server.listen_address = format!("0.0.0.0:{port}");
         }
         if let Some(ref region) = args.region {
-            config.aws.region = region.clone();
+            config.aws.region.clone_from(region);
         }
         if let Some(ref level) = args.log_level {
-            config.logging.level = level.clone();
+            config.logging.level.clone_from(level);
         }
         if let Some(ref format) = args.log_format {
-            config.logging.format = format.clone();
+            config.logging.format.clone_from(format);
         }
 
         config.validate()?;
@@ -268,7 +268,7 @@ impl Config {
         Ok(())
     }
 
-    /// Extract the port from listen_address.
+    /// Extract the port from `listen_address`.
     #[allow(dead_code)]
     pub fn port(&self) -> u16 {
         self.server
@@ -406,13 +406,13 @@ discovery:
 
     #[test]
     fn test_parse_yaml_with_exported_tags() {
-        let yaml = r#"
+        let yaml = r"
 discovery:
   exported_tags:
     - Team
     - Environment
     - Service
-"#;
+";
         let config: Config = serde_yaml::from_str(yaml).unwrap();
         assert_eq!(config.discovery.exported_tags.len(), 3);
         assert_eq!(config.discovery.exported_tags[0], "Team");
@@ -449,7 +449,7 @@ leader_election:
     #[test]
     fn test_default_exported_tags_empty() {
         let config = Config::default();
-        assert!(config.discovery.exported_tags.is_empty());
+        assert_eq!(config.discovery.exported_tags, Vec::<String>::new());
     }
 
     #[test]
@@ -483,12 +483,12 @@ leader_election:
 
     #[test]
     fn test_parse_yaml_with_retry() {
-        let yaml = r#"
+        let yaml = r"
 collection:
   retry:
     max_attempts: 5
     base_delay_ms: 2000
-"#;
+";
         let config: Config = serde_yaml::from_str(yaml).unwrap();
         assert_eq!(config.collection.retry.max_attempts, 5);
         assert_eq!(config.collection.retry.base_delay_ms, 2000);

@@ -1,4 +1,5 @@
 //! Scrape-time gauges for repository inventory and physical storage usage.
+//!
 //! Values are computed on each Prometheus scrape (like the approval_pending
 //! gauge) so they need no leader gating and stay accurate on standbys after a
 //! replication snapshot swap.
@@ -35,15 +36,15 @@ pub trait Reader: Send + Sync {
 #[async_trait]
 impl Reader for crate::meta::Store {
     async fn list_repositories(&self) -> crate::meta::Result<Vec<crate::meta::Repository>> {
-        crate::meta::Store::list_repositories(self).await
+        Self::list_repositories(self).await
     }
 
     async fn all_repo_stats(&self) -> crate::meta::Result<HashMap<i64, crate::meta::RepoStats>> {
-        crate::meta::Store::all_repo_stats(self).await
+        Self::all_repo_stats(self).await
     }
 
     async fn blob_stats(&self) -> crate::meta::Result<(i64, i64)> {
-        crate::meta::Store::blob_stats(self).await
+        Self::blob_stats(self).await
     }
 }
 
@@ -63,8 +64,8 @@ pub struct StorageCollector {
 
 impl StorageCollector {
     /// Builds a collector backed by the metadata store.
-    pub fn new(r: Arc<dyn Reader>) -> StorageCollector {
-        StorageCollector {
+    pub fn new(r: Arc<dyn Reader>) -> Self {
+        Self {
             r,
             timeout: Duration::from_secs(5),
             repositories: desc(
@@ -225,17 +226,14 @@ fn family(desc: &Desc, kind: MetricType, samples: Vec<(Vec<String>, f64)>) -> Me
             labels.sort_by(|a, b| a.name().cmp(b.name()));
             let mut m = Metric::default();
             m.set_label(labels);
-            match kind {
-                MetricType::COUNTER => {
-                    let mut c = prometheus::proto::Counter::default();
-                    c.set_value(value);
-                    m.set_counter(c);
-                }
-                _ => {
-                    let mut g = Gauge::default();
-                    g.set_value(value);
-                    m.set_gauge(g);
-                }
+            if kind == MetricType::COUNTER {
+                let mut c = prometheus::proto::Counter::default();
+                c.set_value(value);
+                m.set_counter(c);
+            } else {
+                let mut g = Gauge::default();
+                g.set_value(value);
+                m.set_gauge(g);
             }
             m
         })

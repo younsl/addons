@@ -63,7 +63,7 @@ pub struct Args {
 
 impl Default for Args {
     fn default() -> Self {
-        Args {
+        Self {
             interactive: false,
             dry_run: false,
             overwrite_meta: false,
@@ -94,7 +94,7 @@ pub fn parse_args(args: &[String]) -> Result<Args, String> {
             inline
                 .clone()
                 .or_else(|| it.next().cloned())
-                .ok_or(format!("flag needs an argument: -{name}"))
+                .ok_or_else(|| format!("flag needs an argument: -{name}"))
         };
         match name {
             "interactive" | "i" => out.interactive = true,
@@ -108,7 +108,7 @@ pub fn parse_args(args: &[String]) -> Result<Args, String> {
                     .parse::<usize>()
                     .ok()
                     .filter(|n| (1..=256).contains(n))
-                    .ok_or(format!("invalid value {v:?} for flag -concurrency (1-256)"))?;
+                    .ok_or_else(|| format!("invalid value {v:?} for flag -concurrency (1-256)"))?;
             }
             "lease-name" => out.lease_name = value()?,
             "writer-selector" => out.writer_selector = value()?,
@@ -125,17 +125,17 @@ pub fn parse_args(args: &[String]) -> Result<Args, String> {
                     .parse::<u8>()
                     .ok()
                     .filter(|n| (1..=100).contains(n))
-                    .ok_or(format!(
-                        "invalid value {v:?} for flag -verify-sample-percent (1-100)"
-                    ))?;
+                    .ok_or_else(|| {
+                        format!("invalid value {v:?} for flag -verify-sample-percent (1-100)")
+                    })?;
             }
             "help" | "h" => return Err(String::new()),
             _ => return Err(format!("flag provided but not defined: {arg}")),
         }
     }
-    out.verify = super::Verify::parse(&verify_mode, verify_percent).ok_or(format!(
-        "invalid value {verify_mode:?} for flag -verify (off, sample, full)"
-    ))?;
+    out.verify = super::Verify::parse(&verify_mode, verify_percent).ok_or_else(|| {
+        format!("invalid value {verify_mode:?} for flag -verify (off, sample, full)")
+    })?;
     if out.lease_name.is_empty() != out.writer_selector.is_empty() {
         return Err("-lease-name and -writer-selector are used together".into());
     }
@@ -200,35 +200,30 @@ impl<R: BufRead, W: Write> Console for Terminal<R, W> {
 }
 
 /// Restores terminal echo on drop. A no-op when stdin is not a terminal.
-struct EchoGuard(Option<libc::termios>);
+struct EchoGuard(Option<rustix::termios::Termios>);
 
 impl EchoGuard {
-    fn off() -> EchoGuard {
-        // SAFETY: tcgetattr/tcsetattr only read and write the termios struct
-        // for stdin, which outlives the guard.
-        unsafe {
-            if libc::isatty(libc::STDIN_FILENO) != 1 {
-                return EchoGuard(None);
-            }
-            let mut t: libc::termios = std::mem::zeroed();
-            if libc::tcgetattr(libc::STDIN_FILENO, &mut t) != 0 {
-                return EchoGuard(None);
-            }
-            let saved = t;
-            t.c_lflag &= !libc::ECHO;
-            libc::tcsetattr(libc::STDIN_FILENO, libc::TCSANOW, &t);
-            EchoGuard(Some(saved))
+    fn off() -> Self {
+        use rustix::termios::{LocalModes, OptionalActions, isatty, tcgetattr, tcsetattr};
+        let stdin = io::stdin();
+        if !isatty(&stdin) {
+            return Self(None);
         }
+        let Ok(saved) = tcgetattr(&stdin) else {
+            return Self(None);
+        };
+        let mut t = saved.clone();
+        t.local_modes.remove(LocalModes::ECHO);
+        let _ = tcsetattr(&stdin, OptionalActions::Now, &t);
+        Self(Some(saved))
     }
 }
 
 impl Drop for EchoGuard {
     fn drop(&mut self) {
         if let Some(t) = &self.0 {
-            // SAFETY: see `off`.
-            unsafe {
-                libc::tcsetattr(libc::STDIN_FILENO, libc::TCSANOW, t);
-            }
+            let _ =
+                rustix::termios::tcsetattr(io::stdin(), rustix::termios::OptionalActions::Now, t);
         }
     }
 }
@@ -454,6 +449,7 @@ async fn open_pair(
 
 /// Runs the interactive flow: prompt, preflight and plan, confirmation, copy.
 /// `Ok(None)` when the operator declines.
+#[allow(clippy::future_not_send)]
 pub async fn run_interactive(
     c: &mut dyn Console,
     source: &config::S3Config,
@@ -648,10 +644,13 @@ mod tests {
     }
 
     impl Script {
-        fn new(answers: &[&str]) -> Script {
-            Script {
-                answers: answers.iter().map(|s| s.to_string()).collect(),
-                ..Script::default()
+        fn new(answers: &[&str]) -> Self {
+            Self {
+                answers: answers
+                    .iter()
+                    .map(std::string::ToString::to_string)
+                    .collect(),
+                ..Self::default()
             }
         }
     }
@@ -675,7 +674,7 @@ mod tests {
     }
 
     fn strings(a: &[&str]) -> Vec<String> {
-        a.iter().map(|s| s.to_string()).collect()
+        a.iter().map(std::string::ToString::to_string).collect()
     }
 
     #[test]

@@ -101,7 +101,7 @@ async fn token_create_validation() {
         if value.is_empty() {
             body.retain(|(k, _)| *k != field);
         } else if !field.is_empty() {
-            for (k, v) in body.iter_mut() {
+            for (k, v) in &mut body {
                 if *k == field {
                     *v = value.to_string();
                 }

@@ -69,16 +69,19 @@ pub struct RuntimeInfo {
 }
 
 impl RuntimeInfo {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             start_time: Instant::now(),
-            hostname: hostname::get()
-                .map(|h| h.to_string_lossy().to_string())
-                .unwrap_or_else(|_| "unknown".to_string()),
+            hostname: hostname::get().map_or_else(
+                |_| "unknown".to_string(),
+                |h| h.to_string_lossy().to_string(),
+            ),
         }
     }
 
     /// Get uptime as human-readable string
+    #[must_use]
     pub fn uptime_string(&self) -> String {
         format_uptime(self.start_time.elapsed().as_secs())
     }
@@ -92,13 +95,13 @@ fn format_uptime(total_secs: u64) -> String {
     let seconds = total_secs % 60;
 
     if days > 0 {
-        format!("{}d {}h {}m {}s", days, hours, minutes, seconds)
+        format!("{days}d {hours}h {minutes}m {seconds}s")
     } else if hours > 0 {
-        format!("{}h {}m {}s", hours, minutes, seconds)
+        format!("{hours}h {minutes}m {seconds}s")
     } else if minutes > 0 {
-        format!("{}m {}s", minutes, seconds)
+        format!("{minutes}m {seconds}s")
     } else {
-        format!("{}s", seconds)
+        format!("{seconds}s")
     }
 }
 
@@ -169,8 +172,7 @@ impl axum::extract::FromRef<AppState> for cookie::Key {
         state
             .auth
             .as_ref()
-            .map(|a| a.cookie_key.clone())
-            .unwrap_or_else(cookie::Key::generate)
+            .map_or_else(Self::generate, |a| a.cookie_key.clone())
     }
 }
 
@@ -195,13 +197,13 @@ mod tests {
     fn runtime_info_starts_at_zero_with_a_hostname() {
         let runtime = RuntimeInfo::new();
         assert_eq!(runtime.uptime_string(), "0s");
-        assert!(!runtime.hostname.is_empty());
+        assert_ne!(runtime.hostname, "");
     }
 
     #[test]
     fn runtime_info_default_matches_new() {
         let runtime = RuntimeInfo::default();
-        assert!(!runtime.hostname.is_empty());
+        assert_ne!(runtime.hostname, "");
         assert_eq!(runtime.uptime_string(), "0s");
     }
 

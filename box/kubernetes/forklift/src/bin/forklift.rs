@@ -36,6 +36,7 @@ const STORE_BOOT_BUDGET: Duration = Duration::from_secs(240);
 const FINAL_SYNC_TIMEOUT: Duration = Duration::from_secs(30);
 
 fn main() -> std::process::ExitCode {
+    let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
     let mut cfg = match config::Config::load() {
         Ok(cfg) => cfg,
         Err(e) => return fatal(&e.to_string()),
@@ -87,7 +88,6 @@ fn migrate_storage(cfg: &config::Config, args: &[String]) -> std::process::ExitC
             "migrate-storage copies between object stores; the source needs FORKLIFT_STORAGE_BACKEND=s3",
         );
     }
-    let _ = rustls::crypto::ring::default_provider().install_default();
     server::logging::init_logging(&cfg.log_level, &cfg.log_format);
     tracing::info!(
         version = %version::string(),
@@ -166,8 +166,8 @@ async fn run(cfg: Arc<config::Config>, cancel: CancellationToken) -> anyhow::Res
         let cancel = cancel.clone();
         async move {
             tokio::select! {
-                _ = signals() => {}
-                _ = cancel.cancelled() => {}
+                () = signals() => {}
+                () = cancel.cancelled() => {}
             }
             shutdown.cancel();
         }
@@ -404,11 +404,11 @@ async fn run(cfg: Arc<config::Config>, cancel: CancellationToken) -> anyhow::Res
                         let f = a.score.parse::<f64>().unwrap_or(0.0);
                         if id.is_empty() || f >= best {
                             best = f;
-                            score = a.score.clone();
-                            id = a.id.clone();
+                            score.clone_from(&a.score);
+                            id.clone_from(&a.id);
                         }
                     }
-                    Some((scan.max_severity.clone(), score, id, true))
+                    Some((scan.max_severity, score, id, true))
                 };
                 match tokio::time::timeout(Duration::from_secs(3), query).await {
                     Ok(Some(found)) => found,
@@ -697,7 +697,7 @@ async fn run(cfg: Arc<config::Config>, cancel: CancellationToken) -> anyhow::Res
             let triggered_by = triggered_by.to_string();
             tokio::spawn(async move {
                 tokio::select! {
-                    _ = shutdown.cancelled() => {}
+                    () = shutdown.cancelled() => {}
                     res = scanner.scan(&triggered_by) => {
                         if let Err(e) = res {
                             tracing::warn!(triggered_by = %triggered_by, err = %e, "coverage: scan failed");
@@ -750,12 +750,12 @@ async fn run(cfg: Arc<config::Config>, cancel: CancellationToken) -> anyhow::Res
                     format!("{endpoint}/{bucket}")
                 };
             } else {
-                st.storage_endpoint = cfg.data_dir.clone();
+                st.storage_endpoint.clone_from(&cfg.data_dir);
             }
             let Some(elector) = &elector else {
                 // Single instance is always the leader and serves itself.
                 st.is_leader = true;
-                st.leader = cfg.ha.identity.clone();
+                st.leader.clone_from(&cfg.ha.identity);
                 st.role = cluster::ROLE_LEADER.to_string();
                 return st;
             };
@@ -822,7 +822,7 @@ async fn run(cfg: Arc<config::Config>, cancel: CancellationToken) -> anyhow::Res
         if let Some(cw) = &conditional_writes {
             descriptor.conditional_writes = Some(cw.is_enforced());
             if let objstore::ConditionalWrites::Ignored { reason } = cw {
-                descriptor.conditional_writes_detail = reason.clone();
+                descriptor.conditional_writes_detail.clone_from(reason);
             }
         }
         let mut cluster: Option<api::ClusterInfoFn> = None;
@@ -1056,7 +1056,7 @@ impl Leadership {
                 match elector.fencing_token().await {
                     Ok(t) => fence = t,
                     Err(e) => {
-                        tracing::warn!(err = %e, "objstore: read fencing token failed; using 0")
+                        tracing::warn!(err = %e, "objstore: read fencing token failed; using 0");
                     }
                 }
             }
@@ -1105,11 +1105,11 @@ impl Leadership {
 
         tokio::spawn(Arc::clone(&self.engine).run_sweeper(
             cancel.clone(),
-            Duration::from_secs(5 * 60),
+            Duration::from_mins(5),
             config::BLOB_GC_GRACE,
         ));
         tokio::spawn(
-            Arc::clone(&self.manager).run_idle_reaper(cancel.clone(), Duration::from_secs(60 * 60)),
+            Arc::clone(&self.manager).run_idle_reaper(cancel.clone(), Duration::from_hours(1)),
         );
         tokio::spawn(Arc::clone(&self.manager).run_oci_prune(
             cancel.clone(),
@@ -1150,7 +1150,7 @@ impl Leadership {
         {
             tokio::spawn(Arc::clone(recorder).run_retention(
                 cancel.clone(),
-                Duration::from_secs(60 * 60),
+                Duration::from_hours(1),
                 cfg.audit.retention,
             ));
         }
@@ -1294,12 +1294,9 @@ async fn signals() {
     #[cfg(unix)]
     {
         use tokio::signal::unix::{SignalKind, signal};
-        let mut term = match signal(SignalKind::terminate()) {
-            Ok(s) => s,
-            Err(_) => {
-                let _ = tokio::signal::ctrl_c().await;
-                return;
-            }
+        let Ok(mut term) = signal(SignalKind::terminate()) else {
+            let _ = tokio::signal::ctrl_c().await;
+            return;
         };
         tokio::select! {
             _ = tokio::signal::ctrl_c() => {}
@@ -1344,8 +1341,8 @@ struct FnGauge {
 }
 
 impl FnGauge {
-    fn new(name: &str, help: &str, value: Arc<dyn Fn() -> f64 + Send + Sync>) -> FnGauge {
-        FnGauge {
+    fn new(name: &str, help: &str, value: Arc<dyn Fn() -> f64 + Send + Sync>) -> Self {
+        Self {
             desc: Desc::new(name.to_string(), help.to_string(), vec![], HashMap::new())
                 .unwrap_or_else(|e| panic!("metric descriptor {name}: {e}")),
             value,
@@ -1427,15 +1424,14 @@ fn parse_flags(cfg: &mut config::Config) -> Result<bool, String> {
         if !VALUE_FLAGS.contains(&name) {
             return Err(format!("flag provided but not defined: -{name}"));
         }
-        let value = match inline {
-            Some(value) => value,
-            None => {
-                let Some(next) = args.get(i) else {
-                    return Err(format!("flag needs an argument: -{name}"));
-                };
-                i += 1;
-                next.clone()
-            }
+        let value = if let Some(value) = inline {
+            value
+        } else {
+            let Some(next) = args.get(i) else {
+                return Err(format!("flag needs an argument: -{name}"));
+            };
+            i += 1;
+            next.clone()
         };
         match name {
             "osv-url" => cfg.vuln.osv_url = value,
@@ -1444,20 +1440,20 @@ fn parse_flags(cfg: &mut config::Config) -> Result<bool, String> {
             "vuln-workers" => cfg.vuln.workers = int_value(&value, name)?,
             "deps-dev-url" => cfg.license.deps_dev_url = value,
             "license-rescan-interval" => {
-                cfg.license.rescan_interval = duration_value(&value, name)?
+                cfg.license.rescan_interval = duration_value(&value, name)?;
             }
             "license-ttl" => cfg.license.ttl = duration_value(&value, name)?,
             "license-workers" => cfg.license.workers = int_value(&value, name)?,
             "ui-upload-max-duration" => cfg.upload.max_duration = duration_value(&value, name)?,
             "ui-upload-max-concurrent" => cfg.upload.max_concurrent = int_value(&value, name)?,
             "ui-upload-max-concurrent-user" => {
-                cfg.upload.max_concurrent_user = int_value(&value, name)?
+                cfg.upload.max_concurrent_user = int_value(&value, name)?;
             }
             "ui-upload-max-assets" => cfg.upload.max_assets = int_value(&value, name)?,
             "ui-upload-max-file-bytes" => cfg.upload.max_file_bytes = bytes_value(&value, name)?,
             "ui-upload-max-batch-bytes" => cfg.upload.max_batch_bytes = bytes_value(&value, name)?,
             "ui-upload-go-max-zip-bytes" => {
-                cfg.upload.go_max_zip_bytes = bytes_value(&value, name)?
+                cfg.upload.go_max_zip_bytes = bytes_value(&value, name)?;
             }
             // VALUE_FLAGS above is the same list, so this is unreachable.
             _ => return Err(format!("flag provided but not defined: -{name}")),
@@ -1575,8 +1571,8 @@ async fn run_coverage_schedule(
             let notifier = Arc::clone(&notifier);
             async move {
                 tokio::select! {
-                    _ = cancel.cancelled() => return,
-                    _ = tokio::time::sleep(STARTUP_SCAN_DELAY) => {}
+                    () = cancel.cancelled() => return,
+                    () = tokio::time::sleep(STARTUP_SCAN_DELAY) => {}
                 }
                 if let Err(e) = scanner.scan(coverage::TRIGGER_STARTUP).await {
                     tracing::warn!(err = %e, "coverage: initial scan failed");
@@ -1596,7 +1592,7 @@ async fn run_coverage_schedule(
     let mut last_fired: Option<i64> = None;
     loop {
         tokio::select! {
-            _ = cancel.cancelled() => return,
+            () = cancel.cancelled() => return,
             _ = ticker.tick() => {}
         }
         let now = Utc::now();
@@ -1723,20 +1719,21 @@ mod tests {
     #[tokio::test(flavor = "multi_thread")]
     async fn run_starts_and_shuts_down() {
         let dir = tempfile::tempdir().expect("temp dir");
-        unsafe {
-            std::env::set_var("FORKLIFT_DATA_DIR", dir.path());
-            std::env::set_var("FORKLIFT_HTTP_ADDR", "127.0.0.1:0");
-            std::env::set_var("FORKLIFT_METRICS_ADDR", "127.0.0.1:0");
-            std::env::set_var("FORKLIFT_PPROF_ADDR", "127.0.0.1:0");
-            std::env::set_var(
+        {
+            use config::test_env::set;
+            set("FORKLIFT_DATA_DIR", dir.path().to_string_lossy());
+            set("FORKLIFT_HTTP_ADDR", "127.0.0.1:0");
+            set("FORKLIFT_METRICS_ADDR", "127.0.0.1:0");
+            set("FORKLIFT_PPROF_ADDR", "127.0.0.1:0");
+            set(
                 "FORKLIFT_SESSION_SECRET",
                 "test-secret-test-secret-test-secret-0123",
             );
-            std::env::set_var("FORKLIFT_BOOTSTRAP_ADMIN_PASSWORD", "admin-pass-123456");
+            set("FORKLIFT_BOOTSTRAP_ADMIN_PASSWORD", "admin-pass-123456");
             // Disable the vuln scanner and license resolver (no network).
-            std::env::set_var("FORKLIFT_OSV_URL", "");
-            std::env::set_var("FORKLIFT_DEPSDEV_URL", "");
-            std::env::set_var("FORKLIFT_SHUTDOWN_TIMEOUT", "2s");
+            set("FORKLIFT_OSV_URL", "");
+            set("FORKLIFT_DEPSDEV_URL", "");
+            set("FORKLIFT_SHUTDOWN_TIMEOUT", "2s");
         }
 
         let cfg = config::Config::load().expect("config load");
@@ -1753,7 +1750,7 @@ mod tests {
             Ok(joined) => joined
                 .expect("run task")
                 .unwrap_or_else(|e| panic!("run returned error: {e:#}")),
-            Err(_) => panic!("run did not shut down after context cancel"),
+            Err(e) => panic!("run did not shut down after context cancel: {e}"),
         }
     }
 }

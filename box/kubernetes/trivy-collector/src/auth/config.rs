@@ -24,16 +24,28 @@ pub fn validate_keycloak_config(
 ) -> Result<(), String> {
     let mut missing = Vec::new();
 
-    if oidc_issuer_url.as_ref().is_none_or(|s| s.is_empty()) {
+    if oidc_issuer_url
+        .as_ref()
+        .is_none_or(std::string::String::is_empty)
+    {
         missing.push(env::OIDC_ISSUER_URL);
     }
-    if oidc_client_id.as_ref().is_none_or(|s| s.is_empty()) {
+    if oidc_client_id
+        .as_ref()
+        .is_none_or(std::string::String::is_empty)
+    {
         missing.push(env::OIDC_CLIENT_ID);
     }
-    if oidc_client_secret.as_ref().is_none_or(|s| s.is_empty()) {
+    if oidc_client_secret
+        .as_ref()
+        .is_none_or(std::string::String::is_empty)
+    {
         missing.push(env::OIDC_CLIENT_SECRET);
     }
-    if oidc_redirect_url.as_ref().is_none_or(|s| s.is_empty()) {
+    if oidc_redirect_url
+        .as_ref()
+        .is_none_or(std::string::String::is_empty)
+    {
         missing.push(env::OIDC_REDIRECT_URL);
     }
 
@@ -91,9 +103,9 @@ mod tests {
     #[test]
     fn test_validate_keycloak_empty_strings() {
         let result = validate_keycloak_config(
-            &Some("".to_string()),
+            &Some(String::new()),
             &Some("client-id".to_string()),
-            &Some("".to_string()),
+            &Some(String::new()),
             &Some("http://localhost:3000/auth/callback".to_string()),
         );
         assert!(result.is_err());

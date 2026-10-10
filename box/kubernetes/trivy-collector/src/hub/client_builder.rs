@@ -13,6 +13,8 @@
 //!   namespaces: '["default","prod"]'   # optional
 //! ```
 
+use std::fmt::Write as _;
+
 use anyhow::{Context, Result, anyhow};
 use k8s_openapi::api::core::v1::Secret;
 use kube::Client;
@@ -33,18 +35,18 @@ pub fn parse_cluster_secret(secret: &Secret) -> Result<ClusterSecret> {
     let server = data
         .get("server")
         .cloned()
-        .ok_or_else(|| anyhow!("cluster Secret '{}' missing 'server' field", name))?;
+        .ok_or_else(|| anyhow!("cluster Secret '{name}' missing 'server' field"))?;
 
     let config_str = data
         .get("config")
-        .ok_or_else(|| anyhow!("cluster Secret '{}' missing 'config' field", name))?;
+        .ok_or_else(|| anyhow!("cluster Secret '{name}' missing 'config' field"))?;
 
     let credentials: ClusterCredentials = serde_json::from_str(config_str)
-        .with_context(|| format!("invalid 'config' JSON in cluster Secret '{}'", name))?;
+        .with_context(|| format!("invalid 'config' JSON in cluster Secret '{name}'"))?;
 
     let namespaces = match data.get("namespaces") {
         Some(v) if !v.trim().is_empty() => serde_json::from_str::<Vec<String>>(v)
-            .with_context(|| format!("invalid 'namespaces' JSON in cluster Secret '{}'", name))?,
+            .with_context(|| format!("invalid 'namespaces' JSON in cluster Secret '{name}'"))?,
         _ => Vec::new(),
     };
 
@@ -85,27 +87,29 @@ fn synth_kubeconfig_yaml(secret: &ClusterSecret) -> String {
         cluster_lines.push_str("    insecure-skip-tls-verify: true\n");
     }
     if let Some(ca) = &tls.ca_data {
-        cluster_lines.push_str(&format!(
-            "    certificate-authority-data: {}\n",
+        let _ = writeln!(
+            cluster_lines,
+            "    certificate-authority-data: {}",
             yaml_quote(ca)
-        ));
+        );
     }
     if let Some(sn) = &tls.server_name {
-        cluster_lines.push_str(&format!("    tls-server-name: {}\n", yaml_quote(sn)));
+        let _ = writeln!(cluster_lines, "    tls-server-name: {}", yaml_quote(sn));
     }
 
     let mut user_lines = String::new();
     if let Some(tok) = &secret.credentials.bearer_token {
-        user_lines.push_str(&format!("    token: {}\n", yaml_quote(tok)));
+        let _ = writeln!(user_lines, "    token: {}", yaml_quote(tok));
     }
     if let Some(cert) = &tls.cert_data {
-        user_lines.push_str(&format!(
-            "    client-certificate-data: {}\n",
+        let _ = writeln!(
+            user_lines,
+            "    client-certificate-data: {}",
             yaml_quote(cert)
-        ));
+        );
     }
     if let Some(key) = &tls.key_data {
-        user_lines.push_str(&format!("    client-key-data: {}\n", yaml_quote(key)));
+        let _ = writeln!(user_lines, "    client-key-data: {}", yaml_quote(key));
     }
 
     let user_block = if user_lines.is_empty() {
@@ -117,27 +121,27 @@ fn synth_kubeconfig_yaml(secret: &ClusterSecret) -> String {
     let mut out = String::new();
     out.push_str("apiVersion: v1\n");
     out.push_str("kind: Config\n");
-    out.push_str(&format!("current-context: {}\n", cluster_name));
+    let _ = writeln!(out, "current-context: {cluster_name}");
     out.push_str("clusters:\n");
-    out.push_str(&format!("- name: {}\n", cluster_name));
+    let _ = writeln!(out, "- name: {cluster_name}");
     out.push_str("  cluster:\n");
     out.push_str(&cluster_lines);
     out.push_str("users:\n");
-    out.push_str(&format!("- name: {}\n", user_name));
+    let _ = writeln!(out, "- name: {user_name}");
     out.push_str("  user:\n");
     out.push_str(&user_block);
     out.push_str("contexts:\n");
-    out.push_str(&format!("- name: {}\n", cluster_name));
+    let _ = writeln!(out, "- name: {cluster_name}");
     out.push_str("  context:\n");
-    out.push_str(&format!("    cluster: {}\n", cluster_name));
-    out.push_str(&format!("    user: {}\n", user_name));
+    let _ = writeln!(out, "    cluster: {cluster_name}");
+    let _ = writeln!(out, "    user: {user_name}");
     out
 }
 
 /// Minimal YAML scalar quoting: wrap in double quotes and escape backslash/quote.
 fn yaml_quote(s: &str) -> String {
     let escaped = s.replace('\\', "\\\\").replace('"', "\\\"");
-    format!("\"{}\"", escaped)
+    format!("\"{escaped}\"")
 }
 
 fn read_secret_map(secret: &Secret) -> std::collections::BTreeMap<String, String> {
@@ -191,7 +195,7 @@ mod tests {
         assert_eq!(parsed.name, "edge-a");
         assert_eq!(parsed.server, "https://edge:443");
         assert_eq!(parsed.credentials.bearer_token.as_deref(), Some("abc"));
-        assert!(parsed.namespaces.is_empty());
+        assert_eq!(parsed.namespaces, [] as [std::string::String; 0]);
     }
 
     #[test]
@@ -232,11 +236,8 @@ mod tests {
     #[test]
     fn test_read_data_field_fallback() {
         let mut data = BTreeMap::new();
-        data.insert("name".to_string(), ByteString("edge-c".as_bytes().to_vec()));
-        data.insert(
-            "server".to_string(),
-            ByteString("https://c".as_bytes().to_vec()),
-        );
+        data.insert("name".to_string(), ByteString(b"edge-c".to_vec()));
+        data.insert("server".to_string(), ByteString(b"https://c".to_vec()));
         data.insert(
             "config".to_string(),
             ByteString(br#"{"bearerToken":"t"}"#.to_vec()),
@@ -262,7 +263,7 @@ mod tests {
             namespaces: vec![],
         };
         let yaml = synth_kubeconfig_yaml(&secret);
-        eprintln!("YAML:\n{}", yaml);
+        eprintln!("YAML:\n{yaml}");
         let kubeconfig = Kubeconfig::from_yaml(&yaml).expect("synth kubeconfig should parse");
         assert_eq!(kubeconfig.current_context.as_deref(), Some("edge-a"));
         assert_eq!(kubeconfig.clusters.len(), 1);

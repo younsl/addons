@@ -39,6 +39,7 @@ pub struct ListQuery {
 }
 
 impl ListQuery {
+    #[must_use]
     pub fn to_query_params(&self) -> QueryParams {
         QueryParams {
             cluster: self.cluster.clone(),
@@ -113,7 +114,7 @@ pub struct ComponentSuggestQuery {
 
 /// Response wrapper for list endpoints
 #[derive(Serialize, ToSchema)]
-pub struct ListResponse<T: ToSchema> {
+pub struct ListResponse<T> {
     /// List of items
     pub items: Vec<T>,
     /// Total count
@@ -244,7 +245,7 @@ pub struct ConfigItem {
 
 impl ConfigItem {
     /// Create a public (non-sensitive) config item
-    pub fn public(env: &str, value: impl ToString) -> Self {
+    pub fn public(env: &str, value: &(impl ToString + ?Sized)) -> Self {
         Self {
             env: env.to_string(),
             value: value.to_string(),
@@ -253,7 +254,7 @@ impl ConfigItem {
     }
 
     /// Create a sensitive config item (value will be masked)
-    pub fn sensitive(env: &str, value: impl ToString) -> Self {
+    pub fn sensitive(env: &str, value: &(impl ToString + ?Sized)) -> Self {
         Self {
             env: env.to_string(),
             value: Self::mask_value(&value.to_string()),
@@ -297,6 +298,7 @@ pub struct TrendQuery {
 
 impl TrendQuery {
     /// Parse range string to (start_date, end_date)
+    #[must_use]
     pub fn parse_range(&self) -> (String, String) {
         let today = chrono::Utc::now().date_naive();
         let range = self.range.as_deref().unwrap_or("30d");
@@ -314,7 +316,6 @@ impl TrendQuery {
             "1d" => 1,
             "2d" => 2,
             "7d" => 7,
-            "30d" => 30,
             _ => 30, // default
         };
 
@@ -323,6 +324,7 @@ impl TrendQuery {
     }
 
     /// Get granularity with default (auto-detect hourly for 1d range)
+    #[must_use]
     pub fn get_granularity(&self) -> &str {
         if let Some(ref g) = self.granularity {
             return g.as_str();

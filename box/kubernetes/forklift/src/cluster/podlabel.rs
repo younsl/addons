@@ -54,9 +54,10 @@ impl Elector {
             if name == self_pod {
                 continue;
             }
-            match self.set_pod_role(namespace, name, ROLE_STANDBY).await {
-                Err(e) => errs.push(e),
-                Ok(()) => tracing::warn!(pod = %name, "demoted stale leader label on peer"),
+            if let Err(e) = self.set_pod_role(namespace, name, ROLE_STANDBY).await {
+                errs.push(e);
+            } else {
+                tracing::warn!(pod = %name, "demoted stale leader label on peer");
             }
         }
         if errs.is_empty() {
@@ -149,8 +150,8 @@ pub(crate) mod tests {
     }
 
     impl FakeApiServer {
-        pub(crate) fn with_objects(objs: Vec<FakeObject>) -> FakeApiServer {
-            let fake = FakeApiServer::default();
+        pub(crate) fn with_objects(objs: Vec<FakeObject>) -> Self {
+            let fake = Self::default();
             {
                 let mut st = fake.state.lock();
                 for o in objs {
@@ -282,7 +283,7 @@ pub(crate) mod tests {
                     .and_then(|v| v.parse::<u64>().ok())
                     .unwrap_or(1)
                     + 1;
-                lease.metadata.namespace = Some(namespace.clone());
+                lease.metadata.namespace = Some(namespace);
                 lease.metadata.resource_version = Some(next.to_string());
                 st.leases.insert(k, lease.clone());
                 ok_json(&lease)
@@ -366,8 +367,7 @@ pub(crate) mod tests {
                 .labels
                 .as_ref()
                 .and_then(|l| l.get(k))
-                .map(|got| got == v)
-                .unwrap_or(false)
+                .is_some_and(|got| got == v)
         })
     }
 

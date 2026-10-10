@@ -85,7 +85,7 @@ pub(crate) mod tests {
     fn cgroup_limit_v2() {
         let dir = tempfile::tempdir().unwrap();
         write_file(&dir.path().join("memory.max"), "268435456\n");
-        assert_eq!(cgroup_limit(dir.path()), Some(268435456), "cgroup_limit");
+        assert_eq!(cgroup_limit(dir.path()), Some(268_435_456), "cgroup_limit");
     }
 
     #[test]
@@ -105,7 +105,7 @@ pub(crate) mod tests {
             &dir.path().join("memory").join("memory.limit_in_bytes"),
             "536870912\n",
         );
-        assert_eq!(cgroup_limit(dir.path()), Some(536870912), "cgroup_limit");
+        assert_eq!(cgroup_limit(dir.path()), Some(536_870_912), "cgroup_limit");
     }
 
     #[test]

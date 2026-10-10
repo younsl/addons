@@ -10,6 +10,7 @@ use crate::error::{Error, Result};
 
 /// EC2 instance information.
 #[derive(Debug, Clone, Tabled)]
+#[allow(clippy::struct_field_names)]
 pub struct Instance {
     #[tabled(rename = "NAME")]
     pub name: String,
@@ -36,7 +37,7 @@ pub fn format_age(secs: u64) -> String {
     const DAY: u64 = 86400;
 
     match secs {
-        s if s < MINUTE => format!("{}s", s),
+        s if s < MINUTE => format!("{s}s"),
         s if s < HOUR => format!("{}m", s / MINUTE),
         s if s < DAY => format!("{}h", s / HOUR),
         s => format!("{}d", s / DAY),
@@ -145,7 +146,7 @@ pub struct Scanner {
 
 impl Scanner {
     /// Create a new scanner with the given config.
-    pub fn new(config: Config) -> Self {
+    pub const fn new(config: Config) -> Self {
         Self { config }
     }
 
@@ -208,19 +209,18 @@ impl Scanner {
     }
 
     fn get_regions(&self) -> Vec<&str> {
-        if let Some(ref region) = self.config.region {
+        match &self.config.region {
             // CLI --region flag overrides everything
-            vec![region.as_str()]
-        } else if !self.config.scan_regions.is_empty() {
+            Some(region) => vec![region.as_str()],
             // Use scan_regions from config file
-            self.config
+            None if !self.config.scan_regions.is_empty() => self
+                .config
                 .scan_regions
                 .iter()
-                .map(|s| s.as_str())
-                .collect()
-        } else {
+                .map(std::string::String::as_str)
+                .collect(),
             // Default: scan all regions
-            AWS_REGIONS.to_vec()
+            None => AWS_REGIONS.to_vec(),
         }
     }
 }
@@ -255,20 +255,18 @@ async fn fetch_region_instances_with_config(
     let instances = resp
         .reservations()
         .iter()
-        .flat_map(|r| r.instances())
+        .flat_map(aws_sdk_ec2::types::Reservation::instances)
         .map(|i| Instance {
             name: extract_name_tag(i).unwrap_or_else(|| "(no name)".to_string()),
             instance_id: i.instance_id().unwrap_or("N/A").to_string(),
             instance_type: i
                 .instance_type()
-                .map(|t| t.as_str())
-                .unwrap_or("N/A")
+                .map_or("N/A", aws_sdk_ec2::types::InstanceType::as_str)
                 .to_string(),
             state: i
                 .state()
                 .and_then(|s| s.name())
-                .map(|n| n.as_str())
-                .unwrap_or("unknown")
+                .map_or("unknown", aws_sdk_ec2::types::InstanceStateName::as_str)
                 .to_string(),
             az: i
                 .placement()
@@ -289,8 +287,7 @@ async fn fetch_region_instances_with_config(
                 .unwrap_or_else(|| "-".to_string()),
             platform: i
                 .platform()
-                .map(|p| p.as_str())
-                .unwrap_or("Linux")
+                .map_or("Linux", aws_sdk_ec2::types::PlatformValues::as_str)
                 .to_string(),
         })
         .collect();
@@ -322,8 +319,7 @@ pub async fn start_instance(
         .find(|s| s.instance_id() == Some(instance_id))
         .and_then(|s| s.current_state())
         .and_then(|s| s.name())
-        .map(|n| n.as_str().to_string())
-        .unwrap_or_else(|| "pending".to_string());
+        .map_or_else(|| "pending".to_string(), |n| n.as_str().to_string());
 
     Ok(state)
 }
@@ -352,8 +348,7 @@ pub async fn stop_instance(
         .find(|s| s.instance_id() == Some(instance_id))
         .and_then(|s| s.current_state())
         .and_then(|s| s.name())
-        .map(|n| n.as_str().to_string())
-        .unwrap_or_else(|| "stopping".to_string());
+        .map_or_else(|| "stopping".to_string(), |n| n.as_str().to_string());
 
     Ok(state)
 }
@@ -374,7 +369,7 @@ fn build_filters(tag_filters: &[String], running_only: bool) -> Vec<Filter> {
         if let Some((key, value)) = tag_filter.split_once('=') {
             filters.push(
                 Filter::builder()
-                    .name(format!("tag:{}", key))
+                    .name(format!("tag:{key}"))
                     .values(value)
                     .build(),
             );
@@ -395,19 +390,22 @@ fn extract_name_tag(instance: &aws_sdk_ec2::types::Instance) -> Option<String> {
         .iter()
         .find(|tag| tag.key() == Some("Name"))
         .and_then(|tag| tag.value())
-        .map(|s| s.to_string())
+        .map(std::string::ToString::to_string)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn test_config(region: Option<&str>, scan_regions: Vec<&str>) -> Config {
+    fn test_config(region: Option<&str>, scan_regions: &[&str]) -> Config {
         Config {
             profile: None,
             aws_config_file: None,
-            region: region.map(|s| s.to_string()),
-            scan_regions: scan_regions.iter().map(|s| s.to_string()).collect(),
+            region: region.map(std::string::ToString::to_string),
+            scan_regions: scan_regions
+                .iter()
+                .map(std::string::ToString::to_string)
+                .collect(),
             tag_filters: Vec::new(),
             running_only: true,
             log_level: "info".into(),
@@ -420,21 +418,21 @@ mod tests {
 
     #[test]
     fn get_regions_cli_overrides_everything() {
-        let config = test_config(Some("us-west-2"), vec!["eu-west-1", "ap-northeast-2"]);
+        let config = test_config(Some("us-west-2"), &["eu-west-1", "ap-northeast-2"]);
         let scanner = Scanner::new(config);
         assert_eq!(scanner.get_regions(), vec!["us-west-2"]);
     }
 
     #[test]
     fn get_regions_uses_scan_regions() {
-        let config = test_config(None, vec!["eu-west-1", "ap-northeast-2"]);
+        let config = test_config(None, &["eu-west-1", "ap-northeast-2"]);
         let scanner = Scanner::new(config);
         assert_eq!(scanner.get_regions(), vec!["eu-west-1", "ap-northeast-2"]);
     }
 
     #[test]
     fn get_regions_defaults_to_all() {
-        let config = test_config(None, vec![]);
+        let config = test_config(None, &[]);
         let scanner = Scanner::new(config);
         let regions = scanner.get_regions();
         assert_eq!(regions.len(), AWS_REGIONS.len());
@@ -454,7 +452,7 @@ mod tests {
     #[test]
     fn build_filters_not_running_only() {
         let filters = build_filters(&[], false);
-        assert!(filters.is_empty());
+        assert_eq!(filters, [] as [aws_sdk_ec2::types::Filter; 0]);
     }
 
     #[test]
@@ -480,7 +478,7 @@ mod tests {
     fn build_filters_ignores_invalid_tag() {
         let tags = vec!["invalid-no-equals".to_string()];
         let filters = build_filters(&tags, false);
-        assert!(filters.is_empty());
+        assert_eq!(filters, [] as [aws_sdk_ec2::types::Filter; 0]);
     }
 
     // --- ColumnWidths tests ---

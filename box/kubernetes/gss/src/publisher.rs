@@ -63,6 +63,7 @@ mod tests {
 
     #[test]
     fn test_create_slack_canvas_publisher() {
+        crate::install_crypto_provider();
         let mut config = Config::new_for_test(
             "test-token".to_string(),
             "test-org".to_string(),

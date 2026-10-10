@@ -130,7 +130,7 @@ impl Uploader {
         }
         match self.store.apply_publication_lifecycle(batch).await {
             Ok(()) => Ok(result),
-            Err(meta::Error::ArtifactConflict) | Err(meta::Error::DerivedMetadataChanged) => {
+            Err(meta::Error::ArtifactConflict | meta::Error::DerivedMetadataChanged) => {
                 Err(upload_problem(
                     409,
                     "concurrent_metadata_update",
@@ -822,7 +822,7 @@ fn best_npm_version(versions: &serde_json::Map<String, serde_json::Value>) -> St
             continue;
         };
         if parsed_best.as_ref().is_none_or(|current| parsed > *current) {
-            best = value.clone();
+            best.clone_from(value);
             parsed_best = Some(parsed);
         }
     }

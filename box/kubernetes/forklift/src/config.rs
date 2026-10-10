@@ -20,7 +20,7 @@ pub enum Error {
     Env {
         key: String,
         #[source]
-        source: Box<Error>,
+        source: Box<Self>,
     },
 }
 
@@ -28,7 +28,7 @@ pub enum Error {
 pub type Result<T> = std::result::Result<T, Error>;
 
 /// Config holds all runtime configuration.
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Config {
     /// The root directory holding the SQLite metadata database and, for the
     /// filesystem backend, the content-addressed blob store. It is backed by a
@@ -114,7 +114,7 @@ pub struct Config {
 }
 
 /// Bounds the OCI distribution API.
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct OCIConfig {
     /// Caps a pushed or proxied manifest/index document, which is buffered
     /// whole for digesting and reference verification.
@@ -143,12 +143,12 @@ pub struct OCIConfig {
 /// snapshot from within that day leaves no dangling references. The cost is
 /// holding deleted bytes for a day, which at any realistic churn is a rounding
 /// error against the blob store.
-pub const BLOB_GC_GRACE: Duration = Duration::from_secs(24 * 60 * 60);
+pub const BLOB_GC_GRACE: Duration = Duration::from_hours(24);
 
 /// Selects where blobs and the metadata database are persisted. A single
 /// backend switch flips both subsystems so they cannot be misconfigured
 /// independently.
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct StorageConfig {
     /// "fs" (local/PersistentVolume) or "s3" (shared S3 bucket). In s3 mode
     /// blobs live directly in the bucket and the metadata database is
@@ -166,7 +166,7 @@ pub struct StorageConfig {
 /// default credential chain, which resolves EKS IRSA and EKS Pod Identity
 /// automatically. `endpoint`/`force_path_style` support S3-compatible stores
 /// (MinIO).
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct S3Config {
     pub bucket: String,
     pub prefix: String,
@@ -201,7 +201,7 @@ impl S3Config {
 }
 
 /// Configures OSV-based vulnerability scanning.
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct VulnConfig {
     /// The OSV API base (e.g. https://api.osv.dev). Empty disables scanning
     /// entirely.
@@ -216,7 +216,7 @@ pub struct VulnConfig {
 }
 
 /// Configures deps.dev-based license resolution.
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct LicenseConfig {
     /// The deps.dev API base (e.g. https://api.deps.dev). Empty disables
     /// license resolution entirely.
@@ -231,7 +231,7 @@ pub struct LicenseConfig {
 
 /// Configures outbound alarms. The alarm channels (receivers) are managed at
 /// runtime in the admin console; this only holds delivery tuning.
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct NotifyConfig {
     /// Bounds each webhook delivery attempt.
     pub webhook_timeout: Duration,
@@ -250,7 +250,7 @@ pub struct NotifyConfig {
 /// the exception on purpose: keeping it in the environment means it never
 /// reaches the database, the snapshots synchronised to object storage, or a
 /// settings API response.
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct CoverageConfig {
     /// Turns coverage scanning on. It is a separate switch from the
     /// credentials on purpose: a deployment that already has a GitLab token in
@@ -268,7 +268,7 @@ pub struct CoverageConfig {
 }
 
 /// Configures local users, sessions, OIDC and anonymous access.
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct AuthConfig {
     /// Signs stateless session cookies. Must be shared across replicas in HA
     /// mode; if empty an ephemeral secret is generated.
@@ -289,7 +289,7 @@ pub struct AuthConfig {
 /// Configures declarative, ArgoCD-style RBAC reconciled from the chart on
 /// startup. When `policy_file` is empty, declarative RBAC is disabled and
 /// authorization relies solely on roles managed through the API/UI.
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct RBACConfig {
     /// The path to an ArgoCD-style policy.csv (ConfigMap mount).
     pub policy_file: String,
@@ -303,7 +303,7 @@ pub struct RBACConfig {
 }
 
 /// Configures Keycloak (or any OIDC provider) login.
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct OIDCConfig {
     pub enabled: bool,
     pub issuer_url: String,
@@ -315,7 +315,7 @@ pub struct OIDCConfig {
 }
 
 /// Configures the per-repository audit log.
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct AuditConfig {
     /// Turns audit logging on (artifact traffic and repository configuration
     /// changes are recorded per repository).
@@ -326,7 +326,7 @@ pub struct AuditConfig {
 }
 
 /// Configures PV-based replication between two replicas.
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ReplicationConfig {
     pub enabled: bool,
     /// Authenticates the internal replication endpoints. Must be shared by all
@@ -350,7 +350,7 @@ pub struct ReplicationConfig {
 }
 
 /// Configures leader election for active/standby high availability.
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct HAConfig {
     pub enabled: bool,
     pub lease_name: String,
@@ -363,12 +363,12 @@ pub struct HAConfig {
 
 const SECOND: Duration = Duration::from_secs(1);
 const MINUTE: Duration = Duration::from_secs(60);
-const HOUR: Duration = Duration::from_secs(60 * 60);
+const HOUR: Duration = Duration::from_hours(1);
 
 impl Config {
     /// Builds a `Config` from the environment, applying defaults.
-    pub fn load() -> Result<Config> {
-        let c = Config {
+    pub fn load() -> Result<Self> {
+        let c = Self {
             data_dir: env("FORKLIFT_DATA_DIR", "/data"),
             storage: StorageConfig {
                 backend: env("FORKLIFT_STORAGE_BACKEND", "fs"),
@@ -597,7 +597,70 @@ pub fn parse_byte_size(raw: &str) -> Result<i64> {
 
 /// Reads an environment variable, treating unset and non-UTF-8 values alike.
 fn lookup_env(key: &str) -> Option<String> {
+    #[cfg(any(test, feature = "testing"))]
+    match test_env::get(key) {
+        Some(test_env::Override::Value(v)) => return Some(v),
+        Some(test_env::Override::Unset) => return None,
+        None => {}
+    }
     std::env::var_os(key).and_then(|v| v.into_string().ok())
+}
+
+/// Process-wide overrides that [`Config::load`] reads before the real
+/// environment, so tests can vary configuration without the `unsafe`
+/// `std::env::set_var`.
+#[cfg(any(test, feature = "testing"))]
+pub mod test_env {
+    use std::collections::HashMap;
+    use std::sync::{Mutex, PoisonError};
+
+    /// What a key reads as while overridden.
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    pub enum Override {
+        Value(String),
+        Unset,
+    }
+
+    static OVERRIDES: Mutex<Option<HashMap<String, Override>>> = Mutex::new(None);
+
+    /// The override for `key`, `None` when the real environment applies.
+    pub fn get(key: &str) -> Option<Override> {
+        OVERRIDES
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .as_ref()
+            .and_then(|m| m.get(key).cloned())
+    }
+
+    /// Overrides `key` with `value`.
+    pub fn put(key: &str, value: Override) {
+        OVERRIDES
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .get_or_insert_with(HashMap::new)
+            .insert(key.to_string(), value);
+    }
+
+    /// Makes `key` read as `value`.
+    pub fn set(key: &str, value: impl Into<String>) {
+        put(key, Override::Value(value.into()));
+    }
+
+    /// Makes `key` read as unset, whatever the real environment holds.
+    pub fn remove(key: &str) {
+        put(key, Override::Unset);
+    }
+
+    /// Drops the override for `key` so the real environment shows through.
+    pub fn clear(key: &str) {
+        if let Some(m) = OVERRIDES
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .as_mut()
+        {
+            m.remove(key);
+        }
+    }
 }
 
 /// Returns the raw value of `key` when it is set and not blank, else `def`.
@@ -633,20 +696,11 @@ pub fn env_int64(key: &str, def: i64) -> i64 {
 pub fn env_duration(key: &str, def: Duration) -> Duration {
     lookup_env(key)
         .and_then(|v| parse_duration_nanos(v.trim()).ok())
-        .map(|n| Duration::from_nanos(n.max(0) as u64))
-        .unwrap_or(def)
+        .map_or(def, |n| Duration::from_nanos(n.max(0) as u64))
 }
 
 fn hostname() -> String {
-    let mut buf = [0u8; 256];
-    // SAFETY: gethostname writes at most `buf.len()` bytes into the buffer we
-    // own and returns non-zero on failure, in which case `buf` is not read.
-    let rc = unsafe { libc::gethostname(buf.as_mut_ptr().cast::<libc::c_char>(), buf.len()) };
-    if rc != 0 {
-        return "forklift".to_string();
-    }
-    let end = buf.iter().position(|&b| b == 0).unwrap_or(buf.len());
-    match std::str::from_utf8(&buf[..end]) {
+    match rustix::system::uname().nodename().to_str() {
         Ok(h) if !h.is_empty() => h.to_string(),
         _ => "forklift".to_string(),
     }
@@ -659,7 +713,7 @@ pub fn format_std_duration(d: Duration) -> String {
 //
 // `Duration.String()` prints "72h3m0.5s", "1.5ms", "0s".
 
-fn unit_nanos(unit: &[u8]) -> Option<u64> {
+const fn unit_nanos(unit: &[u8]) -> Option<u64> {
     match unit {
         b"ns" => Some(1),
         b"us" | b"\xC2\xB5s" | b"\xCE\xBCs" => Some(1_000),
@@ -857,21 +911,20 @@ pub fn format_duration_nanos(nanos: i64) -> String {
 
 #[cfg(test)]
 pub(crate) mod tests {
-    use std::ffi::OsString;
     use std::time::Duration;
 
     use serial_test::serial;
 
     use crate::config::*;
 
-    /// Records and restores environment variables.
+    /// Records and restores configuration overrides.
     struct EnvGuard {
-        saved: Vec<(String, Option<OsString>)>,
+        saved: Vec<(String, Option<test_env::Override>)>,
     }
 
     impl EnvGuard {
         fn new() -> Self {
-            let mut g = EnvGuard { saved: Vec::new() };
+            let mut g = Self { saved: Vec::new() };
             let keys: Vec<String> = std::env::vars_os()
                 .filter_map(|(k, _)| k.into_string().ok())
                 .filter(|k| k.starts_with("FORKLIFT_") || k == "POD_NAME" || k == "POD_NAMESPACE")
@@ -884,33 +937,27 @@ pub(crate) mod tests {
 
         fn remember(&mut self, key: &str) {
             if !self.saved.iter().any(|(k, _)| k == key) {
-                self.saved.push((key.to_string(), std::env::var_os(key)));
+                self.saved.push((key.to_string(), test_env::get(key)));
             }
         }
 
         fn set(&mut self, key: &str, value: &str) {
             self.remember(key);
-            // SAFETY: env-mutating tests are serialised by `#[serial]` and no
-            // other thread in this test reads the environment concurrently.
-            unsafe { std::env::set_var(key, value) };
+            test_env::set(key, value);
         }
 
         fn remove(&mut self, key: &str) {
             self.remember(key);
-            // SAFETY: see `set`.
-            unsafe { std::env::remove_var(key) };
+            test_env::remove(key);
         }
     }
 
     impl Drop for EnvGuard {
         fn drop(&mut self) {
             for (k, v) in self.saved.drain(..).rev() {
-                // SAFETY: see `set`.
-                unsafe {
-                    match v {
-                        Some(v) => std::env::set_var(&k, v),
-                        None => std::env::remove_var(&k),
-                    }
+                match v {
+                    Some(v) => test_env::put(&k, v),
+                    None => test_env::clear(&k),
                 }
             }
         }
@@ -1018,7 +1065,7 @@ pub(crate) mod tests {
         let c = Config::load().unwrap();
         assert!(
             c.auth.bootstrap_admin_user == "admin"
-                && c.auth.session_ttl == Duration::from_secs(12 * 3600),
+                && c.auth.session_ttl == Duration::from_hours(12),
             "auth defaults = {:?}",
             c.auth
         );
@@ -1165,7 +1212,7 @@ pub(crate) mod tests {
             "UI upload must default on now that every supported format slice is ready"
         );
         assert!(
-            c.upload.max_duration == Duration::from_secs(30 * 60)
+            c.upload.max_duration == Duration::from_mins(30)
                 && c.upload.max_concurrent == 4
                 && c.upload.max_concurrent_user == 2,
             "upload concurrency defaults = {:?}",
@@ -1202,7 +1249,7 @@ pub(crate) mod tests {
         let c = Config::load().unwrap();
         assert!(
             c.upload.enabled
-                && c.upload.max_duration == Duration::from_secs(45 * 60)
+                && c.upload.max_duration == Duration::from_mins(45)
                 && c.upload.max_concurrent == 8
                 && c.upload.max_concurrent_user == 3,
             "upload overrides = {:?}",
@@ -1312,13 +1359,13 @@ pub(crate) mod tests {
             ("duration", |c| c.max_duration = Duration::from_secs(30)),
             ("global concurrency", |c| c.max_concurrent = 0),
             ("user concurrency", |c| {
-                c.max_concurrent_user = c.max_concurrent + 1
+                c.max_concurrent_user = c.max_concurrent + 1;
             }),
             ("assets", |c| c.max_assets = 65),
             ("file bytes", |c| c.max_file_bytes = 1 << 10),
             ("batch bytes", |c| c.max_batch_bytes = c.max_file_bytes - 1),
             ("batch below Go zip", |c| {
-                c.max_batch_bytes = c.go_max_zip_bytes - 1
+                c.max_batch_bytes = c.go_max_zip_bytes - 1;
             }),
             ("go zip bytes", |c| c.go_max_zip_bytes = 501 << 20),
         ];

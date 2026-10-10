@@ -142,7 +142,7 @@ impl Manager {
         let ratios = self.compute_clean_scan_ratios().await?;
         {
             let mut cached = self.scan_ratios.lock();
-            cached.ratios = ratios.clone();
+            cached.ratios.clone_from(&ratios);
             cached.at = Some(self.engine.now());
         }
         self.scan_ratio_served.with_label_values(&["miss"]).inc();
@@ -209,7 +209,7 @@ impl Manager {
         };
         loop {
             let stop = tokio::select! {
-                _ = cancel.cancelled() => true,
+                () = cancel.cancelled() => true,
                 job = rx.recv() => match job {
                     Some(job) => {
                         self.run_scan(job).await;
@@ -297,7 +297,7 @@ impl Manager {
         ticker.tick().await;
         loop {
             tokio::select! {
-                _ = cancel.cancelled() => return,
+                () = cancel.cancelled() => return,
                 _ = ticker.tick() => self.backfill_once().await,
             }
         }
@@ -367,7 +367,7 @@ impl Manager {
         ticker.tick().await;
         loop {
             tokio::select! {
-                _ = cancel.cancelled() => return,
+                () = cancel.cancelled() => return,
                 _ = ticker.tick() => {
                     let cutoff = self.engine.now()
                         - chrono::TimeDelta::from_std(ttl).unwrap_or(chrono::TimeDelta::zero());

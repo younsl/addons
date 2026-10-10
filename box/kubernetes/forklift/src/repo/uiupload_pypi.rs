@@ -4,7 +4,6 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use once_cell::sync::Lazy;
 use regex::Regex;
 
 use crate::meta::{
@@ -20,14 +19,15 @@ use super::uiupload::{
 };
 
 /// PEP 440's version grammar, as the canonicaliser applies it.
-static PYPI_VERSION_GRAMMAR: Lazy<Regex> = Lazy::new(|| {
+static PYPI_VERSION_GRAMMAR: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
     Regex::new(
         r"(?i)^v?(?:(\d+)!)?(\d+(?:\.\d+)*)(?:[-_.]?(a|b|c|rc|alpha|beta|pre|preview)(?:[-_.]?(\d+))?)?(?:(?:-(\d+))|(?:[-_.]?(post|rev|r)(?:[-_.]?(\d+))?))?(?:[-_.]?(dev)(?:[-_.]?(\d+))?)?(?:\+([a-z0-9]+(?:[-_.][a-z0-9]+)*))?$",
     )
     .expect("valid regex")
 });
 
-static LOCAL_SEGMENT_SPLIT: Lazy<Regex> = Lazy::new(|| Regex::new(r"[-_.]").expect("valid regex"));
+static LOCAL_SEGMENT_SPLIT: std::sync::LazyLock<Regex> =
+    std::sync::LazyLock::new(|| Regex::new(r"[-_.]").expect("valid regex"));
 
 /// One inspected distribution file.
 #[derive(Debug, Clone, Default)]
@@ -51,8 +51,7 @@ impl MailHeader {
         self.0
             .get(&canonical_header_key(key))
             .and_then(|values| values.first())
-            .map(String::as_str)
-            .unwrap_or("")
+            .map_or("", String::as_str)
     }
 
     fn values(&self, key: &str) -> Vec<String> {
@@ -155,7 +154,7 @@ impl Uploader {
             .await
         {
             Ok(mut publication) => {
-                publication.upload_id = request.upload_id.clone();
+                publication.upload_id.clone_from(&request.upload_id);
                 publication.updated_at = publication_time;
                 publication
             }
@@ -426,7 +425,7 @@ impl Uploader {
         let Some(metadata_bytes) = metadata_bytes else {
             return Err(identity_mismatch());
         };
-        let metadata = parse_core_metadata(&metadata_bytes).map_err(|_| {
+        let metadata = parse_core_metadata(&metadata_bytes).map_err(|()| {
             upload_problem(
                 422,
                 "sdist_metadata_invalid",
@@ -532,7 +531,7 @@ impl Uploader {
                 "METADATA, WHEEL, and RECORD are required in the matching dist-info directory",
             ));
         }
-        let metadata = parse_core_metadata(&required["METADATA"]).map_err(|_| {
+        let metadata = parse_core_metadata(&required["METADATA"]).map_err(|()| {
             upload_problem(
                 422,
                 "wheel_metadata_invalid",
@@ -554,7 +553,7 @@ impl Uploader {
                 "Wheel filename, dist-info directory, and core metadata must identify the same release",
             ));
         }
-        let wheel_headers = parse_metadata_headers(&required["WHEEL"]).map_err(|_| {
+        let wheel_headers = parse_metadata_headers(&required["WHEEL"]).map_err(|()| {
             upload_problem(
                 422,
                 "wheel_metadata_invalid",
@@ -650,7 +649,7 @@ impl Uploader {
                 "Exactly one bounded regular PKG-INFO is required",
             ),
         })?;
-        let metadata = parse_core_metadata(&metadata_bytes.unwrap_or_default()).map_err(|_| {
+        let metadata = parse_core_metadata(&metadata_bytes.unwrap_or_default()).map_err(|()| {
             upload_problem(
                 422,
                 "sdist_metadata_missing",
@@ -809,7 +808,7 @@ pub(crate) fn canonical_pypi_version(version: &str) -> String {
     let Some(match_) = PYPI_VERSION_GRAMMAR.captures(value) else {
         return String::new();
     };
-    let group = |i: usize| match_.get(i).map(|m| m.as_str()).unwrap_or("");
+    let group = |i: usize| match_.get(i).map_or("", |m| m.as_str());
     let normal_number = |raw: &str| -> String {
         if raw.is_empty() {
             return "0".to_string();

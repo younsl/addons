@@ -176,7 +176,7 @@ pub(crate) mod tests {
     /// The server binary installs the process-wide rustls crypto provider at
     /// startup; a test that builds an HTTP client must do it itself first.
     pub(crate) fn install_crypto_provider() {
-        let _ = rustls::crypto::ring::default_provider().install_default();
+        let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
     }
 
     pub(crate) fn config() -> AdminConfig {
@@ -194,7 +194,7 @@ pub(crate) mod tests {
     fn registry_ids_are_unique_and_resolvable() {
         let ids = provider_ids();
         let mut sorted = ids.clone();
-        sorted.sort();
+        sorted.sort_unstable();
         sorted.dedup();
         assert_eq!(sorted.len(), ids.len(), "duplicate provider id in {ids:?}");
         for id in ids {

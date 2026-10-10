@@ -4,6 +4,7 @@ use anyhow::{Context, Result};
 use async_trait::async_trait;
 use reqwest::Client;
 use serde_json::json;
+use std::fmt::Write as _;
 use tracing::info;
 
 const KST_OFFSET_HOURS: i32 = 9;
@@ -46,44 +47,42 @@ impl SlackCanvasPublisher {
             hour.to_string()
         };
 
-        format!("{} {} {} {} {}", minute, kst_hour, day, month, dow)
+        format!("{minute} {kst_hour} {day} {month} {dow}")
     }
 
-    fn format_canvas_content(&self, result: &ScanResult) -> String {
+    fn format_canvas_content(result: &ScanResult) -> String {
         let mut content = String::new();
 
         // Header
         content.push_str("# GitHub Scheduled Workflows Report\n\n");
 
         // Build information
-        content.push_str(&format!("**Version:** {}\n", env!("CARGO_PKG_VERSION")));
-        content.push_str(&format!(
-            "**Build Date:** {}\n",
+        let _ = writeln!(content, "**Version:** {}", env!("CARGO_PKG_VERSION"));
+        let _ = writeln!(
+            content,
+            "**Build Date:** {}",
             option_env!("BUILD_DATE").unwrap_or("unknown")
-        ));
-        content.push_str(&format!(
+        );
+        let _ = write!(
+            content,
             "**Git Commit:** {}\n\n",
             option_env!("GIT_COMMIT").unwrap_or("unknown")
-        ));
+        );
 
         // Summary
         content.push_str("## Summary\n\n");
-        content.push_str(&format!(
-            "- **Total Workflows:** {}\n",
-            result.workflows.len()
-        ));
-        content.push_str(&format!(
-            "- **Total Repositories:** {}\n",
-            result.total_repos
-        ));
-        content.push_str(&format!(
-            "- **Excluded Repositories:** {}\n",
+        let _ = writeln!(content, "- **Total Workflows:** {}", result.workflows.len());
+        let _ = writeln!(content, "- **Total Repositories:** {}", result.total_repos);
+        let _ = writeln!(
+            content,
+            "- **Excluded Repositories:** {}",
             result.excluded_repos_count
-        ));
-        content.push_str(&format!(
+        );
+        let _ = write!(
+            content,
             "- **Scan Duration:** {:?}\n\n",
             result.scan_duration
-        ));
+        );
 
         // Workflows table
         if result.workflows.is_empty() {
@@ -114,22 +113,25 @@ impl SlackCanvasPublisher {
                     "⚠️ Inactive"
                 };
 
-                content.push_str(&format!("### {}. {}\n", idx + 1, workflow.workflow_name));
-                content.push_str(&format!("- **Repository:** `{}`\n", workflow.repo_name));
-                content.push_str(&format!(
-                    "- **Workflow File:** `{}`\n",
+                let _ = writeln!(content, "### {}. {}", idx + 1, workflow.workflow_name);
+                let _ = writeln!(content, "- **Repository:** `{}`", workflow.repo_name);
+                let _ = writeln!(
+                    content,
+                    "- **Workflow File:** `{}`",
                     workflow.workflow_file_name
-                ));
-                content.push_str(&format!("- **UTC Schedule:** `{}`\n", schedules));
-                content.push_str(&format!("- **KST Schedule:** `{}`\n", kst_schedules));
-                content.push_str(&format!(
-                    "- **Last Status:** {} {}\n",
+                );
+                let _ = writeln!(content, "- **UTC Schedule:** `{schedules}`");
+                let _ = writeln!(content, "- **KST Schedule:** `{kst_schedules}`");
+                let _ = writeln!(
+                    content,
+                    "- **Last Status:** {} {}",
                     status_emoji, workflow.last_status
-                ));
-                content.push_str(&format!(
-                    "- **Workflow Last Author:** {} ({})\n",
+                );
+                let _ = writeln!(
+                    content,
+                    "- **Workflow Last Author:** {} ({})",
                     workflow.workflow_last_author, user_status
-                ));
+                );
                 content.push('\n');
             }
         }
@@ -168,17 +170,17 @@ impl SlackCanvasPublisher {
             .context("Failed to parse Slack API response")?;
 
         if !status.is_success() {
-            anyhow::bail!("Slack API request failed with status {}: {}", status, body);
+            anyhow::bail!("Slack API request failed with status {status}: {body}");
         }
 
-        if let Some(ok) = body.get("ok").and_then(|v| v.as_bool())
+        if let Some(ok) = body.get("ok").and_then(serde_json::Value::as_bool)
             && !ok
         {
             let error = body
                 .get("error")
                 .and_then(|v| v.as_str())
                 .unwrap_or("unknown");
-            anyhow::bail!("Slack API returned error: {}", error);
+            anyhow::bail!("Slack API returned error: {error}");
         }
 
         Ok(())
@@ -190,7 +192,7 @@ impl Publisher for SlackCanvasPublisher {
     async fn publish(&self, result: &ScanResult) -> Result<()> {
         info!("Publishing results to Slack Canvas");
 
-        let content = self.format_canvas_content(result);
+        let content = Self::format_canvas_content(result);
 
         self.update_canvas(&content)
             .await
@@ -200,7 +202,7 @@ impl Publisher for SlackCanvasPublisher {
         Ok(())
     }
 
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "slack-canvas"
     }
 }
@@ -261,16 +263,10 @@ mod tests {
 
     #[test]
     fn test_format_canvas_content() {
-        let publisher = SlackCanvasPublisher::new(
-            "xoxb-test".to_string(),
-            "C123".to_string(),
-            "F456".to_string(),
-        );
-
         let mut result = ScanResult::new();
         result.total_repos = 10;
 
-        let content = publisher.format_canvas_content(&result);
+        let content = SlackCanvasPublisher::format_canvas_content(&result);
         assert!(content.contains("# GitHub Scheduled Workflows Report"));
         assert!(content.contains("Total Repositories:** 10"));
         assert!(content.contains("No scheduled workflows found."));
@@ -278,12 +274,6 @@ mod tests {
 
     #[test]
     fn test_format_canvas_content_with_workflows() {
-        let publisher = SlackCanvasPublisher::new(
-            "xoxb-test".to_string(),
-            "C123".to_string(),
-            "F456".to_string(),
-        );
-
         let mut result = ScanResult::new();
         result.total_repos = 10;
         result.excluded_repos_count = 2;
@@ -313,7 +303,7 @@ mod tests {
         wf2.is_active_user = false;
         result.workflows.push(wf2);
 
-        let content = publisher.format_canvas_content(&result);
+        let content = SlackCanvasPublisher::format_canvas_content(&result);
         assert!(content.contains("repo-a"));
         assert!(content.contains("Deploy"));
         assert!(content.contains("✅"));
@@ -326,12 +316,6 @@ mod tests {
 
     #[test]
     fn test_format_canvas_content_various_statuses() {
-        let publisher = SlackCanvasPublisher::new(
-            "xoxb-test".to_string(),
-            "C123".to_string(),
-            "F456".to_string(),
-        );
-
         let mut result = ScanResult::new();
         result.total_repos = 5;
 
@@ -346,9 +330,9 @@ mod tests {
         .enumerate()
         {
             let mut wf = WorkflowInfo::new(
-                format!("repo-{}", status),
-                format!("wf-{}", status),
-                i as i64,
+                format!("repo-{status}"),
+                format!("wf-{status}"),
+                i as u64,
                 ".github/workflows/test.yml".to_string(),
             );
             wf.cron_schedules = vec!["0 0 * * *".to_string()];
@@ -356,7 +340,7 @@ mod tests {
             result.workflows.push(wf);
         }
 
-        let content = publisher.format_canvas_content(&result);
+        let content = SlackCanvasPublisher::format_canvas_content(&result);
         assert!(content.contains("🚫"));
         assert!(content.contains("⏸️"));
         assert!(content.contains("❓"));
@@ -366,6 +350,7 @@ mod tests {
 
     #[test]
     fn test_slack_canvas_publisher_name() {
+        crate::install_crypto_provider();
         let publisher = SlackCanvasPublisher::new(
             "xoxb-test".to_string(),
             "C123".to_string(),

@@ -34,10 +34,10 @@ impl VersionExpr {
             if clause.is_empty() {
                 continue;
             }
-            let (op, rest) = parse_op(clause)?;
+            let (op, rest) = parse_op(clause);
             let version = rest.trim().to_string();
             if version.is_empty() {
-                return Err(format!("missing version after operator in '{}'", clause));
+                return Err(format!("missing version after operator in '{clause}'"));
             }
             constraints.push(Constraint { op, version });
         }
@@ -47,6 +47,7 @@ impl VersionExpr {
         Ok(Self { constraints })
     }
 
+    #[must_use]
     pub fn matches(&self, version: &str) -> bool {
         self.constraints
             .iter()
@@ -54,21 +55,21 @@ impl VersionExpr {
     }
 }
 
-fn parse_op(s: &str) -> Result<(Op, &str), String> {
+fn parse_op(s: &str) -> (Op, &str) {
     if let Some(rest) = s.strip_prefix("<=") {
-        Ok((Op::Le, rest))
+        (Op::Le, rest)
     } else if let Some(rest) = s.strip_prefix(">=") {
-        Ok((Op::Ge, rest))
+        (Op::Ge, rest)
     } else if let Some(rest) = s.strip_prefix("!=") {
-        Ok((Op::Ne, rest))
+        (Op::Ne, rest)
     } else if let Some(rest) = s.strip_prefix('<') {
-        Ok((Op::Lt, rest))
+        (Op::Lt, rest)
     } else if let Some(rest) = s.strip_prefix('>') {
-        Ok((Op::Gt, rest))
+        (Op::Gt, rest)
     } else if let Some(rest) = s.strip_prefix('=') {
-        Ok((Op::Eq, rest))
+        (Op::Eq, rest)
     } else {
-        Ok((Op::Eq, s))
+        (Op::Eq, s)
     }
 }
 

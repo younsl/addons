@@ -7,6 +7,9 @@ pub enum AppError {
 
     #[error("AutoScaling error: {0}")]
     AutoScaling(String),
+
+    #[error(transparent)]
+    Sdk(Box<dyn std::error::Error + Send + Sync>),
 }
 
 #[cfg(test)]

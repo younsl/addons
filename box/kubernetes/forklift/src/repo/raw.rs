@@ -115,7 +115,7 @@ pub(crate) fn raw_package(p: &str) -> String {
 
 /// Always empty: raw artifacts have no version convention, which also makes
 /// vuln/license scanning a no-op for the format.
-pub(crate) fn raw_version(_p: &str) -> String {
+pub(crate) const fn raw_version(_p: &str) -> String {
     String::new()
 }
 
@@ -124,9 +124,8 @@ pub(crate) fn raw_version(_p: &str) -> String {
 /// octet-stream so a stored payload cannot execute as same-origin script; this
 /// is stored with the artifact and reused on serve.
 pub(crate) fn raw_content_type(p: &str) -> String {
-    let ct = match builtin_type_by_extension(path_ext(p)) {
-        Some(ct) => ct,
-        None => return "application/octet-stream".to_string(),
+    let Some(ct) = builtin_type_by_extension(path_ext(p)) else {
+        return "application/octet-stream".to_string();
     };
     let base = ct
         .split(';')

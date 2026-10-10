@@ -71,7 +71,7 @@ Every setting is an environment variable.
 | `MCP_PATH` | `/mcp` | Path the MCP endpoint is served on |
 | `MCP_BEARER_TOKEN` | empty | Bearer token MCP clients must present. Empty disables inbound authentication. |
 | `MAX_RESULT_CHARS` | `100000` | Upper bound on the characters of one tool result |
-| `LOG_LEVEL` | `info` | `debug`, `info`, `warn` or `error` |
+| `LOG_LEVEL` | `info` | `debug`, `info`, `warn` or `error`. `RUST_LOG` overrides it with a full filter directive. |
 | `LOG_FORMAT` | `json` | `json` or `text` |
 
 `GET /healthz` always answers 200 once the process is up. `GET /readyz` proxies Backstage's `/.backstage/health/v1/readiness` and answers 503 when it fails.

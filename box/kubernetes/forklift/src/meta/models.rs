@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 /// A Hosted, Proxy (cached upstream) or Group repository for one package
 /// format.
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Repository {
     pub id: i64,
     pub name: String,
@@ -25,7 +25,7 @@ pub struct Repository {
 
 /// A stored path within a repository pointing at a content-addressed blob,
 /// plus caching/age-policy metadata.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Artifact {
     pub id: i64,
@@ -54,7 +54,7 @@ pub struct Artifact {
 }
 
 /// Groups the immutable paths forming one package version.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ArtifactPublication {
     pub id: String,
@@ -74,7 +74,7 @@ pub struct ArtifactPublication {
 }
 
 /// Prevents reuse of a deleted coordinate where an ecosystem requires it.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ArtifactPublicationTombstone {
     pub repo_id: i64,
@@ -87,7 +87,7 @@ pub struct ArtifactPublicationTombstone {
 }
 
 /// An internal CAS-backed aggregate representation of a group index.
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct GroupMetadataCache {
     pub group_repo_id: i64,
     pub path: String,
@@ -101,7 +101,7 @@ pub struct GroupMetadataCache {
 }
 
 /// The durable idempotency state for one upload.
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ArtifactUploadRequest {
     pub idempotency_key: String,
     pub repo_id: i64,
@@ -122,7 +122,7 @@ pub const UPLOAD_COMMITTED: &str = "committed";
 pub const UPLOAD_FAILED: &str = "failed";
 
 /// The reference-counted record for a content-addressed blob.
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Blob {
     pub sha256: String,
     pub size: i64,
@@ -131,7 +131,7 @@ pub struct Blob {
 }
 
 /// A local (password) or OIDC-sourced principal.
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct User {
     pub id: i64,
     pub username: String,
@@ -160,13 +160,13 @@ pub struct User {
 
 impl User {
     /// Reports whether the account is currently locked out.
-    pub fn locked(&self) -> bool {
+    pub const fn locked(&self) -> bool {
         self.locked_at.is_some()
     }
 }
 
 /// A named bundle of repository permissions.
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Role {
     pub id: i64,
     pub name: String,
@@ -178,7 +178,7 @@ pub struct Role {
 }
 
 /// Grants a set of actions on repositories matching a glob pattern.
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Permission {
     pub id: i64,
     pub role_id: i64,
@@ -190,7 +190,7 @@ pub struct Permission {
 }
 
 /// Maps a Keycloak group name to a role.
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct GroupMapping {
     pub id: i64,
     pub group_name: String,
@@ -199,7 +199,7 @@ pub struct GroupMapping {
 }
 
 /// A personal access token (PAT). Only the SHA-256 hash is stored.
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Token {
     pub id: i64,
     pub user_id: i64,

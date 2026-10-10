@@ -116,41 +116,41 @@ impl Error {
     /// classes into their sentinel variants so callers can `match` on them.
     pub fn sqlite(op: &'static str, source: rusqlite::Error) -> Self {
         match &source {
-            rusqlite::Error::QueryReturnedNoRows => Error::NotFound,
+            rusqlite::Error::QueryReturnedNoRows => Self::NotFound,
             rusqlite::Error::SqliteFailure(e, _)
                 if e.code == rusqlite::ErrorCode::ConstraintViolation =>
             {
-                Error::Conflict
+                Self::Conflict
             }
-            _ => Error::Sqlite { op, source },
+            _ => Self::Sqlite { op, source },
         }
     }
 
     /// Wraps an I/O error with the operation that failed.
-    pub fn io(op: &'static str, source: std::io::Error) -> Self {
-        Error::Io { op, source }
+    pub const fn io(op: &'static str, source: std::io::Error) -> Self {
+        Self::Io { op, source }
     }
 
     /// True for [`Error::NotFound`].
-    pub fn is_not_found(&self) -> bool {
-        matches!(self, Error::NotFound)
+    pub const fn is_not_found(&self) -> bool {
+        matches!(self, Self::NotFound)
     }
 
     /// True for [`Error::Conflict`].
-    pub fn is_conflict(&self) -> bool {
-        matches!(self, Error::Conflict)
+    pub const fn is_conflict(&self) -> bool {
+        matches!(self, Self::Conflict)
     }
 }
 
 impl From<rusqlite::Error> for Error {
     fn from(e: rusqlite::Error) -> Self {
-        Error::sqlite("sqlite", e)
+        Self::sqlite("sqlite", e)
     }
 }
 
 impl From<tokio::task::JoinError> for Error {
     fn from(e: tokio::task::JoinError) -> Self {
-        Error::Task(e.to_string())
+        Self::Task(e.to_string())
     }
 }
 
@@ -196,12 +196,12 @@ struct Pool {
 }
 
 impl Pool {
-    fn open(path: &Path, size: usize) -> Result<Arc<Pool>> {
+    fn open(path: &Path, size: usize) -> Result<Arc<Self>> {
         let mut conns = Vec::with_capacity(size);
         for _ in 0..size {
             conns.push(open_connection(path)?);
         }
-        Ok(Arc::new(Pool {
+        Ok(Arc::new(Self {
             conns: parking_lot::Mutex::new(conns),
             permits: Semaphore::new(size),
             size,
@@ -239,20 +239,19 @@ impl Pool {
         if self.closed.load(Ordering::Acquire) {
             return Err(Error::Other("database handle closed".into()));
         }
-        let permit = match self.permits.try_acquire() {
-            Ok(p) => p,
-            Err(_) => {
-                let started = Instant::now();
-                let p = self
-                    .permits
-                    .acquire()
-                    .await
-                    .map_err(|_| Error::Other("database handle closed".into()))?;
-                self.wait_count.fetch_add(1, Ordering::Relaxed);
-                self.wait_nanos
-                    .fetch_add(started.elapsed().as_nanos() as u64, Ordering::Relaxed);
-                p
-            }
+        let permit = if let Ok(p) = self.permits.try_acquire() {
+            p
+        } else {
+            let started = Instant::now();
+            let p = self
+                .permits
+                .acquire()
+                .await
+                .map_err(|_| Error::Other("database handle closed".into()))?;
+            self.wait_count.fetch_add(1, Ordering::Relaxed);
+            self.wait_nanos
+                .fetch_add(started.elapsed().as_nanos() as u64, Ordering::Relaxed);
+            p
         };
         // The permit guards the count; the connection itself travels with the
         // blocking task, so forget the permit and re-add it on release.
@@ -356,19 +355,19 @@ impl Store {
     /// pending migrations. WAL mode and a busy timeout reduce lock contention;
     /// the single-writer guarantee for HA is provided by leader election, not
     /// the database.
-    pub async fn open(path: impl AsRef<Path>) -> Result<Store> {
+    pub async fn open(path: impl AsRef<Path>) -> Result<Self> {
         let path = path.as_ref().to_path_buf();
         let handles = open_handles(&path).await?;
-        Ok(Store {
+        Ok(Self {
             handles: ArcSwap::from_pointee(handles),
             path,
         })
     }
 
     /// Opens a store on a fresh temporary file. Test helper.
-    pub async fn open_temp() -> Result<(Store, tempfile::TempDir)> {
+    pub async fn open_temp() -> Result<(Self, tempfile::TempDir)> {
         let dir = tempfile::tempdir().map_err(|e| Error::io("create temp dir", e))?;
-        let store = Store::open(dir.path().join("forklift.db")).await?;
+        let store = Self::open(dir.path().join("forklift.db")).await?;
         Ok((store, dir))
     }
 
@@ -792,7 +791,7 @@ pub(crate) mod tests {
             match tokio::time::timeout(Duration::from_secs(2), call).await {
                 Ok(Ok(())) => {}
                 Ok(Err(e)) => panic!("{name} failed: {e}"),
-                Err(_) => panic!("{name} blocked behind the open write transaction"),
+                Err(e) => panic!("{name} blocked behind the open write transaction: {e}"),
             }
         }
     }

@@ -30,7 +30,7 @@ impl Engine {
         ticker.tick().await;
         loop {
             tokio::select! {
-                _ = cancel.cancelled() => return,
+                () = cancel.cancelled() => return,
                 _ = ticker.tick() => self.sweep_once(grace).await,
             }
         }

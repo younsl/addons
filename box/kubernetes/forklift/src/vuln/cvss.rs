@@ -75,9 +75,9 @@ pub(crate) fn cvss_base_score(vector: &str) -> Option<f64> {
     let c = cvss_cia(get("C"))?;
     let i = cvss_cia(get("I"))?;
     let a = cvss_cia(get("A"))?;
-    let iss = 1.0 - (1.0 - c) * (1.0 - i) * (1.0 - a);
+    let iss = f64::mul_add((1.0 - c) * (1.0 - i), -(1.0 - a), 1.0);
     let impact = if scope_changed {
-        7.52 * (iss - 0.029) - 3.25 * (iss - 0.02).powf(15.0)
+        3.25f64.mul_add(-(iss - 0.02).powi(15), 7.52 * (iss - 0.029))
     } else {
         6.42 * iss
     };
@@ -93,9 +93,9 @@ pub(crate) fn cvss_base_score(vector: &str) -> Option<f64> {
 
 /// Rounds up to the nearest 0.1, as defined by the CVSS v3.1 spec.
 fn cvss_roundup(x: f64) -> f64 {
-    let i = (x * 100000.0).round() as i64;
+    let i = (x * 100_000.0).round() as i64;
     if i % 10000 == 0 {
-        return i as f64 / 100000.0;
+        return i as f64 / 100_000.0;
     }
     ((i as f64 / 10000.0).floor() + 1.0) / 10.0
 }

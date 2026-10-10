@@ -31,18 +31,20 @@ const RUSTC_VERSION: &str = env!("BUILD_RUSTC_VERSION");
 #[command(name = "backstage-mcp", version, about)]
 struct Cli {
     /// Enable debug logging regardless of `LOG_LEVEL`.
-    #[arg(short, long)]
+    #[arg(short, long, env = "VERBOSE")]
     verbose: bool,
     /// Serve over stdin and stdout instead of HTTP (same as `MCP_TRANSPORT=stdio`).
-    #[arg(long)]
+    #[arg(long, env = "MCP_STDIO")]
     stdio: bool,
     /// Print the registered tool names and exit.
-    #[arg(long)]
+    #[arg(long, env = "LIST_TOOLS")]
     list_tools: bool,
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
+
     let cli = Cli::parse();
     let mut cfg = match Config::load() {
         Ok(cfg) => cfg,
@@ -142,7 +144,9 @@ async fn main() -> Result<()> {
 }
 
 fn init_tracing(level: &str, format: &str, to_stderr: bool) {
-    let filter = EnvFilter::try_new(level).unwrap_or_else(|_| EnvFilter::new("info"));
+    let filter = EnvFilter::try_from_default_env()
+        .or_else(|_| EnvFilter::try_new(level))
+        .unwrap_or_else(|_| EnvFilter::new("info"));
     let registry = tracing_subscriber::registry().with(filter);
     let writer = move || -> Box<dyn std::io::Write + Send> {
         if to_stderr {

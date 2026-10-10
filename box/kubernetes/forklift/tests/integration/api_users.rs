@@ -56,7 +56,7 @@ async fn robot_account_create() {
     let users = resp.json();
     let bot = find_user(&users, "ci-bot");
     assert!(
-        bot.map(|b| b["robot"] == true).unwrap_or(false),
+        bot.is_some_and(|b| b["robot"] == true),
         "ci-bot not flagged robot: {bot:?}"
     );
 
@@ -129,9 +129,8 @@ async fn user_admin_lifecycle() {
     let users = resp.json();
     let dev1 = find_user(&users, "dev1");
     assert!(
-        dev1.map(|d| d["roles"].as_array().map(Vec::len) == Some(1)
-            && d["roles"][0]["name"] == "readers")
-            .unwrap_or(false),
+        dev1.is_some_and(|d| d["roles"].as_array().map(Vec::len) == Some(1)
+            && d["roles"][0]["name"] == "readers"),
         "dev1 = {dev1:?}, want role readers"
     );
 
@@ -494,9 +493,8 @@ async fn create_user_with_roles() {
     let users = srv.admin_do(Method::GET, "/users", "").await.json();
     let dev1 = find_user(&users, "dev1");
     assert!(
-        dev1.map(|d| d["roles"].as_array().map(Vec::len) == Some(1)
-            && d["roles"][0]["name"] == "readers")
-            .unwrap_or(false),
+        dev1.is_some_and(|d| d["roles"].as_array().map(Vec::len) == Some(1)
+            && d["roles"][0]["name"] == "readers"),
         "dev1 = {dev1:?}, want role readers at creation"
     );
 
@@ -632,9 +630,7 @@ async fn user_lockout_toggle() {
     let users = srv.admin_do(Method::GET, "/users", "").await.json();
     let created = find_user(&users, "lockme");
     assert!(
-        created
-            .map(|c| c["lockout_enabled"] == true)
-            .unwrap_or(false),
+        created.is_some_and(|c| c["lockout_enabled"] == true),
         "new user lockout default = {created:?}, want lockout_enabled true"
     );
     let created = created.expect("lockme");

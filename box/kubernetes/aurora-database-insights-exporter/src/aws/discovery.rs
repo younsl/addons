@@ -31,7 +31,7 @@ pub struct AwsRdsDiscoverer {
 }
 
 impl AwsRdsDiscoverer {
-    pub fn new(client: RdsClient) -> Self {
+    pub const fn new(client: RdsClient) -> Self {
         Self { client }
     }
 }
@@ -78,14 +78,14 @@ impl RdsDiscoverer for AwsRdsDiscoverer {
                         .tag_list()
                         .iter()
                         .filter_map(|t: &aws_sdk_rds::types::Tag| {
-                            Some((t.key.as_ref()?.to_string(), t.value.as_ref()?.to_string()))
+                            Some((t.key.as_ref()?.clone(), t.value.as_ref()?.clone()))
                         })
                         .collect(),
                 };
                 instances.push(info);
             }
 
-            marker = resp.marker().map(|s| s.to_string());
+            marker = resp.marker().map(ToString::to_string);
             if marker.is_none() {
                 break;
             }
@@ -95,7 +95,7 @@ impl RdsDiscoverer for AwsRdsDiscoverer {
     }
 }
 
-/// Filter and convert raw RDS instances to AuroraInstances.
+/// Filter and convert raw RDS instances to `AuroraInstance`s.
 pub fn filter_instances(
     raw: &[RdsInstanceInfo],
     config: &DiscoveryConfig,
@@ -239,6 +239,7 @@ pub async fn run_discovery_cycle<D: RdsDiscoverer>(
 }
 
 #[cfg(test)]
+#[allow(clippy::unused_async_trait_impl)]
 mod tests {
     use super::*;
 
@@ -382,7 +383,7 @@ mod tests {
     fn test_filter_empty_input() {
         let config = default_discovery_config();
         let result = filter_instances(&[], &config).unwrap();
-        assert!(result.is_empty());
+        assert_eq!(result.len(), 0);
     }
 
     #[test]

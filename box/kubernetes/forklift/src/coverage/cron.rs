@@ -182,7 +182,7 @@ impl Schedule {
     }
 
     /// The timezone the expression is evaluated in.
-    pub fn location(&self) -> Tz {
+    pub const fn location(&self) -> Tz {
         self.loc
     }
 
@@ -257,11 +257,10 @@ impl Schedule {
 /// `time.Date` also returns.
 fn start_of_next_day(t: DateTime<Tz>) -> DateTime<Tz> {
     let loc = t.timezone();
-    let next_day = t.date_naive().succ_opt().unwrap_or(t.date_naive());
+    let next_day = t.date_naive().succ_opt().unwrap_or_else(|| t.date_naive());
     for hour in 0..24 {
-        let naive = match next_day.and_hms_opt(hour, 0, 0) {
-            Some(n) => n,
-            None => continue,
+        let Some(naive) = next_day.and_hms_opt(hour, 0, 0) else {
+            continue;
         };
         if let Some(resolved) = loc.from_local_datetime(&naive).earliest() {
             return resolved;

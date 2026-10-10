@@ -1,4 +1,5 @@
 //! Syncs the SQLite metadata database to S3 for the object-storage HA mode.
+//!
 //! SQLite cannot run live on S3 (it needs POSIX file locking), so the live
 //! database stays on a local volume (typically an emptyDir) and this module
 //! keeps a durable copy in S3: the leader periodically uploads a `VACUUM INTO`
@@ -137,7 +138,7 @@ mod tests {
     }
 
     async fn api(endpoint: &str) -> S3Api {
-        let _ = rustls::crypto::ring::default_provider().install_default();
+        let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
         let client = crate::storage::new_s3_client(&crate::storage::S3Config {
             bucket: "b".into(),
             region: "us-east-1".into(),

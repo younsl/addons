@@ -56,14 +56,14 @@ pub struct OidcProvider {
 impl OidcProvider {
     /// Discovers the provider and builds the verifier and OAuth2 config. It
     /// requires network access to the issuer at startup.
-    pub async fn new(p: OidcParams) -> Result<Arc<OidcProvider>, Error> {
+    pub async fn new(p: OidcParams) -> Result<Arc<Self>, Error> {
         let http = HttpClient::new()?;
         let issuer = IssuerUrl::new(p.issuer_url.clone())
             .map_err(|e| Error::Oidc(format!("oidc discovery: {e}")))?;
         let metadata = CoreProviderMetadata::discover_async(issuer, &http)
             .await
             .map_err(|e| Error::Oidc(format!("oidc discovery: {e}")))?;
-        Ok(Arc::new(OidcProvider {
+        Ok(Arc::new(Self {
             client: build_client(metadata, &p)?,
             http,
             username_claim: if p.username_claim.is_empty() {
@@ -141,7 +141,7 @@ impl OidcProvider {
         redirect_url: &str,
         auth_url: &str,
         token_url: &str,
-    ) -> Arc<OidcProvider> {
+    ) -> Arc<Self> {
         use openidconnect::core::{
             CoreJsonWebKeySet, CoreJwsSigningAlgorithm, CoreResponseType, CoreSubjectIdentifierType,
         };
@@ -167,7 +167,7 @@ impl OidcProvider {
             redirect_url: redirect_url.to_string(),
             ..Default::default()
         };
-        Arc::new(OidcProvider {
+        Arc::new(Self {
             client: build_client(metadata, &params).expect("build test client"),
             http: HttpClient::new().expect("http client"),
             username_claim: "preferred_username".into(),
@@ -383,15 +383,15 @@ pub struct HttpClient {
 
 impl HttpClient {
     /// Builds the client used for discovery, JWKS fetches and token exchange.
-    pub fn new() -> Result<HttpClient, Error> {
-        rustls::crypto::ring::default_provider()
+    pub fn new() -> Result<Self, Error> {
+        rustls::crypto::aws_lc_rs::default_provider()
             .install_default()
             .ok();
         let inner = reqwest::Client::builder()
             .redirect(reqwest::redirect::Policy::none())
             .build()
             .map_err(|e| Error::Oidc(format!("build oidc http client: {e}")))?;
-        Ok(HttpClient { inner })
+        Ok(Self { inner })
     }
 }
 

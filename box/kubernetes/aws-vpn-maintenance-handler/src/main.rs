@@ -36,12 +36,12 @@ const LONG_ABOUT: &str = "Applies pending Site-to-Site VPN tunnel endpoint maint
     version = concat!(env!("CARGO_PKG_VERSION"), " (commit ", env!("BUILD_COMMIT"), ")")
 )]
 struct Cli {
-    /// Path to the config file (defaults to `$CONFIG_FILE`, then
+    /// Path to the config file (defaults to
     /// /etc/aws-vpn-maintenance-handler/config.yaml)
-    #[arg(long, global = true)]
+    #[arg(long, env = "CONFIG_FILE", global = true)]
     config: Option<String>,
     /// Verbose output (debug logging)
-    #[arg(short, long, global = true)]
+    #[arg(short, long, env = "VERBOSE", global = true)]
     verbose: bool,
     #[command(subcommand)]
     command: Option<Command>,
@@ -60,12 +60,14 @@ type Subscriber = Box<dyn tracing::Subscriber + Send + Sync>;
 
 /// Builds the tracing subscriber for a level and format.
 fn subscriber(level: &str, format: &str) -> Subscriber {
-    let filter = tracing_subscriber::EnvFilter::new(match level.to_ascii_lowercase().as_str() {
+    let level = match level.to_ascii_lowercase().as_str() {
         "debug" => "debug",
         "warn" => "warn",
         "error" => "error",
         _ => "info",
-    });
+    };
+    let filter = tracing_subscriber::EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new(level));
     let builder = tracing_subscriber::fmt()
         .with_env_filter(filter)
         .with_target(false);

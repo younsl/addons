@@ -76,7 +76,7 @@ pub(crate) async fn handle_cargo(m: Arc<Manager>, req: Request) -> Response {
                 // serves crates from static.crates.io), and the repository's
                 // upstream credentials belong to the index host only.
                 if !super::cargo_dl::same_host(&res.repo.upstream_url, &url) {
-                    cfg.upstream_auth = Default::default();
+                    cfg.upstream_auth = crate::repoconfig::UpstreamAuthConfig::default();
                 }
                 url
             } else {
@@ -333,7 +333,7 @@ impl Manager {
             // publish is refused as read-only. A proxy has neither.
             if (res.repo.r#type == meta::TYPE_HOSTED || via_group) && self.uploader.read().is_some()
             {
-                document.insert("api".to_string(), serde_json::Value::String(base.clone()));
+                document.insert("api".to_string(), serde_json::Value::String(base));
             }
             let mut body = serde_json::to_string(&serde_json::Value::Object(document))
                 .unwrap_or_else(|_| "{}".to_string());
@@ -369,7 +369,7 @@ impl Manager {
             host = parts
                 .uri
                 .authority()
-                .map(|a| a.to_string())
+                .map(std::string::ToString::to_string)
                 .unwrap_or_default();
         }
         let forwarded = super::header_str(&parts.headers, "X-Forwarded-Host");
@@ -424,7 +424,7 @@ pub(crate) fn cargo_package(p: &str) -> String {
         return String::new();
     }
     if let Some((_, after)) = p.split_once("api/v1/crates/") {
-        let crate_name = after.split_once('/').map(|(c, _)| c).unwrap_or(after);
+        let crate_name = after.split_once('/').map_or(after, |(c, _)| c);
         return crate_name.to_lowercase();
     }
     path_base(p).to_lowercase()

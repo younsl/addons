@@ -31,15 +31,14 @@ pub(crate) enum DialError {
 /// Refuses loopback, private, unspecified, link-local and multicast
 /// destinations. `address` is a `host:port` pair as it would reach a dialer.
 pub(crate) fn public_only_dial_control(_network: &str, address: &str) -> Result<(), DialError> {
-    let host = match address.parse::<SocketAddr>() {
-        Ok(sa) => sa.ip(),
-        Err(_) => {
-            let host = match address.rsplit_once(':') {
-                Some((h, _)) => h.trim_start_matches('[').trim_end_matches(']'),
-                None => return Err(DialError::Unparseable),
-            };
-            host.parse::<IpAddr>().map_err(|_| DialError::Unparseable)?
-        }
+    let host = if let Ok(sa) = address.parse::<SocketAddr>() {
+        sa.ip()
+    } else {
+        let host = match address.rsplit_once(':') {
+            Some((h, _)) => h.trim_start_matches('[').trim_end_matches(']'),
+            None => return Err(DialError::Unparseable),
+        };
+        host.parse::<IpAddr>().map_err(|_| DialError::Unparseable)?
     };
     if is_public(host) {
         Ok(())
@@ -48,7 +47,7 @@ pub(crate) fn public_only_dial_control(_network: &str, address: &str) -> Result<
     }
 }
 
-fn is_public(ip: IpAddr) -> bool {
+const fn is_public(ip: IpAddr) -> bool {
     let ip = ip.to_canonical();
     if ip.is_loopback() || ip.is_unspecified() || ip.is_multicast() {
         return false;
@@ -59,12 +58,12 @@ fn is_public(ip: IpAddr) -> bool {
     }
 }
 
-fn is_unique_local(ip: Ipv6Addr) -> bool {
+const fn is_unique_local(ip: Ipv6Addr) -> bool {
     ip.segments()[0] & 0xfe00 == 0xfc00
 }
 
 /// `fe80::/10`, IPv6 link-local unicast.
-fn is_link_local_v6(ip: Ipv6Addr) -> bool {
+const fn is_link_local_v6(ip: Ipv6Addr) -> bool {
     ip.segments()[0] & 0xffc0 == 0xfe80
 }
 

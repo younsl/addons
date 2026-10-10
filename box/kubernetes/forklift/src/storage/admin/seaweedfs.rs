@@ -27,13 +27,13 @@ pub struct SeaweedAdmin {
 }
 
 impl SeaweedAdmin {
-    pub fn new(cfg: &AdminConfig) -> Result<SeaweedAdmin> {
+    pub fn new(cfg: &AdminConfig) -> Result<Self> {
         if cfg.admin_endpoint.trim().is_empty() {
             return Err(Error::AdminUnavailable(
                 "seaweedfs needs the master endpoint (port 9333)".into(),
             ));
         }
-        Ok(SeaweedAdmin {
+        Ok(Self {
             master: base_url(&cfg.admin_endpoint)?,
             client: http_client()?,
         })

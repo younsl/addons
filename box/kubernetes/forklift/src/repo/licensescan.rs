@@ -117,7 +117,7 @@ impl Manager {
         };
         loop {
             let stop = tokio::select! {
-                _ = cancel.cancelled() => true,
+                () = cancel.cancelled() => true,
                 job = rx.recv() => match job {
                     Some(job) => {
                         self.run_resolve(job).await;
@@ -192,7 +192,7 @@ impl Manager {
         ticker.tick().await;
         loop {
             tokio::select! {
-                _ = cancel.cancelled() => return,
+                () = cancel.cancelled() => return,
                 _ = ticker.tick() => self.license_backfill_once().await,
             }
         }
@@ -260,7 +260,7 @@ impl Manager {
         ticker.tick().await;
         loop {
             tokio::select! {
-                _ = cancel.cancelled() => return,
+                () = cancel.cancelled() => return,
                 _ = ticker.tick() => {
                     let cutoff = self.engine.now()
                         - chrono::TimeDelta::from_std(ttl).unwrap_or(chrono::TimeDelta::zero());

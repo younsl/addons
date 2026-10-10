@@ -84,9 +84,7 @@ pub struct StoredToken {
 
 impl StoredToken {
     fn is_expired(&self, now: chrono::DateTime<chrono::Utc>) -> bool {
-        chrono::DateTime::parse_from_rfc3339(&self.expires_at)
-            .map(|exp| now >= exp)
-            .unwrap_or(false)
+        chrono::DateTime::parse_from_rfc3339(&self.expires_at).is_ok_and(|exp| now >= exp)
     }
 
     fn to_info(&self, prefix: &str) -> TokenInfo {
@@ -111,6 +109,7 @@ pub struct TokenCache {
 }
 
 impl TokenCache {
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
@@ -260,6 +259,7 @@ pub struct TokenStore {
 }
 
 impl TokenStore {
+    #[must_use]
     pub fn new(client: Client, namespace: String, secret_name: String) -> Self {
         Self {
             client,
@@ -269,14 +269,17 @@ impl TokenStore {
         }
     }
 
+    #[must_use]
     pub fn namespace(&self) -> &str {
         &self.namespace
     }
 
+    #[must_use]
     pub fn secret_name(&self) -> &str {
         &self.secret_name
     }
 
+    #[must_use]
     pub fn cache(&self) -> &TokenCache {
         &self.cache
     }
@@ -314,6 +317,7 @@ impl TokenStore {
     }
 
     /// List one user's tokens (hashes are never included).
+    #[must_use]
     pub fn list(&self, user_sub: &str) -> Vec<TokenInfo> {
         self.cache.list_for_user(user_sub)
     }
@@ -396,6 +400,7 @@ impl TokenStore {
     }
 
     /// Validate a presented Bearer token and record the use in memory.
+    #[must_use]
     pub fn validate(&self, token_plaintext: &str) -> Option<ValidatedToken> {
         let (prefix, validated) = self.cache.validate(token_plaintext)?;
         self.cache.touch(&prefix);
@@ -465,14 +470,14 @@ impl TokenStore {
                 _ = flush.tick() => self.flush_last_used().await,
                 ev = stream.next() => {
                     match ev {
-                        Some(Ok(Event::Apply(s))) | Some(Ok(Event::InitApply(s))) => {
+                        Some(Ok(Event::Apply(s) | Event::InitApply(s))) => {
                             self.cache.absorb(&s);
                         }
                         Some(Ok(Event::Delete(_))) => {
                             warn!("API tokens Secret deleted — clearing cache");
                             self.cache.clear();
                         }
-                        Some(Ok(Event::Init)) | Some(Ok(Event::InitDone)) => {}
+                        Some(Ok(Event::Init | Event::InitDone)) => {}
                         Some(Err(e)) => error!(error = %e, "API tokens Secret watcher error"),
                         None => {
                             warn!("API tokens Secret watcher stream ended");
@@ -486,6 +491,7 @@ impl TokenStore {
 }
 
 /// Generate a random API token: "tc_" plus 32 random bytes as hex.
+#[must_use]
 pub fn generate_token() -> String {
     use rand::RngExt;
     let mut rng = rand::rng();
@@ -495,6 +501,7 @@ pub fn generate_token() -> String {
 }
 
 /// SHA-256 hash a token and return a hex string.
+#[must_use]
 pub fn hash_token(token: &str) -> String {
     let mut hasher = Sha256::new();
     hasher.update(token.as_bytes());
@@ -502,6 +509,7 @@ pub fn hash_token(token: &str) -> String {
 }
 
 /// Compare two hex digests without leaking a match position through timing.
+#[must_use]
 pub fn constant_time_eq(a: &str, b: &str) -> bool {
     if a.len() != b.len() {
         return false;
@@ -738,8 +746,8 @@ mod tests {
                       "created_at":"2026-01-01T00:00:00+00:00",
                       "expires_at":"2099-01-01T00:00:00+00:00"}"#;
         let t: StoredToken = serde_json::from_str(raw).unwrap();
-        assert!(t.description.is_empty());
-        assert!(t.groups.is_empty());
+        assert_eq!(t.description, "");
+        assert_eq!(t.groups, [] as [std::string::String; 0]);
         assert!(t.last_used_at.is_none());
 
         let back: StoredToken = serde_json::from_str(&serde_json::to_string(&t).unwrap()).unwrap();

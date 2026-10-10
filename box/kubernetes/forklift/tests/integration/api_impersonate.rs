@@ -10,7 +10,7 @@ impl SessionClient {
     /// Signs in over `/login` and keeps the resulting session cookie, which is
     /// what impersonation requires (Basic auth and personal access tokens cannot
     /// start one).
-    async fn new(srv: &TestServer, username: &str, password: &str) -> SessionClient {
+    async fn new(srv: &TestServer, username: &str, password: &str) -> Self {
         let resp = srv
             .anon_do(
                 Method::POST,
@@ -19,7 +19,7 @@ impl SessionClient {
             )
             .await;
         assert_eq!(resp.status, StatusCode::OK, "login: {}", resp.text());
-        let mut client = SessionClient {
+        let mut client = Self {
             cookie: String::new(),
         };
         client.absorb(&resp);

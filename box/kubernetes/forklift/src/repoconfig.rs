@@ -41,7 +41,7 @@ fn is_false(b: &bool) -> bool {
 }
 
 /// The per-repository config payload.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Config {
     #[serde(deserialize_with = "null_default")]
@@ -139,7 +139,7 @@ pub struct UpstreamAuthConfig {
 
 impl UpstreamAuthConfig {
     /// Reports whether credentials are configured.
-    pub fn enabled(&self) -> bool {
+    pub const fn enabled(&self) -> bool {
         !self.type_.is_empty()
     }
 
@@ -187,7 +187,8 @@ impl UpstreamAuthConfig {
 
     /// Returns a copy with secret fields replaced by [`SECRET_MASK`] when set.
     /// The username and header name stay readable; only secrets are hidden.
-    pub fn masked(&self) -> UpstreamAuthConfig {
+    #[must_use]
+    pub fn masked(&self) -> Self {
         let mut u = self.clone();
         if !u.password.is_empty() {
             u.password = SECRET_MASK.to_string();
@@ -204,16 +205,17 @@ impl UpstreamAuthConfig {
     /// Restores secrets that came back as [`SECRET_MASK`] from `prev`, so a
     /// client can round-trip a masked config without knowing the stored
     /// values.
-    pub fn unmask_from(&self, prev: &UpstreamAuthConfig) -> UpstreamAuthConfig {
+    #[must_use]
+    pub fn unmask_from(&self, prev: &Self) -> Self {
         let mut u = self.clone();
         if u.password == SECRET_MASK {
-            u.password = prev.password.clone();
+            u.password.clone_from(&prev.password);
         }
         if u.token == SECRET_MASK {
-            u.token = prev.token.clone();
+            u.token.clone_from(&prev.token);
         }
         if u.value == SECRET_MASK {
-            u.value = prev.value.clone();
+            u.value.clone_from(&prev.value);
         }
         u
     }
@@ -297,7 +299,10 @@ const LEGACY_POLICY_PIPELINE_VERSION: i64 = 1;
 const DEFAULT_POLICY_ORDER: [&str; 3] = [POLICY_VULNERABILITY, POLICY_LICENSE, POLICY_AGE];
 
 fn default_policy_order() -> Vec<String> {
-    DEFAULT_POLICY_ORDER.iter().map(|s| s.to_string()).collect()
+    DEFAULT_POLICY_ORDER
+        .iter()
+        .map(std::string::ToString::to_string)
+        .collect()
 }
 
 /// Controls policy evaluation order. Human approval is not included because
@@ -429,10 +434,10 @@ pub struct IPACLConfig {
     pub allow: Vec<String>,
 }
 
-fn unmap(ip: IpAddr) -> IpAddr {
+const fn unmap(ip: IpAddr) -> IpAddr {
     match ip {
         IpAddr::V6(v6) => v6.to_canonical(),
-        v4 => v4,
+        v4 @ IpAddr::V4(_) => v4,
     }
 }
 
@@ -717,8 +722,8 @@ pub fn default() -> Config {
     Config {
         cache: CacheConfig {
             enabled: true,
-            metadata_ttl: Duration::from_std(std::time::Duration::from_secs(15 * 60)),
-            negative_ttl: Duration::from_std(std::time::Duration::from_secs(5 * 60)),
+            metadata_ttl: Duration::from_std(std::time::Duration::from_mins(15)),
+            negative_ttl: Duration::from_std(std::time::Duration::from_mins(5)),
             eviction: EVICTION_LRU.to_string(),
             ..CacheConfig::default()
         },
@@ -882,13 +887,13 @@ pub struct Duration(pub i64);
 impl Duration {
     /// Wraps a nanosecond count.
     pub const fn from_nanos(nanos: i64) -> Self {
-        Duration(nanos)
+        Self(nanos)
     }
 
     /// Converts from a `std::time::Duration`, saturating at `i64::MAX`
     /// nanoseconds (about 292 years).
     pub fn from_std(d: std::time::Duration) -> Self {
-        Duration(d.as_nanos().min(i64::MAX as u128) as i64)
+        Self(d.as_nanos().min(i64::MAX as u128) as i64)
     }
 
     /// The signed nanosecond count.
@@ -910,7 +915,7 @@ impl Duration {
 
 impl From<std::time::Duration> for Duration {
     fn from(d: std::time::Duration) -> Self {
-        Duration::from_std(d)
+        Self::from_std(d)
     }
 }
 
@@ -1048,7 +1053,7 @@ pub fn path_match(pattern: &str, name: &str) -> std::result::Result<bool, BadPat
 /// preceded by a star.
 fn scan_chunk(mut pattern: &[u8]) -> (bool, &[u8], &[u8]) {
     let mut star = false;
-    while let Some(b'*') = pattern.first() {
+    while matches!(pattern.first(), Some(b'*')) {
         pattern = &pattern[1..];
         star = true;
     }
@@ -1127,7 +1132,7 @@ fn match_chunk<'a>(
                 chunk = &chunk[1..];
                 // Possibly negated.
                 let mut negated = false;
-                if let Some(b'^') = chunk.first() {
+                if matches!(chunk.first(), Some(b'^')) {
                     negated = true;
                     chunk = &chunk[1..];
                 }
@@ -1246,7 +1251,7 @@ pub(crate) mod tests {
         assert!(c.cache.enabled, "cache should default enabled");
         assert_eq!(
             c.cache.metadata_ttl.d(),
-            std::time::Duration::from_secs(15 * 60),
+            std::time::Duration::from_mins(15),
             "metadata ttl default"
         );
         assert_eq!(
@@ -1265,7 +1270,7 @@ pub(crate) mod tests {
     fn parse_round_trip() {
         let input = r#"{"cache":{"enabled":true,"artifact_ttl":"1h","max_size_bytes":1048576,"eviction":"lru"},"age_policy":{"enabled":true,"min_age":"3d","action":"block"}}"#;
         let c = parse(input).expect("parse");
-        assert_eq!(c.cache.max_size_bytes, 1048576, "max size");
+        assert_eq!(c.cache.max_size_bytes, 1_048_576, "max size");
         assert_eq!(c.age_policy.min_age.nanos(), 3 * 24 * HOUR, "min age");
         let out = c.json().unwrap();
         let c2 = parse(&out).expect("reparse");
@@ -1648,7 +1653,7 @@ pub(crate) mod tests {
     /// onto the built request.
     #[test]
     fn upstream_auth_apply_request_builder() {
-        rustls::crypto::ring::default_provider()
+        rustls::crypto::aws_lc_rs::default_provider()
             .install_default()
             .ok();
         let client = reqwest::Client::builder().build().unwrap();

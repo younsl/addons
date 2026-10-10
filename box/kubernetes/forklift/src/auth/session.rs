@@ -45,8 +45,8 @@ pub struct SessionCodec {
 
 impl SessionCodec {
     /// Creates a codec. The secret must be shared across replicas.
-    pub fn new(secret: Vec<u8>, ttl: Duration) -> SessionCodec {
-        SessionCodec {
+    pub fn new(secret: Vec<u8>, ttl: Duration) -> Self {
+        Self {
             secret,
             ttl,
             now: Arc::new(Utc::now),
@@ -246,7 +246,7 @@ pub(crate) mod tests {
             .svc
             .csrf_token(&parts)
             .expect("signed session did not expose a CSRF token");
-        assert!(!token.is_empty());
+        assert_ne!(token, "");
         assert!(
             !t.svc.validate_csrf(&parts),
             "missing CSRF header was accepted"

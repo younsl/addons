@@ -15,8 +15,7 @@ fn main() {
                     None
                 }
             })
-            .map(|s| s.trim().to_string())
-            .unwrap_or_else(|| "unknown".to_string())
+            .map_or_else(|| "unknown".to_string(), |s| s.trim().to_string())
     });
 
     // Get build date
@@ -25,9 +24,8 @@ fn main() {
         std::env::var("BUILD_DATE").unwrap_or_else(|_| chrono::Utc::now().to_rfc3339());
 
     // Get Rust version
-    let rustc_version = rustc_version::version()
-        .map(|v| v.to_string())
-        .unwrap_or_else(|_| "unknown".to_string());
+    let rustc_version =
+        rustc_version::version().map_or_else(|_| "unknown".to_string(), |v| v.to_string());
 
     // Set environment variables for compilation
     for (key, value) in [
@@ -35,7 +33,7 @@ fn main() {
         ("BUILD_DATE", build_date.as_str()),
         ("RUSTC_VERSION", rustc_version.as_str()),
     ] {
-        println!("cargo:rustc-env={}={}", key, value);
+        println!("cargo:rustc-env={key}={value}");
     }
 
     // Re-run triggers
@@ -44,6 +42,6 @@ fn main() {
         "cargo:rerun-if-env-changed=GIT_COMMIT",
         "cargo:rerun-if-env-changed=BUILD_DATE",
     ] {
-        println!("{}", trigger);
+        println!("{trigger}");
     }
 }

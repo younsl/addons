@@ -9,6 +9,7 @@ use crate::error::Result;
 use crate::file_config::{FileConfig, ShellCommands};
 
 /// Run the interactive configuration wizard.
+#[allow(clippy::too_many_lines)]
 pub fn run_wizard() -> Result<()> {
     println!(
         "{}\n",

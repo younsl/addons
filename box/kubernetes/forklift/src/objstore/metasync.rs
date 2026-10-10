@@ -49,25 +49,25 @@ pub enum Error {
     Context {
         context: String,
         #[source]
-        source: Box<Error>,
+        source: Box<Self>,
     },
 }
 
 impl Error {
-    fn io(op: &'static str, source: std::io::Error) -> Error {
-        Error::Io { op, source }
+    const fn io(op: &'static str, source: std::io::Error) -> Self {
+        Self::Io { op, source }
     }
 
     pub fn is_transient(&self) -> bool {
         match self {
-            Error::Unavailable(_) => true,
-            Error::Context { source, .. } => source.is_transient(),
+            Self::Unavailable(_) => true,
+            Self::Context { source, .. } => source.is_transient(),
             _ => false,
         }
     }
 
-    pub(crate) fn context(self, context: impl Into<String>) -> Error {
-        Error::Context {
+    pub(crate) fn context(self, context: impl Into<String>) -> Self {
+        Self::Context {
             context: context.into(),
             source: Box::new(self),
         }
@@ -75,8 +75,8 @@ impl Error {
 
     pub fn is_not_found(&self) -> bool {
         match self {
-            Error::NotFound => true,
-            Error::Context { source, .. } => source.is_not_found(),
+            Self::NotFound => true,
+            Self::Context { source, .. } => source.is_not_found(),
             _ => false,
         }
     }
@@ -84,8 +84,8 @@ impl Error {
     /// Reports whether this is (or wraps) an S3 412 Precondition Failed.
     pub fn is_precondition_failed(&self) -> bool {
         match self {
-            Error::PreconditionFailed(_) => true,
-            Error::Context { source, .. } => source.is_precondition_failed(),
+            Self::PreconditionFailed(_) => true,
+            Self::Context { source, .. } => source.is_precondition_failed(),
             _ => false,
         }
     }
@@ -163,8 +163,8 @@ pub struct S3Api(pub aws_sdk_s3::Client);
 
 impl S3Api {
     /// Wraps an S3 client.
-    pub fn new(client: aws_sdk_s3::Client) -> S3Api {
-        S3Api(client)
+    pub const fn new(client: aws_sdk_s3::Client) -> Self {
+        Self(client)
     }
 
     /// Creates `bucket` when it does not exist, reporting whether it did.
@@ -367,6 +367,7 @@ struct SyncState {
 }
 
 /// Uploads the leader's database snapshot to S3 and restores it on standbys.
+///
 /// Exactly one instance is leader at a time (guaranteed by leader election), so
 /// there is a single writer to the S3 snapshot object.
 pub struct MetaSync {
@@ -400,7 +401,7 @@ pub(crate) const FENCE_META_KEY: &str = "fence";
 
 impl MetaSync {
     /// Builds a MetaSync and registers its metrics.
-    pub fn new(o: MetaOptions) -> Arc<MetaSync> {
+    pub fn new(o: MetaOptions) -> Arc<Self> {
         let counter = |name: &str, help: &str| {
             IntCounterVec::new(Opts::new(name, help).namespace("forklift"), &["result"])
                 .expect("valid objstore metric options")
@@ -409,7 +410,7 @@ impl MetaSync {
             Gauge::with_opts(Opts::new(name, help).namespace("forklift"))
                 .expect("valid objstore metric options")
         };
-        let m = MetaSync {
+        let m = Self {
             store: o.store,
             api: o.api,
             bucket: o.bucket,
@@ -491,7 +492,7 @@ impl MetaSync {
         ticker.tick().await;
         loop {
             tokio::select! {
-                _ = cancel.cancelled() => return,
+                () = cancel.cancelled() => return,
                 _ = ticker.tick() => {
                     if let Err(e) = self.sync().await
                         && !cancel.is_cancelled()
@@ -910,8 +911,8 @@ pub(crate) mod tests {
     }
 
     impl FakeMetaS3 {
-        fn new() -> Arc<FakeMetaS3> {
-            Arc::new(FakeMetaS3::default())
+        fn new() -> Arc<Self> {
+            Arc::new(Self::default())
         }
 
         fn gets(&self) -> usize {

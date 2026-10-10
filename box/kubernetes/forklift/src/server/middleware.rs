@@ -29,8 +29,7 @@ pub(crate) async fn log_requests(
     let route = req
         .extensions()
         .get::<MatchedPath>()
-        .map(|p| route_label(p.as_str()))
-        .unwrap_or_else(|| "unmatched".to_string());
+        .map_or_else(|| "unmatched".to_string(), |p| route_label(p.as_str()));
     let remote = req
         .extensions()
         .get::<ConnectInfo<std::net::SocketAddr>>()

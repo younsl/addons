@@ -18,7 +18,7 @@ use super::uiupload_cargo::cargo_sparse_path;
 use super::{FetchSpec, Kind, Manager};
 
 /// How long an upstream `dl` template is reused before it is fetched again.
-const DL_TTL: Duration = Duration::from_secs(15 * 60);
+const DL_TTL: Duration = Duration::from_mins(15);
 /// How long a failed `config.json` fetch is remembered, so a registry without
 /// one is not asked on every download.
 const DL_MISS_TTL: Duration = Duration::from_secs(60);
@@ -165,6 +165,7 @@ pub(crate) fn expand_dl(
             dl.trim_end_matches('/')
         ));
     }
+    #[allow(clippy::literal_string_with_formatting_args)]
     let mut url = dl
         .replace("{crate}", name)
         .replace("{version}", version)

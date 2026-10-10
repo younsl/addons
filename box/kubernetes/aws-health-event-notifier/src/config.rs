@@ -167,7 +167,7 @@ pub struct K8sArgs {
 #[derive(Debug, Args)]
 pub struct SendArgs {
     /// Lookback window for the event list (hours).
-    #[arg(long, default_value_t = 24)]
+    #[arg(long, env = "SEND_LOOKBACK_HOURS", default_value_t = 24)]
     pub lookback_hours: i64,
 
     /// Locale passed to `DescribeEventDetails` (e.g., en, ja, zh).
@@ -175,18 +175,18 @@ pub struct SendArgs {
     pub event_locale: String,
 
     /// Skip the interactive picker and send the given event ARN(s).
-    #[arg(long, value_delimiter = ',', num_args = 1..)]
+    #[arg(long, env = "SEND_ARN", value_delimiter = ',', num_args = 1..)]
     pub arn: Vec<String>,
 
     /// Optional service filter when listing (e.g., EC2,RDS).
-    #[arg(long, value_delimiter = ',', num_args = 0..)]
+    #[arg(long, env = "SEND_SERVICE", value_delimiter = ',', num_args = 0..)]
     pub service: Vec<String>,
 
     /// Optional category filter when listing.
-    #[arg(long, value_delimiter = ',', num_args = 0..)]
+    #[arg(long, env = "SEND_CATEGORY", value_delimiter = ',', num_args = 0..)]
     pub category: Vec<String>,
 
     /// Don't prompt for confirmation before sending.
-    #[arg(long, default_value_t = false)]
+    #[arg(long, env = "SEND_YES", default_value_t = false)]
     pub yes: bool,
 }
