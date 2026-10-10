@@ -4,6 +4,7 @@
 
 mod api;
 mod app;
+mod banner;
 mod config;
 mod error;
 mod linker;
@@ -15,11 +16,12 @@ use tokio::signal;
 use tokio::sync::watch;
 use tracing_subscriber::{EnvFilter, fmt, prelude::*};
 
-use crate::config::{Config, LogFormat};
+use crate::config::{BuildInfo, Config, LogFormat};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let cfg = Config::load();
+    eprint!("{}", banner::render(BuildInfo::CURRENT));
     init_tracing(&cfg);
 
     let (shutdown_tx, shutdown_rx) = watch::channel(false);
