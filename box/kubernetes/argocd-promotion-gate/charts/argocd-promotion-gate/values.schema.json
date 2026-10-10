@@ -1,0 +1,434 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "title": "argocd-promotion-gate values",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "global": {
+      "type": "object"
+    },
+    "replicaCount": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "image": {
+      "$ref": "#/definitions/image"
+    },
+    "imagePullSecrets": {
+      "type": "array"
+    },
+    "nameOverride": {
+      "type": ["string", "null"]
+    },
+    "fullnameOverride": {
+      "type": ["string", "null"]
+    },
+    "serviceAccount": {
+      "$ref": "#/definitions/serviceAccount"
+    },
+    "rbac": {
+      "$ref": "#/definitions/rbac"
+    },
+    "podAnnotations": {
+      "$ref": "#/definitions/stringMap"
+    },
+    "podLabels": {
+      "$ref": "#/definitions/stringMap"
+    },
+    "podSecurityContext": {
+      "type": "object"
+    },
+    "securityContext": {
+      "type": "object"
+    },
+    "resources": {
+      "type": "object"
+    },
+    "resizePolicy": {
+      "type": "array"
+    },
+    "nodeSelector": {
+      "type": "object"
+    },
+    "tolerations": {
+      "type": "array"
+    },
+    "topologySpreadConstraints": {
+      "type": "array"
+    },
+    "affinity": {
+      "type": "object"
+    },
+    "podDisruptionBudget": {
+      "$ref": "#/definitions/podDisruptionBudget"
+    },
+    "service": {
+      "$ref": "#/definitions/service"
+    },
+    "serviceMonitor": {
+      "$ref": "#/definitions/serviceMonitor"
+    },
+    "logging": {
+      "$ref": "#/definitions/logging"
+    },
+    "webhook": {
+      "$ref": "#/definitions/webhook"
+    },
+    "uiExtension": {
+      "$ref": "#/definitions/uiExtension"
+    },
+    "promotionGate": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "chain": {
+          "type": "array",
+          "minItems": 2,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/definitions/nonEmptyString"
+          }
+        },
+        "gatedEnvs": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/definitions/nonEmptyString"
+          }
+        },
+        "require": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "sync": {
+              "type": "boolean"
+            },
+            "health": {
+              "type": "boolean"
+            }
+          }
+        },
+        "imageTag": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "mode": {
+              "$ref": "#/definitions/gateMode"
+            },
+            "kinds": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/nonEmptyString"
+              }
+            },
+            "ignoreRepos": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "onError": {
+              "$ref": "#/definitions/onError"
+            }
+          }
+        },
+        "rollback": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "allowPreviouslyDeployedRevision": {
+              "type": "boolean"
+            }
+          }
+        },
+        "exempt": {
+          "$ref": "#/definitions/exempt"
+        },
+        "argocd": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "namespace": {
+              "$ref": "#/definitions/nonEmptyString"
+            },
+            "serverAddress": {
+              "type": "string"
+            },
+            "timeoutSeconds": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "cacheTtlSeconds": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "caSecret": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "enabled": {
+                  "type": "boolean"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "key": {
+                  "type": "string"
+                }
+              }
+            },
+            "tokenSecret": {
+              "$ref": "#/definitions/secretKeyRef"
+            }
+          }
+        }
+      }
+    },
+    "extraObjects": {
+      "type": "array",
+      "items": {
+        "type": ["object", "string"]
+      }
+    },
+    "generatedCerts": {
+      "description": "Internal. The certs helper memoizes the generated serving certificate here during one render",
+      "type": "object"
+    }
+  },
+  "definitions": {
+    "stringMap": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "nonEmptyString": {
+      "type": "string",
+      "minLength": 1
+    },
+    "port": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 65535
+    },
+    "gateMode": {
+      "type": "string",
+      "enum": ["enforce", "warn"]
+    },
+    "onError": {
+      "type": "string",
+      "enum": ["allow", "deny"]
+    },
+    "secretKeyRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "key": {
+          "type": "string"
+        }
+      }
+    },
+    "image": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "registry": {
+          "type": "string"
+        },
+        "repository": {
+          "type": "string"
+        },
+        "tag": {
+          "type": "string"
+        },
+        "pullPolicy": {
+          "type": "string"
+        }
+      }
+    },
+    "serviceAccount": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "create": {
+          "type": "boolean"
+        },
+        "annotations": {
+          "$ref": "#/definitions/stringMap"
+        },
+        "name": {
+          "type": "string"
+        }
+      }
+    },
+    "rbac": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "create": {
+          "type": "boolean"
+        }
+      }
+    },
+    "podDisruptionBudget": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "minAvailable": {
+          "type": ["integer", "string"]
+        },
+        "unhealthyPodEvictionPolicy": {
+          "type": "string",
+          "enum": ["", "IfHealthyBudget", "AlwaysAllow"]
+        }
+      }
+    },
+    "service": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "type": "string"
+        },
+        "trafficDistribution": {
+          "type": "string"
+        },
+        "webhookPort": {
+          "$ref": "#/definitions/port"
+        },
+        "adminPort": {
+          "$ref": "#/definitions/port"
+        }
+      }
+    },
+    "serviceMonitor": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "namespace": {
+          "type": "string"
+        },
+        "selector": {
+          "$ref": "#/definitions/stringMap"
+        },
+        "additionalLabels": {
+          "$ref": "#/definitions/stringMap"
+        },
+        "annotations": {
+          "$ref": "#/definitions/stringMap"
+        },
+        "interval": {
+          "type": "string"
+        },
+        "scrapeTimeout": {
+          "type": "string"
+        },
+        "honorLabels": {
+          "type": "boolean"
+        },
+        "scheme": {
+          "type": "string"
+        },
+        "tlsConfig": {
+          "type": "object"
+        },
+        "relabelings": {
+          "type": "array"
+        },
+        "metricRelabelings": {
+          "type": "array"
+        }
+      }
+    },
+    "logging": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "level": {
+          "type": "string",
+          "enum": ["debug", "info", "warn", "error"]
+        },
+        "format": {
+          "type": "string",
+          "enum": ["json", "text"]
+        }
+      }
+    },
+    "webhook": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "failurePolicy": {
+          "type": "string",
+          "enum": ["Fail", "Ignore"]
+        },
+        "timeoutSeconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 30
+        },
+        "certValidityDays": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "extraMatchConditions": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "certManager": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "issuerRef": {
+              "type": "object"
+            }
+          }
+        }
+      }
+    },
+    "uiExtension": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string"
+        }
+      }
+    },
+    "exempt": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "usernames": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "automated": {
+          "type": "boolean"
+        },
+        "annotation": {
+          "$ref": "#/definitions/nonEmptyString"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,211 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "title": "ec2-metadata-exporter values",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "global": {
+      "type": "object"
+    },
+    "image": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "registry": {
+          "type": "string"
+        },
+        "repository": {
+          "type": "string"
+        },
+        "tag": {
+          "type": ["string", "null"]
+        },
+        "pullPolicy": {
+          "type": "string",
+          "enum": ["Always", "IfNotPresent", "Never"]
+        }
+      }
+    },
+    "imagePullSecrets": {
+      "$ref": "#/definitions/nullableObjectList"
+    },
+    "nameOverride": {
+      "type": ["string", "null"]
+    },
+    "fullnameOverride": {
+      "type": ["string", "null"]
+    },
+    "replicaCount": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "revisionHistoryLimit": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "strategy": {
+      "type": "object"
+    },
+    "config": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "region": {
+          "type": "string"
+        },
+        "scrapeInterval": {
+          "type": "string",
+          "minLength": 1
+        },
+        "logLevel": {
+          "type": "string"
+        },
+        "logFormat": {
+          "type": "string",
+          "enum": ["json", "text"]
+        }
+      }
+    },
+    "extraEnv": {
+      "$ref": "#/definitions/nullableObjectList"
+    },
+    "extraEnvFrom": {
+      "$ref": "#/definitions/nullableObjectList"
+    },
+    "ports": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "health": {
+          "$ref": "#/definitions/port"
+        },
+        "metrics": {
+          "$ref": "#/definitions/port"
+        }
+      }
+    },
+    "serviceAccount": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "create": {
+          "type": "boolean"
+        },
+        "name": {
+          "type": ["string", "null"]
+        },
+        "annotations": {
+          "$ref": "#/definitions/nullableStringMap"
+        },
+        "automountServiceAccountToken": {
+          "type": "boolean"
+        },
+        "imagePullSecrets": {
+          "$ref": "#/definitions/nullableObjectList"
+        }
+      }
+    },
+    "service": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "type": {
+          "type": "string",
+          "enum": ["ClusterIP", "NodePort", "LoadBalancer"]
+        },
+        "trafficDistribution": {
+          "type": ["string", "null"]
+        }
+      }
+    },
+    "serviceMonitor": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "interval": {
+          "type": "string"
+        },
+        "scrapeTimeout": {
+          "type": "string"
+        },
+        "labels": {
+          "$ref": "#/definitions/nullableStringMap"
+        },
+        "honorLabels": {
+          "type": "boolean"
+        },
+        "relabelings": {
+          "$ref": "#/definitions/nullableObjectList"
+        },
+        "metricRelabelings": {
+          "$ref": "#/definitions/nullableObjectList"
+        }
+      }
+    },
+    "resources": {
+      "type": "object"
+    },
+    "resizePolicy": {
+      "$ref": "#/definitions/nullableObjectList"
+    },
+    "podAnnotations": {
+      "$ref": "#/definitions/nullableStringMap"
+    },
+    "podLabels": {
+      "$ref": "#/definitions/nullableStringMap"
+    },
+    "podSecurityContext": {
+      "type": "object"
+    },
+    "securityContext": {
+      "type": "object"
+    },
+    "nodeSelector": {
+      "$ref": "#/definitions/nullableStringMap"
+    },
+    "tolerations": {
+      "$ref": "#/definitions/nullableObjectList"
+    },
+    "affinity": {
+      "type": ["object", "null"]
+    },
+    "dnsPolicy": {
+      "type": ["string", "null"],
+      "enum": ["", "ClusterFirst", "ClusterFirstWithHostNet", "Default", "None", null]
+    },
+    "dnsConfig": {
+      "type": ["object", "null"]
+    },
+    "extraObjects": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    }
+  },
+  "definitions": {
+    "nullableStringMap": {
+      "type": ["object", "null"],
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "nullableObjectList": {
+      "type": ["array", "null"],
+      "items": {
+        "type": "object"
+      }
+    },
+    "port": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 65535
+    }
+  }
+}

@@ -1,0 +1,516 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "title": "kagent-gateway values",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "global": {
+      "type": "object"
+    },
+    "image": {
+      "$ref": "#/definitions/image"
+    },
+    "imagePullSecrets": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "nameOverride": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "fullnameOverride": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "replicaCount": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "revisionHistoryLimit": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "strategy": {
+      "type": "object"
+    },
+    "slack": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "parentMode": {
+          "type": "string",
+          "enum": [
+            "lookup",
+            "post"
+          ]
+        },
+        "lookupWindow": {
+          "$ref": "#/definitions/duration"
+        },
+        "lookupAttempts": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10
+        },
+        "investigatingReaction": {
+          "type": "string"
+        },
+        "completedReaction": {
+          "type": "string"
+        },
+        "defaultChannel": {
+          "type": "string"
+        },
+        "channelLabel": {
+          "type": "string"
+        },
+        "channelMap": {
+          "$ref": "#/definitions/stringMap"
+        },
+        "maxTextLength": {
+          "type": "integer",
+          "minimum": 500,
+          "maximum": 39000
+        },
+        "apiURL": {
+          "type": "string",
+          "minLength": 1
+        },
+        "existingSecret": {
+          "type": "string"
+        },
+        "existingSecretKey": {
+          "type": "string"
+        },
+        "token": {
+          "type": "string"
+        },
+        "existingSecretAppTokenKey": {
+          "type": "string"
+        },
+        "appToken": {
+          "type": "string"
+        }
+      }
+    },
+    "chat": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "agent": {
+          "type": "string"
+        },
+        "agentMap": {
+          "$ref": "#/definitions/stringMap"
+        },
+        "channels": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "allowedUsers": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "instructions": {
+          "type": "string"
+        },
+        "userID": {
+          "type": "string"
+        },
+        "timeout": {
+          "$ref": "#/definitions/duration"
+        },
+        "sessionTTL": {
+          "$ref": "#/definitions/duration"
+        },
+        "statusInterval": {
+          "$ref": "#/definitions/duration"
+        },
+        "threadHint": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "deniedHint": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "maxConcurrent": {
+          "$ref": "#/definitions/concurrency"
+        }
+      }
+    },
+    "kagent": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "url": {
+          "type": "string",
+          "minLength": 1
+        },
+        "namespace": {
+          "type": "string",
+          "minLength": 1
+        },
+        "agent": {
+          "type": "string",
+          "minLength": 1
+        },
+        "agentRoutingLabel": {
+          "type": "string"
+        },
+        "agentRoutingMap": {
+          "$ref": "#/definitions/stringMap"
+        },
+        "userID": {
+          "type": "string"
+        },
+        "timeout": {
+          "$ref": "#/definitions/duration"
+        },
+        "requestTimeout": {
+          "$ref": "#/definitions/duration"
+        },
+        "pollInterval": {
+          "$ref": "#/definitions/duration"
+        }
+      }
+    },
+    "analysis": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "severities": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "resolved": {
+          "type": "boolean"
+        },
+        "dedupeTTL": {
+          "$ref": "#/definitions/duration"
+        },
+        "maxAlerts": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "maxConcurrent": {
+          "$ref": "#/definitions/concurrency"
+        },
+        "instructions": {
+          "type": "string"
+        }
+      }
+    },
+    "webhook": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "type": "string",
+          "pattern": "^/"
+        },
+        "existingSecret": {
+          "type": "string"
+        },
+        "existingSecretKey": {
+          "type": "string"
+        },
+        "token": {
+          "type": "string"
+        }
+      }
+    },
+    "log": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "level": {
+          "type": "string",
+          "minLength": 1
+        },
+        "format": {
+          "type": "string",
+          "enum": [
+            "json",
+            "text"
+          ]
+        }
+      }
+    },
+    "extraEnv": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "extraEnvFrom": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "ports": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "http": {
+          "$ref": "#/definitions/port"
+        },
+        "metrics": {
+          "$ref": "#/definitions/port"
+        }
+      }
+    },
+    "serviceAccount": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "create": {
+          "type": "boolean"
+        },
+        "name": {
+          "type": "string"
+        },
+        "annotations": {
+          "$ref": "#/definitions/stringMap"
+        },
+        "automountServiceAccountToken": {
+          "type": "boolean"
+        },
+        "imagePullSecrets": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        }
+      }
+    },
+    "service": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "type": {
+          "$ref": "#/definitions/serviceType"
+        },
+        "trafficDistribution": {
+          "type": "string"
+        }
+      }
+    },
+    "serviceMonitor": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "interval": {
+          "type": "string"
+        },
+        "scrapeTimeout": {
+          "type": "string"
+        },
+        "labels": {
+          "$ref": "#/definitions/stringMap"
+        },
+        "honorLabels": {
+          "type": "boolean"
+        },
+        "relabelings": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "metricRelabelings": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        }
+      }
+    },
+    "prometheusRule": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "namespace": {
+          "type": "string"
+        },
+        "labels": {
+          "$ref": "#/definitions/stringMap"
+        },
+        "annotations": {
+          "$ref": "#/definitions/stringMap"
+        },
+        "groups": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        }
+      }
+    },
+    "resources": {
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "resizePolicy": {
+      "type": [
+        "array",
+        "null"
+      ]
+    },
+    "terminationGracePeriodSeconds": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "podAnnotations": {
+      "$ref": "#/definitions/stringMap"
+    },
+    "podLabels": {
+      "$ref": "#/definitions/stringMap"
+    },
+    "podSecurityContext": {
+      "type": "object"
+    },
+    "securityContext": {
+      "type": "object"
+    },
+    "nodeSelector": {
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "tolerations": {
+      "type": [
+        "array",
+        "null"
+      ]
+    },
+    "affinity": {
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "topologySpreadConstraints": {
+      "type": [
+        "array",
+        "null"
+      ]
+    },
+    "dnsPolicy": {
+      "$ref": "#/definitions/dnsPolicy"
+    },
+    "dnsConfig": {
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "extraObjects": {
+      "$ref": "#/definitions/extraObjects"
+    }
+  },
+  "definitions": {
+    "stringMap": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "port": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 65535
+    },
+    "image": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "registry": {
+          "type": "string",
+          "minLength": 1
+        },
+        "repository": {
+          "type": "string",
+          "minLength": 1
+        },
+        "tag": {
+          "type": "string"
+        },
+        "pullPolicy": {
+          "type": "string",
+          "enum": [
+            "Always",
+            "IfNotPresent",
+            "Never"
+          ]
+        }
+      }
+    },
+    "serviceType": {
+      "type": "string",
+      "enum": [
+        "ClusterIP",
+        "NodePort",
+        "LoadBalancer"
+      ]
+    },
+    "dnsPolicy": {
+      "type": "string",
+      "enum": [
+        "",
+        "ClusterFirst",
+        "ClusterFirstWithHostNet",
+        "Default",
+        "None"
+      ]
+    },
+    "extraObjects": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "duration": {
+      "type": "string",
+      "pattern": "^(0|([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+)?$"
+    },
+    "concurrency": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 64
+    }
+  }
+}

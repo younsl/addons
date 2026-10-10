@@ -1,0 +1,420 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "title": "external-ebs-autoresizer values",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "global": {
+      "type": "object"
+    },
+    "image": {
+      "$ref": "#/definitions/image"
+    },
+    "imagePullSecrets": {
+      "$ref": "#/definitions/nullableObjectList"
+    },
+    "nameOverride": {
+      "type": ["string", "null"]
+    },
+    "fullnameOverride": {
+      "type": ["string", "null"]
+    },
+    "replicaCount": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "revisionHistoryLimit": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "strategy": {
+      "type": "object"
+    },
+    "config": {
+      "$ref": "#/definitions/config"
+    },
+    "extraEnv": {
+      "$ref": "#/definitions/nullableObjectList"
+    },
+    "extraEnvFrom": {
+      "$ref": "#/definitions/nullableObjectList"
+    },
+    "ports": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "health": {
+          "$ref": "#/definitions/port"
+        },
+        "metrics": {
+          "$ref": "#/definitions/port"
+        }
+      }
+    },
+    "rbac": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "create": {
+          "type": "boolean"
+        }
+      }
+    },
+    "serviceAccount": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "create": {
+          "type": "boolean"
+        },
+        "name": {
+          "type": ["string", "null"]
+        },
+        "annotations": {
+          "$ref": "#/definitions/nullableStringMap"
+        },
+        "automountServiceAccountToken": {
+          "type": "boolean"
+        },
+        "imagePullSecrets": {
+          "$ref": "#/definitions/nullableObjectList"
+        }
+      }
+    },
+    "service": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "type": {
+          "type": "string",
+          "enum": ["ClusterIP", "NodePort", "LoadBalancer"]
+        },
+        "trafficDistribution": {
+          "type": ["string", "null"]
+        }
+      }
+    },
+    "serviceMonitor": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "interval": {
+          "type": "string"
+        },
+        "scrapeTimeout": {
+          "type": "string"
+        },
+        "labels": {
+          "$ref": "#/definitions/nullableStringMap"
+        }
+      }
+    },
+    "resources": {
+      "type": "object"
+    },
+    "resizePolicy": {
+      "$ref": "#/definitions/nullableObjectList"
+    },
+    "podAnnotations": {
+      "$ref": "#/definitions/nullableStringMap"
+    },
+    "podLabels": {
+      "$ref": "#/definitions/nullableStringMap"
+    },
+    "podSecurityContext": {
+      "type": "object"
+    },
+    "securityContext": {
+      "type": "object"
+    },
+    "priorityClassName": {
+      "type": ["string", "null"]
+    },
+    "nodeSelector": {
+      "$ref": "#/definitions/nullableStringMap"
+    },
+    "tolerations": {
+      "$ref": "#/definitions/nullableObjectList"
+    },
+    "affinity": {
+      "type": ["object", "null"]
+    },
+    "dnsPolicy": {
+      "type": ["string", "null"],
+      "enum": ["", "ClusterFirst", "ClusterFirstWithHostNet", "Default", "None", null]
+    },
+    "dnsConfig": {
+      "type": ["object", "null"]
+    },
+    "extraObjects": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    }
+  },
+  "definitions": {
+    "stringMap": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "nullableStringMap": {
+      "type": ["object", "null"],
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "nullableObjectList": {
+      "type": ["array", "null"],
+      "items": {
+        "type": "object"
+      }
+    },
+    "port": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 65535
+    },
+    "goDuration": {
+      "type": "string",
+      "pattern": "^ *\\+?(0|([0-9]*\\.?[0-9]+(ns|us|µs|ms|s|m|h))+) *$"
+    },
+    "notifyOutcome": {
+      "type": "string",
+      "enum": ["all", "success", "failure"]
+    },
+    "image": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "registry": {
+          "type": "string"
+        },
+        "repository": {
+          "type": "string"
+        },
+        "tag": {
+          "type": ["string", "null"]
+        },
+        "pullPolicy": {
+          "type": "string",
+          "enum": ["Always", "IfNotPresent", "Never"]
+        }
+      }
+    },
+    "config": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "region": {
+          "type": "string"
+        },
+        "tagFilters": {
+          "type": "string"
+        },
+        "excludeEKSNodes": {
+          "type": "boolean"
+        },
+        "reconcileInterval": {
+          "$ref": "#/definitions/goDuration"
+        },
+        "reconcileConcurrency": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "defaultPolicy": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/resizeSpec"
+            },
+            {
+              "required": ["usageThresholdPercent", "growMode"]
+            }
+          ]
+        },
+        "policies": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/policy"
+          }
+        },
+        "ssmCommandTimeout": {
+          "$ref": "#/definitions/goDuration"
+        },
+        "ssmPollInterval": {
+          "$ref": "#/definitions/goDuration"
+        },
+        "volumeModifyTimeout": {
+          "$ref": "#/definitions/goDuration"
+        },
+        "dryRun": {
+          "type": "boolean"
+        },
+        "logLevel": {
+          "type": "string"
+        },
+        "logFormat": {
+          "type": "string"
+        },
+        "alertmanager": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "url": {
+              "type": "string"
+            },
+            "timeout": {
+              "$ref": "#/definitions/goDuration"
+            },
+            "labels": {
+              "$ref": "#/definitions/stringMap"
+            },
+            "notifyOn": {
+              "$ref": "#/definitions/notifyOutcome"
+            },
+            "dashboardUrl": {
+              "type": "string"
+            }
+          }
+        },
+        "grafanaAnnotation": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "url": {
+              "type": "string"
+            },
+            "timeout": {
+              "$ref": "#/definitions/goDuration"
+            },
+            "tags": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "annotateOn": {
+              "$ref": "#/definitions/notifyOutcome"
+            },
+            "apiToken": {
+              "type": "string"
+            },
+            "existingSecret": {
+              "type": "string"
+            },
+            "existingSecretKey": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "throughputRecommendation": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "prometheusUrl": {
+              "type": "string"
+            },
+            "prometheusTenantId": {
+              "type": "string"
+            },
+            "metricNodeNameLabel": {
+              "type": "string",
+              "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$"
+            },
+            "lookbackWindow": {
+              "type": "string",
+              "pattern": "^([0-9]+(ms|s|m|h|d|w|y))+$"
+            },
+            "interval": {
+              "$ref": "#/definitions/goDuration"
+            },
+            "applyOnResize": {
+              "type": "boolean"
+            }
+          }
+        }
+      }
+    },
+    "resizeSpec": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "usageThresholdPercent": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "growMode": {
+          "type": "string",
+          "enum": ["percent", "absolute"]
+        },
+        "paused": {
+          "type": "boolean"
+        },
+        "alertEnabled": {
+          "type": "boolean"
+        },
+        "autoProtectiveCordon": {
+          "type": "boolean"
+        },
+        "growPercent": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "growAmount": {
+          "type": "string",
+          "pattern": "^ *[0-9]+ *([GgMm][Ii][Bb]?) *$"
+        },
+        "maxVolumeSizeGiB": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "weight": {
+          "type": "integer"
+        },
+        "instanceSelector": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "tags": {
+              "$ref": "#/definitions/stringMap"
+            },
+            "nameRegex": {
+              "type": "string"
+            }
+          }
+        },
+        "resize": {
+          "$ref": "#/definitions/resizeSpec"
+        }
+      }
+    }
+  }
+}

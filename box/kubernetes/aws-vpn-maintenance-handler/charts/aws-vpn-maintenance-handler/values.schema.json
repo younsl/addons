@@ -1,0 +1,364 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "title": "aws-vpn-maintenance-handler values",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "global": {
+      "type": "object"
+    },
+    "nameOverride": {
+      "type": ["string", "null"]
+    },
+    "fullnameOverride": {
+      "type": ["string", "null"]
+    },
+    "image": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "registry": {
+          "type": "string"
+        },
+        "repository": {
+          "type": "string"
+        },
+        "tag": {
+          "type": "string"
+        },
+        "pullPolicy": {
+          "$ref": "#/definitions/pullPolicy"
+        }
+      }
+    },
+    "imagePullSecrets": {
+      "type": "array"
+    },
+    "replicaCount": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "revisionHistoryLimit": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "stateConfigMapName": {
+      "type": "string"
+    },
+    "strategy": {
+      "type": "object"
+    },
+    "config": {
+      "$ref": "#/definitions/config"
+    },
+    "slack": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "existingSecret": {
+          "type": "string"
+        },
+        "botToken": {
+          "type": "string"
+        },
+        "appToken": {
+          "type": "string"
+        }
+      }
+    },
+    "healthPort": {
+      "$ref": "#/definitions/port"
+    },
+    "metricsPort": {
+      "$ref": "#/definitions/port"
+    },
+    "serviceAccount": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "create": {
+          "type": "boolean"
+        },
+        "name": {
+          "type": "string"
+        },
+        "annotations": {
+          "$ref": "#/definitions/stringMap"
+        }
+      }
+    },
+    "rbac": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "create": {
+          "type": "boolean"
+        }
+      }
+    },
+    "service": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["ClusterIP", "NodePort", "LoadBalancer"]
+        },
+        "annotations": {
+          "$ref": "#/definitions/stringMap"
+        },
+        "trafficDistribution": {
+          "type": "string"
+        }
+      }
+    },
+    "serviceMonitor": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "namespace": {
+          "type": "string"
+        },
+        "interval": {
+          "type": "string"
+        },
+        "scrapeTimeout": {
+          "type": "string"
+        },
+        "labels": {
+          "$ref": "#/definitions/stringMap"
+        }
+      }
+    },
+    "podDisruptionBudget": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "minAvailable": {
+          "type": ["integer", "string"]
+        },
+        "unhealthyPodEvictionPolicy": {
+          "type": "string",
+          "enum": ["", "IfHealthyBudget", "AlwaysAllow"]
+        }
+      }
+    },
+    "resources": {
+      "type": "object"
+    },
+    "resizePolicy": {
+      "type": "array"
+    },
+    "securityContext": {
+      "type": "object"
+    },
+    "podSecurityContext": {
+      "type": "object"
+    },
+    "podAnnotations": {
+      "$ref": "#/definitions/stringMap"
+    },
+    "podLabels": {
+      "$ref": "#/definitions/stringMap"
+    },
+    "priorityClassName": {
+      "type": "string"
+    },
+    "nodeSelector": {
+      "$ref": "#/definitions/stringMap"
+    },
+    "tolerations": {
+      "type": "array"
+    },
+    "affinity": {
+      "type": "object"
+    },
+    "topologySpreadConstraints": {
+      "type": "array"
+    },
+    "dnsPolicy": {
+      "type": "string"
+    },
+    "dnsConfig": {
+      "type": "object"
+    },
+    "terminationGracePeriodSeconds": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "extraEnv": {
+      "type": "array"
+    },
+    "extraObjects": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    }
+  },
+  "definitions": {
+    "stringMap": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "port": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 65535
+    },
+    "pullPolicy": {
+      "type": "string",
+      "enum": ["Always", "IfNotPresent", "Never"]
+    },
+    "duration": {
+      "type": ["string", "null"]
+    },
+    "config": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "region": {
+          "type": "string"
+        },
+        "reconcileInterval": {
+          "$ref": "#/definitions/duration"
+        },
+        "dryRun": {
+          "type": "boolean"
+        },
+        "targets": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "tagFilters": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["key"],
+                "properties": {
+                  "key": {
+                    "type": "string"
+                  },
+                  "value": {
+                    "type": "string"
+                  }
+                }
+              }
+            },
+            "excludeConnectionIDs": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "maintenanceWindow": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "timezone": {
+              "type": "string"
+            },
+            "cronSchedule": {
+              "type": "string"
+            },
+            "duration": {
+              "$ref": "#/definitions/duration"
+            },
+            "minRemaining": {
+              "$ref": "#/definitions/duration"
+            }
+          }
+        },
+        "safety": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "peerMinStableFor": {
+              "$ref": "#/definitions/duration"
+            },
+            "peerMinAcceptedRoutes": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "perConnectionCooldown": {
+              "$ref": "#/definitions/duration"
+            },
+            "chainSiblingTunnel": {
+              "type": "boolean"
+            },
+            "verifyTimeout": {
+              "$ref": "#/definitions/duration"
+            },
+            "verifyPollInterval": {
+              "$ref": "#/definitions/duration"
+            },
+            "escalateBefore": {
+              "$ref": "#/definitions/duration"
+            }
+          }
+        },
+        "approval": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "slackUserIDs": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^[UW]"
+              }
+            },
+            "timeout": {
+              "$ref": "#/definitions/duration"
+            },
+            "progressHeartbeat": {
+              "$ref": "#/definitions/duration"
+            }
+          }
+        },
+        "trafficGate": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "endpoint": {
+              "type": "string"
+            },
+            "headers": {
+              "$ref": "#/definitions/stringMap"
+            },
+            "timeout": {
+              "$ref": "#/definitions/duration"
+            },
+            "quietPercentile": {
+              "type": "number"
+            },
+            "onError": {
+              "type": "string",
+              "enum": ["", "block", "allow"]
+            }
+          }
+        },
+        "logLevel": {
+          "type": "string"
+        },
+        "logFormat": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

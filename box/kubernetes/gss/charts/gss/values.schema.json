@@ -1,0 +1,198 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "title": "gss values",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "global": {
+      "type": "object"
+    },
+    "nameOverride": {
+      "type": ["string", "null"]
+    },
+    "fullnameOverride": {
+      "type": ["string", "null"]
+    },
+    "image": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "registry": {
+          "type": "string",
+          "minLength": 1
+        },
+        "repository": {
+          "type": "string",
+          "minLength": 1
+        },
+        "pullPolicy": {
+          "type": "string",
+          "enum": ["Always", "IfNotPresent", "Never"]
+        },
+        "tag": {
+          "type": ["string", "null"]
+        }
+      }
+    },
+    "imagePullSecrets": {
+      "$ref": "#/definitions/objectList"
+    },
+    "restartPolicy": {
+      "type": "string",
+      "enum": ["Never", "OnFailure"]
+    },
+    "suspend": {
+      "type": "boolean"
+    },
+    "schedule": {
+      "type": "string",
+      "minLength": 1
+    },
+    "concurrencyPolicy": {
+      "type": "string",
+      "enum": ["Allow", "Forbid", "Replace"]
+    },
+    "timeZone": {
+      "type": ["string", "null"]
+    },
+    "ttlSecondsAfterFinished": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "successfulJobsHistoryLimit": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "failedJobsHistoryLimit": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "dnsConfig": {
+      "type": ["object", "null"]
+    },
+    "annotations": {
+      "$ref": "#/definitions/stringMap"
+    },
+    "podAnnotations": {
+      "$ref": "#/definitions/stringMap"
+    },
+    "configMap": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "name": {
+          "type": ["string", "null"]
+        },
+        "data": {
+          "$ref": "#/definitions/appConfig"
+        }
+      }
+    },
+    "secretName": {
+      "type": "string",
+      "minLength": 1
+    },
+    "resources": {
+      "type": ["object", "null"]
+    },
+    "podSecurityContext": {
+      "type": ["object", "null"]
+    },
+    "securityContext": {
+      "type": ["object", "null"]
+    },
+    "nodeSelector": {
+      "type": ["object", "null"]
+    },
+    "tolerations": {
+      "$ref": "#/definitions/objectList"
+    },
+    "affinity": {
+      "type": ["object", "null"]
+    },
+    "topologySpreadConstraints": {
+      "$ref": "#/definitions/objectList"
+    },
+    "excludedRepositoriesList": {
+      "type": ["array", "null"],
+      "items": {
+        "type": "string"
+      }
+    },
+    "extraObjects": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    }
+  },
+  "definitions": {
+    "stringMap": {
+      "type": ["object", "null"],
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "objectList": {
+      "type": ["array", "null"],
+      "items": {
+        "type": "object"
+      }
+    },
+    "nullableString": {
+      "type": ["string", "null"]
+    },
+    "positiveNumber": {
+      "anyOf": [
+        {
+          "type": "integer",
+          "minimum": 1
+        },
+        {
+          "type": "string",
+          "pattern": "^[1-9][0-9]*$"
+        }
+      ]
+    },
+    "appConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "GITHUB_ORG": {
+          "type": "string",
+          "minLength": 1
+        },
+        "GITHUB_BASE_URL": {
+          "type": "string",
+          "minLength": 1
+        },
+        "LOG_LEVEL": {
+          "type": "string"
+        },
+        "REQUEST_TIMEOUT": {
+          "$ref": "#/definitions/positiveNumber"
+        },
+        "CONCURRENT_SCANS": {
+          "$ref": "#/definitions/positiveNumber"
+        },
+        "SLACK_TOKEN": {
+          "type": ["string", "null"],
+          "pattern": "^xoxb-"
+        },
+        "SLACK_CHANNEL_ID": {
+          "$ref": "#/definitions/nullableString"
+        },
+        "SLACK_CANVAS_ID": {
+          "$ref": "#/definitions/nullableString"
+        },
+        "PUBLISHER_TYPE": {
+          "type": "string",
+          "enum": ["console", "slack-canvas"]
+        }
+      }
+    }
+  }
+}

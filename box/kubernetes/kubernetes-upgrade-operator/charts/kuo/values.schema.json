@@ -1,0 +1,377 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "title": "kuo values",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "global": {
+      "type": "object"
+    },
+    "nameOverride": {
+      "type": ["string", "null"]
+    },
+    "fullnameOverride": {
+      "type": ["string", "null"]
+    },
+    "crds": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "install": {
+          "type": "boolean"
+        },
+        "keep": {
+          "type": "boolean"
+        },
+        "annotations": {
+          "$ref": "#/definitions/nullableStringMap"
+        },
+        "additionalLabels": {
+          "$ref": "#/definitions/nullableStringMap"
+        }
+      }
+    },
+    "replicaCount": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "revisionHistoryLimit": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "image": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "registry": {
+          "type": ["string", "null"]
+        },
+        "repository": {
+          "type": "string"
+        },
+        "pullPolicy": {
+          "type": "string",
+          "enum": ["Always", "IfNotPresent", "Never"]
+        },
+        "tag": {
+          "type": ["string", "null"]
+        }
+      }
+    },
+    "imagePullSecrets": {
+      "$ref": "#/definitions/nullableObjectList"
+    },
+    "serviceAccount": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "create": {
+          "type": "boolean"
+        },
+        "annotations": {
+          "$ref": "#/definitions/nullableStringMap"
+        },
+        "name": {
+          "type": ["string", "null"]
+        }
+      }
+    },
+    "resources": {
+      "type": "object"
+    },
+    "resizePolicy": {
+      "$ref": "#/definitions/nullableObjectList"
+    },
+    "podDisruptionBudget": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "maxUnavailable": {
+          "type": ["integer", "string"],
+          "minimum": 0
+        },
+        "unhealthyPodEvictionPolicy": {
+          "type": ["string", "null"],
+          "enum": ["", "IfHealthyBudget", "AlwaysAllow", null]
+        }
+      }
+    },
+    "securityContext": {
+      "type": "object"
+    },
+    "serviceMonitor": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "interval": {
+          "type": "string"
+        },
+        "scrapeTimeout": {
+          "type": ["string", "null"]
+        },
+        "additionalLabels": {
+          "$ref": "#/definitions/nullableStringMap"
+        }
+      }
+    },
+    "prometheusRule": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "additionalLabels": {
+          "$ref": "#/definitions/nullableStringMap"
+        },
+        "annotations": {
+          "$ref": "#/definitions/nullableStringMap"
+        },
+        "groups": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        }
+      }
+    },
+    "priorityClassName": {
+      "type": ["string", "null"]
+    },
+    "dnsPolicy": {
+      "type": ["string", "null"],
+      "enum": ["", "ClusterFirst", "ClusterFirstWithHostNet", "Default", "None", null]
+    },
+    "dnsConfig": {
+      "type": ["object", "null"]
+    },
+    "nodeSelector": {
+      "$ref": "#/definitions/nullableStringMap"
+    },
+    "tolerations": {
+      "$ref": "#/definitions/nullableObjectList"
+    },
+    "affinity": {
+      "type": ["object", "null"]
+    },
+    "slack": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "webhookUrl": {
+          "type": "string"
+        }
+      }
+    },
+    "grafanaAnnotation": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "url": {
+          "type": "string"
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "annotateOn": {
+          "type": "string",
+          "enum": ["all", "upgrade", "dryRun"]
+        },
+        "apiToken": {
+          "type": "string"
+        },
+        "existingSecret": {
+          "type": "string"
+        },
+        "existingSecretKey": {
+          "$ref": "#/definitions/secretKey"
+        },
+        "secretAnnotations": {
+          "$ref": "#/definitions/nullableStringMap"
+        }
+      }
+    },
+    "eksUpgrades": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/eksUpgrade"
+      }
+    },
+    "mcp": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "cacheTtlSeconds": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "token": {
+          "type": "string"
+        },
+        "existingSecret": {
+          "type": "string"
+        },
+        "existingSecretKey": {
+          "$ref": "#/definitions/secretKey"
+        }
+      }
+    },
+    "extraObjects": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    }
+  },
+  "definitions": {
+    "stringMap": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "nullableStringMap": {
+      "type": ["object", "null"],
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "nullableObjectList": {
+      "type": ["array", "null"],
+      "items": {
+        "type": "object"
+      }
+    },
+    "secretKey": {
+      "type": "string",
+      "pattern": "^[-._a-zA-Z0-9]+$"
+    },
+    "eksUpgrade": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "spec"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$",
+          "maxLength": 253
+        },
+        "spec": {
+          "$ref": "#/definitions/eksUpgradeSpec"
+        }
+      }
+    },
+    "eksUpgradeSpec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["clusterName", "targetVersion", "region"],
+      "properties": {
+        "clusterName": {
+          "type": "string",
+          "minLength": 1
+        },
+        "targetVersion": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+"
+        },
+        "region": {
+          "type": "string",
+          "minLength": 1
+        },
+        "upgradeMode": {
+          "type": "string",
+          "enum": ["Forward", "Rollback"]
+        },
+        "assumeRoleArn": {
+          "type": "string"
+        },
+        "dryRun": {
+          "type": "boolean"
+        },
+        "addonVersions": {
+          "$ref": "#/definitions/stringMap"
+        },
+        "timeouts": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "controlPlaneMinutes": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "nodegroupMinutes": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        },
+        "notification": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "onUpgrade": {
+              "type": "boolean"
+            },
+            "onDryRun": {
+              "type": "boolean"
+            }
+          }
+        },
+        "karpenterNodePools": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "nodePools": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "strategy": {
+              "type": "string",
+              "enum": ["Replace"]
+            },
+            "maxUnavailable": {
+              "type": "string",
+              "pattern": "^[0-9]+%?$"
+            },
+            "nodeDrainTimeoutMinutes": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "controllerStableTimeoutMinutes": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        }
+      }
+    }
+  }
+}

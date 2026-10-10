@@ -149,7 +149,7 @@ jobs:
           set -euo pipefail
           helm template rel charts/forklift > /dev/null
           helm template rel charts/forklift --set mcp.enabled=true > /dev/null
-          helm template rel charts/forklift --set ingress.enabled=true > /dev/null
+          helm template rel charts/forklift --set gateway.enabled=true > /dev/null
 
   # The official distribution-spec conformance suite against a live binary.
   oci-conformance:
