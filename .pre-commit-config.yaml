@@ -9,6 +9,12 @@ repos:
       - id: gitleaks
         name: Scan for hardcoded secrets
 
+  - repo: https://github.com/lycheeverse/lychee
+    rev: lychee-v0.24.2
+    hooks:
+      - id: lychee
+        files: '^docs/kb/.*\.md$'
+
   - repo: local
     hooks:
       - id: helm-docs
@@ -22,6 +28,12 @@ repos:
         entry: make -C docs/resume pdf
         language: system
         files: '^docs/resume/resume\.html$'
+        pass_filenames: false
+      - id: kb-index
+        name: kb-index
+        entry: scripts/kb-index.sh
+        language: script
+        files: '^docs/kb/.*\.md$'
         pass_filenames: false
       - id: cargo-fmt
         name: cargo fmt
