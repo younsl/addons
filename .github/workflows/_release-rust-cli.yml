@@ -336,7 +336,19 @@ jobs:
             exit 1
           fi
 
-          envsubst '${PROJECT_NAME} ${VERSION} ${REPOSITORY} ${CHECKSUMS_TABLE}' < "${TEMPLATE}" > release-body.md
+          # The previous tag is the newest one for this project other than the
+          # current tag, so a forced re-release still diffs against the last version.
+          PREV_TAG=$(git tag --list "${PROJECT_NAME}/*" --sort=-v:refname | grep -vxF "${TAG}" | head -1 || true)
+          if [ -n "${PREV_TAG}" ]; then
+            CHANGES=$(git log --no-merges --format='- %s (%h)' "${PREV_TAG}..${GITHUB_SHA}" -- "${PROJECT_BASE_DIR}" | sed "s/^- \[${PROJECT_NAME}\] /- /")
+            CHANGES="${CHANGES:-- No changes under ${PROJECT_BASE_DIR}}"
+            CHANGES+=$'\n\n'"**Full Changelog**: https://github.com/${REPOSITORY}/compare/${PREV_TAG}...${TAG}"
+          else
+            CHANGES="- Initial release"
+          fi
+          export CHANGES
+
+          envsubst '${PROJECT_NAME} ${VERSION} ${REPOSITORY} ${CHECKSUMS_TABLE} ${CHANGES}' < "${TEMPLATE}" > release-body.md
 
           echo "Generated release body:"
           cat release-body.md
@@ -349,7 +361,7 @@ jobs:
           target_commitish: ${{ github.sha }}
           name: ${{ env.PROJECT_NAME }} ${{ env.VERSION }}
           body_path: release-body.md
-          generate_release_notes: true
+          generate_release_notes: false
           draft: false
           prerelease: false
           token: ${{ secrets.GITHUB_TOKEN }}
