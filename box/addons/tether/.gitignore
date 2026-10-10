@@ -12,7 +12,6 @@ lcov.info
 
 # Dotfiles: local-only files the configs load at runtime
 /configs/git/config-*
-!/configs/git/config-younsl
 /configs/git/*.key
 /configs/zsh/.zshrc.local
 /configs/claude/scripts/statusbar-rs

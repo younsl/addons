@@ -2,6 +2,10 @@
 # Reference for git configuration file:
 # https://git-scm.com/docs/git-config
 #--------------------------------------------------------
+[user]
+  name = younsl
+  email = cysl@kakao.com
+
 [column]
   ui = auto
 
@@ -72,8 +76,5 @@
 [include]
   path = ~/.config/git/config-work
 
-[includeIf "gitdir:~/github/younsl/"]
-  path = ~/.config/git/config-younsl
-
-[includeIf "gitdir:~/github/younsl/"]
+[include]
   path = ~/.config/git/younsl-gpg-signing.key
