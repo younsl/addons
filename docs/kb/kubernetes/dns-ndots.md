@@ -10,12 +10,12 @@ reviewed: 2026-10-10
 
 ## Rule
 
-Pods default to `ndots:5`, which turns most external lookups into a burst of failed queries. Set `ndots:2` on workloads so that external names resolve on the first try while short in-cluster names keep working.
+Pods default to [`ndots:5`](https://man7.org/linux/man-pages/man5/resolv.conf.5.html), which turns most external lookups into a burst of failed queries. Set `ndots:2` on workloads so that external names resolve on the first try while short in-cluster names keep working.
 
 - In-cluster calls use `my-svc`, `my-svc.my-ns`, or the full `my-svc.my-ns.svc.cluster.local`
 - Avoid the `my-svc.my-ns.svc` form: it has 2 dots, so it is tried absolute first and fails once before the search list catches it
 - External names with a single dot (`example.com`) still walk the search list, so add a trailing dot (`example.com.`) when that path is hot
-- Apply cluster-wide with a mutating admission policy rather than editing every chart, see [prefer-vap-map-over-kyverno.md](prefer-vap-map-over-kyverno.md)
+- Apply cluster-wide with a [MutatingAdmissionPolicy](https://kubernetes.io/docs/reference/access-authn-authz/mutating-admission-policy/) rather than editing every chart, see [prefer-vap-map-over-kyverno.md](prefer-vap-map-over-kyverno.md)
 
 ## Why
 
@@ -37,8 +37,8 @@ A name with fewer dots than `ndots` is tried against every search domain before 
 Each step runs for both A and AAAA records, so one lookup becomes 8 to 10 queries. The cost shows up as:
 
 - higher latency on every external call that is not cached
-- CoreDNS CPU and cache churn
-- upstream resolver rate limits (on AWS, the VPC resolver drops packets past a per-ENI packet rate, seen as `linklocal_allowance_exceeded`)
+- [CoreDNS](https://coredns.io/) CPU and cache churn
+- upstream resolver rate limits (on AWS, the [VPC resolver](https://docs.aws.amazon.com/vpc/latest/userguide/AmazonDNS-concepts.html) drops packets past a per-ENI packet rate, seen as [`linklocal_allowance_exceeded`](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/monitoring-network-performance-ena.html))
 
 ### Why 2 and not 1
 
@@ -55,12 +55,12 @@ With `ndots:1`, `my-svc.my-ns` would go to the upstream resolver as an absolute 
 
 ## Exceptions
 
-- Workloads that address in-cluster names with 2 or more dots but no full domain, such as StatefulSet pods via `web-0.nginx.my-ns`, pay one failed upstream query per lookup. Switch them to the full `svc.cluster.local` name, or leave them on the default
-- Workloads that never resolve in-cluster names can skip cluster DNS entirely with `dnsPolicy: None` and their own resolver and search list
+- Workloads that address in-cluster names with 2 or more dots but no full domain, such as [StatefulSet pods](https://kubernetes.io/docs/concepts/workloads/controllers/statefulset/#stable-network-id) via `web-0.nginx.my-ns`, pay one failed upstream query per lookup. Switch them to the full `svc.cluster.local` name, or leave them on the default
+- Workloads that never resolve in-cluster names can skip cluster DNS entirely with [`dnsPolicy: None`](https://kubernetes.io/docs/concepts/services-networking/dns-pod-service/#pod-s-dns-policy) and their own resolver and search list
 
 ## Example
 
-`dnsConfig` merges with the default `dnsPolicy: ClusterFirst`, so only the option needs to be set.
+[`dnsConfig`](https://kubernetes.io/docs/concepts/services-networking/dns-pod-service/#pod-dns-config) merges with the default `dnsPolicy: ClusterFirst`, so only the option needs to be set.
 
 ```yaml
 spec:
