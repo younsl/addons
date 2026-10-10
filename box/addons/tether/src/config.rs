@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use clap::Parser;
 
-use crate::error::ConfigError;
+use crate::Error;
 
 const BUILD_COMMIT: &str = env!("BUILD_COMMIT");
 const BUILD_DATE: &str = env!("BUILD_DATE");
@@ -98,7 +98,7 @@ const fn const_format() -> &'static str {
 fn parse_duration(s: &str) -> Result<Duration, String> {
     let d = humantime::parse_duration(s).map_err(|e| format!("invalid duration {s:?}: {e}"))?;
     if d < Duration::from_secs(1) {
-        return Err(ConfigError::IntervalTooShort(d).to_string());
+        return Err(Error::IntervalTooShort(d).to_string());
     }
     Ok(d)
 }
@@ -108,7 +108,7 @@ fn parse_home(s: &str) -> Result<PathBuf, String> {
     if path.is_absolute() {
         Ok(path)
     } else {
-        Err(ConfigError::HomeNotAbsolute(path).to_string())
+        Err(Error::HomeNotAbsolute(path).to_string())
     }
 }
 

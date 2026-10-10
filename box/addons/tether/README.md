@@ -17,7 +17,8 @@ curl -s 127.0.0.1:8080/status
 ## Docs
 
 - [Architecture](docs/architecture.md): reconcile loop, actions, image contents
-- [Usage](docs/usage.md): run, API, settings, link spec
+- [Usage](docs/usage.md): run, console, API
+- [Configuration](docs/configuration.md): settings, config.toml, mounts, load errors
 - [Dotfiles](docs/dotfiles.md): layout, fresh machine, local-only files
 
 ## Development

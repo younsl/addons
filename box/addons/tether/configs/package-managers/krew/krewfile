@@ -1,8 +1,7 @@
 #---------------------------------
-# Backup completed on 2026-02-17 
-# Krew version is v0.4.5   
+# Backup completed on 2026-10-11 
+# Krew version is v0.5.0   
 #---------------------------------
-kyverno
 node-shell
 stern
 tree

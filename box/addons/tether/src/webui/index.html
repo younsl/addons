@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>tether</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="/assets/app.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/highlight.min.js" integrity="sha384-RH2xi4eIQ/gjtbs9fUXM68sLSi99C7ZWBRX1vDrVv6GQXRibxXLbwO2NGZB74MbU" crossorigin="anonymous" referrerpolicy="no-referrer" defer></script>
+<script src="/assets/app.js" defer></script>
+</head>
+<body>
+<header class="nav">
+  <div class="nav-inner">
+    <a class="wordmark" href="/">tether</a>
+    <span class="nav-meta" id="build"></span>
+    <span class="health" id="health" data-state="unknown"><span class="dot" aria-hidden="true"></span><span id="health-text">Connecting</span></span>
+    <button class="btn btn-primary" id="reconcile" type="button">Reconcile now</button>
+  </div>
+</header>
+
+<main>
+  <section class="status" id="status" data-tone="neutral" aria-live="polite">
+    <div class="mesh" aria-hidden="true"></div>
+    <div class="status-inner">
+      <p class="eyebrow">Links</p>
+      <h1 id="headline">Waiting for the first reconcile</h1>
+      <p class="lede" id="lede">tether checks every link on start, then on an interval.</p>
+    </div>
+  </section>
+
+  <section class="panel" aria-labelledby="links-title">
+    <div class="panel-head">
+      <h2 id="links-title">Links</h2>
+      <div class="filters" role="tablist" aria-label="Filter links" id="filters"></div>
+      <label class="search">
+        <span class="visually-hidden">Search links</span>
+        <input id="search" type="search" placeholder="Search paths" autocomplete="off" spellcheck="false">
+        <kbd aria-hidden="true">/</kbd>
+      </label>
+    </div>
+    <div class="table-wrap">
+      <table class="links">
+        <thead>
+          <tr><th scope="col">Target</th><th scope="col">Source</th><th scope="col">Action</th><th scope="col">Detail</th></tr>
+        </thead>
+        <tbody id="rows"></tbody>
+      </table>
+      <p class="empty" id="empty" hidden></p>
+    </div>
+  </section>
+
+  <section class="panel" aria-labelledby="packages-title" id="packages-panel" hidden>
+    <div class="panel-head">
+      <h2 id="packages-title">Package files</h2>
+    </div>
+    <ul class="packages" id="packages"></ul>
+    <div class="guide" id="mount-guide" hidden></div>
+  </section>
+</main>
+
+<footer class="foot">
+  <dl id="facts"></dl>
+</footer>
+
+<div class="viewer" id="viewer" hidden>
+  <div class="viewer-scrim" data-close></div>
+  <section class="viewer-panel" role="dialog" aria-modal="true" aria-labelledby="viewer-title">
+    <header class="viewer-head">
+      <div class="viewer-heading">
+        <h2 id="viewer-title"></h2>
+        <p class="viewer-sub" id="viewer-sub"></p>
+      </div>
+      <button class="btn btn-ghost" type="button" id="viewer-close" data-close>Close</button>
+    </header>
+    <div class="viewer-body">
+      <nav class="viewer-tree" id="viewer-tree" aria-label="Files"></nav>
+      <div class="viewer-file">
+        <p class="viewer-path" id="viewer-path"></p>
+        <div class="viewer-code" id="viewer-code"></div>
+      </div>
+    </div>
+  </section>
+</div>
+
+<div class="toast" id="toast" role="status" hidden></div>
+</body>
+</html>

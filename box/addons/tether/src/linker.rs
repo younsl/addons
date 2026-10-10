@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 
-use crate::error::LinkError;
+use crate::Error;
 use crate::spec::{Link, Spec};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -93,14 +93,14 @@ impl Backups {
         self.used.then_some(self.dir.as_path())
     }
 
-    fn stash(&mut self, target: &Path) -> Result<PathBuf, LinkError> {
+    fn stash(&mut self, target: &Path) -> Result<PathBuf, Error> {
         let relative = target
             .strip_prefix(&self.home)
             .or_else(|_| target.strip_prefix("/"))
             .unwrap_or(target);
         let dest = self.dir.join(relative);
         create_parent(&dest)?;
-        fs::rename(target, &dest).map_err(LinkError::io("move", target))?;
+        fs::rename(target, &dest).map_err(Error::io("move", target))?;
         self.used = true;
         Ok(dest)
     }
@@ -210,7 +210,7 @@ pub fn apply(steps: Vec<Step>, backups: &mut Backups) -> Vec<Entry> {
         .collect()
 }
 
-fn apply_step(step: &Step, backups: &mut Backups) -> Result<Option<PathBuf>, LinkError> {
+fn apply_step(step: &Step, backups: &mut Backups) -> Result<Option<PathBuf>, Error> {
     let Step {
         source,
         target,
@@ -222,7 +222,7 @@ fn apply_step(step: &Step, backups: &mut Backups) -> Result<Option<PathBuf>, Lin
             if fs::symlink_metadata(target).is_ok_and(|meta| meta.file_type().is_symlink()) {
                 remove(target)?;
             }
-            fs::create_dir_all(target).map_err(LinkError::io("create dir", target))?;
+            fs::create_dir_all(target).map_err(Error::io("create dir", target))?;
             Ok(None)
         }
         Action::Create => {
@@ -243,61 +243,46 @@ fn apply_step(step: &Step, backups: &mut Backups) -> Result<Option<PathBuf>, Lin
     }
 }
 
-fn create_parent(path: &Path) -> Result<(), LinkError> {
+fn create_parent(path: &Path) -> Result<(), Error> {
     path.parent().map_or(Ok(()), |parent| {
-        fs::create_dir_all(parent).map_err(LinkError::io("create dir", parent))
+        fs::create_dir_all(parent).map_err(Error::io("create dir", parent))
     })
 }
 
-fn remove(path: &Path) -> Result<(), LinkError> {
-    fs::remove_file(path).map_err(LinkError::io("remove", path))
+fn remove(path: &Path) -> Result<(), Error> {
+    fs::remove_file(path).map_err(Error::io("remove", path))
 }
 
-fn link(source: &Path, target: &Path) -> Result<(), LinkError> {
-    symlink(source, target).map_err(LinkError::io("link", target))
+fn link(source: &Path, target: &Path) -> Result<(), Error> {
+    symlink(source, target).map_err(Error::io("link", target))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::fixtures::TempHome;
 
-    struct Fixture {
-        _dir: tempfile::TempDir,
-        home: PathBuf,
-        repo: PathBuf,
+    struct Fixture(TempHome);
+
+    impl std::ops::Deref for Fixture {
+        type Target = TempHome;
+
+        fn deref(&self) -> &TempHome {
+            &self.0
+        }
     }
 
     impl Fixture {
         fn new() -> Self {
-            let dir = tempfile::tempdir().expect("tempdir");
-            let home = dir.path().join("home");
-            let repo = dir.path().join("repo");
-            fs::create_dir_all(&home).expect("home");
-            fs::create_dir_all(&repo).expect("repo");
-            Self {
-                _dir: dir,
-                home,
-                repo,
-            }
-        }
-
-        fn source_file(&self, name: &str) -> PathBuf {
-            let path = self.repo.join(name);
-            fs::create_dir_all(path.parent().expect("parent")).expect("mkdir");
-            fs::write(&path, name).expect("write");
-            path
-        }
-
-        fn source_dir(&self, name: &str) -> PathBuf {
-            let path = self.repo.join(name);
-            fs::create_dir_all(&path).expect("mkdir");
-            path
+            Self(TempHome::new())
         }
 
         fn spec(&self, links: Vec<Link>) -> Spec {
             Spec {
+                source_root: self.repo.clone(),
                 backup_root: self.home.join(".dotfiles-backup"),
                 links,
+                packages: None,
             }
         }
 

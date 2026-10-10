@@ -224,11 +224,6 @@ alias s=switch
 eval "$(mise activate zsh)"
 
 #----------------------------------
-# Brewfile and krewfile refresh (once a day, background)
-#----------------------------------
-pkgfile-sync
-
-#----------------------------------
 # Load local config (not tracked in git)
 #----------------------------------
 [[ -f ~/.zshrc.local ]] && source ~/.zshrc.local

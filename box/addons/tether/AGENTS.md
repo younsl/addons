@@ -15,9 +15,16 @@ tether is two things in one directory: a Rust server (src/) that keeps symlinks 
 
 [tether] TYPE(SCOPE): DETAIL. For a dotfiles change the scope is the tool ([tether] feat(nvim): add nvim-treesitter-textobjects via vim.pack), for a server change the module ([tether] fix(linker): ...).
 
+## Server layout
+
+Modeled on kube-rs/controller-rs: lib.rs owns Error and Result and exports the modules, main.rs only wires settings, telemetry, the controller, and the web server. controller.rs holds Context, reconcile, error_policy, State, and run. Test helpers live in fixtures.rs.
+
 ## Server traps
 
-- **HTTP handlers never touch the file system.** They read the last report and wake the reconcile loop through Shared. A handler that reads a configured path is flagged by CodeQL as rust/path-injection.
+- **HTTP handlers never touch the file system.** They read State and wake the controller. A handler that reads a configured path is flagged by CodeQL as rust/path-injection.
+- **The console and its API answer only to loopback hosts** (web/guard.rs), and writes need a same-origin request. Keep new console routes inside that layer. Health and metrics stay outside it.
+- **The file viewer shows only files tracked in git** (src/files.rs reads .git/index). Never widen it to untracked files: configs/ holds gitignored local-only files such as config-work and signing keys.
+- **The console is plain HTML, CSS, and JavaScript** in src/webui/, compiled in with include_str!. No build step, no native alert, confirm, prompt, or title tooltips.
 - **A reconcile in progress always finishes** before shutdown, so no target is left between remove and link.
 - **Links are absolute paths**, so the container mounts $HOME at the same path as on the host.
 
@@ -55,4 +62,4 @@ k and j come from oh-my-zsh plugins, so the plugins=() list in .zshrc is load-be
 - **istioctl**: pinned in mise, never brew. It is version-coupled to the control plane and brew's daily --upgrade would bump it past the mesh.
 - **nvim**: plugins are managed by built-in vim.pack (configs/nvim/lua/config/pack.lua) and pinned in nvim-pack-lock.json. Auto-update runs daily on VimEnter and rewrites the lockfile, so commit it after it changes. Prefer a native Neovim feature over a plugin.
 - **git**: per-org profiles selected by includeIf gitdir:. Work profiles go in the untracked config-work. GPG signing is on globally.
-- **Brewfile**: the backup-brewfile pre-commit hook dumps it once per day (date in the untracked .brewfile-last-backup) and stages it.
+- **Brewfile and krewfile**: tether regenerates them from disk on every reconcile (src/packages/). The Brewfile output is byte-identical to brew bundle dump, so check any change to src/packages/brew.rs by diffing against a real dump.

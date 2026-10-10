@@ -81,3 +81,8 @@ target = "~/.claude/hooks"
 [[links]]
 source = "claude/scripts"
 target = "~/.claude/scripts"
+
+[packages]
+brewfile = "package-managers/brew/Brewfile"
+krewfile = "package-managers/krew/krewfile"
+npm_prefix = "~/.local/share/mise/installs/node/24"

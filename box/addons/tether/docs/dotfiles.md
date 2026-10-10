@@ -38,6 +38,6 @@ This repository is public. These files are loaded at runtime but gitignored, and
 | .key files in configs/git/ | Signing key settings |
 | ~/.zshrc.local | Site values such as Jira and registry hosts for Claude Code skills, sourced last by .zshrc |
 
-## Brewfile backup
+## Package files
 
-The backup-brewfile pre-commit hook dumps configs/package-managers/brew/Brewfile once per day, appends a package count summary, and stages it. The last run date is kept in the untracked .brewfile-last-backup.
+tether regenerates configs/package-managers/brew/Brewfile and configs/package-managers/krew/krewfile on every reconcile, from what is installed on disk. A file is rewritten only when its package list changes, so the date in its header never churns on its own. Commit the change when it shows up. See [Configuration](configuration.md#packages) for what it reads.

@@ -41,6 +41,13 @@ start_tether() {
         "$runtime" rm -f "$TETHER_NAME" >/dev/null
     fi
 
+    local homebrew_mount=()
+    if [[ -d /opt/homebrew ]] && "$runtime" run --rm -v /opt/homebrew:/opt/homebrew:ro "$TETHER_IMAGE" --version &>/dev/null; then
+        homebrew_mount=(-v /opt/homebrew:/opt/homebrew:ro)
+    else
+        echo "/opt/homebrew is not shared with the container runtime, so the Brewfile is not refreshed."
+    fi
+
     "$runtime" run -d \
         --name "$TETHER_NAME" \
         --restart unless-stopped \
@@ -49,6 +56,7 @@ start_tether() {
         -e LOG_FORMAT=text \
         -v "$HOME:$HOME" \
         -v "$TETHER_CONFIG_FILE:/etc/tether/config.toml:ro" \
+        "${homebrew_mount[@]}" \
         -p "127.0.0.1:$TETHER_PORT:8080" \
         "$TETHER_IMAGE" >/dev/null
 

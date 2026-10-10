@@ -1,28 +1,23 @@
-//! Server that keeps dotfiles symlinked into a home directory. It reconciles
-//! the links declared in a spec file on an interval or on demand, and moves
-//! any real file in the way into a timestamped backup directory.
+//! tether binary: settings and logging, then the controller and the web
+//! server until SIGTERM or Ctrl-C.
 
-mod api;
-mod app;
-mod banner;
-mod config;
-mod error;
-mod linker;
-mod observability;
-mod reconciler;
-mod spec;
+use std::sync::Arc;
 
+use anyhow::Context as _;
 use tokio::signal;
 use tokio::sync::watch;
-use tracing_subscriber::{EnvFilter, fmt, prelude::*};
+use tokio::task::JoinSet;
 
-use crate::config::{BuildInfo, Config, LogFormat};
+use tether::config::{BuildInfo, Config};
+use tether::telemetry::{self, LogFilterHandle};
+use tether::web::{self, AppState, Info};
+use tether::{Metrics, State, banner, controller};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let cfg = Config::load();
     eprint!("{}", banner::render(BuildInfo::CURRENT));
-    init_tracing(&cfg);
+    let log_filter = telemetry::init(&cfg.log_level, cfg.log_format);
 
     let (shutdown_tx, shutdown_rx) = watch::channel(false);
     tokio::spawn(async move {
@@ -30,19 +25,51 @@ async fn main() -> anyhow::Result<()> {
         let _ = shutdown_tx.send(true);
     });
 
-    app::run(cfg, shutdown_rx).await
+    run(cfg, log_filter, shutdown_rx).await
 }
 
-fn init_tracing(cfg: &Config) {
-    let filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new(cfg.log_level.as_str()));
-    let registry = tracing_subscriber::registry().with(filter);
-    match cfg.log_format {
-        LogFormat::Json => registry
-            .with(fmt::layer().json().flatten_event(true))
-            .init(),
-        LogFormat::Text => registry.with(fmt::layer().with_target(false)).init(),
+async fn run(
+    cfg: Config,
+    log_filter: LogFilterHandle,
+    shutdown: watch::Receiver<bool>,
+) -> anyhow::Result<()> {
+    let build = BuildInfo::CURRENT;
+    tracing::info!(
+        version = build.version,
+        commit = build.commit,
+        built = build.date,
+        rustc = build.rustc,
+        config_file = %cfg.file.display(),
+        home = %cfg.home.display(),
+        reconcile_interval = %humantime::format_duration(cfg.reconcile_interval),
+        dry_run = cfg.dry_run,
+        port = cfg.port,
+        "starting tether"
+    );
+
+    let listener = web::bind(cfg.port).await.context("http port")?;
+
+    let state = State::new(Metrics::new(build));
+    let ctx = state.to_context(&cfg);
+    let app = AppState {
+        state: state.clone(),
+        info: Arc::new(Info::new(&cfg, build)),
+        log_filter,
+    };
+
+    let mut tasks = JoinSet::new();
+    tasks.spawn(web::serve(listener, web::router(app), shutdown.clone()));
+    let interval = cfg.reconcile_interval;
+    tasks.spawn(async move {
+        controller::run(state, ctx, interval, shutdown).await;
+        Ok(())
+    });
+
+    while let Some(res) = tasks.join_next().await {
+        res.context("task panicked")??;
     }
+    tracing::info!("shutdown complete");
+    Ok(())
 }
 
 async fn wait_for_signal() {
@@ -60,4 +87,53 @@ async fn wait_for_signal() {
         () = terminate => {},
     }
     tracing::info!("shutdown signal received");
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+    use std::time::Duration;
+
+    use tether::config::LogFormat;
+    use tracing_subscriber::{EnvFilter, Registry, reload};
+
+    use super::*;
+
+    fn test_config() -> Config {
+        Config {
+            file: PathBuf::from("/nonexistent/config.toml"),
+            home: PathBuf::from("/nonexistent"),
+            reconcile_interval: Duration::from_secs(3600),
+            dry_run: true,
+            port: 0,
+            log_level: "info".into(),
+            log_format: LogFormat::Text,
+        }
+    }
+
+    fn filter() -> (reload::Layer<EnvFilter, Registry>, LogFilterHandle) {
+        reload::Layer::new(EnvFilter::new("info"))
+    }
+
+    #[tokio::test]
+    async fn run_stops_on_shutdown() {
+        let (_layer, handle) = filter();
+        let (tx, rx) = watch::channel(false);
+        tx.send(true).expect("signal shutdown");
+        tokio::time::timeout(Duration::from_secs(10), run(test_config(), handle, rx))
+            .await
+            .expect("run returns")
+            .expect("run succeeds");
+    }
+
+    #[tokio::test]
+    async fn run_fails_on_busy_port() {
+        let (_layer, handle) = filter();
+        let busy = web::bind(0).await.expect("bind");
+        let mut cfg = test_config();
+        cfg.port = busy.local_addr().expect("addr").port();
+        let (_tx, rx) = watch::channel(false);
+        let err = run(cfg, handle, rx).await.expect_err("busy port must fail");
+        assert!(format!("{err:#}").contains("http port"), "{err:#}");
+    }
 }

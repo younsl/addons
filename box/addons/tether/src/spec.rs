@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
 
-use crate::error::SpecError;
+use crate::{Error, Result};
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -15,6 +15,22 @@ struct RawSpec {
     backup_root: String,
     #[serde(default)]
     links: Vec<RawLink>,
+    packages: Option<RawPackages>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawPackages {
+    brewfile: Option<String>,
+    krewfile: Option<String>,
+    homebrew_prefix: Option<String>,
+    homebrew_cache: Option<String>,
+    trust_file: Option<String>,
+    launch_agents: Option<String>,
+    krew_root: Option<String>,
+    cargo_home: Option<String>,
+    go_bin: Option<String>,
+    npm_prefix: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -29,8 +45,25 @@ struct RawLink {
 /// Resolved spec with every path absolute.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Spec {
+    pub source_root: PathBuf,
     pub backup_root: PathBuf,
     pub links: Vec<Link>,
+    pub packages: Option<Packages>,
+}
+
+/// Package manager files regenerated from what is installed on disk.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Packages {
+    pub brewfile: Option<PathBuf>,
+    pub krewfile: Option<PathBuf>,
+    pub homebrew_prefix: PathBuf,
+    pub homebrew_cache: PathBuf,
+    pub trust_file: PathBuf,
+    pub launch_agents: PathBuf,
+    pub krew_root: PathBuf,
+    pub cargo_home: PathBuf,
+    pub go_bin: PathBuf,
+    pub npm_prefix: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -43,16 +76,16 @@ pub struct Link {
 }
 
 impl Spec {
-    pub fn load(path: &Path, home: &Path) -> Result<Self, SpecError> {
-        let text = fs::read_to_string(path).map_err(|error| SpecError::Read {
+    pub fn load(path: &Path, home: &Path) -> Result<Self> {
+        let text = fs::read_to_string(path).map_err(|error| Error::ConfigRead {
             path: path.to_path_buf(),
             error,
         })?;
         Self::parse(&text, path, home)
     }
 
-    pub fn parse(text: &str, path: &Path, home: &Path) -> Result<Self, SpecError> {
-        let raw: RawSpec = toml::from_str(text).map_err(|error| SpecError::Parse {
+    pub fn parse(text: &str, path: &Path, home: &Path) -> Result<Self> {
+        let raw: RawSpec = toml::from_str(text).map_err(|error| Error::ConfigParse {
             path: path.to_path_buf(),
             error: Box::new(error),
         })?;
@@ -67,29 +100,78 @@ impl Spec {
             .map(|link| {
                 let target = expand("target", &link.target, home)?;
                 if !seen.insert(target.clone()) {
-                    return Err(SpecError::DuplicateTarget(target));
+                    return Err(Error::DuplicateTarget(target));
                 }
                 Ok(Link {
-                    source: resolve_source(&link.source, &source_root, home)?,
+                    source: resolve_source("source", &link.source, &source_root, home)?,
                     target,
                     per_entry: link.per_entry,
                 })
             })
             .collect::<Result<_, _>>()?;
 
-        Ok(Self { backup_root, links })
+        let packages = raw
+            .packages
+            .map(|raw| resolve_packages(raw, &source_root, home))
+            .transpose()?;
+
+        Ok(Self {
+            source_root,
+            backup_root,
+            links,
+            packages,
+        })
     }
 }
 
-fn resolve_source(value: &str, source_root: &Path, home: &Path) -> Result<PathBuf, SpecError> {
+fn resolve_packages(raw: RawPackages, source_root: &Path, home: &Path) -> Result<Packages> {
+    let path_or = |field: &'static str, value: Option<String>, default: &str| {
+        expand(field, value.as_deref().unwrap_or(default), home)
+    };
+    let file = |field: &'static str, value: Option<String>| {
+        value
+            .map(|v| resolve_source(field, &v, source_root, home))
+            .transpose()
+    };
+    Ok(Packages {
+        brewfile: file("brewfile", raw.brewfile)?,
+        krewfile: file("krewfile", raw.krewfile)?,
+        homebrew_prefix: path_or("homebrew_prefix", raw.homebrew_prefix, "/opt/homebrew")?,
+        homebrew_cache: path_or(
+            "homebrew_cache",
+            raw.homebrew_cache,
+            "~/Library/Caches/Homebrew",
+        )?,
+        trust_file: path_or(
+            "trust_file",
+            raw.trust_file,
+            "~/.config/homebrew/trust.json",
+        )?,
+        launch_agents: path_or("launch_agents", raw.launch_agents, "~/Library/LaunchAgents")?,
+        krew_root: path_or("krew_root", raw.krew_root, "~/.krew")?,
+        cargo_home: path_or("cargo_home", raw.cargo_home, "~/.cargo")?,
+        go_bin: path_or("go_bin", raw.go_bin, "~/go/bin")?,
+        npm_prefix: raw
+            .npm_prefix
+            .map(|v| expand("npm_prefix", &v, home))
+            .transpose()?,
+    })
+}
+
+fn resolve_source(
+    field: &'static str,
+    value: &str,
+    source_root: &Path,
+    home: &Path,
+) -> Result<PathBuf> {
     if value.starts_with('~') || Path::new(value).is_absolute() {
-        expand("source", value, home)
+        expand(field, value, home)
     } else {
         Ok(source_root.join(value))
     }
 }
 
-fn expand(field: &'static str, value: &str, home: &Path) -> Result<PathBuf, SpecError> {
+fn expand(field: &'static str, value: &str, home: &Path) -> Result<PathBuf> {
     if value == "~" {
         return Ok(home.to_path_buf());
     }
@@ -100,7 +182,7 @@ fn expand(field: &'static str, value: &str, home: &Path) -> Result<PathBuf, Spec
     if path.is_absolute() {
         Ok(path)
     } else {
-        Err(SpecError::NotAbsolute {
+        Err(Error::NotAbsolute {
             field,
             value: value.to_string(),
         })
@@ -113,7 +195,7 @@ mod tests {
 
     const HOME: &str = "/home/dev";
 
-    fn parse(text: &str) -> Result<Spec, SpecError> {
+    fn parse(text: &str) -> Result<Spec> {
         Spec::parse(text, Path::new("config.toml"), Path::new(HOME))
     }
 
@@ -184,7 +266,7 @@ mod tests {
         .expect_err("relative target");
         assert!(matches!(
             err,
-            SpecError::NotAbsolute {
+            Error::NotAbsolute {
                 field: "target",
                 ..
             }
@@ -212,7 +294,7 @@ mod tests {
             "#,
         )
         .expect_err("duplicate target");
-        assert!(matches!(err, SpecError::DuplicateTarget(_)));
+        assert!(matches!(err, Error::DuplicateTarget(_)));
     }
 
     #[test]

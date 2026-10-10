@@ -18,7 +18,7 @@ path = "src/main.rs"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "net", "time", "sync"] }
 
 # HTTP server (status, reconcile trigger, health, metrics)
-axum = { version = "0.8", default-features = false, features = ["http1", "tokio", "json"] }
+axum = { version = "0.8", default-features = false, features = ["http1", "tokio", "json", "query"] }
 
 # Metrics
 prometheus-client = "0.25"
@@ -27,6 +27,8 @@ prometheus-client = "0.25"
 serde = { version = "1", features = ["derive"] }
 toml = "0.9"
 jiff = { version = "0.2", default-features = false, features = ["std", "serde"] }
+
+serde_json = "1"
 
 # Config
 clap = { version = "4", features = ["derive", "env"] }
@@ -42,7 +44,6 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 
 [dev-dependencies]
 http-body-util = "0.1"
-serde_json = "1"
 tempfile = "3"
 tower = { version = "0.5", features = ["util"] }
 
@@ -50,9 +51,13 @@ tower = { version = "0.5", features = ["util"] }
 unsafe_code = "forbid"
 
 [lints.clippy]
-all = "warn"
-pedantic = "warn"
-nursery = "warn"
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+nursery = { level = "warn", priority = -1 }
+# The library exists for the binary and tests, not as a published API
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+must_use_candidate = "allow"
 
 [profile.release]
 opt-level = "z"
