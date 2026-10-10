@@ -4,6 +4,7 @@
 use std::collections::VecDeque;
 use std::fmt;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use jiff::Timestamp;
 use serde::Serialize;
@@ -147,6 +148,17 @@ pub fn init(level: &str, format: LogFormat) -> (LogFilterHandle, LogBuffer) {
     (handle, buffer)
 }
 
+/// A duration for people reading logs: milliseconds under a minute, whole
+/// seconds above, such as 12ms, 1s 250ms, or 2h 3m 4s.
+pub fn human_duration(duration: Duration) -> String {
+    let rounded = if duration < Duration::from_secs(60) {
+        Duration::from_millis(u64::try_from(duration.as_millis()).unwrap_or(u64::MAX))
+    } else {
+        Duration::from_secs(duration.as_secs())
+    };
+    humantime::format_duration(rounded).to_string()
+}
+
 fn initial_filter(level: &str) -> EnvFilter {
     EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(level))
 }
@@ -201,6 +213,14 @@ mod tests {
         );
         assert_eq!(buffer.since(1, 10).len(), 1);
         assert_eq!(buffer.since(0, 1).len(), 1);
+    }
+
+    #[test]
+    fn human_duration_drops_noise() {
+        assert_eq!(human_duration(Duration::from_micros(12_345)), "12ms");
+        assert_eq!(human_duration(Duration::from_millis(1250)), "1s 250ms");
+        assert_eq!(human_duration(Duration::from_millis(7_384_567)), "2h 3m 4s");
+        assert_eq!(human_duration(Duration::ZERO), "0s");
     }
 
     #[test]

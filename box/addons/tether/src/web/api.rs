@@ -102,6 +102,16 @@ pub struct LogLevel {
     filter: String,
 }
 
+/// The log filter in effect, after any PUT /api/log-level.
+pub async fn current_log_level(Extract(app): Extract<AppState>) -> Response {
+    app.log_filter
+        .with_current(ToString::to_string)
+        .map_or_else(
+            |err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()).into_response(),
+            |filter| Json(LogLevel { filter }).into_response(),
+        )
+}
+
 pub async fn log_level(Extract(app): Extract<AppState>, Json(body): Json<LogLevel>) -> Response {
     let filter = match EnvFilter::try_new(&body.filter) {
         Ok(filter) => filter,
@@ -464,6 +474,9 @@ mod tests {
                 .expect("current"),
             "debug"
         );
+        let (code, body, _) = call(&h.app, Method::GET, "/api/log-level", &json, "").await;
+        assert_eq!(code, StatusCode::OK);
+        assert_eq!(body, r#"{"filter":"debug"}"#);
         let (code, _, _) = call(
             &h.app,
             Method::PUT,

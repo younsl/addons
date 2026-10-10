@@ -26,7 +26,7 @@ docker run -d --name tether \
 
 Open http://127.0.0.1:8080 for the console: the result of the last reconcile, every link with its action, the package files, and a button that runs a reconcile now. Click a link or a package file to read its source with syntax highlighting. The viewer is read only, and it shows only files tracked in git, so local-only files such as work git settings and signing keys never appear.
 
-http://127.0.0.1:8080/logs shows tether's own log: the last 1000 events, filtered by level and followed live. The Logs link in the navigation counts warnings and errors.
+http://127.0.0.1:8080/logs shows tether's own log: the last 1000 events, filtered by level and followed live, with the log level in effect.
 
 ## API
 
@@ -40,6 +40,7 @@ http://127.0.0.1:8080/logs shows tether's own log: the last 1000 events, filtere
 | GET /api/file?path=FILE | One tracked file with its content |
 | GET /api/logs?after=SEQ | Log events newer than sequence number SEQ |
 | POST /api/reconcile | Run a reconcile now (202 Accepted) |
+| GET /api/log-level | The log filter in effect |
 | PUT /api/log-level | Change the log filter at runtime, for example {"filter":"debug"} |
 | GET /healthz | Liveness |
 | GET /readyz | Ready once the link spec loads |

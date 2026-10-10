@@ -345,17 +345,17 @@ body.locked { overflow: hidden; }
   .log-level { display: none; }
 }
 
-.log-alert {
-  min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9999px;
-  display: inline-flex; align-items: center; justify-content: center;
-  font: 500 11px/16px var(--mono); background: var(--warning-soft); color: var(--warning);
-}
-.log-alert[data-kind="error"] { background: var(--error-soft); color: var(--error); }
 .page-head { padding: 40px 0 24px; }
 .page-head h1 { font-size: 32px; line-height: 40px; letter-spacing: -1.28px; }
 .page-head .lede { margin-top: 8px; }
 .logs-panel .panel-head { justify-content: space-between; }
-.logs-panel .follow { margin-left: auto; }
+.logs-panel .log-level-now { margin: 0 0 0 auto; font-size: 13px; color: var(--body); }
+.logs-panel .follow { margin-left: 16px; }
+#log-level-value {
+  margin-left: 6px; padding: 2px 8px; border-radius: 6px;
+  font: 500 12px/16px var(--mono); color: var(--ink); background: var(--well);
+  border: 1px solid var(--hairline);
+}
 .follow { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--body); cursor: pointer; }
 .logs-body { height: calc(100vh - 300px); min-height: 320px; overflow: auto; overscroll-behavior: contain; }
 .log-lines { list-style: none; margin: 0; padding: 8px 0; }

@@ -2,6 +2,7 @@
 //! server until SIGTERM or Ctrl-C.
 
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use anyhow::Context as _;
 use tokio::signal;
@@ -35,6 +36,7 @@ async fn run(
     shutdown: watch::Receiver<bool>,
 ) -> anyhow::Result<()> {
     let build = BuildInfo::CURRENT;
+    let started = Instant::now();
     tracing::info!(
         version = build.version,
         commit = build.commit,
@@ -70,7 +72,12 @@ async fn run(
     while let Some(res) = tasks.join_next().await {
         res.context("task panicked")??;
     }
-    tracing::info!("shutdown complete");
+    let uptime = Duration::from_secs(started.elapsed().as_secs());
+    tracing::info!(
+        uptime_secs = uptime.as_secs(),
+        uptime = %telemetry::human_duration(uptime),
+        "shutdown complete"
+    );
     Ok(())
 }
 

@@ -18,7 +18,7 @@
     <span class="nav-meta" id="build"></span>
     <nav class="nav-links" aria-label="Pages">
       <a class="nav-link" href="/" data-route="/">Overview</a>
-      <a class="nav-link" href="/logs" data-route="/logs">Logs<span class="log-alert" id="logs-alert" hidden></span></a>
+      <a class="nav-link" href="/logs" data-route="/logs">Logs</a>
     </nav>
     <span class="health" id="health" data-state="unknown"><span class="dot" aria-hidden="true"></span><span id="health-text">Connecting</span></span>
     <button class="btn btn-primary" id="reconcile" type="button">Reconcile now</button>
@@ -73,6 +73,7 @@
   <section class="panel logs-panel" aria-label="Log events">
     <div class="panel-head">
       <div class="filters" role="tablist" aria-label="Filter logs by level" id="logs-filters"></div>
+      <p class="log-level-now">Log level <span id="log-level-value">unknown</span></p>
       <label class="follow"><input type="checkbox" id="logs-follow" checked> Follow new events</label>
     </div>
     <div class="logs-body" id="logs-body">

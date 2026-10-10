@@ -13,7 +13,7 @@ use std::sync::Arc;
 use anyhow::Context as _;
 use axum::Router;
 use axum::middleware;
-use axum::routing::{get, post, put};
+use axum::routing::{get, post};
 use serde::Serialize;
 use tokio::net::TcpListener;
 use tokio::sync::watch;
@@ -69,7 +69,10 @@ pub fn router(app: AppState) -> Router {
         .route("/api/tree", get(api::tree))
         .route("/api/file", get(api::file))
         .route("/api/reconcile", post(api::reconcile))
-        .route("/api/log-level", put(api::log_level))
+        .route(
+            "/api/log-level",
+            get(api::current_log_level).put(api::log_level),
+        )
         .route("/api/logs", get(api::logs))
         .layer(middleware::from_fn(guard::loopback_only));
     Router::new()

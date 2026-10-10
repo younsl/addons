@@ -7,7 +7,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, RwLock};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use jiff::Timestamp;
 use serde::Serialize;
@@ -20,6 +20,7 @@ use crate::linker::{self, Backups, Entry};
 use crate::metrics::Metrics;
 use crate::packages::{self, FileReport};
 use crate::spec::Spec;
+use crate::telemetry::human_duration;
 use crate::{Error, Result};
 
 /// What one reconcile needs, built once from the settings.
@@ -164,7 +165,8 @@ pub fn reconcile(ctx: &Context, now: Timestamp) -> Result<Report> {
         .map(|e| e.step.source.clone())
         .chain(report.packages.iter().map(|p| p.path.clone()))
         .collect();
-    report.files = Arc::new(Snapshot::collect(&spec.source_root, &roots));
+    report.files =
+        Arc::new(Snapshot::collect(&spec.source_root, &roots).with_config(&ctx.config_file));
     Ok(report)
 }
 
@@ -173,6 +175,7 @@ pub fn error_policy(error: &Error, ctx: &Context, now: Timestamp) -> Report {
     ctx.metrics.reconcile_failure(error);
     let mut report = Report::new(now, ctx.dry_run);
     report.error = Some(error.to_string());
+    report.files = Arc::new(Snapshot::default().with_config(&ctx.config_file));
     report
 }
 
@@ -200,16 +203,24 @@ pub async fn run(
 
 async fn reconcile_once(state: &State, ctx: &Arc<Context>) {
     let _measure = ctx.metrics.count_and_measure();
+    let started = Instant::now();
     let worker = Arc::clone(ctx);
     let joined = tokio::task::spawn_blocking(move || {
         let now = Timestamp::now();
         reconcile(&worker, now).map_err(|err| (now, err))
     })
     .await;
+    let took = started.elapsed();
+    let duration_ms = u64::try_from(took.as_millis()).unwrap_or(u64::MAX);
     let report = match joined {
         Ok(Ok(report)) => report,
         Ok(Err((now, err))) => {
-            tracing::error!(error = %err, "reconcile failed");
+            tracing::error!(
+                error = %err,
+                duration_ms,
+                duration = %human_duration(took),
+                "reconcile failed"
+            );
             error_policy(&err, ctx, now)
         }
         Err(err) => {
@@ -225,6 +236,8 @@ async fn reconcile_once(state: &State, ctx: &Arc<Context>) {
             changed = report.changed(),
             failed = report.failed(),
             backup_dir = report.backup_dir.as_ref().map(|p| p.display().to_string()),
+            duration_ms,
+            duration = %human_duration(took),
             "reconcile finished"
         );
     }
@@ -321,6 +334,10 @@ mod tests {
                 .is_symlink()
         );
         assert_eq!(report.packages.len(), 0);
+        assert!(
+            report.files.file(&ctx.config_file).is_some(),
+            "config is viewable"
+        );
 
         let again = reconcile(&ctx, now()).expect("again");
         assert_eq!(again.changed(), 0);
@@ -398,6 +415,10 @@ mod tests {
         fs::remove_file(home.root.join("config.toml")).expect("remove");
         let err = reconcile(&ctx, now()).expect_err("missing config");
         let report = error_policy(&err, &ctx, now());
+        assert!(
+            report.files.file(&ctx.config_file).is_none(),
+            "nothing to show when the file is gone"
+        );
         assert!(!report.succeeded());
         assert_eq!(report.entries.len(), 0);
         assert!(

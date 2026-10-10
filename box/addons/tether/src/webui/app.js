@@ -74,6 +74,17 @@ function until(seconds) {
   return m === 1 ? "in a minute" : `in ${m} minutes`;
 }
 
+function formatInterval(seconds) {
+  const parts = [];
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = seconds % 60;
+  if (h) parts.push(plural(h, "hour", "hours"));
+  if (m) parts.push(plural(m, "minute", "minutes"));
+  if (s || parts.length === 0) parts.push(plural(s, "second", "seconds"));
+  return parts.join(" ");
+}
+
 function plural(n, one, many) {
   return `${n} ${n === 1 ? one : many}`;
 }
@@ -101,7 +112,7 @@ function renderBuild() {
   const facts = [
     ["Config file", i.config_file],
     ["Home", i.home],
-    ["Reconcile interval", `${Math.round(i.reconcile_interval_secs / 60)} minutes`],
+    ["Reconcile interval", formatInterval(i.reconcile_interval_secs)],
     ["Mode", i.dry_run ? "Dry run, nothing is changed" : "Apply changes"],
     ["Build", `${i.version}, commit ${i.commit}, rustc ${i.rustc}`],
   ];
@@ -112,7 +123,16 @@ function renderBuild() {
     const dt = document.createElement("dt");
     const dd = document.createElement("dd");
     dt.textContent = term;
-    dd.textContent = value;
+    if (term === "Config file") {
+      const open = document.createElement("button");
+      open.type = "button";
+      open.className = "row-link";
+      open.textContent = value;
+      open.addEventListener("click", () => openViewer(value, "Config file", open));
+      dd.append(open);
+    } else {
+      dd.textContent = value;
+    }
     wrap.append(dt, dd);
     dl.append(wrap);
   }
@@ -367,6 +387,7 @@ function route() {
   if (onLogsPage()) {
     renderLogFilters();
     renderLogLines(true);
+    refreshLogLevel();
   }
 }
 
@@ -478,15 +499,17 @@ function renderLogLines(reset, added = []) {
   if ($("logs-follow").checked) $("logs-body").scrollTop = $("logs-body").scrollHeight;
 }
 
-function renderLogAlert() {
-  const alerts = logs.records.filter((r) => r.level === "warn" || r.level === "error").length;
-  const badge = $("logs-alert");
-  badge.hidden = alerts === 0;
-  badge.textContent = String(alerts);
-  badge.dataset.kind = logs.records.some((r) => r.level === "error") ? "error" : "warn";
+async function refreshLogLevel() {
+  try {
+    const { filter } = await getJson("/api/log-level");
+    $("log-level-value").textContent = filter;
+  } catch {
+    $("log-level-value").textContent = "unknown";
+  }
 }
 
 async function pollLogs() {
+  if (onLogsPage()) refreshLogLevel();
   let added;
   try {
     added = await getJson(`/api/logs?after=${logs.last}`);
@@ -497,7 +520,6 @@ async function pollLogs() {
   logs.last = added[added.length - 1].seq;
   logs.records.push(...added);
   if (logs.records.length > 1000) logs.records.splice(0, logs.records.length - 1000);
-  renderLogAlert();
   if (onLogsPage()) {
     renderLogFilters();
     renderLogLines(false, added);

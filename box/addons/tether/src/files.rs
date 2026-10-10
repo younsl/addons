@@ -77,6 +77,18 @@ impl Snapshot {
         snapshot
     }
 
+    /// Add tether's own config file. It usually sits outside the repository,
+    /// so it is not tracked there, and it holds no secrets by design.
+    #[must_use]
+    pub fn with_config(mut self, path: &Path) -> Self {
+        if let Some(view) = read(path) {
+            self.files.insert(path.to_path_buf(), view);
+            self.roots
+                .insert(path.to_path_buf(), vec![path.to_path_buf()]);
+        }
+        self
+    }
+
     pub fn tree(&self, root: &Path) -> Option<Tree> {
         let paths = self.roots.get(root)?;
         Some(Tree {
@@ -215,6 +227,21 @@ mod tests {
         assert_eq!(binary.content, None);
 
         assert!(snapshot.tree(Path::new("/elsewhere")).is_none());
+    }
+
+    #[test]
+    fn config_file_is_added_outside_the_repository() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let config = dir.path().join("config.toml");
+        fs::write(&config, "source_root = \"~\"\n").expect("config");
+        let snapshot = Snapshot::default().with_config(&config);
+        assert_eq!(
+            snapshot.file(&config).and_then(|f| f.content.as_deref()),
+            Some("source_root = \"~\"\n")
+        );
+        assert_eq!(snapshot.tree(&config).expect("tree").files.len(), 1);
+        let missing = Snapshot::default().with_config(&dir.path().join("none.toml"));
+        assert!(missing.tree(&dir.path().join("none.toml")).is_none());
     }
 
     #[test]
