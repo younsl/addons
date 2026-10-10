@@ -29,6 +29,8 @@ Examples:
 
 Chart READMEs come from helm-docs (`box/kubernetes/charts/README.md.gotmpl`, regenerate with `make -C box/kubernetes/charts docs`); never edit one directly, a pre-commit hook reverts it.
 
+`docs/kb/README.md` comes from `scripts/kb-index.sh`, which also validates note frontmatter and sections. A pre-commit hook runs it, and lychee checks the links in `docs/kb/`.
+
 ## Release Triggers
 
 Every release triggers on merge to `main` when a version value inside a file changes, and skips if that
@@ -86,7 +88,11 @@ Every note starts with YAML frontmatter so agents can find relevant notes withou
 - `description`: one sentence stating the rule and its main reason
 - `tags`: lowercase keywords, domain first
 - `resources`: Kubernetes kinds or tool objects the rule applies to, omitted when none
+- `status`: `adopted`, or `superseded` with `superseded_by` naming the replacing note file. Never apply a superseded note
+- `reviewed`: date the content was last verified against current upstream docs (`YYYY-MM-DD`). Bump it only after re-checking, not on every edit
 
-Find notes for a kind with `rg -l 'resources:.*\bService\b' docs/kb`.
+The body is one H1 followed by these H2 sections in order: `Rule`, `Why`, `Exceptions` (optional), `Example` (optional), `References`. Use H3 for anything else inside them.
+
+Find notes for a kind with `rg -l 'resources:.*\bService\b' docs/kb`, or scan `docs/kb/README.md` for one-line summaries.
 
 Notes come from real work and this repository is public. Never include company names, internal domains, hostnames, IP ranges, account IDs, ARNs, credentials, or personal info. Use `example.com`, `10.0.0.0/16`, `123456789012`, `${SECRET_NAME}` instead. Incident write-ups describe the failure mode and fix, not the affected internal service.
