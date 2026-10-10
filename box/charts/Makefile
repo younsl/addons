@@ -1,5 +1,5 @@
 CHARTS_DIR ?= .
-APP_CHARTS_DIR ?= ..
+APP_CHARTS_DIR ?= ../addons
 SHARED_TEMPLATE ?= README.md.gotmpl
 
 # Generate documentation for all charts
@@ -19,7 +19,7 @@ docs-standalone:
 # Generate docs for app charts (local template, fallback to shared template)
 .PHONY: docs-app
 docs-app:
-	@find $(APP_CHARTS_DIR) -path '$(APP_CHARTS_DIR)/charts' -prune -o -name Chart.yaml -print | while read chart_yaml; do \
+	@find $(APP_CHARTS_DIR) -name Chart.yaml -print | while read chart_yaml; do \
 		chart_dir=$$(dirname "$$chart_yaml"); \
 		if [ -f "$$chart_dir/README.md.gotmpl" ]; then \
 			echo "Generating docs for $$chart_dir (local template)"; \

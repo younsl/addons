@@ -6,7 +6,7 @@ This file records only what the repository cannot tell you by itself: convention
 
 ## Overview
 
-Monorepo of Kubernetes addons, operators, CLI tools, and runtime container images, plus personal docs under `docs/`. Every component is built in Rust except `backstage` (Node.js/React). `trivy-collector` and `forklift` embed a web frontend that the image build compiles first.
+Monorepo of Kubernetes addons, operators, CLI tools, and runtime container images, plus personal docs under `docs/`. Components with an image live in `box/addons/`, standalone Helm charts in `box/charts/`, CLIs in `box/cli/`. Every component is built in Rust except `backstage` (Node.js/React). `trivy-collector` and `forklift` embed a web frontend that the image build compiles first.
 
 Each component does one thing well. Prefer a new small component over extending an existing one past its purpose.
 
@@ -18,7 +18,7 @@ Everything committed here is public, including commit messages and PR attachment
 
 Commit directly to `main` with a DCO sign-off (`git commit -s`). Do not open a branch for routine work.
 
-Several agent sessions share this working tree and git index, so the index often holds files you did not stage. Never run `git add -A` or `git add .`. Commit with a pathspec (`git commit -s -- box/<component>`) so other sessions' staged files stay out, then check the scope with `git show --name-only HEAD`.
+Several agent sessions share this working tree and git index, so the index often holds files you did not stage. Never run `git add -A` or `git add .`. Commit with a pathspec (`git commit -s -- box/addons/<component>`) so other sessions' staged files stay out, then check the scope with `git show --name-only HEAD`.
 
 ### Commit messages
 
@@ -102,7 +102,7 @@ Every release triggers on push to `main` when a version value inside a file chan
 | Container image | `org.opencontainers.image.version` label in the Dockerfile | Builds and pushes to GHCR |
 | Helm chart | `version` in `Chart.yaml` | Pushes to `ghcr.io/younsl/charts/{chart}` |
 | Rust CLI (`ij`) | `version` in `Cargo.toml` | Builds release binaries and cuts the `ij/x.y.z` release |
-| Harbor arm64 images | `box/harbor/VERSION` | Rebuilds upstream Harbor images for arm64 |
+| Harbor arm64 images | `box/addons/harbor/VERSION` | Rebuilds upstream Harbor images for arm64 |
 
 - Release decisions (what changed, what is already published) live in `.github/scripts/ci-*.sh`. Workflows only wire environment and matrices into them. Rust scratch-container projects are listed in `.github/scripts/ci-rust-projects.json`.
 - The `paths:` list at the top of each workflow in `.github/workflows/` decides which workflow owns a component. Trust it over any list written elsewhere.

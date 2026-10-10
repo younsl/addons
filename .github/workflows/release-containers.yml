@@ -5,7 +5,7 @@ on:
   push:
     branches: [main]
     paths:
-      - 'box/backstage/Dockerfile'
+      - 'box/addons/backstage/Dockerfile'
   workflow_dispatch:
     inputs:
       container:
@@ -48,7 +48,7 @@ jobs:
           PUSH_BEFORE: ${{ github.event.before }}
         run: |
           .github/scripts/ci-detect-container-releases.sh \
-            backstage:box/backstage/Dockerfile
+            backstage:box/addons/backstage/Dockerfile
 
   # ---------------------------------------------------------------------------
   # Test: backstage (Node.js)
@@ -61,7 +61,7 @@ jobs:
       contents: read
     defaults:
       run:
-        working-directory: box/backstage
+        working-directory: box/addons/backstage
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -113,7 +113,7 @@ jobs:
           - name: backstage
             release_flag: backstage_release
             version_key: backstage_version
-            context: box/backstage
+            context: box/addons/backstage
         platform:
           - arch: amd64
             target: linux/amd64

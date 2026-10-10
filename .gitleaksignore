@@ -1,10 +1,10 @@
 # AWS Performance Insights API response sample. The flagged values are
 # db.sql_tokenized.id SQL statement hashes, not credentials.
-box/aurora-database-insights-exporter/docs/limitation.md:generic-api-key:22
-box/aurora-database-insights-exporter/docs/limitation.md:generic-api-key:29
+box/addons/aurora-database-insights-exporter/docs/limitation.md:generic-api-key:22
+box/addons/aurora-database-insights-exporter/docs/limitation.md:generic-api-key:29
 
 # Unit test literal asserting that ConfigItem::sensitive masks its value.
-box/trivy-collector/src/web/types.rs:generic-api-key:503
+box/addons/trivy-collector/src/web/types.rs:generic-api-key:503
 
 # Same two findings as they appear in history. The repository is periodically
 # re-rooted by commit-history-cleaner, so each orphan root reintroduces them.

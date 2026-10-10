@@ -5,20 +5,20 @@ on:
   push:
     branches: [main]
     paths:
-      - 'box/aurora-database-insights-exporter/Dockerfile'
-      - 'box/aws-health-event-notifier/Dockerfile'
-      - 'box/aws-vpn-maintenance-handler/Dockerfile'
-      - 'box/ec2-metadata-exporter/Dockerfile'
-      - 'box/gss/Dockerfile'
-      - 'box/trivy-collector/Dockerfile'
-      - 'box/kubernetes-upgrade-operator/Dockerfile'
-      - 'box/kagent-gateway/Dockerfile'
-      - 'box/argocd-promotion-gate/Dockerfile'
-      - 'box/argocd-canary-gate/Dockerfile'
-      - 'box/filesystem-cleaner/Dockerfile'
-      - 'box/external-ebs-autoresizer/Dockerfile'
-      - 'box/forklift/Dockerfile'
-      - 'box/forklift/Dockerfile.mcp'
+      - 'box/addons/aurora-database-insights-exporter/Dockerfile'
+      - 'box/addons/aws-health-event-notifier/Dockerfile'
+      - 'box/addons/aws-vpn-maintenance-handler/Dockerfile'
+      - 'box/addons/ec2-metadata-exporter/Dockerfile'
+      - 'box/addons/gss/Dockerfile'
+      - 'box/addons/trivy-collector/Dockerfile'
+      - 'box/addons/kubernetes-upgrade-operator/Dockerfile'
+      - 'box/addons/kagent-gateway/Dockerfile'
+      - 'box/addons/argocd-promotion-gate/Dockerfile'
+      - 'box/addons/argocd-canary-gate/Dockerfile'
+      - 'box/addons/filesystem-cleaner/Dockerfile'
+      - 'box/addons/external-ebs-autoresizer/Dockerfile'
+      - 'box/addons/forklift/Dockerfile'
+      - 'box/addons/forklift/Dockerfile.mcp'
   workflow_dispatch:
     inputs:
       project:

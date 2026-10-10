@@ -7,12 +7,12 @@ on:
   pull_request:
     branches: [main]
     paths:
-      - 'box/forklift/**'
+      - 'box/addons/forklift/**'
       - '.github/workflows/ci-forklift.yml'
   push:
     branches: [main]
     paths:
-      - 'box/forklift/**'
+      - 'box/addons/forklift/**'
       - '.github/workflows/ci-forklift.yml'
   workflow_dispatch:
 
@@ -35,7 +35,7 @@ env:
 
 defaults:
   run:
-    working-directory: box/forklift
+    working-directory: box/addons/forklift
 
 jobs:
   # The console is built first: the binary embeds src/webui/dist.
@@ -57,7 +57,7 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
-          cache-dependency-path: box/forklift/web/pnpm-lock.yaml
+          cache-dependency-path: box/addons/forklift/web/pnpm-lock.yaml
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@master
@@ -68,7 +68,7 @@ jobs:
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: box/forklift
+          workspaces: box/addons/forklift
 
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
@@ -110,7 +110,7 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
-          cache-dependency-path: box/forklift/web/pnpm-lock.yaml
+          cache-dependency-path: box/addons/forklift/web/pnpm-lock.yaml
 
       - name: Install
         run: pnpm --dir web install --frozen-lockfile
@@ -172,7 +172,7 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
-          cache-dependency-path: box/forklift/web/pnpm-lock.yaml
+          cache-dependency-path: box/addons/forklift/web/pnpm-lock.yaml
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@master
@@ -182,7 +182,7 @@ jobs:
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: box/forklift
+          workspaces: box/addons/forklift
 
       - name: Build web UI
         run: |
