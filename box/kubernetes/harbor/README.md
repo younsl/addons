@@ -10,7 +10,9 @@
 
 A bundle of custom-built [Harbor](https://goharbor.io/) v2.15.3 images for [AWS Graviton](https://aws.amazon.com/ec2/graviton/) (`linux/arm64`). Upstream publishes the v2.15.x images for amd64 only, so this component rebuilds every image the [harbor-helm](https://github.com/goharbor/harbor-helm) chart deploys from the unmodified upstream source, driven by `harbor-arm64`, a small Rust CLI.
 
-This is a stopgap. Harbor v2.16.0 officially supports `linux/arm64`: multi-arch support was merged to `main` in [goharbor/harbor#22311](https://github.com/goharbor/harbor/pull/22311), and the maintainers confirmed it ships with v2.16.0 in [goharbor/harbor#23558](https://github.com/goharbor/harbor/issues/23558). The [v2.16.0 release plan](https://github.com/goharbor/harbor/issues/24016) targets the end of October 2026. Once you upgrade to v2.16.0, switch back to the upstream images and delete this component.
+## Announcement
+
+This is a stopgap. [Harbor v2.16.0](https://github.com/goharbor/harbor/issues/23558) ships official linux/arm64 images, [planned](https://github.com/goharbor/harbor/issues/24016) for late October 2026. Once it is released, this component and every image under ghcr.io/younsl/harbor will be removed.
 
 ## Images
 
