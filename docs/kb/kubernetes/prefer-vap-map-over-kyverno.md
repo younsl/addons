@@ -1,3 +1,9 @@
+---
+description: Write admission policies as ValidatingAdmissionPolicy and MutatingAdmissionPolicy, using Kyverno only for generate, cleanup, image verification, and background reports.
+tags: [kubernetes, admission, policy, cel, kyverno]
+resources: [ValidatingAdmissionPolicy, MutatingAdmissionPolicy, ClusterPolicy]
+---
+
 # Prefer VAP and MAP over Kyverno
 
 Admission policies default to the built-in ValidatingAdmissionPolicy (VAP) and MutatingAdmissionPolicy (MAP). Kyverno is used only for what the built-in APIs cannot do.

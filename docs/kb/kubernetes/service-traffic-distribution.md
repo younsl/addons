@@ -1,3 +1,9 @@
+---
+description: Set trafficDistribution PreferSameZone on Services to keep in-cluster traffic in the client's zone and cut cross-zone cost.
+tags: [kubernetes, networking, service, topology, cost]
+resources: [Service]
+---
+
 # Set trafficDistribution to PreferSameZone
 
 Services set `spec.trafficDistribution: PreferSameZone` so that in-cluster traffic stays in the client's zone whenever a ready endpoint exists there.

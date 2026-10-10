@@ -1,3 +1,9 @@
+---
+description: Set dnsConfig ndots to 2 on Pods so external lookups skip the cluster search list.
+tags: [kubernetes, dns, coredns, eks]
+resources: [Pod]
+---
+
 # Set ndots to 2
 
 Pods default to `ndots:5`, which turns most external lookups into a burst of failed queries. Set `ndots:2` on workloads so that external names resolve on the first try while short in-cluster names keep working.
