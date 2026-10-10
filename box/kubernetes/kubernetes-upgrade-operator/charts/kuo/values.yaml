@@ -138,6 +138,12 @@ tolerations: []
 # -- (object) Affinity rules for pod scheduling.
 affinity: {}
 
+logging:
+  # -- (string) Log level: trace, debug, info, warn, error. `RUST_LOG` on the pod overrides it.
+  level: info
+  # -- (string) Log format: json or text
+  format: json
+
 slack:
   # -- (bool) Whether to create a Slack webhook Secret and inject the URL into the operator.
   enabled: false

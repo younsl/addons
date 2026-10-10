@@ -109,6 +109,8 @@ The following table lists the configurable parameters and their default values.
 | nodeSelector | object | `{}` | Node selector for pod scheduling. |
 | tolerations | list | `[]` | Tolerations for pod scheduling. |
 | affinity | object | `{}` | Affinity rules for pod scheduling. |
+| logging.level | string | `"info"` | Log level: trace, debug, info, warn, error. `RUST_LOG` on the pod overrides it. |
+| logging.format | string | `"json"` | Log format: json or text |
 | slack.enabled | bool | `false` | Whether to create a Slack webhook Secret and inject the URL into the operator. |
 | slack.webhookUrl | string | `""` | Slack Incoming Webhook URL. |
 | grafanaAnnotation.enabled | bool | `false` | Whether to record each upgrade phase as a Grafana annotation. Needs `url` and a token; if either is missing the operator logs a warning and runs with annotating disabled. |

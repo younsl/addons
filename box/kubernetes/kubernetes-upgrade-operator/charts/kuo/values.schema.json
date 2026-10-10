@@ -160,6 +160,20 @@
     "affinity": {
       "type": ["object", "null"]
     },
+    "logging": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "level": {
+          "type": "string",
+          "enum": ["trace", "debug", "info", "warn", "error"]
+        },
+        "format": {
+          "type": "string",
+          "enum": ["json", "text"]
+        }
+      }
+    },
     "slack": {
       "type": "object",
       "additionalProperties": false,
