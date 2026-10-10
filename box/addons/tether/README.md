@@ -77,6 +77,7 @@ Captured from a demo home, one scenario each.
 - [Usage](docs/usage.md): run, console, API
 - [Configuration](docs/configuration.md): settings, config.toml, mounts, load errors
 - [Dotfiles](docs/dotfiles.md): layout, fresh machine, local-only files
+- [Changelog](CHANGELOG.md): changes per release
 
 ## Development
 
