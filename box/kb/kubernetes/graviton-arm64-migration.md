@@ -15,7 +15,7 @@ Migrate to [Graviton](https://aws.amazon.com/ec2/graviton/) in this order: image
 - **Images first**: publish a [multi-platform](https://docs.docker.com/build/building/multi-platform/) manifest list with `linux/amd64` and `linux/arm64` under the existing tag before any pod is scheduled on arm64. Clusters mix both architectures during the migration, so every image is multi-arch or carries an explicit architecture constraint
 - **Native builds**: build each architecture on a runner of that architecture (for example a [GitLab runner tag](https://docs.gitlab.com/ci/yaml/#tags) `arm64`) and join the per-architecture tags with [`docker buildx imagetools create`](https://docs.docker.com/reference/cli/docker/buildx/imagetools/create/). Never compile under [QEMU emulation](https://docs.docker.com/build/building/multi-platform/#qemu)
 - **Architecture-neutral Dockerfiles**: no `GOARCH=amd64`, `FROM --platform=linux/amd64`, or `x86_64` download URLs. Use the [`TARGETARCH`](https://docs.docker.com/build/building/variables/#multi-platform-build-arguments) build argument instead
-- **Explicit scheduling**: pin arm64 per environment with a [`kubernetes.io/arch`](https://kubernetes.io/docs/reference/labels-annotations-taints/#kubernetes-io-arch) `nodeSelector`, or a Karpenter [NodePool requirement](https://karpenter.sh/docs/concepts/nodepools/#well-known-labels) on the same label
+- **Explicit scheduling**: pin arm64 per environment with a [node affinity](https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/#node-affinity) that requires both [`kubernetes.io/os`](https://kubernetes.io/docs/reference/labels-annotations-taints/#kubernetes-io-os) `linux` and [`kubernetes.io/arch`](https://kubernetes.io/docs/reference/labels-annotations-taints/#kubernetes-io-arch) `arm64`, or a Karpenter [NodePool requirement](https://karpenter.sh/docs/concepts/nodepools/#well-known-labels) on the same labels
 - **Single arm64 build last**: drop the amd64 job and the manifest list only when every environment the pipeline deploys to passes all three checks below. Otherwise a pod still placed on amd64 fails with `no match for platform in manifest`
 
 | Check | Pass condition |
@@ -73,12 +73,23 @@ deploy-manifest:
     - docker buildx imagetools create --tag $IMAGE:$TAG $IMAGE:$TAG-amd64 $IMAGE:$TAG-arm64
 ```
 
-Pin the workload to arm64:
+Pin the workload to linux and arm64 with a node affinity:
 
 ```yaml
 spec:
-  nodeSelector:
-    kubernetes.io/arch: arm64
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+          - matchExpressions:
+              - key: kubernetes.io/os
+                operator: In
+                values:
+                  - linux
+              - key: kubernetes.io/arch
+                operator: In
+                values:
+                  - arm64
 ```
 
 Verify the image and the placement:
