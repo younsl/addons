@@ -43,13 +43,7 @@ true
 {{- end -}}
 
 {{- define "external-ebs-autoresizer.protectiveCordonEnabled" -}}
-{{- $enabled := .Values.config.defaultPolicy.autoProtectiveCordon -}}
-{{- range .Values.config.policies -}}
-{{- if and .resize .resize.autoProtectiveCordon -}}
-{{- $enabled = true -}}
-{{- end -}}
-{{- end -}}
-{{- if $enabled -}}
+{{- if not .Values.config.excludeEKSNodes -}}
 true
 {{- end -}}
 {{- end -}}

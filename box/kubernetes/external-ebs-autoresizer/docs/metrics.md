@@ -174,7 +174,7 @@ The total number of errors, grouped by the reconcile stage where each error
 happened. The `stage` label is one of `discover`, `measure`, `cooldown`,
 `modify`, `wait`, or `resize` (see the Background section for what each stage
 does), plus `node_list`, `query_peak`, `query_samples`, `describe_volumes`,
-`describe_instance_types`, and `annotate` from the throughput recommender, and `protective_cordon` when listing [Nodes][k8s-node] for the [protective auto-cordon][k8s-cordon] fails.
+`describe_instance_types`, and `annotate` from the throughput recommender, and `protective_cordon` when listing [Nodes][k8s-node] or writing the `ProtectiveCordon` condition for the [protective auto-cordon][k8s-cordon] fails.
 
 This metric is more detailed than `resize_total` because it shows *where* things
 break. For example, many errors with `stage="measure"` point to an SSM or
@@ -196,7 +196,7 @@ has stalled, even if the [Pod][k8s-pod] still looks healthy.
 - Type: Counter
 - Labels: `action`, `result`
 
-The total number of protective auto-cordon changes on Nodes whose root filesystem usage crossed the threshold. `action` is `cordon` or `uncordon`, `result` is `success` or `failure`. Only populated when a policy sets `autoProtectiveCordon: true`. Dry runs count nothing.
+The total number of protective auto-cordon changes on Nodes whose root filesystem usage crossed the threshold. `action` is `cordon` or `uncordon`, `result` is `success` or `failure`. Only populated when EKS nodes are resized (`excludeEKSNodes: false`). Dry runs count nothing.
 
 A cordon that is never followed by an uncordon means a Node stays unschedulable because its disk cannot get back under the threshold, usually paired with `skip_total{reason="max_size"}`. Alert on any `result="failure"`: a failed cordon leaves the Node open to new Pods, and a failed uncordon keeps it closed.
 

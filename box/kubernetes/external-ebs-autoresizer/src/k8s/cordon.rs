@@ -3,6 +3,8 @@
 //! Pods on it while the volume grows. The addon marks every cordon it applies
 //! with an annotation and only ever lifts a cordon carrying that mark, so a
 //! cordon set by an operator, a drain, or another controller is never undone.
+//! The mark is mirrored as the `ProtectiveCordon` Node condition, so the state
+//! shows in `kubectl describe node` next to the kubelet's own conditions.
 
 use std::collections::HashMap;
 
@@ -17,6 +19,9 @@ use super::nodes::{PAGE_SIZE, instance_id_from_provider_id};
 /// the RFC 3339 instant the cordon was applied.
 pub const ANNOTATION_SUFFIX: &str = "protective-cordon";
 
+/// The Node condition type that mirrors the protective cordon mark.
+pub const CONDITION_TYPE: &str = "ProtectiveCordon";
+
 /// The cordon state of one EC2-backed Node.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct CordonNode {
@@ -26,6 +31,18 @@ pub struct CordonNode {
     pub unschedulable: bool,
     /// The Node carries the addon's protective cordon mark.
     pub protective: bool,
+    /// The status of the `ProtectiveCordon` condition, `None` when the Node
+    /// has never carried it.
+    pub condition: Option<bool>,
+}
+
+/// One write of the `ProtectiveCordon` condition.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Condition {
+    pub status: bool,
+    pub reason: &'static str,
+    pub message: String,
+    pub at: DateTime<Utc>,
 }
 
 /// The subset of Node operations the protective cordon depends on.
@@ -40,6 +57,9 @@ pub trait CordonApi: Send + Sync {
     /// Drops the protective mark only, for a Node someone else already
     /// uncordoned.
     async fn forget(&self, name: &str) -> Result<(), String>;
+    /// Writes the `ProtectiveCordon` condition, leaving every other condition
+    /// as it is.
+    async fn set_condition(&self, name: &str, condition: &Condition) -> Result<(), String>;
 }
 
 /// The kube-backed protective cordon client.
@@ -90,6 +110,18 @@ impl CordonApi for KubeCordon {
     async fn forget(&self, name: &str) -> Result<(), String> {
         self.patch(name, forget_patch()).await
     }
+
+    async fn set_condition(&self, name: &str, condition: &Condition) -> Result<(), String> {
+        self.0
+            .patch_status(
+                name,
+                &PatchParams::default(),
+                &Patch::Strategic(condition_patch(condition)),
+            )
+            .await
+            .map(|_| ())
+            .map_err(|e| format!("patch node {name} status: {e}"))
+    }
 }
 
 /// The full annotation key of the protective cordon mark.
@@ -116,6 +148,22 @@ fn forget_patch() -> serde_json::Value {
     serde_json::json!({"metadata": {"annotations": {annotation_key(): null}}})
 }
 
+/// A strategic merge patch merges `status.conditions` by `type`, so the
+/// kubelet's conditions are never overwritten.
+fn condition_patch(c: &Condition) -> serde_json::Value {
+    let at = c.at.to_rfc3339_opts(SecondsFormat::Secs, true);
+    serde_json::json!({
+        "status": {"conditions": [{
+            "type": CONDITION_TYPE,
+            "status": if c.status { "True" } else { "False" },
+            "reason": c.reason,
+            "message": c.message,
+            "lastHeartbeatTime": at,
+            "lastTransitionTime": at,
+        }]},
+    })
+}
+
 /// Reduces a Node to its cordon state, or `None` when it is not EC2-backed
 /// and so can never match a discovered instance.
 fn from_k8s_node(n: &K8sNode) -> Option<(String, CordonNode)> {
@@ -136,6 +184,12 @@ fn from_k8s_node(n: &K8sNode) -> Option<(String, CordonNode)> {
             .annotations
             .as_ref()
             .is_some_and(|a| a.contains_key(&annotation_key())),
+        condition: n
+            .status
+            .as_ref()
+            .and_then(|s| s.conditions.as_ref())
+            .and_then(|cs| cs.iter().find(|c| c.type_ == CONDITION_TYPE))
+            .map(|c| c.status == "True"),
     };
     Some((instance_id, node))
 }
@@ -144,7 +198,7 @@ fn from_k8s_node(n: &K8sNode) -> Option<(String, CordonNode)> {
 mod tests {
     use std::collections::BTreeMap;
 
-    use k8s_openapi::api::core::v1::NodeSpec;
+    use k8s_openapi::api::core::v1::{NodeCondition, NodeSpec, NodeStatus};
     use kube::api::ObjectMeta;
 
     use super::*;
@@ -168,6 +222,18 @@ mod tests {
         }
     }
 
+    fn with_condition(mut n: K8sNode, type_: &str, status: &str) -> K8sNode {
+        n.status = Some(NodeStatus {
+            conditions: Some(vec![NodeCondition {
+                type_: type_.into(),
+                status: status.into(),
+                ..NodeCondition::default()
+            }]),
+            ..NodeStatus::default()
+        });
+        n
+    }
+
     #[test]
     fn node_reduction() {
         let (id, n) = from_k8s_node(&node("aws:///ap-northeast-2a/i-1", Some(true), true)).unwrap();
@@ -179,11 +245,21 @@ mod tests {
                 uid: "u".into(),
                 unschedulable: true,
                 protective: true,
+                condition: None,
             }
         );
         let (_, n) = from_k8s_node(&node("aws:///zone/i-2", None, false)).unwrap();
         assert!(!n.unschedulable);
         assert!(!n.protective);
+        let marked = node("aws:///zone/i-3", Some(true), true);
+        let (_, n) =
+            from_k8s_node(&with_condition(marked.clone(), CONDITION_TYPE, "True")).unwrap();
+        assert_eq!(n.condition, Some(true));
+        let (_, n) =
+            from_k8s_node(&with_condition(marked.clone(), CONDITION_TYPE, "False")).unwrap();
+        assert_eq!(n.condition, Some(false));
+        let (_, n) = from_k8s_node(&with_condition(marked, "DiskPressure", "True")).unwrap();
+        assert_eq!(n.condition, None);
         assert!(from_k8s_node(&node("aws:///zone/fargate-x", None, false)).is_none());
         assert!(from_k8s_node(&K8sNode::default()).is_none());
     }
@@ -208,6 +284,24 @@ mod tests {
         assert_eq!(
             forget_patch(),
             serde_json::json!({"metadata": {"annotations": {"external-ebs-autoresizer/protective-cordon": null}}})
+        );
+        assert_eq!(
+            condition_patch(&Condition {
+                status: true,
+                reason: "ProtectiveCordonApplied",
+                message: "m".into(),
+                at,
+            }),
+            serde_json::json!({
+                "status": {"conditions": [{
+                    "type": "ProtectiveCordon",
+                    "status": "True",
+                    "reason": "ProtectiveCordonApplied",
+                    "message": "m",
+                    "lastHeartbeatTime": "2023-11-14T22:13:20Z",
+                    "lastTransitionTime": "2023-11-14T22:13:20Z",
+                }]},
+            })
         );
     }
 }

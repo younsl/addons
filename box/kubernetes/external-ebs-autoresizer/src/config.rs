@@ -90,11 +90,6 @@ pub struct ResizeSpec {
     /// matching instances. The global `alertmanager.enabled` switch remains the
     /// master gate. Defaults to true.
     pub alert_enabled: Option<bool>,
-    /// When true, cordons the Kubernetes Node of a matching instance while its
-    /// root usage is at or above the threshold, so no new Pod lands on a
-    /// filling disk, and uncordons it once usage is back under. Only a cordon
-    /// the addon applied itself is ever lifted. Defaults to false.
-    pub auto_protective_cordon: Option<bool>,
     pub usage_threshold_percent: Option<i32>,
     pub grow_mode: Option<String>,
     pub grow_percent: Option<i32>,
@@ -192,8 +187,6 @@ pub struct Config {
     /// The default-policy alert switch. Only consulted when
     /// `alertmanager_enabled` is true.
     pub alert_enabled: bool,
-    /// The default-policy protective cordon switch.
-    pub auto_protective_cordon: bool,
     pub ssm_command_timeout: Duration,
     pub volume_modify_timeout: Duration,
     /// Measures and decides but never mutates AWS resources.
@@ -482,7 +475,6 @@ pub fn parse(raw: &str, env: &Env) -> Result<Config, ConfigError> {
             .unwrap_or(DEFAULT_MAX_VOLUME_SIZE_GIB),
         paused: dp.paused.unwrap_or(false),
         alert_enabled: dp.alert_enabled.unwrap_or(true),
-        auto_protective_cordon: dp.auto_protective_cordon.unwrap_or(false),
         ssm_command_timeout: parse::parse_duration("ssmCommandTimeout", &f.ssm_command_timeout)?,
         volume_modify_timeout: parse::parse_duration(
             "volumeModifyTimeout",
@@ -554,12 +546,24 @@ pub fn parse(raw: &str, env: &Env) -> Result<Config, ConfigError> {
 
 #[cfg(test)]
 mod tests {
+    use indoc::indoc;
+
     use super::*;
 
-    const MINIMAL: &str = "region: ap-northeast-2\ndefaultPolicy:\n  usageThresholdPercent: 80\n  growMode: percent\n";
+    const MINIMAL: &str = indoc! {"
+        region: ap-northeast-2
+        defaultPolicy:
+          usageThresholdPercent: 80
+          growMode: percent
+    "};
 
     fn env() -> Env {
         Env::default()
+    }
+
+    /// `MINIMAL` followed by extra top-level keys.
+    fn with(extra: &str) -> String {
+        format!("{MINIMAL}{extra}")
     }
 
     #[test]
@@ -579,7 +583,6 @@ mod tests {
         assert_eq!(c.max_volume_size_gib, 1000);
         assert!(!c.paused);
         assert!(c.alert_enabled);
-        assert!(!c.auto_protective_cordon);
         assert_eq!(c.ssm_command_timeout, Duration::from_mins(5));
         assert_eq!(c.volume_modify_timeout, Duration::from_mins(10));
         assert!(!c.dry_run);
@@ -608,96 +611,104 @@ mod tests {
 
     #[test]
     fn required_default_policy_fields() {
-        let err = parse("region: r\ndefaultPolicy:\n  growMode: percent\n", &env())
-            .unwrap_err()
-            .to_string();
-        assert!(
-            err.contains("defaultPolicy.usageThresholdPercent is required"),
-            "{err}"
-        );
-        let err = parse(
-            "region: r\ndefaultPolicy:\n  usageThresholdPercent: 80\n",
-            &env(),
-        )
-        .unwrap_err()
-        .to_string();
-        assert!(err.contains("defaultPolicy.growMode is required"), "{err}");
-        let err = parse(
-            "region: r\ndefaultPolicy:\n  usageThresholdPercent: 80\n  growMode: \"  \"\n",
-            &env(),
-        )
-        .unwrap_err()
-        .to_string();
-        assert!(err.contains("defaultPolicy.growMode is required"), "{err}");
+        let cases = [
+            (
+                indoc! {"
+                    region: r
+                    defaultPolicy:
+                      growMode: percent
+                "},
+                "defaultPolicy.usageThresholdPercent is required",
+            ),
+            (
+                indoc! {"
+                    region: r
+                    defaultPolicy:
+                      usageThresholdPercent: 80
+                "},
+                "defaultPolicy.growMode is required",
+            ),
+            (
+                indoc! {r#"
+                    region: r
+                    defaultPolicy:
+                      usageThresholdPercent: 80
+                      growMode: "  "
+                "#},
+                "defaultPolicy.growMode is required",
+            ),
+        ];
+        for (raw, want) in cases {
+            let err = parse(raw, &env()).unwrap_err().to_string();
+            assert!(err.contains(want), "{raw}\nwant {want:?}\ngot {err}");
+        }
     }
 
     #[test]
     #[allow(clippy::too_many_lines)]
     fn overrides_and_explicit_zeros() {
-        let raw = r#"
-region: us-east-1
-tagFilters: "Env=prod,Team=infra"
-excludeEKSNodes: false
-reconcileInterval: 1h30m
-reconcileConcurrency: 3
-ssmPollInterval: 500ms
-defaultPolicy:
-  usageThresholdPercent: 0
-  growMode: " ABSOLUTE "
-  paused: true
-  alertEnabled: false
-  autoProtectiveCordon: true
-  growPercent: 25
-  growAmount: 5120MiB
-  maxVolumeSizeGiB: 2000
-ssmCommandTimeout: 30s
-volumeModifyTimeout: 20m
-dryRun: true
-healthPort: 9000
-metricsPort: 9001
-leaderElect: false
-leaseName: custom
-logLevel: debug
-logFormat: text
-alertmanager:
-  enabled: true
-  url: http://am:9093/
-  timeout: 2s
-  labels:
-    cluster: prod
-  notifyOn: all
-  dashboardUrl: "https://g/{instance_id}"
-grafanaAnnotation:
-  enabled: true
-  url: http://grafana:3000
-  timeout: 3s
-  tags: []
-  annotateOn: failure
-throughputRecommendation:
-  enabled: true
-  prometheusUrl: " http://mimir/prometheus "
-  prometheusTenantId: " tenant "
-  interval: 1h
-  metricNodeNameLabel: instance
-  lookbackWindow: 12h
-  applyOnResize: false
-policies:
-  - name: db
-    weight: 10
-    instanceSelector:
-      tags:
-        Role: database
-      nameRegex: "^prod-"
-    resize:
-      usageThresholdPercent: 70
-      growMode: absolute
-      growAmount: 50GiB
-      maxVolumeSizeGiB: 3000
-      paused: false
-      alertEnabled: true
-      autoProtectiveCordon: false
-      growPercent: 5
-"#;
+        let raw = indoc! {r#"
+            region: us-east-1
+            tagFilters: "Env=prod,Team=infra"
+            excludeEKSNodes: false
+            reconcileInterval: 1h30m
+            reconcileConcurrency: 3
+            ssmPollInterval: 500ms
+            defaultPolicy:
+              usageThresholdPercent: 0
+              growMode: " ABSOLUTE "
+              paused: true
+              alertEnabled: false
+              growPercent: 25
+              growAmount: 5120MiB
+              maxVolumeSizeGiB: 2000
+            ssmCommandTimeout: 30s
+            volumeModifyTimeout: 20m
+            dryRun: true
+            healthPort: 9000
+            metricsPort: 9001
+            leaderElect: false
+            leaseName: custom
+            logLevel: debug
+            logFormat: text
+            alertmanager:
+              enabled: true
+              url: http://am:9093/
+              timeout: 2s
+              labels:
+                cluster: prod
+              notifyOn: all
+              dashboardUrl: "https://g/{instance_id}"
+            grafanaAnnotation:
+              enabled: true
+              url: http://grafana:3000
+              timeout: 3s
+              tags: []
+              annotateOn: failure
+            throughputRecommendation:
+              enabled: true
+              prometheusUrl: " http://mimir/prometheus "
+              prometheusTenantId: " tenant "
+              interval: 1h
+              metricNodeNameLabel: instance
+              lookbackWindow: 12h
+              applyOnResize: false
+            policies:
+              - name: db
+                weight: 10
+                instanceSelector:
+                  tags:
+                    Role: database
+                  nameRegex: "^prod-"
+                resize:
+                  usageThresholdPercent: 70
+                  growMode: absolute
+                  growAmount: 50GiB
+                  maxVolumeSizeGiB: 3000
+                  paused: false
+                  alertEnabled: true
+                  growPercent: 5
+        "#};
         let e = Env {
             pod_name: "pod-0".into(),
             pod_namespace: "kube-system".into(),
@@ -716,7 +727,6 @@ policies:
         assert_eq!(c.grow_mode, GROW_MODE_ABSOLUTE, "normalized");
         assert!(c.paused);
         assert!(!c.alert_enabled);
-        assert!(c.auto_protective_cordon);
         assert_eq!(c.grow_percent, 25);
         assert_eq!(c.grow_amount_gib, 5);
         assert_eq!(c.max_volume_size_gib, 2000);
@@ -768,14 +778,17 @@ policies:
         assert_eq!(p.resize.max_volume_size_gib, Some(3000));
         assert_eq!(p.resize.paused, Some(false));
         assert_eq!(p.resize.alert_enabled, Some(true));
-        assert_eq!(p.resize.auto_protective_cordon, Some(false));
         assert_eq!(p.resize.grow_percent, Some(5));
     }
 
     #[test]
     fn policy_omitted_fields_stay_unset() {
-        let raw =
-            format!("{MINIMAL}policies:\n  - name: a\n    instanceSelector:\n      nameRegex: x\n");
+        let raw = with(indoc! {"
+            policies:
+              - name: a
+                instanceSelector:
+                  nameRegex: x
+        "});
         let c = parse(&raw, &env()).unwrap();
         assert_eq!(c.policies[0].resize, ResizeSpec::default());
         assert_eq!(c.policies[0].weight, 0);
@@ -784,10 +797,28 @@ policies:
     #[test]
     fn unknown_keys_fail() {
         for raw in [
-            format!("{MINIMAL}bogus: 1\n"),
-            format!("{MINIMAL}alertmanager:\n  bogus: 1\n"),
-            format!("{MINIMAL}throughputRecommendation:\n  quantile: 0.9\n"),
-            format!("{MINIMAL}policies:\n  - name: a\n    bogus: 1\n"),
+            with("bogus: 1\n"),
+            with(indoc! {"
+                alertmanager:
+                  bogus: 1
+            "}),
+            with(indoc! {"
+                throughputRecommendation:
+                  quantile: 0.9
+            "}),
+            with(indoc! {"
+                policies:
+                  - name: a
+                    bogus: 1
+            "}),
+            indoc! {"
+                region: r
+                defaultPolicy:
+                  usageThresholdPercent: 80
+                  growMode: percent
+                  autoProtectiveCordon: true
+            "}
+            .to_string(),
         ] {
             let err = parse(&raw, &env()).unwrap_err();
             assert!(matches!(err, ConfigError::Parse { .. }), "{raw}: {err}");
@@ -796,55 +827,174 @@ policies:
     }
 
     #[test]
+    #[allow(clippy::too_many_lines)]
     fn validation_errors() {
         let cases: Vec<(String, &str)> = vec![
             (
-                "defaultPolicy:\n  usageThresholdPercent: 80\n  growMode: percent\n".into(),
+                indoc! {"
+                    defaultPolicy:
+                      usageThresholdPercent: 80
+                      growMode: percent
+                "}
+                .into(),
                 "region is required",
             ),
             (
-                "region: r\ndefaultPolicy:\n  usageThresholdPercent: 101\n  growMode: percent\n"
-                    .into(),
+                indoc! {"
+                    region: r
+                    defaultPolicy:
+                      usageThresholdPercent: 101
+                      growMode: percent
+                "}
+                .into(),
                 "usageThresholdPercent must be between 0 and 100",
             ),
             (
-                format!("{MINIMAL}reconcileInterval: 5min\n"),
+                with("reconcileInterval: 5min\n"),
                 "invalid reconcileInterval",
             ),
-            (format!("{MINIMAL}reconcileInterval: 0s\n"), "reconcileInterval must be greater than 0"),
-            (format!("{MINIMAL}reconcileConcurrency: 0\n"), "reconcileConcurrency must be greater than 0"),
-            (format!("{MINIMAL}reconcileConcurrency: -1\n"), "reconcileConcurrency must be greater than 0"),
-            (format!("{MINIMAL}ssmPollInterval: 0\n"), "ssmPollInterval must be greater than 0"),
             (
-                "region: r\ndefaultPolicy:\n  usageThresholdPercent: 80\n  growMode: sideways\n".into(),
+                with("reconcileInterval: 0s\n"),
+                "reconcileInterval must be greater than 0",
+            ),
+            (
+                with("reconcileConcurrency: 0\n"),
+                "reconcileConcurrency must be greater than 0",
+            ),
+            (
+                with("reconcileConcurrency: -1\n"),
+                "reconcileConcurrency must be greater than 0",
+            ),
+            (
+                with("ssmPollInterval: 0\n"),
+                "ssmPollInterval must be greater than 0",
+            ),
+            (with("tagFilters: \"Env\"\n"), "invalid tag filter"),
+            (with("ssmCommandTimeout: x\n"), "invalid ssmCommandTimeout"),
+            (
+                with("volumeModifyTimeout: x\n"),
+                "invalid volumeModifyTimeout",
+            ),
+            (
+                indoc! {"
+                    region: r
+                    defaultPolicy:
+                      usageThresholdPercent: 80
+                      growMode: sideways
+                "}
+                .into(),
                 "growMode must be one of percent, absolute",
             ),
             (
-                "region: r\ndefaultPolicy:\n  usageThresholdPercent: 80\n  growMode: percent\n  growPercent: 0\n".into(),
+                indoc! {"
+                    region: r
+                    defaultPolicy:
+                      usageThresholdPercent: 80
+                      growMode: percent
+                      growPercent: 0
+                "}
+                .into(),
                 "growPercent must be greater than 0",
             ),
             (
-                "region: r\ndefaultPolicy:\n  usageThresholdPercent: 80\n  growMode: absolute\n  growAmount: 10GB\n".into(),
+                indoc! {"
+                    region: r
+                    defaultPolicy:
+                      usageThresholdPercent: 80
+                      growMode: absolute
+                      growAmount: 10GB
+                "}
+                .into(),
                 "invalid growAmount",
             ),
             (
-                "region: r\ndefaultPolicy:\n  usageThresholdPercent: 80\n  growMode: percent\n  maxVolumeSizeGiB: 0\n".into(),
+                indoc! {"
+                    region: r
+                    defaultPolicy:
+                      usageThresholdPercent: 80
+                      growMode: percent
+                      maxVolumeSizeGiB: 0
+                "}
+                .into(),
                 "maxVolumeSizeGiB must be greater than 0",
             ),
-            (format!("{MINIMAL}alertmanager:\n  notifyOn: never\n"), "alertmanager.notifyOn must be one of"),
-            (format!("{MINIMAL}alertmanager:\n  enabled: true\n"), "alertmanager.url is required"),
-            (format!("{MINIMAL}alertmanager:\n  timeout: bogus\n"), "invalid alertmanager.timeout"),
-            (format!("{MINIMAL}grafanaAnnotation:\n  annotateOn: never\n"), "grafanaAnnotation.annotateOn must be one of"),
-            (format!("{MINIMAL}grafanaAnnotation:\n  enabled: true\n"), "grafanaAnnotation.url is required"),
-            (format!("{MINIMAL}grafanaAnnotation:\n  timeout: bogus\n"), "invalid grafanaAnnotation.timeout"),
-            (format!("{MINIMAL}throughputRecommendation:\n  enabled: true\n"), "throughputRecommendation.prometheusUrl is required"),
-            (format!("{MINIMAL}throughputRecommendation:\n  interval: 0s\n"), "throughputRecommendation.interval must be greater than 0"),
-            (format!("{MINIMAL}throughputRecommendation:\n  interval: soon\n"), "invalid throughputRecommendation.interval"),
-            (format!("{MINIMAL}throughputRecommendation:\n  metricNodeNameLabel: \"no-de\"\n"), "invalid throughputRecommendation.metricNodeNameLabel"),
-            (format!("{MINIMAL}throughputRecommendation:\n  lookbackWindow: 1.5h\n"), "invalid throughputRecommendation.lookbackWindow"),
-            (format!("{MINIMAL}tagFilters: \"Env\"\n"), "invalid tag filter"),
-            (format!("{MINIMAL}ssmCommandTimeout: x\n"), "invalid ssmCommandTimeout"),
-            (format!("{MINIMAL}volumeModifyTimeout: x\n"), "invalid volumeModifyTimeout"),
+            (
+                with(indoc! {"
+                    alertmanager:
+                      notifyOn: never
+                "}),
+                "alertmanager.notifyOn must be one of",
+            ),
+            (
+                with(indoc! {"
+                    alertmanager:
+                      enabled: true
+                "}),
+                "alertmanager.url is required",
+            ),
+            (
+                with(indoc! {"
+                    alertmanager:
+                      timeout: bogus
+                "}),
+                "invalid alertmanager.timeout",
+            ),
+            (
+                with(indoc! {"
+                    grafanaAnnotation:
+                      annotateOn: never
+                "}),
+                "grafanaAnnotation.annotateOn must be one of",
+            ),
+            (
+                with(indoc! {"
+                    grafanaAnnotation:
+                      enabled: true
+                "}),
+                "grafanaAnnotation.url is required",
+            ),
+            (
+                with(indoc! {"
+                    grafanaAnnotation:
+                      timeout: bogus
+                "}),
+                "invalid grafanaAnnotation.timeout",
+            ),
+            (
+                with(indoc! {"
+                    throughputRecommendation:
+                      enabled: true
+                "}),
+                "throughputRecommendation.prometheusUrl is required",
+            ),
+            (
+                with(indoc! {"
+                    throughputRecommendation:
+                      interval: 0s
+                "}),
+                "throughputRecommendation.interval must be greater than 0",
+            ),
+            (
+                with(indoc! {"
+                    throughputRecommendation:
+                      interval: soon
+                "}),
+                "invalid throughputRecommendation.interval",
+            ),
+            (
+                with(indoc! {r#"
+                    throughputRecommendation:
+                      metricNodeNameLabel: "no-de"
+                "#}),
+                "invalid throughputRecommendation.metricNodeNameLabel",
+            ),
+            (
+                with(indoc! {"
+                    throughputRecommendation:
+                      lookbackWindow: 1.5h
+                "}),
+                "invalid throughputRecommendation.lookbackWindow",
+            ),
         ];
         for (raw, want) in cases {
             let err = parse(&raw, &env()).unwrap_err().to_string();
@@ -854,7 +1004,11 @@ policies:
 
     #[test]
     fn grafana_enabled_without_token() {
-        let raw = format!("{MINIMAL}grafanaAnnotation:\n  enabled: true\n  url: http://g\n");
+        let raw = with(indoc! {"
+            grafanaAnnotation:
+              enabled: true
+              url: http://g
+        "});
         let err = parse(&raw, &env()).unwrap_err().to_string();
         assert!(err.contains("GRAFANA_API_TOKEN is required"), "{err}");
         let e = Env {

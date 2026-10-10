@@ -33,9 +33,6 @@ pub struct Effective {
     /// When false, suppresses Alertmanager alerts for resize outcomes on
     /// matching instances. Only consulted when alerting is globally enabled.
     pub alert_enabled: bool,
-    /// When true, the instance's Node is cordoned while its root usage is at
-    /// or above the threshold.
-    pub auto_protective_cordon: bool,
     pub usage_threshold_percent: i32,
     pub grow_mode: String,
     pub grow_percent: i32,
@@ -66,7 +63,6 @@ pub fn from_config(cfg: &Config) -> Effective {
         policy: DEFAULT_POLICY_NAME.into(),
         paused: cfg.paused,
         alert_enabled: cfg.alert_enabled,
-        auto_protective_cordon: cfg.auto_protective_cordon,
         usage_threshold_percent: cfg.usage_threshold_percent,
         grow_mode: cfg.grow_mode.clone(),
         grow_percent: cfg.grow_percent,
@@ -119,7 +115,7 @@ impl Resolver {
         best.map_or_else(|| self.defaults.clone(), |c| c.effective.clone())
     }
 
-    /// Returns one `name(weight=N,paused=B,alert=B,cordon=B)` string per
+    /// Returns one `name(weight=N,paused=B,alert=B)` string per
     /// policy in file order, so the startup log shows each group's active
     /// state.
     #[must_use]
@@ -128,12 +124,8 @@ impl Resolver {
             .iter()
             .map(|c| {
                 format!(
-                    "{}(weight={},paused={},alert={},cordon={})",
-                    c.policy.name,
-                    c.policy.weight,
-                    c.effective.paused,
-                    c.effective.alert_enabled,
-                    c.effective.auto_protective_cordon
+                    "{}(weight={},paused={},alert={})",
+                    c.policy.name, c.policy.weight, c.effective.paused, c.effective.alert_enabled
                 )
             })
             .collect()
@@ -157,22 +149,6 @@ impl Resolver {
             push(&c.policy.name, c.effective.alert_enabled);
         }
         (enabled, muted)
-    }
-
-    /// The policy buckets (the implicit default first, then named policies in
-    /// file order) whose instances get a protective cordon. Empty means the
-    /// resizer never needs to look at a Node.
-    #[must_use]
-    pub fn protective_cordon_policy_names(&self) -> Vec<String> {
-        std::iter::once((DEFAULT_POLICY_NAME, &self.defaults))
-            .chain(
-                self.policies
-                    .iter()
-                    .map(|c| (c.policy.name.as_str(), &c.effective)),
-            )
-            .filter(|(_, e)| e.auto_protective_cordon)
-            .map(|(n, _)| n.to_string())
-            .collect()
     }
 
     /// The number of loaded policies.
@@ -244,9 +220,6 @@ fn compile(p: &ResizePolicy, defaults: &Effective) -> Result<Compiled, String> {
     }
     if let Some(v) = rs.alert_enabled {
         eff.alert_enabled = v;
-    }
-    if let Some(v) = rs.auto_protective_cordon {
-        eff.auto_protective_cordon = v;
     }
     if let Some(v) = rs.usage_threshold_percent {
         if !(0..=100).contains(&v) {
@@ -411,10 +384,7 @@ mod tests {
             r.names(),
             vec!["db", "prod", "both", "low-first", "low-second"]
         );
-        assert_eq!(
-            r.summaries()[0],
-            "db(weight=10,paused=false,alert=true,cordon=false)"
-        );
+        assert_eq!(r.summaries()[0], "db(weight=10,paused=false,alert=true)");
     }
 
     #[test]
@@ -439,30 +409,7 @@ mod tests {
             "an unset policy switch inherits the muted default"
         );
         assert_eq!(muted, vec!["default", "muted", "loud"]);
-        assert_eq!(
-            r.summaries()[0],
-            "muted(weight=1,paused=false,alert=false,cordon=false)"
-        );
-    }
-
-    #[test]
-    fn protective_cordon_policy_names_follow_overrides() {
-        let mut cfg = base_config();
-        let mut on = policy("on", 1, "on", &[]);
-        on.resize.auto_protective_cordon = Some(true);
-        cfg.policies = vec![on, policy("inherit", 1, "inherit", &[])];
-        let r = Resolver::new(&cfg).unwrap();
-        assert_eq!(r.protective_cordon_policy_names(), vec!["on"]);
-        assert!(r.resolve("on", &tags(&[])).auto_protective_cordon);
-        assert!(!r.resolve("x", &tags(&[])).auto_protective_cordon);
-
-        cfg.auto_protective_cordon = true;
-        cfg.policies[0].resize.auto_protective_cordon = Some(false);
-        let r = Resolver::new(&cfg).unwrap();
-        assert_eq!(
-            r.protective_cordon_policy_names(),
-            vec!["default", "inherit"]
-        );
+        assert_eq!(r.summaries()[0], "muted(weight=1,paused=false,alert=false)");
     }
 
     #[test]

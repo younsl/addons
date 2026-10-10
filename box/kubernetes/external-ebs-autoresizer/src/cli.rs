@@ -68,7 +68,6 @@ pub async fn run_policies(
         "SELECTOR",
         "PAUSED",
         "ALERT",
-        "PROTECTIVE_CORDON",
         "THRESHOLD%",
         "GROW",
         "MAX_GIB",
@@ -84,7 +83,6 @@ pub async fn run_policies(
             selector,
             eff.paused.to_string(),
             eff.alert_enabled.to_string(),
-            eff.auto_protective_cordon.to_string(),
             eff.usage_threshold_percent.to_string(),
             grow_summary(eff),
             eff.max_volume_size_gib.to_string(),
@@ -435,7 +433,15 @@ mod tests {
         );
 
         let bad = path.with_file_name("bad.yaml");
-        std::fs::write(&bad, "region: r\ndefaultPolicy:\n  usageThresholdPercent: 80\n  growMode: percent\npolicies:\n  - name: x\n").unwrap();
+        let raw = indoc::indoc! {"
+            region: r
+            defaultPolicy:
+              usageThresholdPercent: 80
+              growMode: percent
+            policies:
+              - name: x
+        "};
+        std::fs::write(&bad, raw).unwrap();
         let err = run_validate(&bad, &Env::default(), &mut Vec::new()).unwrap_err();
         assert!(format!("{err:#}").contains("invalid config"), "{err:#}");
         assert!(
@@ -457,19 +463,19 @@ mod tests {
         let lines: Vec<&str> = text.lines().collect();
         assert_eq!(
             lines[0],
-            "POLICY   WEIGHT  SELECTOR                        PAUSED  ALERT  PROTECTIVE_CORDON  THRESHOLD%  GROW             MAX_GIB"
+            "POLICY   WEIGHT  SELECTOR                        PAUSED  ALERT  THRESHOLD%  GROW             MAX_GIB"
         );
         assert_eq!(
             lines[1],
-            "bastion  5       name~bastion                    true    false  false              60          percent +10%     1000"
+            "bastion  5       name~bastion                    true    false  60          percent +10%     1000"
         );
         assert_eq!(
             lines[2],
-            "shared   1       name~^shared-                   false   true   false              80          absolute +50GiB  1000"
+            "shared   1       name~^shared-                   false   true   80          absolute +50GiB  1000"
         );
         assert_eq!(
             lines[3],
-            "default  -       (instances matching no policy)  false   true   false              80          percent +10%     1000"
+            "default  -       (instances matching no policy)  false   true   80          percent +10%     1000"
         );
     }
 

@@ -69,10 +69,10 @@ Never contacts AWS unless `--count` is set.
 
 ```console
 $ external-ebs-autoresizer policies --config config.example.yaml
-POLICY   WEIGHT  SELECTOR                        PAUSED  ALERT  PROTECTIVE_CORDON  THRESHOLD%  GROW             MAX_GIB
-bastion  5       name~bastion                    true    false  false              60          percent +10%     1000
-shared   1       name~^shared-                   false   true   false              80          absolute +50GiB  1000
-default  -       (instances matching no policy)  false   true   false              80          percent +10%     1000
+POLICY   WEIGHT  SELECTOR                        PAUSED  ALERT  THRESHOLD%  GROW             MAX_GIB
+bastion  5       name~bastion                    true    false  60          percent +10%     1000
+shared   1       name~^shared-                   false   true   80          absolute +50GiB  1000
+default  -       (instances matching no policy)  false   true   80          percent +10%     1000
 ```
 
 | Column | Meaning |
@@ -82,7 +82,6 @@ default  -       (instances matching no policy)  false   true   false           
 | `SELECTOR` | Compact selector: `Key=Value` tag equalities and `name~<regex>`, ANDed with ` & ` |
 | `PAUSED` | `true` means matching instances are skipped entirely |
 | `ALERT` | Effective `alertEnabled` |
-| `PROTECTIVE_CORDON` | Effective `autoProtectiveCordon`: `true` means the [Node][k8s-node] of a matching instance is [cordoned][k8s-cordon] while its usage is at or above the threshold |
 | `THRESHOLD%` | Effective `usageThresholdPercent` |
 | `GROW` | Effective growth: `percent +N%` or `absolute +NGiB` |
 | `MAX_GIB` | Effective `maxVolumeSizeGiB` ceiling |
@@ -93,10 +92,10 @@ the `external_ebs_autoresizer_policy_instances` metric):
 
 ```console
 $ external-ebs-autoresizer policies --count --config config.example.yaml
-POLICY   WEIGHT  SELECTOR                        PAUSED  ALERT  PROTECTIVE_CORDON  THRESHOLD%  GROW             MAX_GIB  MATCHED
-bastion  5       name~bastion                    true    false  false              60          percent +10%     1000     1
-shared   1       name~^shared-                   false   true   false              80          absolute +50GiB  1000     5
-default  -       (instances matching no policy)  false   true   false              80          percent +10%     1000     0
+POLICY   WEIGHT  SELECTOR                        PAUSED  ALERT  THRESHOLD%  GROW             MAX_GIB  MATCHED
+bastion  5       name~bastion                    true    false  60          percent +10%     1000     1
+shared   1       name~^shared-                   false   true   80          absolute +50GiB  1000     5
+default  -       (instances matching no policy)  false   true   80          percent +10%     1000     0
 ```
 
 ### instances
@@ -207,8 +206,6 @@ first when a resize did not happen where you expected one.
 
 [k8s-pod]: https://kubernetes.io/docs/concepts/workloads/pods/
 [k8s-configmap]: https://kubernetes.io/docs/concepts/configuration/configmap/
-[k8s-cordon]: https://kubernetes.io/docs/concepts/architecture/nodes/#manual-node-administration
-[k8s-node]: https://kubernetes.io/docs/concepts/architecture/nodes/
 [k8s-pvc]: https://kubernetes.io/docs/concepts/storage/persistent-volumes/#persistentvolumeclaims
 [k8s-pv]: https://kubernetes.io/docs/concepts/storage/persistent-volumes/
 [k8s-annotations]: https://kubernetes.io/docs/concepts/overview/working-with-objects/annotations/

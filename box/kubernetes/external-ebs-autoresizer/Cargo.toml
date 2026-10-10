@@ -70,6 +70,7 @@ http-body-util = "0.1.5"
 tempfile = "3.27.0"
 # Paused-clock tests for the controller loop
 tokio = { version = "1.53.1", features = ["test-util"] }
+indoc = "2.0.8"
 
 [lints.rust]
 unsafe_code = "forbid"

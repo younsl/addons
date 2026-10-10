@@ -14,7 +14,7 @@ ConfigMap.
 ```yaml
 region: ap-northeast-2                 # required
 tagFilters: ""                         # "Key=Value,Key2=Value2"; empty scans all instances in the account/region
-excludeEKSNodes: true                  # drop EKS nodes (managed node groups, self-managed, Karpenter)
+excludeEKSNodes: true                  # drop EKS nodes (managed node groups, self-managed, Karpenter). false also turns on the protective auto-cordon (see protective-auto-cordon.md)
 reconcileInterval: 5m                  # duration: 30s, 5m, 1h, 1h30m
 reconcileConcurrency: 10               # max instances reconciled in parallel per pass
 defaultPolicy:                         # volume-expansion settings for instances matching no named policy (see Per-group resize policies)
@@ -22,7 +22,6 @@ defaultPolicy:                         # volume-expansion settings for instances
   growMode: percent                    # REQUIRED. percent (by growPercent) or absolute (by growAmount)
   paused: false                        # true stops the resizer from touching those instances
   alertEnabled: true                   # false mutes Alertmanager alerts for those instances (needs alertmanager.enabled)
-  autoProtectiveCordon: false          # true cordons the instance's Node while usage is at or above the threshold (see protective-auto-cordon.md)
   growPercent: 10                      # growth percent per resize (growMode: percent)
   growAmount: 10GiB                    # absolute growth with a MiB/GiB unit (growMode: absolute); MiB rounds up to whole GiB
   maxVolumeSizeGiB: 1000               # safety ceiling

@@ -38,7 +38,7 @@ config:
   region: ""
   # -- (string) Comma-separated Key=Value tag filters selecting target instances; empty scans every instance in the account/region
   tagFilters: ""
-  # -- (bool) Exclude EKS cluster nodes (managed node groups, self-managed, Karpenter) so only standalone EC2 instances are managed
+  # -- (bool) Exclude EKS cluster nodes (managed node groups, self-managed, Karpenter) so only standalone EC2 instances are managed. When false, the protective auto-cordon is always on for EKS nodes: a Node whose root usage is at or above its policy threshold is cordoned until usage falls back under, and the ClusterRole grants patch on nodes and nodes/status
   excludeEKSNodes: true
   # -- (string) Reconcile loop interval as a duration; supports h, m, s and combinations (e.g. 30s, 5m, 1h, 1h30m)
   reconcileInterval: "5m"
@@ -54,8 +54,6 @@ config:
     paused: false
     # -- (bool) Alert switch for instances not matched by a named policy: false mutes their Alertmanager alerts. Named policies can override it per group via resize.alertEnabled. Only consulted when alertmanager.enabled is true
     alertEnabled: true
-    # -- (bool) Protective auto-cordon for instances not matched by a named policy: true cordons the instance's Kubernetes Node while its root usage is at or above usageThresholdPercent, so no new Pods land on a filling disk, and uncordons it once usage falls back under. Only cordons the addon applied are lifted. Named policies can override it per group via resize.autoProtectiveCordon. Takes effect only on EKS nodes, so it needs excludeEKSNodes false, and it grants patch on nodes in the ClusterRole
-    autoProtectiveCordon: false
     # -- (int) EBS volume growth percent per resize (used when growMode is percent)
     growPercent: 10
     # -- (string) Absolute growth per resize with a MiB or GiB unit, e.g. 10GiB or 5120MiB (used when growMode is absolute); MiB rounds up to whole GiB
@@ -87,14 +85,6 @@ config:
     #     # mute Alertmanager alerts for this group only
     #     alertEnabled: false
     #     growPercent: 30
-    # - name: eks-workers
-    #   weight: 1
-    #   instanceSelector:
-    #     tags:
-    #       eks:cluster-name: example
-    #   resize:
-    #     # cordon the Node while its disk is over the threshold
-    #     autoProtectiveCordon: true
   # -- (string) SSM command poll timeout as a duration (30s, 5m, 1h)
   ssmCommandTimeout: "5m"
   # -- (string) Delay between SSM command and volume modification status polls as a duration (30s, 5m, 1h)

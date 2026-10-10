@@ -27,7 +27,7 @@ Built with Rust 1.99.0 and shipped as a statically linked musl binary
 - Per-group resize policies that vary threshold and growth by tag or Name regex, with weighted precedence. See [Per-group resize policies](docs/configuration.md#per-group-resize-policies)
 - Safety guards: max volume size, the AWS 6-hour modification cooldown, and dry run
 - High availability through leader election across replicas. See [High availability](docs/how-it-works.md#high-availability)
-- Optional protective auto-cordon that keeps new Pods off a Node whose root disk crossed the threshold and uncordons it once usage is back under. See [Protective auto-cordon](docs/protective-auto-cordon.md)
+- Protective auto-cordon, always on for EKS nodes, that keeps new Pods off a Node whose root disk crossed the threshold, marks it with a `ProtectiveCordon` Node condition, and uncordons it once usage is back under. See [Protective auto-cordon](docs/protective-auto-cordon.md)
 - Optional gp3 throughput recommendations for in-cluster Nodes, piggybacked onto a size expansion. See [Node throughput recommendations](docs/throughput-recommendation.md)
 - Always-on identification of unused PersistentVolumeClaims and PersistentVolumes. It never deletes one. See [Unused volume identification](docs/unused-volumes.md)
 - Observability through [Prometheus metrics](docs/metrics.md), Kubernetes Events, [Alertmanager alerts](docs/alerting.md), and [Grafana annotations](docs/grafana-annotations.md)
@@ -58,7 +58,9 @@ Guides:
 - [Node throughput recommendations](docs/throughput-recommendation.md)
 - [Unused volume identification](docs/unused-volumes.md)
 - [Built-in CLI](docs/cli.md)
-- [Metrics](docs/metrics.md), [Alerting](docs/alerting.md), [Grafana annotations](docs/grafana-annotations.md)
+- [Metrics](docs/metrics.md)
+- [Alerting](docs/alerting.md)
+- [Grafana annotations](docs/grafana-annotations.md)
 - [Development](docs/development.md): build, test, and package
 
 Design documents:

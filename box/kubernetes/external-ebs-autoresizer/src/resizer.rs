@@ -302,7 +302,7 @@ impl Resizer {
         }
         self.log_policy_counts(&counts);
         self.rec.observe_policy_instances(&counts);
-        let mut nodes = self.protective_cordon_nodes(&effs).await;
+        let mut nodes = self.protective_cordon_nodes().await;
 
         // Reconcile instances concurrently with a bounded worker pool. Each
         // instance targets an independent EBS volume, so parallelism is safe;
@@ -730,6 +730,7 @@ pub(crate) mod tests {
 
     use super::*;
     use crate::config::{GROW_MODE_PERCENT, NOTIFY_ON_ALL};
+    use crate::k8s::cordon::Condition;
     use crate::k8s::events::capture::Capture;
     use crate::recstore::{ACTION_INCREASE, Entry};
 
@@ -887,6 +888,9 @@ pub(crate) mod tests {
         pub nodes: Mutex<HashMap<String, CordonNode>>,
         pub list_error: Option<String>,
         pub fail: bool,
+        pub fail_condition: bool,
+        /// Every condition write as `(status, reason)`.
+        pub conditions: Mutex<Vec<(bool, String)>>,
         /// Every mutating call as `(action, node)`.
         pub calls: Mutex<Vec<(String, String)>>,
     }
@@ -921,6 +925,21 @@ pub(crate) mod tests {
         }
         async fn forget(&self, name: &str) -> Result<(), String> {
             self.record("forget", name)
+        }
+        async fn set_condition(&self, name: &str, c: &Condition) -> Result<(), String> {
+            self.calls
+                .lock()
+                .unwrap()
+                .push((format!("condition={}", c.status), name.into()));
+            self.conditions
+                .lock()
+                .unwrap()
+                .push((c.status, c.reason.into()));
+            if self.fail_condition {
+                Err("forbidden".into())
+            } else {
+                Ok(())
+            }
         }
     }
 

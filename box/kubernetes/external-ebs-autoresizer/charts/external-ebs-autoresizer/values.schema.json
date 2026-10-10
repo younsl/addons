@@ -372,9 +372,6 @@
         "alertEnabled": {
           "type": "boolean"
         },
-        "autoProtectiveCordon": {
-          "type": "boolean"
-        },
         "growPercent": {
           "type": "integer",
           "minimum": 1

@@ -36,13 +36,13 @@
     <text x="300" y="372" font-size="10.5" fill="#8a8a8a">yes</text>
 
     <rect x="400" y="300" width="556" height="160" rx="3" fill="#0f0f0f" stroke="#c8a24a" stroke-width="1"/>
-    <text x="414" y="322" font-size="11.5" fill="#e0c37a">apply protective cordon (policy switch on)</text>
+    <text x="414" y="322" font-size="11.5" fill="#e0c37a">apply protective cordon (always on for EKS nodes)</text>
     <text x="414" y="344" font-size="10.5" fill="#8a8a8a">already carries our mark</text><text x="620" y="344" font-size="10.5" fill="#8a8a8a">-&gt;</text><text x="640" y="344" font-size="10.5" fill="#8a8a8a">no-op</text>
     <text x="414" y="362" font-size="10.5" fill="#8a8a8a">unschedulable without our mark</text><text x="620" y="362" font-size="10.5" fill="#8a8a8a">-&gt;</text><text x="640" y="362" font-size="10.5" fill="#8a8a8a">leave alone, not ours</text>
     <text x="414" y="380" font-size="10.5" fill="#8a8a8a">no Node (standalone EC2)</text><text x="620" y="380" font-size="10.5" fill="#8a8a8a">-&gt;</text><text x="640" y="380" font-size="10.5" fill="#8a8a8a">nothing to cordon</text>
     <text x="414" y="398" font-size="10.5" fill="#8a8a8a">dry run</text><text x="620" y="398" font-size="10.5" fill="#8a8a8a">-&gt;</text><text x="640" y="398" font-size="10.5" fill="#8a8a8a">log only</text>
     <text x="414" y="416" font-size="10.5" fill="#d4d4d4">otherwise</text><text x="620" y="416" font-size="10.5" fill="#d4d4d4">-&gt;</text><text x="640" y="416" font-size="10.5" fill="#d4d4d4">spec.unschedulable: true</text>
-    <text x="640" y="434" font-size="10.5" fill="#d4d4d4">+ protective-cordon annotation</text>
+    <text x="640" y="434" font-size="10.5" fill="#d4d4d4">+ protective-cordon annotation, condition True</text>
     <text x="640" y="452" font-size="10.5" fill="#d4d4d4">+ ProtectiveCordonApplied (Warning)</text>
 
     <line x1="678" y1="460" x2="678" y2="488" stroke="#6e6e6e" stroke-width="1" marker-end="url(#arrow)"/>
@@ -68,7 +68,7 @@
 
     <rect x="24" y="490" width="300" height="180" rx="3" fill="#0f0f0f" stroke="#6aa86a" stroke-width="1"/>
     <text x="38" y="512" font-size="11.5" fill="#9fd49f">release protective cordon</text>
-    <text x="38" y="532" font-size="10.5" fill="#6e6e6e">whatever the policy switch says now</text>
+    <text x="38" y="532" font-size="10.5" fill="#6e6e6e">condition goes False once the mark is gone</text>
     <text x="38" y="554" font-size="10.5" fill="#8a8a8a">no mark</text><text x="170" y="554" font-size="10.5" fill="#8a8a8a">-&gt;</text><text x="190" y="554" font-size="10.5" fill="#8a8a8a">nothing</text>
     <text x="38" y="572" font-size="10.5" fill="#8a8a8a">dry run</text><text x="170" y="572" font-size="10.5" fill="#8a8a8a">-&gt;</text><text x="190" y="572" font-size="10.5" fill="#8a8a8a">log only</text>
     <text x="38" y="590" font-size="10.5" fill="#d4d4d4">mark, unschedulable</text><text x="170" y="590" font-size="10.5" fill="#d4d4d4">-&gt;</text><text x="190" y="590" font-size="10.5" fill="#d4d4d4">uncordon</text>

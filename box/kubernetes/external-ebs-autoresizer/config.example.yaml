@@ -13,7 +13,6 @@ defaultPolicy:
   growPercent: 10
   maxVolumeSizeGiB: 1000
   alertEnabled: true        # default-policy alert switch; named policies can override
-  autoProtectiveCordon: false  # cordon the Node while usage is over the threshold (EKS nodes only)
 
 throughputRecommendation:
   enabled: false

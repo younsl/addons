@@ -13,7 +13,7 @@ use crate::awsx::Clients;
 use crate::config::{Config, GROW_MODE_ABSOLUTE};
 use crate::controller;
 use crate::humanize::{go_duration, round_duration};
-use crate::k8s::cordon::{CordonApi, KubeCordon};
+use crate::k8s::cordon::{CONDITION_TYPE, CordonApi, CordonNode, KubeCordon, annotation_key};
 use crate::k8s::events::{Emitter, KubeEvents};
 use crate::k8s::leader::{self, KubeLeases, LeaderConfig, Timing};
 use crate::k8s::nodes::KubeNodes;
@@ -125,6 +125,10 @@ pub async fn run(cfg: Config) -> Result<()> {
         );
     }
 
+    let cordon = build_cordon(&cfg, kube.as_ref());
+    if let Some(api) = &cordon {
+        log_cordon_detection(api.as_ref()).await;
+    }
     let resizer = Arc::new(Resizer::new(
         cfg.clone(),
         clients.clone(),
@@ -137,7 +141,7 @@ pub async fn run(cfg: Config) -> Result<()> {
             annotator: sinks.annotator.clone(),
             recs: store.clone(),
             node_events: object_events.clone(),
-            cordon: build_cordon(&cfg, &resolver, kube.as_ref()),
+            cordon,
         },
     ));
     let recommender = build_recommender(
@@ -344,30 +348,79 @@ fn log_alert_policies(cfg: &Config, resolver: &Resolver) {
         "alertmanager notifications configured per policy");
 }
 
-/// Constructs the protective cordon client, or `None` when no policy turns it
-/// on or there is no cluster to cordon in.
-fn build_cordon(
-    cfg: &Config,
-    resolver: &Resolver,
-    kube: Option<&kube::Client>,
-) -> Option<Arc<dyn CordonApi>> {
-    let policies = resolver.protective_cordon_policy_names();
-    if policies.is_empty() {
-        info!("Protective cordon disabled: no policy sets autoProtectiveCordon");
+/// Constructs the protective cordon client. It is always on for EKS nodes,
+/// so `None` only means no cluster Node can be resized or there is no cluster
+/// to cordon in.
+fn build_cordon(cfg: &Config, kube: Option<&kube::Client>) -> Option<Arc<dyn CordonApi>> {
+    if cfg.exclude_eks_nodes {
+        info!(
+            enabled = false,
+            reason = "excludeEKSNodes is true",
+            "Protective cordon disabled: no cluster Node is resized, so none is cordoned"
+        );
         return None;
     }
     let Some(client) = kube else {
-        error!(policies = ?policies, "Protective cordon disabled: no in-cluster Kubernetes access");
+        error!(
+            enabled = false,
+            reason = "no in-cluster Kubernetes access",
+            "Protective cordon disabled: EKS nodes are resized but cannot be cordoned"
+        );
         return None;
     };
-    if cfg.exclude_eks_nodes {
-        warn!(policies = ?policies,
-            hint = "set excludeEKSNodes: false so EKS nodes are discovered, then scope them with a policy",
-            "Protective cordon is enabled but excludeEKSNodes is true, so no cluster Node is discovered and none will be cordoned");
-    }
-    info!(policies = ?policies, annotation = %crate::k8s::cordon::annotation_key(), dry_run = cfg.dry_run,
+    info!(enabled = true, annotation = %annotation_key(), condition = CONDITION_TYPE, dry_run = cfg.dry_run,
         "Protective cordon enabled: a Node whose root filesystem usage is at or above its policy threshold is cordoned, and uncordoned once usage falls back under it. Only cordons the addon applied are ever lifted");
     Some(Arc::new(KubeCordon::new(client.clone())))
+}
+
+/// What the startup Node list found.
+#[derive(Debug, Default, PartialEq, Eq)]
+struct Detection {
+    /// EC2-backed Nodes, the ones an instance can map to.
+    nodes: usize,
+    /// Nodes holding the addon's cordon mark, sorted.
+    held: Vec<String>,
+    /// Nodes cordoned by someone else, which the addon leaves alone.
+    cordoned_by_others: usize,
+    /// Nodes whose `ProtectiveCordon` condition disagrees with the mark,
+    /// rewritten on the first pass that measures them.
+    condition_out_of_sync: usize,
+}
+
+impl Detection {
+    fn of<'a>(nodes: impl IntoIterator<Item = &'a CordonNode>) -> Self {
+        let mut d = Self::default();
+        for n in nodes {
+            d.nodes += 1;
+            if n.protective {
+                d.held.push(n.name.clone());
+            } else if n.unschedulable {
+                d.cordoned_by_others += 1;
+            }
+            if n.condition.unwrap_or(false) != n.protective {
+                d.condition_out_of_sync += 1;
+            }
+        }
+        d.held.sort();
+        d
+    }
+}
+
+/// Lists the cluster's Nodes once at startup and logs what the protective
+/// cordon starts watching. Like the metrics check it runs on every replica
+/// before leader election, so a missing `nodes` grant shows at startup
+/// rather than at failover. A failure is not fatal: every pass lists again.
+async fn log_cordon_detection(api: &dyn CordonApi) {
+    match api.list().await {
+        Ok(nodes) => {
+            let d = Detection::of(nodes.values());
+            info!(nodes_detected = d.nodes, held_by_addon = d.held.len(), held_nodes = ?d.held,
+                cordoned_by_others = d.cordoned_by_others, condition_out_of_sync = d.condition_out_of_sync,
+                "Protective cordon monitoring started");
+        }
+        Err(err) => error!(error = %err,
+            "Protective cordon monitoring started, but the initial Node detection failed; it is retried every pass"),
+    }
 }
 
 /// Constructs the recommender, or `None` when it is disabled or cannot run.
@@ -620,16 +673,10 @@ mod tests {
         let c = cfg();
         let metrics = Arc::new(Metrics::new());
         assert!(build_scanner(&c, None, metrics.clone(), None).is_none());
-        assert!(
-            build_cordon(&c, &Resolver::new(&c).unwrap(), None).is_none(),
-            "disabled"
-        );
-        let mut on = cfg();
-        on.auto_protective_cordon = true;
-        assert!(
-            build_cordon(&on, &Resolver::new(&on).unwrap(), None).is_none(),
-            "no cluster"
-        );
+        assert!(build_cordon(&c, None).is_none(), "no cluster");
+        let mut eks = cfg();
+        eks.exclude_eks_nodes = false;
+        assert!(build_cordon(&eks, None).is_none(), "no cluster");
         let clients = Arc::new(Clients::from_parts(
             Box::new(crate::awsx::fake::FakeEc2::default()),
             Box::new(crate::awsx::fake::FakeSsm::default()),
@@ -664,6 +711,47 @@ mod tests {
             .is_none(),
             "no cluster"
         );
+    }
+
+    #[test]
+    fn cordon_detection_summary() {
+        let node = |name: &str, unschedulable: bool, protective: bool, condition: Option<bool>| {
+            CordonNode {
+                name: name.into(),
+                uid: String::new(),
+                unschedulable,
+                protective,
+                condition,
+            }
+        };
+        let nodes = [
+            node("b", true, true, Some(true)),
+            node("a", true, true, None),
+            node("c", true, false, None),
+            node("d", false, false, Some(true)),
+            node("e", false, false, None),
+        ];
+        assert_eq!(
+            Detection::of(&nodes),
+            Detection {
+                nodes: 5,
+                held: vec!["a".into(), "b".into()],
+                cordoned_by_others: 1,
+                condition_out_of_sync: 2,
+            }
+        );
+        assert_eq!(Detection::of(&[]), Detection::default());
+    }
+
+    #[tokio::test]
+    async fn log_cordon_detection_outcomes() {
+        use crate::resizer::tests::FakeCordon;
+        log_cordon_detection(&FakeCordon::default()).await;
+        log_cordon_detection(&FakeCordon {
+            list_error: Some("forbidden".into()),
+            ..FakeCordon::default()
+        })
+        .await;
     }
 
     #[tokio::test]

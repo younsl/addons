@@ -14,6 +14,12 @@ rules:
       - list
       - patch
   {{- end }}
+  {{- if (include "external-ebs-autoresizer.protectiveCordonEnabled" .) }}
+  - apiGroups: [""]
+    resources: ["nodes/status"]
+    verbs:
+      - patch
+  {{- end }}
   - apiGroups: [""]
     resources: ["pods"]
     verbs:

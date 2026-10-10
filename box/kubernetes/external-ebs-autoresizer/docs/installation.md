@@ -80,7 +80,7 @@ document and instances.
 is true; it reads the instance type's EBS bandwidth ceiling. That feature also needs
 `get`, `list`, and `patch` on `nodes` in the addon's [ClusterRole][k8s-rbac].
 
-The [protective auto-cordon][k8s-cordon] needs no IAM permission. It needs the same `nodes` grant in the ClusterRole, which the chart adds whenever any policy sets `autoProtectiveCordon: true`.
+The [protective auto-cordon][k8s-cordon] needs no IAM permission. It needs the same `nodes` grant plus `patch` on `nodes/status` for its `ProtectiveCordon` condition, which the chart adds whenever `excludeEKSNodes` is false.
 
 Replace `123456789012` with your account ID. To restrict which instances can be
 modified or commanded, narrow the `instance/*` and `volume/*` ARNs or add a
