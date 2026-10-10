@@ -93,6 +93,8 @@ Every note starts with YAML frontmatter so agents can find relevant notes withou
 
 The body is one H1 followed by these H2 sections in order: `Rule`, `Why`, `Exceptions` (optional), `Example` (optional), `References`. Use H3 for anything else inside them.
 
+Link every major keyword (tool, Kubernetes object or field, AWS service, protocol concept) to its official documentation or GitHub repository at its first mention in the body. Frontmatter, headings, and code blocks stay unlinked. Prefer a deep link with an anchor over a landing page.
+
 Find notes for a kind with `rg -l 'resources:.*\bService\b' docs/kb`, or scan `docs/kb/README.md` for one-line summaries.
 
 Notes come from real work and this repository is public. Never include company names, internal domains, hostnames, IP ranges, account IDs, ARNs, credentials, or personal info. Use `example.com`, `10.0.0.0/16`, `123456789012`, `${SECRET_NAME}` instead. Incident write-ups describe the failure mode and fix, not the affected internal service.
