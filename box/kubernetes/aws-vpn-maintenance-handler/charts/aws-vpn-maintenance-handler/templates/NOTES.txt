@@ -5,7 +5,7 @@ DryRun flag and no tunnel is actually replaced. Set config.dryRun=false once you
 approval cards and preflight output in your environment.{{ else }}DISABLED: an approved request
 replaces the tunnel for real, and that cannot be undone.{{ end }}
 
-Maintenance window: {{ .Values.config.maintenanceWindow.days | join "," }} {{ .Values.config.maintenanceWindow.start }}-{{ .Values.config.maintenanceWindow.end }} ({{ .Values.config.maintenanceWindow.timezone }})
+Maintenance window: {{ .Values.config.maintenanceWindow.cronSchedule }} for {{ .Values.config.maintenanceWindow.duration }} ({{ .Values.config.maintenanceWindow.timezone }})
 Approvers: {{ len .Values.config.approval.slackUserIDs }} Slack user(s)
 Leader election: {{ if (include "aws-vpn-maintenance-handler.leaderElectEnabled" .) }}enabled ({{ .Values.replicaCount }} replicas){{ else }}disabled (single replica){{ end }}
 

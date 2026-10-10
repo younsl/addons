@@ -6,7 +6,7 @@ Image tag check: {{ if .Values.promotionGate.imageTag.enabled }}{{ .Values.promo
 
 The webhook is live now. A sync of a gated Application is denied unless its
 upstream counterpart is {{ if .Values.promotionGate.require.sync }}Synced{{ end }}{{ if and .Values.promotionGate.require.sync .Values.promotionGate.require.health }} and {{ end }}{{ if .Values.promotionGate.require.health }}Healthy{{ end }}.
-An Application with no upstream counterpart is {{ .Values.promotionGate.missingUpstream }}ed.
+An Application with no upstream counterpart is always allowed.
 
 {{ if .Values.promotionGate.imageTag.enabled }}
 Two things still need doing by hand:

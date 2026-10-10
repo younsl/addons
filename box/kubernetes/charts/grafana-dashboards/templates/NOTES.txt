@@ -2,8 +2,10 @@ Grafana dashboards have been deployed as ConfigMaps.
 
 Ensure your Grafana has sidecar enabled with:
   sidecar.dashboards.enabled: true
-  sidecar.dashboards.label: {{ .Values.sidecar.label }}
-  sidecar.dashboards.labelValue: {{ .Values.sidecar.labelValue | quote }}
+{{- range $key, $value := .Values.sidecar.labels }}
+  sidecar.dashboards.label: {{ $key }}
+  sidecar.dashboards.labelValue: {{ $value | quote }}
+{{- end }}
 
 Deployed dashboards:
 {{- range $name, $dashboard := .Values.dashboards }}
