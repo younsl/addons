@@ -1,0 +1,68 @@
+# Set ndots to 2
+
+Pods default to `ndots:5`, which turns most external lookups into a burst of failed queries. Set `ndots:2` on workloads so that external names resolve on the first try while short in-cluster names keep working.
+
+## Why
+
+The default pod `/etc/resolv.conf` looks like this:
+
+```
+search <namespace>.svc.cluster.local svc.cluster.local cluster.local <node search domains>
+options ndots:5
+```
+
+A name with fewer dots than `ndots` is tried against every search domain before it is tried as is. Resolving `api.example.com` (2 dots) under `ndots:5` produces:
+
+- `api.example.com.<namespace>.svc.cluster.local` NXDOMAIN
+- `api.example.com.svc.cluster.local` NXDOMAIN
+- `api.example.com.cluster.local` NXDOMAIN
+- one NXDOMAIN per node search domain (for example the cloud provider's internal zone)
+- `api.example.com` finally answers
+
+Each step runs for both A and AAAA records, so one lookup becomes 8 to 10 queries. The cost shows up as:
+
+- higher latency on every external call that is not cached
+- CoreDNS CPU and cache churn
+- upstream resolver rate limits (on AWS, the VPC resolver drops packets past a per-ENI packet rate, seen as `linklocal_allowance_exceeded`)
+
+## Why 2 and not 1
+
+`ndots:2` keeps the in-cluster short forms resolving on the first query:
+
+| Name | Dots | Resolution under `ndots:2` |
+|------|------|----------------------------|
+| `my-svc` | 0 | search list, first try hits |
+| `my-svc.my-ns` | 1 | search list, hits via `svc.cluster.local` |
+| `api.example.com` | 2 | absolute first, hits |
+| `my-svc.my-ns.svc.cluster.local` | 4 | absolute first, hits |
+
+With `ndots:1`, `my-svc.my-ns` would go to the upstream resolver as an absolute name first, fail, and leak cluster service names outside the cluster before falling back to the search list.
+
+## Rules of thumb
+
+- In-cluster calls use `my-svc`, `my-svc.my-ns`, or the full `my-svc.my-ns.svc.cluster.local`
+- Avoid the `my-svc.my-ns.svc` form: it has 2 dots, so it is tried absolute first and fails once before the search list catches it
+- External names with a single dot (`example.com`) still walk the search list, so add a trailing dot (`example.com.`) when that path is hot
+- Apply cluster-wide with a mutating admission policy rather than editing every chart, see [prefer-vap-map-over-kyverno.md](prefer-vap-map-over-kyverno.md)
+
+## Example
+
+`dnsConfig` merges with the default `dnsPolicy: ClusterFirst`, so only the option needs to be set.
+
+```yaml
+spec:
+  dnsConfig:
+    options:
+      - name: ndots
+        value: "2"
+```
+
+Verify inside the pod:
+
+```bash
+kubectl exec <pod> -- cat /etc/resolv.conf
+```
+
+## References
+
+- [DNS for Services and Pods](https://kubernetes.io/docs/concepts/services-networking/dns-pod-service/)
