@@ -66,3 +66,4 @@ kubectl exec <pod> -- cat /etc/resolv.conf
 ## References
 
 - [DNS for Services and Pods](https://kubernetes.io/docs/concepts/services-networking/dns-pod-service/)
+- [EKS Best Practices: Reduce external queries by lowering ndots](https://docs.aws.amazon.com/eks/latest/best-practices/scale-cluster-services.html#_reduce_external_queries_by_lowering_ndots)
