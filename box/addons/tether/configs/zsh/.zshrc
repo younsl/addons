@@ -195,7 +195,7 @@ alias tgp="terragrunt plan"
 alias tga="terragrunt apply"
 alias tgd="terragrunt destroy"
 alias tgo="terragrunt output"
-alias tgf="terragrunt hclfmt"
+alias tgf="terragrunt hcl fmt"
 alias tgfu="terragrunt force-unlock"
 
 #----------------------------------

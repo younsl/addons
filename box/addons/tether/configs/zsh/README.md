@@ -25,7 +25,7 @@ zsh/
 | `tga` | terragrunt apply |
 | `tgd` | terragrunt destroy |
 | `tgo` | terragrunt output |
-| `tgf` | terragrunt hclfmt |
+| `tgf` | terragrunt hcl fmt |
 | `tgfu` | terragrunt force-unlock |
 
 ## Functions

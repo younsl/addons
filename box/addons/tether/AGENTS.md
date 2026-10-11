@@ -48,7 +48,7 @@ Single-letter aliases are load-bearing in daily use. Never rename or shadow them
 | k | kubectl | oh-my-zsh kubectl plugin |
 | s CONTEXT | switch CONTEXT (kubeswitch) | alias + switcher init zsh |
 | j DIR | jump to a frecent directory | oh-my-zsh autojump plugin |
-| tgp / tga / tgd / tgo / tgf / tgfu | terragrunt plan/apply/destroy/output/hclfmt/force-unlock | alias |
+| tgp / tga / tgd / tgo / tgf / tgfu | terragrunt plan/apply/destroy/output/hcl fmt/force-unlock | alias |
 | git sweep | prune remote-tracking refs, then delete local [gone] branches (removes their worktrees first) | configs/git/config |
 | git br | branches by last commit date, in a column table | configs/git/config |
 | chc | commit-history-cleaner, **destructive** | alias + configs/zsh/functions/ |
