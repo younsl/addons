@@ -1,0 +1,26 @@
+{
+  "skill_name": "helm-bump",
+  "evals": [
+    {
+      "id": 1,
+      "name": "wrapper-upstream-latest",
+      "prompt": "descheduler 래퍼 차트 업스트림 최신 버전으로 범프해줘",
+      "expected_output": "Queries the registry for the latest descheduler chart version before editing; bumps dependencies version, syncs appVersion to upstream appVersion, and bumps the wrapper version (mirrors upstream when it already tracks it, else minor); places new upstream values keys at their upstream position with comments verbatim and keeps local overrides; regenerates Chart.lock only if tracked; touches nothing else; drafts a commit message in the repo's git log convention without committing.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "name": "image-only-bump",
+      "prompt": "nginx 이미지 태그만 1.27.5로 변경해줘",
+      "expected_output": "Verifies nginx:1.27.5 exists in the registry (e.g. crane digest) before editing; changes appVersion and the explicit image tag only; chart version unchanged; comments and key order preserved; environment override files untouched; no commit made.",
+      "files": []
+    },
+    {
+      "id": 3,
+      "name": "missing-version-abort",
+      "prompt": "argo-cd 차트 9.99.0으로 범프해줘",
+      "expected_output": "Queries the argo-cd chart registry, finds 9.99.0 does not exist, makes no file edits, and reports the latest available argo-cd chart version.",
+      "files": []
+    }
+  ]
+}

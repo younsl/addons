@@ -1,15 +1,15 @@
 ---
 name: k8s-manifest
 description: Author and review raw Kubernetes manifests and CRD resources (Karpenter, External Secrets, Gateway API, Istio, admission policies) following EKS conventions and the user's field rules.
-when_to_use: Writing or reviewing Deployments, Services, NodePools, ExternalSecrets, HTTPRoutes, DestinationRules, admission policies, or other YAML resources, e.g. "매니페스트 작성", "NodePool 추가", "ExternalSecret 생성", "ArgoCD diff 해소", "VAP 정책 작성", "kyverno 정책 작성". Not for Helm template structure (use helm-chart).
+when_to_use: Writing or reviewing Deployments, Services, NodePools, ExternalSecrets, HTTPRoutes, DestinationRules, admission policies, or other YAML resources, e.g. "매니페스트 작성", "NodePool 추가", "ExternalSecret 생성", "ArgoCD diff 해소", "VAP 정책 작성", "kyverno 정책 작성". Not for Helm template structure (use helm-chart), chart or image version bumps (use helm-bump), Falco rules (use falco-rules), or AWS resources such as the interruption SQS queue (use terraform-generator).
 argument-hint: "[manifest path or resource kind]"
 license: Apache-2.0
 compatibility: kubeconform; kubectl for server-side dry-run
 metadata:
-  version: "2.1.0"
+  version: "2.2.0"
   category: generator
   related: helm-chart done-check
-allowed-tools: Bash(kubeconform *) Bash(kubectl apply --dry-run=server *) Bash(kubectl get *) Read Write Edit Grep Glob
+allowed-tools: Bash(kubeconform *) Bash(kubectl apply --dry-run=server *) Bash(kubectl get *) Bash(kubectl api-resources *) Bash(jq *) Bash(yq *) Bash(diff *) Read Write Edit Grep Glob
 user-invocable: true
 disable-model-invocation: false
 ---
@@ -45,25 +45,28 @@ Write CRD default fields explicitly so ArgoCD does not show permanent drift.
 
 | Resource | Fields to spell out |
 |----------|---------------------|
-| ExternalSecret `data[].remoteRef` | `conversionStrategy: Default`, `decodingStrategy: None`, `metadataPolicy: None` |
-| ExternalSecret `target` | `creationPolicy: Owner`, `deletionPolicy: Retain` |
+| ExternalSecret `data[].remoteRef`, `dataFrom[].extract`, `dataFrom[].find` (ESO before v2.9.0, harmless after) | `conversionStrategy: Default`, `decodingStrategy: None`, `metadataPolicy: None` (not on `find`). On ESO v2.3.0 to v2.6.x only, also `nullBytePolicy: Ignore` (field absent before v2.3.0) |
+| ExternalSecret `spec`, `target` | `refreshInterval` (any explicit value), `creationPolicy: Owner`, `deletionPolicy: Retain` |
+| ExternalSecret `target.template`, `templateFrom[]` (when used) | `engineVersion: v2`, `mergePolicy: Replace`, `templateFrom[].target: Data` |
 | Gateway API `parentRefs`, `backendRefs` | `group`, `kind`, `name`, `namespace` |
 
-Verify by diffing `kubectl get <kind> <name> -o jsonpath='{.spec}'` against git.
+Defaults vary by operator version. Read the installed CRD (`kubectl get crd <name> -o yaml`) before relying on the table, and scope any no-drift claim to that version.
+
+Verify with an empty `diff <(kubectl get <kind> <name> -n <ns> -o json | jq -S .spec) <(yq -o json .spec <file> | jq -S .)`.
 
 ## Karpenter
 
 - NodePool with a single instance type limits by `limits.nodes`, not cpu or memory
 - System and workload pools are separated by a node kind label plus matching taints
 - EC2NodeClass AMIs are AL2023 or Bottlerocket (cgroup v2), never AL2. The kubelet `failCgroupV1: false` override is only a short migration bridge. Set `singleProcessOOMKill: true` only for workloads that depend on per-process OOM kills, since cgroup v2 kills the whole container
-- Interruption handling belongs to Karpenter: `settings.interruptionQueue` points at the cluster's SQS queue, and AWS Node Termination Handler is never installed on Karpenter nodes (two node lifecycle owners cause launch and terminate churn)
+- Interruption handling belongs to Karpenter: `settings.interruptionQueue` points at the cluster's SQS queue. Remove AWS Node Termination Handler when moving nodes to Karpenter and never run both (two node lifecycle owners cause launch and terminate churn). Karpenter does not drain on rebalance recommendations, so NTH alongside it only when proactive rebalance draining is a hard requirement
 
 ## Secrets And Policies
 
 - Secret keys named by value type, consistent across siblings (`Amd64RunnerToken`, `Arm64RunnerToken`)
-- Kyverno and admission policy `title`, `description`, and messages in English
-- Admission policies default to ValidatingAdmissionPolicy and MutatingAdmissionPolicy (CEL in kube-apiserver, no webhook to fail). Kyverno only for generate, cleanup, `verifyImages`, background reports, and external data beyond `paramRef`
-- Policy and binding ship together. Bindings roll out with `validationActions: ["Warn", "Audit"]`, then `["Deny"]` once nothing legitimate is flagged. Check MAP is served (`kubectl api-resources | grep mutatingadmissionpolicies`) before relying on it
+- Kyverno policies carry `policies.kyverno.io/title` and `policies.kyverno.io/description` annotations and messages in English. VAP and MAP need only an English `message` or `messageExpression`
+- Admission policies default to ValidatingAdmissionPolicy and MutatingAdmissionPolicy (CEL in kube-apiserver, no webhook to fail). Kyverno only for generate, cleanup, `verifyImages`, background reports, and external data beyond `paramRef`. An explicit Kyverno request gets Kyverno, and the reply adds one line noting the VAP fit when the rule fits VAP
+- Policy and binding ship together. Bindings roll out with `validationActions: ["Warn", "Audit"]`, then `["Deny"]` once nothing legitimate is flagged. Kyverno rules likewise start at `Audit`, then `Enforce`. Check VAP or MAP is served (`kubectl api-resources --api-group=admissionregistration.k8s.io`) before relying on it
 - `failurePolicy: Fail` also fires on CEL evaluation errors, so test expressions against real objects first
 
 ## Operations
@@ -77,5 +80,5 @@ Errors, then warnings, one line each with `file:line` and the fix; then validati
 
 ## Validation
 
-- `kubeconform -strict -summary` passes, with CRD schemas from the catalog
+- `kubeconform -strict -summary -schema-location default -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json'` passes
 - `kubectl apply --dry-run=server` passes where cluster access exists
