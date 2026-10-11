@@ -84,7 +84,7 @@ Every skill declares the same frontmatter keys:
 
 `model`, `effort`, `context`, `paths`, and `hooks` are left unset so skills run in the session's own context and settings.
 
-Keep the body under 100 lines, frontmatter excluded. Omit general knowledge the model already has and keep only your conventions and constraints.
+Keep the body under 500 lines, frontmatter excluded. Omit general knowledge the model already has and keep only your conventions and constraints.
 
 ## License
 

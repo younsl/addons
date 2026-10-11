@@ -6,7 +6,7 @@ argument-hint: "[resource or module]"
 license: Apache-2.0
 compatibility: terraform 1.10+, terragrunt when the repo uses it
 metadata:
-  version: "2.0.0"
+  version: "2.1.0"
   category: generator
   related: done-check git-ship
 allowed-tools: Bash(terraform fmt *) Bash(terraform validate*) Bash(terragrunt hclfmt*) Bash(terragrunt validate*) Read Write Edit Grep Glob
@@ -35,6 +35,12 @@ General practice (pinned providers, variable validation, encryption at rest, lea
 - Issue key and description tags on every resource that supports them, using the repo's tag key convention
 - Tag values only use letters, digits, spaces, and `_ . : / = + - @`; no parentheses or commas (apply fails although plan passes)
 - EC2 instances with instance metadata tags enabled cannot have `/` in tag keys; replace it with `:`
+
+## EKS
+
+- kube-proxy add-on `configuration_values` sets `mode` explicitly to `iptables` or `nftables`, never `ipvs` (deprecated) and never left to the default (flips to nftables upstream). nftables only when every node runs Linux 5.13+ and VPC CNI v1.23.0+, and after testing anything that reaches a NodePort through `localhost`
+- Node AMIs are AL2023 or Bottlerocket (cgroup v2), never Amazon Linux 2
+- Karpenter interruption queue comes from the `terraform-aws-modules/eks` `karpenter` submodule (`enable_spot_termination = true`: SQS queue, queue policy, EventBridge rules for Spot interruption, rebalance, state change, AWS Health, capacity reservation interruption). Its `queue_name` output feeds Karpenter `settings.interruptionQueue`. No Node Termination Handler resources alongside it
 
 ## Execution
 

@@ -1,12 +1,12 @@
 ---
 name: k8s-manifest
-description: Author and review raw Kubernetes manifests and CRD resources (Karpenter, External Secrets, Gateway API, Kyverno) following EKS conventions and the user's field rules.
-when_to_use: Writing or reviewing Deployments, NodePools, ExternalSecrets, HTTPRoutes, admission policies, or other YAML resources, e.g. "매니페스트 작성", "NodePool 추가", "ExternalSecret 생성", "ArgoCD diff 해소", "kyverno 정책 작성". Not for Helm template structure (use helm-chart).
+description: Author and review raw Kubernetes manifests and CRD resources (Karpenter, External Secrets, Gateway API, Istio, admission policies) following EKS conventions and the user's field rules.
+when_to_use: Writing or reviewing Deployments, Services, NodePools, ExternalSecrets, HTTPRoutes, DestinationRules, admission policies, or other YAML resources, e.g. "매니페스트 작성", "NodePool 추가", "ExternalSecret 생성", "ArgoCD diff 해소", "VAP 정책 작성", "kyverno 정책 작성". Not for Helm template structure (use helm-chart).
 argument-hint: "[manifest path or resource kind]"
 license: Apache-2.0
 compatibility: kubeconform; kubectl for server-side dry-run
 metadata:
-  version: "2.0.0"
+  version: "2.1.0"
   category: generator
   related: helm-chart done-check
 allowed-tools: Bash(kubeconform *) Bash(kubectl apply --dry-run=server *) Bash(kubectl get *) Read Write Edit Grep Glob
@@ -21,11 +21,23 @@ Standard production practice (pinned tags, non-root `securityContext`, probes, `
 ## Workloads
 
 - Memory limit set, CPU limit omitted (CFS throttling); CPU request only
+- CPU request sized from baseline usage under normal load, never from history recorded under a CPU limit (throttling distorts it). Memory limit equals memory request
+- Without a CPU limit, pin the runtime CPU count to the request: `GOMAXPROCS` (Go), `-XX:ActiveProcessorCount` (JVM), `DOTNET_PROCESSOR_COUNT` (.NET). Otherwise thread pools size to every node core
+- A namespace LimitRange default or ResourceQuota on `limits.cpu` must not inject or require a CPU limit
+- CPU limit only for exclusive cores (static CPU manager, Guaranteed pod with integer CPU) or platforms that force requests equal to limits
 - Omit fields a controller owns: `spec.replicas` under HPA, KEDA, or Rollouts; resources under VPA. Otherwise add ArgoCD `ignoreDifferences`
 - `nodeAffinity.matchExpressions` and Karpenter NodePool `requirements` order: `kubernetes.io/os`, `kubernetes.io/arch`, worker selector (node kind label, `karpenter.sh/nodepool`), then zone or others; a worker label requested for a NodePool goes in both `template.metadata.labels` and `requirements`
 - Clusters mix amd64 and arm64 nodes; images must be multi-arch or the arch constraint explicit
 - `resizePolicy` right after `resources`: cpu `NotRequired`, memory `RestartContainer`
 - `preStop` sleep with matching `terminationGracePeriodSeconds`; `automountServiceAccountToken: false` unless the API is called; `dnsConfig.options.ndots: "2"` after testing
+- Under `ndots: "2"`, in-cluster names are `svc`, `svc.ns`, or the full `svc.ns.svc.cluster.local`, never `svc.ns.svc` (tried as absolute first and fails once). StatefulSet pod names such as `web-0.nginx.ns` use the full domain. Hot external names with one dot get a trailing dot (`example.com.`)
+
+## Services And Traffic
+
+- Services set `trafficDistribution: PreferSameZone`, never the deprecated `PreferClose` alias. Backends spread across every zone with `topologySpreadConstraints` on `topology.kubernetes.io/zone`, and replicas (HPA `minReplicas` included) stay at or above the zone count, otherwise one zone falls back to cross-zone
+- Skip `PreferSameZone` when clients concentrate in one zone (no capacity spillover, that zone overloads) or when `internalTrafficPolicy: Local` already applies
+- gRPC Services with long-lived clients are balanced per request by an L7 proxy: Istio ambient waypoint (`istio.io/use-waypoint` label on the Service) and a DestinationRule with `loadBalancer.simple: LEAST_REQUEST` plus `outlierDetection`. ztunnel alone is L4 and pins every call on a connection to one pod
+- Judge gRPC balancing by server-side p99 per pod, not by even request counts. No proxy is needed when clients use gRPC `round_robin` against a headless Service
 
 ## CRDs With Server-Side Defaults
 
@@ -43,11 +55,16 @@ Verify by diffing `kubectl get <kind> <name> -o jsonpath='{.spec}'` against git.
 
 - NodePool with a single instance type limits by `limits.nodes`, not cpu or memory
 - System and workload pools are separated by a node kind label plus matching taints
+- EC2NodeClass AMIs are AL2023 or Bottlerocket (cgroup v2), never AL2. The kubelet `failCgroupV1: false` override is only a short migration bridge. Set `singleProcessOOMKill: true` only for workloads that depend on per-process OOM kills, since cgroup v2 kills the whole container
+- Interruption handling belongs to Karpenter: `settings.interruptionQueue` points at the cluster's SQS queue, and AWS Node Termination Handler is never installed on Karpenter nodes (two node lifecycle owners cause launch and terminate churn)
 
 ## Secrets And Policies
 
 - Secret keys named by value type, consistent across siblings (`Amd64RunnerToken`, `Arm64RunnerToken`)
 - Kyverno and admission policy `title`, `description`, and messages in English
+- Admission policies default to ValidatingAdmissionPolicy and MutatingAdmissionPolicy (CEL in kube-apiserver, no webhook to fail). Kyverno only for generate, cleanup, `verifyImages`, background reports, and external data beyond `paramRef`
+- Policy and binding ship together. Bindings roll out with `validationActions: ["Warn", "Audit"]`, then `["Deny"]` once nothing legitimate is flagged. Check MAP is served (`kubectl api-resources | grep mutatingadmissionpolicies`) before relying on it
+- `failurePolicy: Fail` also fires on CEL evaluation errors, so test expressions against real objects first
 
 ## Operations
 

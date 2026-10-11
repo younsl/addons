@@ -67,7 +67,7 @@ Omit general knowledge Claude already knows. Keep only **your conventions and co
 ### Rules
 
 - State constraints ("image versions pinned"), not procedures ("Step 1: pin the image")
-- Keep under 100 lines; Claude generates boilerplate contextually
+- Keep the body under 500 lines; Claude generates boilerplate contextually
 - Use tables for pattern references instead of repetitive code blocks
 - List validation criteria, not numbered step sequences
 

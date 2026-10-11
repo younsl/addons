@@ -6,7 +6,7 @@ argument-hint: "[rule name or alert output]"
 license: Apache-2.0
 compatibility: falco binary for --validate; kubectl for reading Falco pod logs
 metadata:
-  version: "1.1.0"
+  version: "1.2.0"
   category: generator
   related: k8s-manifest helm-chart
 allowed-tools: Bash(falco *) Bash(kubectl logs *) Read Write Edit Grep Glob
@@ -26,6 +26,23 @@ Generate and tune Falco custom rules, exceptions, and macros for runtime securit
 - Extend the existing `falco` namespace and DaemonSet (extra sources, extra rules) instead of creating a new namespace or Falco instance
 - Native buildkit builds on runners report `container.id=host`, so buildkit exceptions cannot rely on the `buildkit/` prefix alone
 - Comments follow the global Code Comments rule
+
+## Sensor And Response
+
+- Syscall source uses the modern eBPF driver on a DaemonSet that tolerates every taint. Managed nodes do not allow kernel modules
+- Kubernetes API abuse (`pods/exec`, Secret deletion, privileged pod creation) is invisible to syscalls and needs the `k8saudit-eks` plugin reading EKS audit logs
+- JSON output with container and Kubernetes metadata, so every alert names namespace, pod, image, and command line
+- Kernel event drops from Falco metrics are alerted on. A silent sensor is a detection gap
+- Rules scoped to application namespaces, platform namespaces excluded with macros and exceptions. Debug and break-glass namespaces get their own exception, never a lower priority for everyone
+- Benign activity from the stack (agent wrappers, probes) is allowlisted before any automated action
+
+| Priority | Example | Response |
+|----------|---------|----------|
+| WARNING | Interactive shell in an app container (`proc.tty != 0`) | Falco Talon labels the pod, no notification |
+| ERROR | Write under `/etc`, package manager in a container | Falcosidekick notifies the team channel |
+| CRITICAL | `/etc/shadow` read, instance metadata access, outbound connection from a shell | Notify, then Talon terminates the pod after a short grace period |
+
+Talon actions match specific rule names, never every CRITICAL alert.
 
 ## Override Syntax (Falco 0.35+)
 
@@ -104,6 +121,10 @@ falco --validate /etc/falco/rules.d/rules-custom.yaml
 
 # Check hot reload logs after ConfigMap update
 kubectl logs -l app.kubernetes.io/name=falco -c falco --tail=20 | grep -E "Loading|Error|Warning|complete"
+
+# End-to-end after rollout: expect a CRITICAL alert, a notification, and the Talon action
+kubectl run falco-test --image=busybox --restart=Never -it --rm -- sh -c \
+  'cat /etc/shadow; wget -qO- -T 2 http://169.254.169.254/latest/meta-data/'
 ```
 
 ## Common Errors
