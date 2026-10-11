@@ -24,7 +24,7 @@ Several agent sessions share this working tree and git index, so the index often
 
 Format: `[<TOOLNAME>] <type>(<scope>): <detail message>`
 
-- `<TOOLNAME>` is the component directory name. Use `[repo]` for changes that span components and `[kb]` for knowledge base notes.
+- `<TOOLNAME>` is the component directory name. Use `[repo]` for changes that span components.
 - Types: `feat`, `fix`, `refactor`, `docs`, `test`, `chore`.
 - No `Claude-Session` trailer in commit messages or PR bodies.
 
@@ -117,25 +117,3 @@ Never edit these by hand. A pre-commit hook regenerates them.
 | File | Source | Regenerate |
 | --- | --- | --- |
 | Chart `README.md` | helm-docs with `box/charts/README.md.gotmpl` or a chart-local `README.md.gotmpl` | `make -C box/charts docs` |
-
-## Knowledge Base
-
-`box/kb/` holds personal SRE notes, one directory per domain (`kubernetes/`, `observability/`, ...) and one subject per kebab-case file. Commit with `[kb] docs(<domain>): ...`. lychee checks every link in `box/kb/`, and `scripts/kb-lint.sh` validates the frontmatter and sections below.
-
-Notes come from real work. Incident write-ups describe the failure mode and fix, not the affected internal service.
-
-Every note starts with YAML frontmatter so agents can find relevant notes without reading bodies:
-
-- `description`: one sentence stating the rule and its main reason
-- `tags`: lowercase keywords, domain first
-- `resources`: Kubernetes kinds or tool objects the rule applies to, omitted when none
-- `status`: `adopted`, or `superseded` with `superseded_by` naming the replacing note file. Never apply a superseded note
-- `reviewed`: date the content was last verified against current upstream docs (`YYYY-MM-DD`). Bump it only after re-checking, not on every edit
-
-The body is one H1 followed by these H2 sections in order: `Rule`, `Why`, `Exceptions` (optional), `Example` (optional), `References`. Use H3 for anything else inside them.
-
-Link every major keyword (tool, Kubernetes object or field, AWS service, protocol concept) to its official documentation or GitHub repository at its first mention in the body. Frontmatter, headings, and code blocks stay unlinked. Prefer a deep link with an anchor over a landing page.
-
-Add, rename, or supersede a note together with its row in `box/kb/README.md`, which is written by hand.
-
-Find notes for a kind with `rg -l 'resources:.*\bService\b' box/kb`, or scan `box/kb/README.md` for one-line summaries.

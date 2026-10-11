@@ -52,9 +52,3 @@ Runs `cargo fmt --check`, `cargo clippy -- -D warnings`, or `cargo test` in ever
 It is wired into `.pre-commit-config.yaml`: fmt and clippy run on `pre-commit`, test runs on `pre-push`. Install both hook types once with `pre-commit install`.
 
 The script `cd`s into each crate instead of passing `--manifest-path`, because rustup picks `rust-toolchain.toml` from the working directory.
-
-## kb-lint.sh
-
-Validates the frontmatter and section order of every note under `box/kb/` and exits non-zero on any error. Requires `yq`. The index in `box/kb/README.md` is written by hand.
-
-It is wired into `.pre-commit-config.yaml` for changes under `box/kb/`. The schema it enforces is described in `AGENTS.md`.

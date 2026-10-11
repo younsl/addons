@@ -9,13 +9,6 @@ repos:
       - id: gitleaks
         name: Scan for hardcoded secrets
 
-  - repo: https://github.com/lycheeverse/lychee
-    rev: lychee-v0.24.2
-    hooks:
-      - id: lychee
-        args: ["--no-progress", "--include-fragments"]
-        files: '^box/kb/.*\.md$'
-
   # Helm
   - repo: local
     hooks:
@@ -34,12 +27,6 @@ repos:
         entry: make -C docs/resume pdf
         language: system
         files: '^docs/resume/resume\.html$'
-        pass_filenames: false
-      - id: kb-lint
-        name: kb-lint
-        entry: scripts/kb-lint.sh
-        language: script
-        files: '^box/kb/.*\.md$'
         pass_filenames: false
 
   # Rust
