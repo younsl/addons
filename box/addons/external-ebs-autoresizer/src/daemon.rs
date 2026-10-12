@@ -382,8 +382,8 @@ struct Detection {
     held: Vec<String>,
     /// Nodes cordoned by someone else, which the addon leaves alone.
     cordoned_by_others: usize,
-    /// Nodes whose `ProtectiveCordon` condition disagrees with the mark,
-    /// rewritten on the first pass that measures them.
+    /// Nodes whose `ProtectiveCordon` condition is missing or disagrees with
+    /// the mark, written on the first pass that measures them.
     condition_out_of_sync: usize,
 }
 
@@ -397,7 +397,7 @@ impl Detection {
             } else if n.unschedulable {
                 d.cordoned_by_others += 1;
             }
-            if n.condition.unwrap_or(false) != n.protective {
+            if n.condition != Some(n.protective) {
                 d.condition_out_of_sync += 1;
             }
         }
@@ -737,7 +737,7 @@ mod tests {
                 nodes: 5,
                 held: vec!["a".into(), "b".into()],
                 cordoned_by_others: 1,
-                condition_out_of_sync: 2,
+                condition_out_of_sync: 4,
             }
         );
         assert_eq!(Detection::of(&[]), Detection::default());

@@ -26,6 +26,7 @@ pub const RESULT_FAILURE: &str = "failure";
 const REASON_APPLIED: &str = "ProtectiveCordonApplied";
 const REASON_RELEASED: &str = "ProtectiveCordonReleased";
 const REASON_MARK_REMOVED: &str = "ProtectiveCordonMarkRemoved";
+const REASON_NOT_NEEDED: &str = "ProtectiveCordonNotNeeded";
 
 impl Resizer {
     /// Lists the cluster's EC2-backed Nodes once per pass, keyed by instance
@@ -220,10 +221,14 @@ impl Resizer {
     /// mark: `True` while the addon holds the cordon, `False` once it no
     /// longer does. `False` says who ended it: `ProtectiveCordonReleased` when
     /// the Node is schedulable again with usage back under the threshold,
-    /// `ProtectiveCordonMarkRemoved` when someone else removed the mark. A Node with no mark that never carried the condition is
-    /// not written, so most Nodes never get it. A failed write is retried on
-    /// the next pass, which also backfills cordons applied before the
-    /// condition existed.
+    /// `ProtectiveCordonMarkRemoved` when someone else removed the mark. A
+    /// Node that never carried the condition gets `False` with
+    /// `ProtectiveCordonNotNeeded` on its first measurement under the
+    /// threshold, so a missing condition means the Node was never measured.
+    /// One at or above the threshold without the mark (a failed cordon or
+    /// someone else's) stays unwritten until the addon cordons it or usage
+    /// falls back under. A failed write is retried on the next pass, which
+    /// also backfills cordons applied before the condition existed.
     async fn sync_protective_condition(
         &self,
         inst: &Instance,
@@ -235,7 +240,11 @@ impl Resizer {
             return;
         };
         let want = n.protective;
-        if n.condition == Some(want) || (!want && n.condition.is_none()) || self.cfg.dry_run {
+        let under = usage < eff.usage_threshold_percent;
+        if n.condition == Some(want)
+            || (!want && n.condition.is_none() && !under)
+            || self.cfg.dry_run
+        {
             return;
         }
         let component = crate::k8s::events::COMPONENT;
@@ -244,7 +253,14 @@ impl Resizer {
                 REASON_APPLIED,
                 format!("{component} has cordoned the node for high root filesystem usage"),
             )
-        } else if usage < eff.usage_threshold_percent && !n.unschedulable {
+        } else if n.condition.is_none() {
+            (
+                REASON_NOT_NEEDED,
+                format!(
+                    "{component} has no cordon as root filesystem usage is under the threshold"
+                ),
+            )
+        } else if under && !n.unschedulable {
             (
                 REASON_RELEASED,
                 format!(
@@ -481,10 +497,12 @@ mod tests {
             cordon_with(Some(node(true, false))),
         )
         .await;
-        assert!(
-            calls(&h).is_empty(),
+        assert_eq!(
+            calls(&h),
+            pairs(&[("condition=false", "n1")]),
             "someone else's cordon below threshold"
         );
+        assert_eq!(reasons(&h), vec![(false, REASON_NOT_NEEDED.to_string())]);
         let h = run(
             config(),
             ec2(),
@@ -492,9 +510,10 @@ mod tests {
             cordon_with(Some(node(true, false))),
         )
         .await;
-        assert!(
-            calls(&h).is_empty(),
-            "someone else's cordon above threshold"
+        assert_eq!(
+            calls(&h),
+            pairs(&[("condition=false", "n1")]),
+            "someone else's cordon above threshold, then under after the resize"
         );
         assert_eq!(h.node_events.summary().len(), 0);
     }
@@ -569,6 +588,45 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn first_measurement_under_the_threshold_writes_false() {
+        let h = run(
+            config(),
+            ec2(),
+            &["50"],
+            cordon_with(Some(node(false, false))),
+        )
+        .await;
+        assert_eq!(calls(&h), pairs(&[("condition=false", "n1")]));
+        assert_eq!(reasons(&h), vec![(false, REASON_NOT_NEEDED.to_string())]);
+        assert_eq!(h.node_events.summary().len(), 0);
+        assert_eq!(h.rec.cordons.lock().unwrap().len(), 0);
+
+        let ec2 = ec2();
+        *ec2.last_modification.lock().unwrap() = Some(VolumeModification {
+            state: "completed".into(),
+            start_time: Some(Utc::now()),
+            target_gib: 100,
+        });
+        let h = run(config(), ec2, &["90"], cordon_with(Some(node(true, false)))).await;
+        assert_eq!(
+            calls(&h),
+            pairs(&[]),
+            "someone else's cordon at or above the threshold is not written"
+        );
+
+        let mut dry = config();
+        dry.dry_run = true;
+        let h = run(
+            dry,
+            self::ec2(),
+            &["50"],
+            cordon_with(Some(node(false, false))),
+        )
+        .await;
+        assert_eq!(calls(&h), pairs(&[]), "dry run writes nothing");
+    }
+
+    #[tokio::test]
     async fn no_op_cases() {
         let h = run(
             config(),
@@ -628,7 +686,7 @@ mod tests {
         let h = run(config(), ec2(), &["90", "50"], cordon).await;
         assert_eq!(
             calls(&h),
-            pairs(&[("cordon", "n1")]),
+            pairs(&[("cordon", "n1"), ("condition=false", "n1")]),
             "a failed cordon is not released"
         );
         assert_eq!(
@@ -669,13 +727,15 @@ mod tests {
             pairs(&[
                 ("cordon", "n1"),
                 ("condition=true", "n1"),
-                ("uncordon", "n1")
+                ("uncordon", "n1"),
+                ("condition=false", "n1")
             ]),
             "a failed condition write never blocks the cordon"
         );
         assert_eq!(
             h.rec.errors.lock().unwrap().clone(),
-            vec!["protective_cordon"]
+            vec!["protective_cordon", "protective_cordon"],
+            "both condition writes failed"
         );
         assert_eq!(h.ec2.modify_calls.lock().unwrap().len(), 1);
     }

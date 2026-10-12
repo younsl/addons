@@ -57,10 +57,11 @@ Node conditions are not reserved for the kubelet. Any component with `patch` on 
 - **`False`** once it no longer does, with a reason that says who ended it. Reason changes with status, as it does for every condition owner:
   - `ProtectiveCordonReleased` when the Node is schedulable again with usage back under the threshold, after the addon's own uncordon or a manual one.
   - `ProtectiveCordonMarkRemoved` when someone else removed the mark, typically an operator taking over the cordon for maintenance while the Node stays unschedulable.
+  - `ProtectiveCordonNotNeeded` on the first measurement under the threshold of a Node that never carried the condition.
 - **Fixed messages** per reason with no usage figures, named after the writer the way `kubelet has no disk pressure` and `Calico is running on this node` are. The condition states the current fact, while the usage that triggered a change lives in the Node Events and the usage metric.
-- **Absent** on Nodes the addon never cordoned. Writing `False` on every Node would cost one status write per Node for no information.
+- **Absent** only until the addon first measures the Node. The [API conventions][k8s-api-conventions] ask a controller to set its conditions on the first visit and read a missing condition as `Unknown`, and node-problem-detector writes `False` on every Node at startup the same way. A missing condition would otherwise mean healthy, not yet measured, and addon not running all at once. The cost is one status write per Node, once. A Node at or above the threshold that the addon does not hold stays absent, since neither `True` nor `False` would be accurate.
 
-The annotation stays the source of truth for ownership and the condition follows it. After every cordon decision the addon compares the two and writes the condition only when they disagree, so a failed write is retried on the next pass and a cordon applied before the condition existed is backfilled. The write is a [strategic merge patch][k8s-strategic-merge-patch] on `nodes/status`, which merges `status.conditions` by `type`. The kubelet updates only its own condition types and preserves the rest, and the node lifecycle controller only marks the kubelet's types `Unknown` when a Node stops reporting, so a third-party type survives both. node-problem-detector and the CNI plugins rely on the same contract.
+The annotation stays the source of truth for ownership and the condition follows it. After every cordon decision the addon compares the two and writes the condition only when it is missing or they disagree, so a failed write is retried on the next pass and a cordon applied before the condition existed is backfilled. The write is a [strategic merge patch][k8s-strategic-merge-patch] on `nodes/status`, which merges `status.conditions` by `type`. The kubelet updates only its own condition types and preserves the rest, and the node lifecycle controller only marks the kubelet's types `Unknown` when a Node stops reporting, so a third-party type survives both. node-problem-detector and the CNI plugins rely on the same contract.
 
 A condition cannot replace the cordon: the scheduler ignores custom conditions, so `spec.unschedulable` is still what keeps new Pods away.
 
@@ -143,5 +144,6 @@ No IAM permission is added. The [ClusterRole][k8s-rbac] needs `get`, `list`, and
 [k8s-rbac]: https://kubernetes.io/docs/reference/access-authn-authz/rbac/#role-and-clusterrole
 [k8s-strategic-merge-patch]: https://kubernetes.io/docs/tasks/manage-kubernetes-objects/update-api-object-kubectl-patch/#use-a-strategic-merge-patch-to-update-a-deployment
 [npd]: https://github.com/kubernetes/node-problem-detector
+[k8s-api-conventions]: https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api-conventions.md#typical-status-properties
 [calico]: https://github.com/projectcalico/calico
 [cilium]: https://github.com/cilium/cilium

@@ -27,7 +27,7 @@ Two lines at startup tell whether it is active and what it found:
 | `nodes_detected` | EC2-backed Nodes an instance can map to |
 | `held_by_addon`, `held_nodes` | Nodes currently cordoned by the addon, carried over from a previous run |
 | `cordoned_by_others` | Nodes cordoned by an operator, a drain, or another controller, which the addon leaves alone |
-| `condition_out_of_sync` | Nodes whose `ProtectiveCordon` condition disagrees with the mark, rewritten on the first pass |
+| `condition_out_of_sync` | Nodes whose `ProtectiveCordon` condition is missing or disagrees with the mark, written on the first pass that measures them |
 
 A failed startup list logs an error instead, usually a missing `nodes` grant. It is not fatal: every pass lists again.
 
@@ -35,7 +35,7 @@ A failed startup list logs an error instead, usually a missing `nodes` grant. It
 
 - **Cordon**: when a measured instance maps to a Node (by [`spec.providerID`][k8s-node-spec]) and its root usage is at or above the effective `usageThresholdPercent`, the Node gets `spec.unschedulable: true` and the `external-ebs-autoresizer/protective-cordon` [annotation][k8s-annotations] (the cordon time). This happens before the resize, so it also covers the cooldown and max-size skips, the cases where the volume cannot grow in time.
 - **Uncordon**: once usage is back under the threshold (right after a verified resize, or on any later pass), the addon removes `spec.unschedulable` and the annotation.
-- **Condition**: the `ProtectiveCordon` [Node condition][k8s-node-conditions] mirrors the annotation. It is `True` with reason `ProtectiveCordonApplied` while the addon holds the cordon. It turns `False` with reason `ProtectiveCordonReleased` once the Node is schedulable again with usage back under the threshold, or with reason `ProtectiveCordonMarkRemoved` when someone else removed the annotation. Nodes the addon never cordoned do not carry it.
+- **Condition**: the `ProtectiveCordon` [Node condition][k8s-node-conditions] mirrors the annotation. It is `True` with reason `ProtectiveCordonApplied` while the addon holds the cordon. It turns `False` with reason `ProtectiveCordonReleased` once the Node is schedulable again with usage back under the threshold, or with reason `ProtectiveCordonMarkRemoved` when someone else removed the annotation. A Node the addon never cordoned gets `False` with reason `ProtectiveCordonNotNeeded` on its first measurement under the threshold, so a Node without the condition has not been measured yet (a `paused` policy, a failed measurement, or a Node that joined since the last pass). A Node at or above the threshold that the addon could not cordon (someone else's cordon, or a failed cordon) stays without it until usage falls back under.
 - **Ownership**: only a cordon carrying the annotation is ever lifted. A Node already cordoned by an operator, a [drain][k8s-drain], or another controller is left alone. A Node someone uncordoned by hand just has the annotation dropped.
 - **Scope**: only EKS nodes have a Node object, so it applies only with `excludeEKSNodes: false`. Running Pods are never [evicted][k8s-eviction], and a `paused` policy is never measured, so its Nodes are neither cordoned nor uncordoned.
 - **Dry run**: `dryRun: true` logs what would be cordoned or uncordoned and changes nothing.
@@ -60,7 +60,7 @@ List every Node the addon currently holds:
 $ kubectl get nodes -o jsonpath='{range .items[?(@.status.conditions[?(@.type=="ProtectiveCordon")].status=="True")]}{.metadata.name}{"\n"}{end}'
 ```
 
-The condition is written with a [strategic merge patch][k8s-strategic-merge-patch] on the `status` subresource, which merges by condition `type`, so the kubelet's conditions are never touched. It is written only when it disagrees with the annotation, not every pass, so `lastHeartbeatTime` is the time of the last change.
+The condition is written with a [strategic merge patch][k8s-strategic-merge-patch] on the `status` subresource, which merges by condition `type`, so the kubelet's conditions are never touched. It is written only when it is missing or disagrees with the annotation, not every pass, so `lastHeartbeatTime` is the time of the last change.
 
 ## Kubernetes Events
 
