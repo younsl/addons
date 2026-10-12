@@ -5,7 +5,7 @@
       "id": 1,
       "name": "wrapper-upstream-latest",
       "prompt": "descheduler 래퍼 차트 업스트림 최신 버전으로 범프해줘",
-      "expected_output": "Queries the registry for the latest descheduler chart version before editing; bumps dependencies version, syncs appVersion to upstream appVersion, and bumps the wrapper version (mirrors upstream when it already tracks it, else minor); places new upstream values keys at their upstream position with comments verbatim and keeps local overrides; regenerates Chart.lock only if tracked; touches nothing else; drafts a commit message in the repo's git log convention without committing.",
+      "expected_output": "Queries the registry for the latest descheduler chart version before editing; bumps dependencies version, syncs appVersion to upstream appVersion, and handles the wrapper version as past bumps did (mirror upstream, keep fixed, or minor); carries every hunk of the upstream values diff between old and new versions to its upstream position with comments verbatim and keeps local overrides; regenerates Chart.lock only if tracked; touches nothing else; drafts a commit message in the repo's git log convention without committing.",
       "files": []
     },
     {
@@ -20,6 +20,13 @@
       "name": "missing-version-abort",
       "prompt": "argo-cd 차트 9.99.0으로 범프해줘",
       "expected_output": "Queries the argo-cd chart registry, finds 9.99.0 does not exist, makes no file edits, and reports the latest available argo-cd chart version.",
+      "files": []
+    },
+    {
+      "id": 4,
+      "name": "wrapper-pinned-image-tag",
+      "prompt": "mimir 6.2.1 (shared)",
+      "expected_output": "Verifies mimir-distributed 6.2.1 exists; bumps dependencies version and appVersion; notices values.yaml pins image.tag to the old appVersion and moves it to the new appVersion after confirming the tag exists in the registry the values point at; carries the upstream values diff between 6.2.0 and 6.2.1 with comments verbatim, rewriting new image repositories to the repo registry proxy convention; keeps the wrapper version fixed when earlier bumps left it unchanged; helm template shows the new chart label and image tag; no commit made.",
       "files": []
     }
   ]
