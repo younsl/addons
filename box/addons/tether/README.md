@@ -76,6 +76,7 @@ Captured from a demo home, one scenario each.
 - [Architecture](docs/architecture.md): reconcile loop, actions, image contents
 - [Usage](docs/usage.md): run, console, API
 - [Configuration](docs/configuration.md): settings, config.toml, mounts, load errors
+- [Metrics](docs/metrics.md): Prometheus metrics, labels, queries
 - [Dotfiles](docs/dotfiles.md): layout, fresh machine, local-only files
 - [Changelog](CHANGELOG.md): changes per release
 

@@ -44,7 +44,7 @@ http://127.0.0.1:8080/logs shows tether's own log: the last 1000 events, filtere
 | PUT /api/log-level | Change the log filter at runtime, for example {"filter":"debug"} |
 | GET /healthz | Liveness |
 | GET /readyz | Ready once the link spec loads |
-| GET /metrics | Prometheus metrics with the tether_ prefix |
+| GET /metrics | Prometheus metrics with the tether_ prefix, see [Metrics](metrics.md) |
 
 ```bash
 curl -s -X POST 127.0.0.1:8080/api/reconcile
