@@ -2,6 +2,8 @@
 
 How tether reconciles symlinks and what ends up in its image.
 
+![tether container architecture on macOS: clients reach the console over loopback, and the container mounts config.toml, HOME, and /opt/homebrew](assets/architecture.svg)
+
 ## Reconcile loop
 
 One loop owns every file system change. It runs on start, then on every RECONCILE_INTERVAL tick or POST /api/reconcile request. Requests made while a run is in progress collapse into one more run. Each run rereads the link spec, plans one step per target, applies the steps, and publishes a report that /api/status and /metrics serve.

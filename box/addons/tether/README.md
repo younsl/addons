@@ -6,6 +6,8 @@
 
 A small server that keeps personal macOS dotfiles symlinked into a home directory, plus the dotfiles themselves. Shipped as a statically linked Rust 1.99.0 binary on a scratch image for linux/amd64 and linux/arm64. The image holds only the binary, never the dotfiles.
 
+![tether container architecture on macOS: clients reach the console over loopback, and the container mounts config.toml, HOME, and /opt/homebrew](docs/assets/architecture.svg)
+
 ## Features
 
 - **Self-healing symlinks**: every 5 minutes, or on demand, each config is linked back into place. A real file in the way is moved to a timestamped backup directory, never deleted.
