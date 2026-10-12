@@ -1,5 +1,5 @@
 # Statically linked binary built via GitHub Actions cross-compilation (cargo-zigbuild)
-FROM alpine:3.23 AS certs
+FROM alpine:3.24 AS certs
 RUN apk add --no-cache ca-certificates
 
 FROM scratch AS runtime

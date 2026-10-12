@@ -15,46 +15,46 @@ path = "src/main.rs"
 
 [dependencies]
 # Async runtime
-tokio = { version = "1.53.1", features = ["macros", "rt-multi-thread", "signal", "net", "time", "sync"] }
-tokio-util = "0.7.19"
+tokio = { version = "1.53.2", features = ["macros", "rt-multi-thread", "signal", "net", "time", "sync"] }
+tokio-util = "0.7.20"
 async-trait = "0.1.92"
 
 # HTTP servers (health, metrics)
 axum = { version = "0.8.9", default-features = false, features = ["http1", "tokio"] }
 
 # HTTP client (Alertmanager, Grafana, Prometheus query API)
-reqwest = { version = "0.13.4", default-features = false, features = ["json", "form", "rustls"] }
+reqwest = { version = "0.13.5", default-features = false, features = ["json", "form", "rustls"] }
 
 # AWS SDK
-aws-config = { version = "1.11.0", features = ["behavior-version-latest"] }
-aws-sdk-ec2 = "1.251.0"
-aws-sdk-ssm = "1.121.0"
-aws-smithy-types = "1.6.2"
+aws-config = { version = "1.12.0", features = ["behavior-version-latest"] }
+aws-sdk-ec2 = "1.267.0"
+aws-sdk-ssm = "1.128.0"
+aws-smithy-types = "1.8.1"
 
 # Kubernetes (Lease, Events, Nodes, claims and volumes)
 kube = { version = "4.2.0", default-features = false, features = ["client", "rustls-tls", "aws-lc-rs"] }
 k8s-openapi = { version = "0.28.0", features = ["v1_32"] }
 # Pin the process-wide rustls crypto provider. Both `ring` (reqwest) and
 # `aws-lc-rs` (AWS SDK, kube) get linked, so rustls cannot auto-pick a default.
-rustls = { version = "0.23.43", default-features = false, features = ["aws-lc-rs"] }
+rustls = { version = "0.23.45", default-features = false, features = ["aws-lc-rs"] }
 
 # Serialization
 serde = { version = "1.0.229", features = ["derive"] }
-serde_json = "1.0.151"
+serde_json = "1.0.154"
 serde_yaml = "0.9.34"
 
 # Time
 chrono = { version = "0.4.45", default-features = false, features = ["clock", "std"] }
 
 # CLI
-clap = { version = "4.6.6", features = ["derive", "env"] }
+clap = { version = "4.6.7", features = ["derive", "env"] }
 
 # Policy selectors (RE2-compatible syntax, as in the Go version)
 regex = "1.13.1"
 
 # Error handling
 anyhow = "1.0.104"
-thiserror = "2.0.20"
+thiserror = "2.0.21"
 
 # Logging
 tracing = "0.1.44"
@@ -69,7 +69,7 @@ tower = { version = "0.5.3", features = ["util"] }
 http-body-util = "0.1.5"
 tempfile = "3.27.0"
 # Paused-clock tests for the controller loop
-tokio = { version = "1.53.1", features = ["test-util"] }
+tokio = { version = "1.53.2", features = ["test-util"] }
 indoc = "2.0.8"
 
 [lints.rust]
