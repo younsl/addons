@@ -8,101 +8,21 @@
 
 <img src="docs/assets/harbor-logo.svg" alt="Harbor logo" width="320">
 
-A bundle of custom-built [Harbor](https://goharbor.io/) v2.15.3 images for [AWS Graviton](https://aws.amazon.com/ec2/graviton/) (`linux/arm64`). Upstream publishes the v2.15.x images for amd64 only, so this component rebuilds every image the [harbor-helm](https://github.com/goharbor/harbor-helm) chart deploys from the unmodified upstream source, driven by `harbor-arm64`, a small Rust CLI.
+A bundle of custom-built [Harbor](https://goharbor.io/) v2.15.3 images for [AWS Graviton](https://aws.amazon.com/ec2/graviton/) (linux/arm64). Upstream publishes the v2.15.x images for amd64 only, so this component rebuilds every image the [harbor-helm](https://github.com/goharbor/harbor-helm) chart deploys from the unmodified upstream source, driven by harbor-arm64, a small Rust CLI.
 
 ## Announcement
 
 This is a stopgap. [Harbor v2.16.0](https://github.com/goharbor/harbor/issues/23558) ships official linux/arm64 images, [planned](https://github.com/goharbor/harbor/issues/24016) for late October 2026. Once it is released, this component and every image under ghcr.io/younsl/harbor will be removed.
 
-## Images
+## Documentation
 
-Every image is single-architecture `linux/arm64`, tagged v2.15.3. harbor-helm has no 2.15.3 release yet, so deploy with [harbor-helm 1.19.2](https://github.com/goharbor/harbor-helm/releases/tag/v1.19.2) (app version 2.15.2) and let `harbor-arm64 values` override every image tag.
-
-| Image | Chart value ([harbor-helm 1.19.2](https://github.com/goharbor/harbor-helm/releases/tag/v1.19.2)) |
-| --- | --- |
-| `ghcr.io/younsl/harbor/nginx-photon:v2.15.3` | `nginx.image` |
-| `ghcr.io/younsl/harbor/harbor-portal:v2.15.3` | `portal.image` |
-| `ghcr.io/younsl/harbor/harbor-core:v2.15.3` | `core.image` |
-| `ghcr.io/younsl/harbor/harbor-jobservice:v2.15.3` | `jobservice.image` |
-| `ghcr.io/younsl/harbor/registry-photon:v2.15.3` | `registry.registry.image` |
-| `ghcr.io/younsl/harbor/harbor-registryctl:v2.15.3` | `registry.controller.image` |
-| `ghcr.io/younsl/harbor/trivy-adapter-photon:v2.15.3` | `trivy.image` |
-| `ghcr.io/younsl/harbor/harbor-db:v2.15.3` | `database.internal.image` |
-| `ghcr.io/younsl/harbor/valkey-photon:v2.15.3` | `redis.internal.image` |
-| `ghcr.io/younsl/harbor/harbor-exporter:v2.15.3` | `exporter.image` |
-
-`prepare` and `harbor-log` are not built. Only the docker-compose installer uses them.
-
-## Usage
-
-`harbor-arm64 values` prints the chart overrides for every image. Layer it under your own values:
-
-```bash
-cargo run --quiet --manifest-path box/addons/harbor/Cargo.toml -- values > values-arm64.yaml
-
-helm repo add harbor https://helm.goharbor.io
-helm upgrade --install harbor harbor/harbor --version 1.19.2 \
-  -f values-arm64.yaml \
-  -f values.yaml
-```
-
-The images do not run on amd64 nodes. Schedule every Harbor component onto Graviton nodes with the per-component `nodeSelector` (`kubernetes.io/arch: arm64`) in the chart values.
-
-## How it works
-
-`harbor-arm64 build` clones `goharbor/harbor` at the tag in [VERSION](VERSION) and runs the upstream Makefile on a native arm64 Docker host. The Makefile passes no `--platform`, so every compile container and image build runs on the host architecture. Emulation is not an option, the host itself must be arm64.
-
-Only three things deviate from an upstream build:
-
-| Deviation | Why |
-| --- | --- |
-| Build `goharbor/photon:5.0-legacy` locally from `make/photon/common/Dockerfile` | The published tag is amd64 only, so every `Dockerfile.base` would pull amd64 ([goharbor/harbor#23748](https://github.com/goharbor/harbor/issues/23748)). Base images are then built with `BUILD_BASE=true PULL_BASE_FROM_DOCKERHUB=false`. |
-| `ENV GOARCH=amd64` becomes `arm64` in `make/photon/exporter/Dockerfile` | The exporter build stage pins the architecture. |
-| Trivy asset `_Linux-64bit.tar.gz` becomes `_Linux-ARM64.tar.gz` in `Makefile` | The download URL names the x86_64 release asset. |
-
-Each patch fails the build if its target text is missing, so an upstream change surfaces instead of silently producing amd64 artifacts.
-
-Before anything is pushed, the build checks that every image reports `arm64` and reads the ELF header of each compiled or downloaded binary (core, jobservice, registryctl, registry, trivy, scanner-trivy, exporter) to confirm it targets aarch64. Image metadata alone would pass an amd64 binary copied into an arm64 base.
-
-## Test results
-
-Verified in production on [Amazon EKS 1.36](https://docs.aws.amazon.com/eks/latest/userguide/kubernetes-versions-standard.html#kubernetes-1-36) with Graviton `m7g.2xlarge` nodes, running v2.15.3 through harbor-helm 1.19.2 with an external PostgreSQL and S3 registry storage. Every component reported healthy, the 2.15.3 schema migration applied cleanly, and image pulls through the registry succeeded with no errors.
-
-## Building
-
-Requirements: a native arm64 Docker host (Linux on Graviton, or Docker Desktop on Apple Silicon), `git`, `make`, and Rust 1.99.0.
-
-```bash
-cd box/addons/harbor
-
-# Log every command without running anything
-make dry-run
-
-# Build, verify and push to a registry you are logged in to
-cargo run --release -- build --push --registry registry.example.com/harbor
-```
-
-| Flag | Default | Purpose |
-| --- | --- | --- |
-| `--harbor-version` | [VERSION](VERSION) | Harbor git tag to build |
-| `--registry` | `ghcr.io/younsl/harbor` (env `REGISTRY_PREFIX`) | Target image prefix |
-| `--workdir` | `$TMPDIR/harbor-arm64-<tag>` | Source checkout, replaced on every run |
-| `--push` | off | Push after tagging |
-| `--dry-run` | off | Log commands instead of running them |
-
-Compile containers run as root, so on Linux a previous checkout can hold root-owned files. Remove the workdir with `sudo` if a rerun cannot replace it.
-
-## Release
-
-Bumping [VERSION](VERSION) on `main` triggers [release-harbor-arm64.yml](../../../.github/workflows/release-harbor-arm64.yml). It builds on an `ubuntu-26.04-arm` runner and skips when every image already has the tag on GHCR. To rebuild a published version, dispatch the workflow with `force=true`.
-
-## Development
-
-```bash
-make test       # unit tests
-make coverage   # 70% line coverage gate (cargo-llvm-cov)
-make lint       # rustfmt check + clippy with warnings denied
-```
+- [Images](docs/images.md): published images and the harbor-helm value each one overrides
+- [Usage](docs/usage.md): deploy with harbor-helm on Graviton nodes
+- [How it works](docs/how-it-works.md): build flow, upstream deviations, arm64 verification
+- [Test results](docs/test-results.md): production verification on EKS
+- [Building](docs/building.md): requirements, commands, and CLI flags
+- [Release](docs/release.md): VERSION-driven release workflow
+- [Development](docs/development.md): test, coverage, and lint targets
 
 ## License
 
