@@ -79,3 +79,7 @@ jumps:
 | `labelSelector` | Match by label with template | `app={{.metadata.name}}` |
 | `fieldSelector` | Match by field with template | `metadata.name={{.metadata.name}}` |
 | `targetNamespace` | Namespace scope | `same`, `all`, or specific namespace |
+
+## AI Disclosure
+
+The entire codebase of this project was developed with the assistance of [Claude Opus 5.5](https://www.anthropic.com/claude/opus) (High effort).

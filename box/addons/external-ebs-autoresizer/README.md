@@ -78,3 +78,7 @@ This project is licensed under the Apache License 2.0. See the [LICENSE](../../.
 [ebs-extend-fs]: https://docs.aws.amazon.com/ebs/latest/userguide/recognize-expanded-volume-linux.html
 [ec2-modifyvolume]: https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_ModifyVolume.html
 [ssm-run-command]: https://docs.aws.amazon.com/systems-manager/latest/userguide/run-command.html
+
+## AI Disclosure
+
+The entire codebase of this project was developed with the assistance of [Claude Opus 5.5](https://www.anthropic.com/claude/opus) (High effort).

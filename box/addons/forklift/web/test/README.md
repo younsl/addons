@@ -12,3 +12,7 @@ Storybook stories stay under `src/stories/`; Storybook test-runner smoke checks 
 
 Prefer role, label, and user-event assertions over DOM structure, CSS classes, or snapshots while
 the UX is still changing.
+
+## AI Disclosure
+
+The entire codebase of this project was developed with the assistance of [Claude Opus 5.5](https://www.anthropic.com/claude/opus) (High effort).

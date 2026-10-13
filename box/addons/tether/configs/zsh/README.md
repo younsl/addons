@@ -35,3 +35,7 @@ Functions are lazy-loaded on first invocation. Add new functions by placing a fi
 | Function | Description |
 |----------|-------------|
 | `commit-history-cleaner` | Clean all git commit history by creating an orphan branch |
+
+## AI Disclosure
+
+The entire codebase of this project was developed with the assistance of [Claude Opus 5.5](https://www.anthropic.com/claude/opus) (High effort).

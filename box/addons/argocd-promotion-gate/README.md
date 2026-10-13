@@ -55,3 +55,7 @@ The chart generates its own serving certificate, so [cert-manager](https://cert-
 - [docs/metrics.md](docs/metrics.md) for the metric set, label values, and queries
 - [docs/ui-extension.md](docs/ui-extension.md) for wiring the panel into argocd-server
 - [docs/development.md](docs/development.md) for build, test, live-cluster runs
+
+## AI Disclosure
+
+The entire codebase of this project was developed with the assistance of [Claude Opus 5.5](https://www.anthropic.com/claude/opus) (High effort).

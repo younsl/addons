@@ -66,3 +66,7 @@ The container is `scratch` with a statically linked musl binary, built by the sh
 ### Local test environment
 
 `scripts/e2e/up.sh` stands up a kind cluster with real Argo CD, real Argo Rollouts, and the gate built from the working tree, then prints a numbered walkthrough: an allowed sync against a settled Rollout, a denied sync mid-canary, the skip annotation bypass, promote-then-sync, and warn mode. `scripts/e2e/sync.sh <app>` triggers a sync the same way the UI does, so a denial lands as the kubectl error. Needs kind, helm, cargo-zigbuild, and a docker or podman engine. The real kubeconfig is never touched, and `scripts/e2e/down.sh` removes everything.
+
+## AI Disclosure
+
+The entire codebase of this project was developed with the assistance of [Claude Opus 5.5](https://www.anthropic.com/claude/opus) (High effort).

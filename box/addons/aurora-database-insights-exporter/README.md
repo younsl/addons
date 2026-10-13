@@ -44,3 +44,7 @@ make release   # Release build
 
 - [awslabs/prometheus-cloudwatch-database-insights-exporter](https://github.com/awslabs/prometheus-cloudwatch-database-insights-exporter): AWS official exporter (all PI metrics)
 - [qonto/prometheus-rds-exporter](https://github.com/qonto/prometheus-rds-exporter): RDS CloudWatch metrics exporter
+
+## AI Disclosure
+
+The entire codebase of this project was developed with the assistance of [Claude Opus 5.5](https://www.anthropic.com/claude/opus) (High effort).

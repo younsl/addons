@@ -52,3 +52,7 @@ Runs `cargo fmt --check`, `cargo clippy -- -D warnings`, or `cargo test` in ever
 It is wired into `.pre-commit-config.yaml`: fmt and clippy run on `pre-commit`, test runs on `pre-push`. Install both hook types once with `pre-commit install`.
 
 The script `cd`s into each crate instead of passing `--manifest-path`, because rustup picks `rust-toolchain.toml` from the working directory.
+
+## AI Disclosure
+
+The entire codebase of this project was developed with the assistance of [Claude Opus 5.5](https://www.anthropic.com/claude/opus) (High effort).

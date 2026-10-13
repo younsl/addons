@@ -229,3 +229,7 @@ Notable editor settings include:
 - Indent guides through `listchars`
 
 For detailed plugin configurations and customization options, refer to the individual plugin files in the `lua/plugins` directory.
+
+## AI Disclosure
+
+The entire codebase of this project was developed with the assistance of [Claude Opus 5.5](https://www.anthropic.com/claude/opus) (High effort).

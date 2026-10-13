@@ -37,3 +37,7 @@ Authentication is [Keycloak](https://github.com/keycloak/keycloak) OIDC only. Gu
 - [GitLab API Discovery](docs/plugins/catalog-backend-module-gitlab/api-discovery.md)
 - [OpenCost](docs/plugins/opencost/overview.md)
 - [OpenCost ERD](docs/plugins/opencost/erd.md)
+
+## AI Disclosure
+
+The entire codebase of this project was developed with the assistance of [Claude Opus 5.5](https://www.anthropic.com/claude/opus) (High effort).

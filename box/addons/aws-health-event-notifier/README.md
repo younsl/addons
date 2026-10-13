@@ -99,3 +99,7 @@ make local-run # Run daemon locally (cold-start suppress ON)
 
 - [AWS Health API reference](https://docs.aws.amazon.com/health/latest/APIReference/Welcome.html)
 - [aws-samples/aws-health-aware](https://github.com/aws-samples/aws-health-aware): AWS official, EventBridge push model (Python/Lambda)
+
+## AI Disclosure
+
+The entire codebase of this project was developed with the assistance of [Claude Opus 5.5](https://www.anthropic.com/claude/opus) (High effort).

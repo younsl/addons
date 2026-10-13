@@ -98,3 +98,7 @@ make all        # fmt + lint + test + build
 ```
 
 The container image is built from the pre-compiled `ec2-metadata-exporter-linux-<arch>` binaries, so `make docker-build` runs `zigbuild` first. Requires `cargo-zigbuild` and `zig`.
+
+## AI Disclosure
+
+The entire codebase of this project was developed with the assistance of [Claude Opus 5.5](https://www.anthropic.com/claude/opus) (High effort).

@@ -27,3 +27,7 @@ This is a stopgap. [Harbor v2.16.0](https://github.com/goharbor/harbor/issues/23
 ## License
 
 Apache License 2.0. See [LICENSE](../../../LICENSE). Harbor itself is licensed under Apache License 2.0 by the Harbor authors. The Harbor logo comes from [cncf/artwork](https://github.com/cncf/artwork/tree/main/projects/harbor) and is a trademark of The Linux Foundation.
+
+## AI Disclosure
+
+The entire codebase of this project was developed with the assistance of [Claude Opus 5.5](https://www.anthropic.com/claude/opus) (High effort).

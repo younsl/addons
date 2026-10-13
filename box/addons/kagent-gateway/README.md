@@ -351,3 +351,7 @@ The chart is also released to the OCI registry on Chart.yaml version bumps:
 crane ls ghcr.io/younsl/charts/kagent-gateway
 helm install kagent-gateway oci://ghcr.io/younsl/charts/kagent-gateway --version 0.1.0
 ```
+
+## AI Disclosure
+
+The entire codebase of this project was developed with the assistance of [Claude Opus 5.5](https://www.anthropic.com/claude/opus) (High effort).

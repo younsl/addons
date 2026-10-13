@@ -40,3 +40,7 @@ Opus 5 High dotfiles on main ctx:32% | 5h 22% | week 44% | cpu 38% mem 51% | +40
 Rate limit percentages come straight from the status line JSON on stdin, so they match `/usage`; they are only present for Pro/Max plans. The last seen values are cached in `~/.claude/cache/statusbar-limits.json` because early renders in a fresh session carry no `rate_limits`, and cached windows are dropped once their `resets_at` passes.
 
 Session cost and elapsed time are deliberately omitted — the rate limit percentages already carry the usage signal.
+
+## AI Disclosure
+
+The entire codebase of this project was developed with the assistance of [Claude Opus 5.5](https://www.anthropic.com/claude/opus) (High effort).
