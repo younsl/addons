@@ -1,0 +1,77 @@
+{{- if .Values.enabled }}
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: deepsecurity-agent
+  namespace: {{ .Values.namespace }}
+spec:
+  selector:
+    matchLabels:
+      app: ds-agent
+  template:
+    metadata:
+      labels:
+        app: ds-agent
+      annotations:
+        checksum/configmap: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+    spec:
+      hostPID: true
+      hostNetwork: true
+      restartPolicy: Always
+      {{- with .Values.dnsConfig }}
+      dnsConfig:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+      - name: ds-agent
+        image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+        imagePullPolicy: {{ .Values.image.pullPolicy }}
+        securityContext:
+          privileged: true
+        command: ["/bin/bash", "-c"]
+        args:
+          - |
+            cp /script/install.sh /tmp/install.sh
+            chmod +x /tmp/install.sh
+            /tmp/install.sh
+            sleep infinity
+        volumeMounts:
+        - name: install-script
+          mountPath: /script/install.sh
+          subPath: install.sh
+        - name: host-root
+          mountPath: /host
+          mountPropagation: Bidirectional
+        lifecycle:
+          preStop:
+            exec:
+              command:
+                - /bin/bash
+                - -c
+                - chroot /host systemctl stop ds_agent
+        livenessProbe:
+          exec:
+            command:
+              - /bin/bash
+              - -c
+              - "[ -x /host/opt/ds_agent/dsa_control ]"
+          initialDelaySeconds: 60
+          periodSeconds: 300
+          failureThreshold: 3
+          timeoutSeconds: 5
+      volumes:
+      - name: install-script
+        configMap:
+          name: dsa-install-script
+      - name: host-root
+        hostPath:
+          path: /
+{{- end }}

@@ -1,0 +1,128 @@
+{{- if .Values.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dsa-install-script
+  namespace: {{ .Values.namespace }}
+data:
+  install.sh: |
+    #!/bin/bash
+    set -e
+
+    # Check if DSA is already installed and online
+    if [ -x /host/opt/ds_agent/dsa_control ]; then
+        echo "[INFO] DSA binary found on host."
+        if chroot /host /opt/ds_agent/dsa_query -c GetAgentStatus | grep green; then
+            echo "[INFO] DSA is already Online. Skipping installation."
+            exit 0
+        else
+            echo "[WARN] DSA is installed but not Online. Attempting restart..."
+            chroot /host systemctl restart ds_agent
+            sleep 10
+            chroot /host /opt/ds_agent/dsa_control -r
+            chroot /host /opt/ds_agent/dsa_control -a {{ .Values.dsm.activationUrl }} "policyid:{{ .Values.dsm.policyId }}"
+            chroot /host /opt/ds_agent/dsa_control -m
+            if chroot /host /opt/ds_agent/dsa_query -c GetAgentStatus | grep green; then
+                echo "[INFO] DSA recovered successfully after restart."
+                exit 0
+            else
+                echo "[ERROR] Restart failed. Proceeding with re-installation."
+            fi
+        fi
+    fi
+
+    ACTIVATIONURL="{{ .Values.dsm.activationUrl }}"
+    MANAGERURL="{{ .Values.dsm.managerUrl }}"
+    POLICYID="{{ .Values.dsm.policyId }}"
+    TMP_SCRIPT="/tmp/install-dsa.sh"
+
+    cat <<'EOF' > $TMP_SCRIPT
+    #!/bin/bash
+    set -e
+
+    if [[ $(/usr/bin/id -u) -ne 0 ]]; then
+        echo "Run as root required."; exit 1;
+    fi
+
+    rm -f /host/tmp/PlatformDetection /host/tmp/agent.*
+
+    if ! command -v curl >/dev/null 2>&1; then
+        echo "[ERROR] curl not installed"; exit 1;
+    fi
+
+    curl --insecure --silent --tlsv1.2 -o /host/tmp/PlatformDetection {{ .Values.dsm.managerUrl }}/software/deploymentscript/platform/linuxdetectscriptv1/
+    if [[ $? -ne 0 || ! -s /host/tmp/PlatformDetection ]]; then
+        echo "[ERROR] Failed to download PlatformDetection script"
+        exit 1
+    fi
+
+    . /host/tmp/PlatformDetection
+    platform_detect
+
+    echo "[DEBUG] Detected: Platform=$runningPlatform, Version=$majorVersion, Arch=$archType"
+
+    if [[ -z "$runningPlatform" || -z "$majorVersion" || -z "$archType" ]]; then
+        echo "[ERROR] Platform detection failed"
+        exit 1
+    fi
+
+    if ! chroot /host rpm -q util-linux > /dev/null 2>&1; then
+        echo "[INFO] Installing util-linux..."
+        chroot /host yum install -y util-linux
+    else
+        echo "[INFO] util-linux already present, skipping install"
+    fi
+
+    package="agent.rpm"
+    [[ "$isRPM" != "1" ]] && package="agent.deb"
+
+    curl --insecure --tlsv1.2 {{ .Values.dsm.managerUrl }}/software/agent/${runningPlatform}${majorVersion}/${archType}/{{ with .Values.dsm.agentVersion }}{{ . }}/{{ end }}$package -o /host/tmp/$package
+    if [[ $? -ne 0 || ! -s /host/tmp/$package ]]; then
+        echo "[ERROR] agent package not downloaded correctly"
+        exit 1
+    fi
+
+    # Remove leftover ds_agent package
+    if chroot /host rpm -q ds_agent > /dev/null 2>&1; then
+        echo "[INFO] Existing DSA package found. Removing..."
+        chroot /host rpm -e ds_agent || echo "[WARN] Removal of existing DSA package did not complete cleanly"
+        if chroot /host test -d /opt/ds_agent; then
+            echo "[INFO] Cleaning up /opt/ds_agent directory"
+            chroot /host rm -rf /opt/ds_agent
+        fi
+    fi
+
+    # Install ds_agent
+    if [[ "$isRPM" == "1" ]]; then
+        chroot /host rpm -ihv /tmp/agent.rpm || exit 1
+    else
+        chroot /host dpkg -i /tmp/agent.deb || exit 1
+    fi
+    sleep 10
+
+    # Enable, start, and activate
+    chroot /host systemctl enable ds_agent
+    chroot /host systemctl start ds_agent
+    sleep 10
+
+    chroot /host /opt/ds_agent/dsa_control -r
+    chroot /host /opt/ds_agent/dsa_control -a {{ .Values.dsm.activationUrl }} "policyid:{{ .Values.dsm.policyId }}"
+    chroot /host /opt/ds_agent/dsa_control -m
+    EOF
+
+    chmod +x $TMP_SCRIPT
+    /bin/bash $TMP_SCRIPT
+
+    # Check Online status every 5 minutes and recover if offline
+    while true; do
+      if ! chroot /host /opt/ds_agent/dsa_query -c GetAgentStatus | grep green; then
+        echo "[WARN] DSA Offline. Restarting..."
+        chroot /host systemctl restart ds_agent
+        sleep 10
+        chroot /host /opt/ds_agent/dsa_control -r
+        chroot /host /opt/ds_agent/dsa_control -a {{ .Values.dsm.activationUrl }} "policyid:{{ .Values.dsm.policyId }}"
+        chroot /host /opt/ds_agent/dsa_control -m
+      fi
+      sleep 300
+    done
+{{- end }}

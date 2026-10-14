@@ -18,6 +18,7 @@ For these reasons this repository publishes charts only as OCI artifacts and doe
 | Chart | Description |
 |-------|-------------|
 | [argo-workflows-templates](./argo-workflows-templates) | Manages Argo Workflows WorkflowTemplate and ClusterWorkflowTemplate resources. Requires the Argo Workflows controller to be installed first. |
+| [deepsecurity](./deepsecurity) | Installs and activates the Trend Micro Deep Security Agent on every Linux node through a privileged DaemonSet that chroots into the host. |
 | [istio-envoyfilters](./istio-envoyfilters) | Manages Istio EnvoyFilter resources to customize Envoy proxy configurations across namespaces. |
 | [istio-waypoints](./istio-waypoints) | Manages Istio ambient waypoint proxies. One Gateway per waypoint with parametersRef ConfigMap, Telemetry and AuthorizationPolicy, many waypoints from a single values file. |
 | [karpenter-nodepool](./karpenter-nodepool) | Creates Karpenter NodePool and EC2NodeClass resources. |

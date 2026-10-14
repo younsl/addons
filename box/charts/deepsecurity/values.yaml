@@ -1,0 +1,49 @@
+# -- (bool) Deploy the Deep Security Agent. Set to false to remove all resources.
+enabled: true
+
+image:
+  # -- (string) Base image that runs the install script. Override to pull through a proxy registry.
+  repository: public.ecr.aws/amazonlinux/amazonlinux
+  # -- (string) Image tag.
+  tag: "2023"
+  # -- (string) Image pull policy.
+  pullPolicy: IfNotPresent
+
+dsm:
+  # -- (string) Deep Security Manager URL. Placeholder, always override.
+  managerUrl: "https://dsm.example.com:4119"
+  # -- (string) Agent activation URL for `dsa_control -a`. Placeholder, always override.
+  activationUrl: "dsm://dsm.example.com:4120/"
+  # -- (string) Security policy ID applied on activation. Placeholder, always override.
+  policyId: "1"
+  # -- (string) Agent package version to pin (e.g. 20.0.3.5660). Empty uses the DSM default version.
+  agentVersion: ""
+
+# -- (string) Namespace to deploy the agent into.
+namespace: deepsecurity
+
+# -- (object) Pod DNS config. ndots 2 avoids needless search-domain lookups for external DSM hostnames.
+dnsConfig:
+  options:
+    - name: ndots
+      value: "2"
+
+# -- (list) Pod tolerations. Tolerates all taints to run on every node.
+tolerations:
+  - operator: Exists
+
+# -- (object) Pod affinity. Linux nodes only, Fargate excluded. The agent installs
+# an rpm/deb into the host OS through chroot, so a non-Linux node can never run it.
+affinity:
+  nodeAffinity:
+    requiredDuringSchedulingIgnoredDuringExecution:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: kubernetes.io/os
+              operator: In
+              values:
+                - linux
+            - key: eks.amazonaws.com/compute-type
+              operator: NotIn
+              values:
+                - fargate
