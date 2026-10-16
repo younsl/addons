@@ -61,6 +61,7 @@
 	      if [ -n \"$wt\" ]; then git worktree remove --force \"$wt\"; fi; \
 	      git branch -D \"$branch\"; \
 	    done; \
+	  if git rev-parse --abbrev-ref @{u} >/dev/null 2>&1; then git pull --ff-only; fi; \
   }; f"
 
   # Show branches with their last commit date and subject
