@@ -7,6 +7,7 @@ Custom Claude Code skills for DevOps workflows, written to the [Agent Skills](ht
 | Skill | Type | Description |
 |-------|------|-------------|
 | `airflow-dag-generator` | Generator | Airflow DAGs (parse cost, idempotency) |
+| `api-timeout-investigation` | Analyzer | External API timeout incident root cause across layers with a chart-based report |
 | `bash-generator` | Generator | Production-ready Bash scripts |
 | `done-check` | Validator | Verification gate and release readiness report |
 | `dockerfile-generator` | Generator | Optimized, secure Dockerfiles |
