@@ -10,10 +10,12 @@ import {
   getInsightCheckHistory,
   getInsightSettings,
   getInsights,
+  getInsightsNotificationHistory,
   getInsightsNotificationPreview,
 } from "@/services/v1/insights/api";
 import type {
   GetInsightCheckHistoryRequest,
+  GetInsightsNotificationHistoryRequest,
 } from "@/services/v1/insights/types";
 export function createInsightsOpenApiQueryOptions(client: HttpClient) {
   return {
@@ -34,6 +36,12 @@ export function createInsightsOpenApiQueryOptions(client: HttpClient) {
         queryKey: openApiQueryKeys.getInsightsNotificationPreview(),
         queryFn: ({ signal }) =>
           getInsightsNotificationPreview({ signal, client }),
+      }),
+    getInsightsNotificationHistory: (params?: GetInsightsNotificationHistoryRequest) =>
+      queryOptions({
+        queryKey: openApiQueryKeys.getInsightsNotificationHistory(params),
+        queryFn: ({ signal }) =>
+          getInsightsNotificationHistory(params ?? {}, { signal, client }),
       }),
     getInsightCheckHistory: (params: GetInsightCheckHistoryRequest) =>
       queryOptions({

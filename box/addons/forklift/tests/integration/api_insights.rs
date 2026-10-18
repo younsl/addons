@@ -177,7 +177,36 @@ async fn insights_alarm_preview_and_send() {
     assert_eq!(results["results"][0]["ok"], true, "{results}");
     assert_eq!(results["results"][1]["ok"], false, "{results}");
 
+    let history = srv
+        .admin_do(Method::GET, "/insights/notification/history", "")
+        .await
+        .json();
+    let deliveries = history["deliveries"].as_array().expect("deliveries");
+    assert_eq!(
+        deliveries.len(),
+        1,
+        "an unknown receiver id is not a delivery: {history}"
+    );
+    assert_eq!(deliveries[0]["receiver"], "sec-alerts", "{history}");
+    assert_eq!(deliveries[0]["trigger"], "manual", "{history}");
+    assert_eq!(deliveries[0]["ok"], true, "{history}");
+    assert!(deliveries[0]["items"].as_i64() >= Some(1), "{history}");
+    let resp = srv
+        .admin_do(Method::GET, "/insights/notification/history?days=91", "")
+        .await;
+    assert_eq!(resp.status, StatusCode::BAD_REQUEST, "{}", resp.text());
+
     mk_read_user(&srv.store, "dev", "*").await;
+    let resp = srv
+        .do_as(
+            "dev",
+            USER_PASS,
+            Method::GET,
+            "/insights/notification/history",
+            "",
+        )
+        .await;
+    assert_eq!(resp.status, StatusCode::FORBIDDEN, "{}", resp.text());
     let resp = srv
         .do_as(
             "dev",

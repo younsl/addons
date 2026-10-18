@@ -3,6 +3,7 @@
 // OpenAPI: forklift API 0.1.0
 
 import type {
+  AlarmHistory,
   InsightAck,
   InsightCheckPoint,
   InsightSettings,
@@ -25,6 +26,9 @@ export type GetInsightsNotificationPreviewResponse = InsightsAlarmPreview;
 
 export type SendInsightsNotificationRequest = { body: { receiver_ids: number[]; } };
 export type SendInsightsNotificationResponse = NotificationSampleReport;
+
+export type GetInsightsNotificationHistoryRequest = { query?: { days?: number } };
+export type GetInsightsNotificationHistoryResponse = AlarmHistory;
 
 export type GetInsightCheckHistoryRequest = { path: { id: string }; query?: { days?: number } };
 export type GetInsightCheckHistoryResponse = { points: InsightCheckPoint[]; };

@@ -75,8 +75,9 @@ The categories are:
 | OP-01 | `retention-off` | Low | Operations | DevOps | A repository without idle retention holds at least 10 artifacts not downloaded for 180 days |
 | OP-02 | `policy-blocks` | Low | Operations | Developer | A vulnerability or license policy blocked a path in the last 7 days |
 | OP-03 | `approvals-aging` | Low | Operations | Security, Developer | A package approval has been pending for more than 7 days |
+| OP-04 | `storage-capacity` | Critical (90%+), High (80%+) or Medium (70%+) | Operations | DevOps | The volume holding the data directory (metadata database, and blobs on the filesystem backend) is at least 70% full |
 
-The alert criteria column above is condensed. The check page states each rule's full criteria, and the API returns them as `criteria` along with `rationale` (why it matters) and `recommendation`. Each finding lists up to 100 affected items, worst first, and links each one to where it is fixed: the artifact (the Artifacts tab searched for its path), the image, the repository's Settings, Security or Statistics tab, the user, the approval queue, or the project's Coverage page.
+The alert criteria column above is condensed. The check page states each rule's full criteria, and the API returns them as `criteria` along with `rationale` (why it matters) and `recommendation`. Each finding lists up to 100 affected items, worst first, and links each one to where it is fixed: the artifact (the Artifacts tab searched for its path), the image, the repository's Settings, Security or Statistics tab, the user, the approval queue, the project's Coverage page, or the Storage page.
 
 ## Codes
 

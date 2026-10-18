@@ -122,6 +122,8 @@ export function AffectedLink({ finding, item }: { finding: InsightFinding; item:
       );
     case "project":
       return <Link to="/workspace/coverage/project" search={{ path: item.label }}>{item.label}</Link>;
+    case "volume":
+      return <Link to="/admin/storage">{item.label}</Link>;
     default:
       return item.label;
   }

@@ -168,6 +168,15 @@ Severity in light mode must not rely on color alone: its four levels separate by
 44.0 there against dark's 84.2, because light orange and light yellow converge.
 A severity badge needs an icon or a word alongside the color.
 
+### Series
+
+| Token | Purpose |
+| --- | --- |
+| `--fx-series-1` to `--fx-series-4` | Categorical parts of a whole, in order of size (storage usage by format). |
+| `--fx-series-other` | The neutral remainder of such a bar. |
+
+A series colour names a part, not a state. Pair it with a legend that names the part, and keep the status tokens for health.
+
 ### Login background
 
 `--fx-login-glow` and `--fx-login-wave` tint the login screen's animated

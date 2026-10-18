@@ -9,6 +9,7 @@ import { openApiQueryKeys } from "@/query/v1/openapi-query-keys";
 import {
   getCoverage,
   getCoverageGitlabCheck,
+  getCoverageNotificationHistory,
   getCoverageNotificationPreview,
   getCoverageProject,
   getCoverageProjectLastCommit,
@@ -18,6 +19,7 @@ import {
   listCoverageHistory,
 } from "@/services/v1/coverage/api";
 import type {
+  GetCoverageNotificationHistoryRequest,
   GetCoverageProjectLastCommitRequest,
   GetCoverageProjectPipelineRequest,
   GetCoverageProjectRequest,
@@ -78,6 +80,12 @@ export function createCoverageOpenApiQueryOptions(client: HttpClient) {
         queryKey: openApiQueryKeys.getCoverageNotificationPreview(),
         queryFn: ({ signal }) =>
           getCoverageNotificationPreview({ signal, client }),
+      }),
+    getCoverageNotificationHistory: (params?: GetCoverageNotificationHistoryRequest) =>
+      queryOptions({
+        queryKey: openApiQueryKeys.getCoverageNotificationHistory(params),
+        queryFn: ({ signal }) =>
+          getCoverageNotificationHistory(params ?? {}, { signal, client }),
       }),
   } as const;
 }

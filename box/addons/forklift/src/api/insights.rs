@@ -11,9 +11,13 @@ use serde::Serialize;
 
 use crate::auth;
 use crate::insights::{Category, InsightSummary, Report};
+use crate::meta;
 use crate::notify;
 
-use super::notifications::{NotificationSampleReportDTO, NotificationSampleResultDTO};
+use super::notifications::{
+    AlarmHistoryQuery, NotificationSampleReportDTO, NotificationSampleResultDTO,
+    write_alarm_history,
+};
 use super::{Handler, map_error, principal_name, write_error, write_json};
 
 /// The trend window the view draws.
@@ -316,7 +320,8 @@ pub(super) async fn send_alarm(State(h): State<Arc<Handler>>, request: Request) 
         Ok(receivers) => receivers,
         Err(err) => return map_error(err),
     };
-    let payload = notifier.build_insights_report(&crate::insights::alarm_report(&report));
+    let alarm = crate::insights::alarm_report(&report);
+    let payload = notifier.build_insights_report(&alarm);
     let mut results = Vec::with_capacity(req.receiver_ids.len());
     for id in &req.receiver_ids {
         let Some(receiver) = receivers.iter().find(|r| r.id == *id) else {
@@ -337,6 +342,15 @@ pub(super) async fn send_alarm(State(h): State<Arc<Handler>>, request: Request) 
                 .await
                 .map_err(|err| err.to_string())
         };
+        h.store
+            .log_alarm_delivery(
+                meta::ALARM_INSIGHTS,
+                &receiver.name,
+                meta::ALARM_TRIGGER_MANUAL,
+                outcome.as_ref().copied().map_err(String::as_str),
+                alarm.findings.len() as i64,
+            )
+            .await;
         results.push(NotificationSampleResultDTO {
             name: receiver.name.clone(),
             ok: outcome.is_ok(),
@@ -345,6 +359,29 @@ pub(super) async fn send_alarm(State(h): State<Arc<Handler>>, request: Request) 
     }
     h.audit(&parts, "", "insights.notify", 200);
     write_json(StatusCode::OK, NotificationSampleReportDTO { results })
+}
+
+/// Lists the security alarm's recent deliveries (admin or security), so the
+/// settings page can chart how the alarm went out.
+pub(super) async fn alarm_history(
+    State(h): State<Arc<Handler>>,
+    axum::extract::Query(query): axum::extract::Query<AlarmHistoryQuery>,
+    request: Request,
+) -> Response {
+    let (parts, _) = request.into_parts();
+    if !may_refresh(&h, &parts) {
+        return write_error(
+            StatusCode::FORBIDDEN,
+            "the alarm history requires admin or security permission",
+        );
+    }
+    if h.insights().is_none() {
+        return write_error(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "security insights are disabled",
+        );
+    }
+    write_alarm_history(&h, meta::ALARM_INSIGHTS, &query).await
 }
 
 /// Applies the stored acknowledgements to a report as of now.

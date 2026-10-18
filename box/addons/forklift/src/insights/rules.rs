@@ -30,6 +30,11 @@ const SCAN_GAP_MIN: i64 = 10;
 const SCAN_GAP_RATIO: f64 = 0.2;
 /// Unused artifacts a repository needs before retention is suggested.
 const STALE_MIN: i64 = 10;
+/// Data volume usage at which it is reported (medium), urgent (high) and about
+/// to stop writes (critical).
+const DISK_MEDIUM: f64 = 0.70;
+const DISK_HIGH: f64 = 0.80;
+const DISK_CRITICAL: f64 = 0.90;
 
 /// Runs every rule and reports each one as a check, passing or not.
 pub fn evaluate(s: &DataSnapshot) -> (Vec<Finding>, Vec<Check>) {
@@ -43,6 +48,7 @@ pub fn evaluate(s: &DataSnapshot) -> (Vec<Finding>, Vec<Check>) {
                 None if r.id == "coverage-bypass" && s.coverage.is_none() => {
                     CheckStatus::Unavailable
                 }
+                None if r.id == "storage-capacity" && s.disk.is_none() => CheckStatus::Unavailable,
                 None => CheckStatus::Ok,
             };
             Check {
@@ -92,6 +98,7 @@ fn findings(s: &DataSnapshot) -> Vec<Finding> {
         auth_failures(s),
         policy_blocks(s),
         aging_approvals(s),
+        storage_capacity(s),
         coverage_bypass(s),
     ]
     .into_iter()
@@ -356,6 +363,16 @@ pub const CATALOG: &[Rule] = &[
         rationale: "A request waiting for weeks blocks the team that asked, and pushes people towards fetching the package around forklift.",
         criteria: "Yellow: a package approval request has been pending for more than 7 days.",
         recommendation: "Decide them, or enable auto-approval of clean packages so reviewers only see what needs a human.",
+    },
+    Rule {
+        id: "storage-capacity",
+        code: "OP-04",
+        category: Category::Operations,
+        audiences: &[Audience::Devops],
+        title: "Data volume running out of space",
+        rationale: "The data volume holds the metadata database, and the blobs on the filesystem backend. Once it is full every upload, proxy cache fill and metadata write fails at the same time, so builds break in every repository at once.",
+        criteria: "Red (critical): the volume holding the data directory is 90% full or more. Red (high): 80% or more. Yellow (medium): 70% or more.",
+        recommendation: "Expand the PersistentVolume before it fills. To free space now, turn on idle retention for repositories holding unused artifacts and delete repositories nobody uses. The Storage page shows what the blobs take.",
     },
     Rule {
         id: "coverage-bypass",
@@ -1156,6 +1173,41 @@ fn retention_off(s: &DataSnapshot) -> Option<Finding> {
     )
 }
 
+fn storage_capacity(s: &DataSnapshot) -> Option<Finding> {
+    let disk = s.disk.as_ref()?;
+    let ratio = disk.usage_ratio;
+    let severity = if ratio >= DISK_CRITICAL {
+        Severity::Critical
+    } else if ratio >= DISK_HIGH {
+        Severity::High
+    } else if ratio >= DISK_MEDIUM {
+        Severity::Medium
+    } else {
+        return None;
+    };
+    let percent = (ratio * 100.0).floor() as i64;
+    let free = human_bytes(disk.available_bytes);
+    finding(
+        Spec {
+            id: "storage-capacity",
+            severity,
+            summary: format!(
+                "The data volume is {percent}% full with {free} left. Writes fail once it fills."
+            ),
+            params: vec![("percent", percent.to_string()), ("free", free.clone())],
+        },
+        vec![Affected {
+            kind: "volume".to_string(),
+            label: disk.path.clone(),
+            detail: format!(
+                "{percent}% used, {free} free of {}",
+                human_bytes(disk.total_bytes)
+            ),
+            ..Default::default()
+        }],
+    )
+}
+
 /// Users whose roles grant admin on every repository.
 fn admin_user_ids(s: &DataSnapshot) -> HashSet<i64> {
     let admin_roles: HashSet<i64> = s
@@ -1621,6 +1673,7 @@ mod tests {
         VulnSummary,
     };
     use crate::repoconfig::{self, Duration};
+    use crate::storage;
 
     fn view(id: i64, name: &str, format: &str, typ: &str, cfg: repoconfig::Config) -> RepoView {
         RepoView {
@@ -1913,6 +1966,7 @@ mod tests {
                     },
                 ],
             }),
+            disk: Some(disk(0.85)),
         }
     }
 
@@ -1924,7 +1978,7 @@ mod tests {
             checks.iter().all(|c| c.status != CheckStatus::Ok),
             "every rule trips"
         );
-        assert_eq!(findings.len(), 25, "{:?}", ids(&findings));
+        assert_eq!(findings.len(), 26, "{:?}", ids(&findings));
 
         let used = get(&findings, "vuln-in-use");
         assert_eq!(used.severity, Severity::Critical);
@@ -2011,6 +2065,7 @@ mod tests {
         assert_eq!(bypass.severity, Severity::Medium);
         assert_eq!(bypass.total, 1, "applied and excluded projects are skipped");
         assert_eq!(bypass.affected[0].label, "team/web");
+        assert_eq!(get(&findings, "storage-capacity").severity, Severity::High);
     }
 
     #[test]
@@ -2049,6 +2104,7 @@ mod tests {
                 created_at: now,
                 ..Default::default()
             }],
+            disk: Some(disk(0.5)),
             ..Default::default()
         };
         let (findings, checks) = evaluate(&s);
@@ -2065,6 +2121,62 @@ mod tests {
                 .filter(|c| c.id != "coverage-bypass")
                 .all(|c| c.status == CheckStatus::Ok && c.flagged == 0)
         );
+    }
+
+    fn disk(ratio: f64) -> storage::Disk {
+        let total: i64 = 100 << 30;
+        let used = (total as f64 * ratio) as i64;
+        storage::Disk {
+            path: "/data".to_string(),
+            total_bytes: total,
+            used_bytes: used,
+            available_bytes: total - used,
+            usage_ratio: ratio,
+        }
+    }
+
+    #[test]
+    fn storage_capacity_severity_follows_usage() {
+        let cases = [
+            (0.69, None),
+            (0.70, Some(Severity::Medium)),
+            (0.79, Some(Severity::Medium)),
+            (0.80, Some(Severity::High)),
+            (0.89, Some(Severity::High)),
+            (0.90, Some(Severity::Critical)),
+            (0.97, Some(Severity::Critical)),
+        ];
+        for (ratio, want) in cases {
+            let s = DataSnapshot {
+                disk: Some(disk(ratio)),
+                ..Default::default()
+            };
+            assert_eq!(
+                storage_capacity(&s).map(|f| f.severity),
+                want,
+                "usage {ratio}"
+            );
+        }
+        let s = DataSnapshot {
+            disk: Some(disk(0.97)),
+            ..Default::default()
+        };
+        let f = storage_capacity(&s).expect("finding");
+        assert_eq!(f.affected[0].kind, "volume");
+        assert_eq!(f.affected[0].label, "/data");
+        assert_eq!(f.affected[0].detail, "97% used, 3.0 GB free of 100.0 GB");
+        assert_eq!(f.params["percent"], "97");
+        assert_eq!(f.params["free"], "3.0 GB");
+    }
+
+    #[test]
+    fn storage_capacity_is_unavailable_without_a_measurement() {
+        let (_, checks) = evaluate(&DataSnapshot::default());
+        let check = checks
+            .iter()
+            .find(|c| c.id == "storage-capacity")
+            .expect("storage-capacity check");
+        assert_eq!(check.status, CheckStatus::Unavailable);
     }
 
     #[test]

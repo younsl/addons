@@ -180,4 +180,8 @@ pub(crate) const MIGRATIONS: &[(&str, &str)] = &[
         "0045_announcement_dismissible.sql",
         include_str!("migrations/0045_announcement_dismissible.sql"),
     ),
+    (
+        "0046_alarm_deliveries.sql",
+        include_str!("migrations/0046_alarm_deliveries.sql"),
+    ),
 ];

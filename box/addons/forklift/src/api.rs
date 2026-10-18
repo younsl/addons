@@ -444,6 +444,10 @@ pub fn routes(h: Arc<Handler>) -> Router {
             axum::routing::post(insights::send_alarm),
         )
         .route(
+            "/insights/notification/history",
+            axum::routing::get(insights::alarm_history),
+        )
+        .route(
             "/insights/checks/{id}/history",
             axum::routing::get(insights::check_history),
         )
@@ -621,6 +625,10 @@ pub fn routes(h: Arc<Handler>) -> Router {
         .route(
             "/coverage/notification/send",
             axum::routing::post(coverage::send_alarm),
+        )
+        .route(
+            "/coverage/notification/history",
+            axum::routing::get(coverage::alarm_history),
         );
     if guarded {
         admin = admin.route_layer(axum::middleware::from_fn(auth_service::require_admin));

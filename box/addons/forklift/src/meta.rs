@@ -25,6 +25,7 @@ use arc_swap::ArcSwap;
 use rusqlite::{Connection, OpenFlags};
 use tokio::sync::Semaphore;
 
+mod alarm;
 mod announcement;
 mod approval;
 mod artifact;
@@ -48,6 +49,7 @@ pub mod time;
 mod versiondeny;
 mod vuln;
 
+pub use alarm::*;
 pub use announcement::*;
 pub use approval::*;
 pub use artifact::*;

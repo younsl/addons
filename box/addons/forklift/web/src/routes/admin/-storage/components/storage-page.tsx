@@ -62,6 +62,8 @@ export function StoragePage() {
               cluster={storage.cluster}
               providerName={storage.provider_name}
               health={storage.backend === "s3" ? <StorageHealthCard /> : undefined}
+              blobBytes={storage.blob_bytes}
+              formats={storage.usage_by_format ?? []}
             />
           ) : storage.backend === "s3" ? (
             <div className="space-y-3">

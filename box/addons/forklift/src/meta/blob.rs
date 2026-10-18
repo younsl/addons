@@ -5,7 +5,7 @@ use chrono::{DateTime, Utc};
 use rusqlite::params;
 
 use super::repository::query_all;
-use super::{Blob, Error, Result, Store, format_time, parse_time};
+use super::{Blob, Error, FormatUsage, Result, Store, format_time, parse_time};
 
 impl Store {
     /// Returns blob metadata by digest.
@@ -46,6 +46,38 @@ impl Store {
                 },
             )
             .map_err(|e| Error::sqlite("blob stats", e))
+        })
+        .await
+    }
+
+    /// Returns the stored blob footprint split by the format of the
+    /// repositories referencing each blob, largest first. A blob shared across
+    /// formats counts once, under the first format by name, so the parts never
+    /// add up to more than [`Store::blob_stats`]. Blobs no artifact references
+    /// (awaiting garbage collection) are not in any part.
+    pub async fn blob_usage_by_format(&self) -> Result<Vec<FormatUsage>> {
+        self.read(|conn| {
+            query_all(
+                conn,
+                "blob usage by format",
+                "SELECT format, COUNT(*), SUM(size) FROM (
+                   SELECT b.size AS size, MIN(r.format) AS format
+                     FROM blobs b
+                     JOIN artifacts a ON a.blob_sha256 = b.sha256
+                     JOIN repositories r ON r.id = a.repo_id
+                    GROUP BY b.sha256
+                 )
+                 GROUP BY format
+                 ORDER BY SUM(size) DESC, format ASC",
+                [],
+                |r| {
+                    Ok(FormatUsage {
+                        format: r.get(0)?,
+                        blob_count: r.get(1)?,
+                        bytes: r.get(2)?,
+                    })
+                },
+            )
         })
         .await
     }
@@ -126,5 +158,74 @@ impl Store {
             Ok(n > 0)
         })
         .await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::meta::{Artifact, FORMAT_NPM, FORMAT_RAW, Repository, TYPE_HOSTED};
+    use crate::testing::meta::test_store;
+
+    #[tokio::test]
+    async fn blob_usage_splits_by_repository_format() {
+        let (s, _dir) = test_store().await;
+        let mut repo_ids = Vec::new();
+        for (name, format) in [
+            ("npm-a", FORMAT_NPM),
+            ("npm-b", FORMAT_NPM),
+            ("files", FORMAT_RAW),
+        ] {
+            let repo = s
+                .create_repository(Repository {
+                    name: name.to_string(),
+                    format: format.to_string(),
+                    r#type: TYPE_HOSTED.to_string(),
+                    ..Default::default()
+                })
+                .await
+                .unwrap();
+            repo_ids.push(repo.id);
+        }
+        let now = Utc::now();
+        // The npm blob is shared by two npm repositories and also stored in the
+        // raw one, so it must count once, under npm.
+        for (repo_id, path, sha, size) in [
+            (repo_ids[0], "a/-/a-1.tgz", "shared", 100),
+            (repo_ids[1], "a/-/a-1.tgz", "shared", 100),
+            (repo_ids[2], "copy.tgz", "shared", 100),
+            (repo_ids[2], "big.bin", "raw-only", 300),
+        ] {
+            s.put_artifact(Artifact {
+                repo_id,
+                path: path.to_string(),
+                blob_sha256: sha.to_string(),
+                size,
+                cached_at: now,
+                last_accessed_at: now,
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+        }
+
+        let parts = s.blob_usage_by_format().await.unwrap();
+        assert_eq!(
+            parts,
+            vec![
+                FormatUsage {
+                    format: FORMAT_RAW.to_string(),
+                    blob_count: 1,
+                    bytes: 300,
+                },
+                FormatUsage {
+                    format: FORMAT_NPM.to_string(),
+                    blob_count: 1,
+                    bytes: 100,
+                },
+            ]
+        );
+        let (_, total) = s.blob_stats().await.unwrap();
+        assert_eq!(parts.iter().map(|p| p.bytes).sum::<i64>(), total);
     }
 }

@@ -12,6 +12,19 @@ import { ChartHover, TooltipRow, TooltipTime } from "./chart-hover";
 
 type Status = InsightCheckPoint["status"];
 
+// ChartPoint is one run as the Metrics panels draw it: when it happened, the
+// status band it falls in, and the count the trend line plots.
+export type ChartPoint = { generated_at: string; status: string; flagged: number };
+
+// Series says what a set of points means: each status's colour and name, the
+// order a bucket of runs takes its colour from, and what the crosshair shows.
+export type Series = {
+  color: (status: string) => string;
+  label: (status: string) => string;
+  urgency: string[];
+  tooltip: (point: ChartPoint) => ReactNode;
+};
+
 const STATUS_COLOR: Record<Status, string> = {
   action: "var(--fx-danger)",
   investigate: "var(--fx-warning)",
@@ -51,17 +64,17 @@ export function runLabels(times: string[]): string[] {
   return dates.map((d, i) => `${day(d, i)}${clock(d)}`);
 }
 
-export type Stretch = { status: Status; from: string; label: string; runs: number };
+export type Stretch = { status: string; from: string; label: string; runs: number };
 
 // The order a bucket of runs takes its colour from: the most urgent status in
 // it wins, so a single action-recommended run is never averaged away.
-const URGENCY: Status[] = ["action", "investigate", "acknowledged", "ok", "unavailable"];
+const URGENCY: string[] = ["action", "investigate", "acknowledged", "ok", "unavailable"];
 
 // stretches folds consecutive runs with the same status into one stretch,
 // labelled with the run it began at. Past `maxBuckets` runs, the runs are first
 // grouped into that many equal buckets, each taking its most urgent status, so
 // thousands of runs draw as one band per few pixels instead of sub-pixel slivers.
-export function stretches(points: InsightCheckPoint[], labels: string[], maxBuckets = Infinity): Stretch[] {
+export function stretches(points: Pick<ChartPoint, "generated_at" | "status">[], labels: string[], maxBuckets = Infinity, urgency = URGENCY): Stretch[] {
   const n = points.length;
   const buckets = Math.max(1, Math.min(n, Math.floor(maxBuckets)));
   const out: Stretch[] = [];
@@ -71,7 +84,7 @@ export function stretches(points: InsightCheckPoint[], labels: string[], maxBuck
     if (end <= start) continue;
     let status = points[start].status;
     for (let i = start + 1; i < end; i++) {
-      if (URGENCY.indexOf(points[i].status) < URGENCY.indexOf(status)) status = points[i].status;
+      if (urgency.indexOf(points[i].status) < urgency.indexOf(status)) status = points[i].status;
     }
     const prev = out[out.length - 1];
     if (prev && prev.status === status) prev.runs += end - start;
@@ -132,7 +145,7 @@ export function axisTicks(times: string[], width: number, charPx = 6.5): { index
 
 // Axis marks every run under the chart while the marks stay apart, and names
 // the runs axisTicks picks.
-function Axis({ points, width }: { points: InsightCheckPoint[]; width: number }) {
+function Axis({ points, width }: { points: ChartPoint[]; width: number }) {
   const n = points.length;
   const slot = width / n;
   const ticks = axisTicks(points.map((p) => p.generated_at), width);
@@ -159,49 +172,47 @@ function Axis({ points, width }: { points: InsightCheckPoint[]; width: number })
 
 type Hover = { index: number; panel: "status" | "flagged" } | null;
 
-type HoverProps = { hover: Hover; onHover: (hover: Hover) => void; onZoom: (first: number, last: number) => void };
-
-// RunTooltip is what the crosshair shows for one run, the same in both panels.
-function RunTooltip({ point }: { point: InsightCheckPoint }) {
-  const { t } = useTranslation();
-  return (
-    <>
-      <TooltipTime at={point.generated_at} />
-      <TooltipRow color={STATUS_COLOR[point.status]} label={t("insights.status")} value={t(`insights.status-${point.status}` as MessageKey)} />
-      <TooltipRow color="var(--fx-accent-ink)" label={t("insights.history-flagged")} value={point.flagged.toLocaleString()} />
-    </>
-  );
-}
+type HoverProps = {
+  points: ChartPoint[];
+  series: Series;
+  hover: Hover;
+  onHover: (hover: Hover) => void;
+  onZoom: (first: number, last: number) => void;
+};
 
 // StatusTimeline draws one band per stretch of runs with the same status, as
 // wide as its share of the runs, and names the status and when it began
 // inside the band, so the chart needs no legend or change list. A faint rule
 // inside a band marks each run within it.
-function StatusTimeline({ points, hover, onHover, onZoom }: { points: InsightCheckPoint[] } & HoverProps) {
-  const { t } = useTranslation();
+function StatusTimeline({ points, series, hover, onHover, onZoom }: HoverProps) {
   const [ref, width] = useWidth<HTMLDivElement>();
   const n = points.length;
   const labels = runLabels(points.map((p) => p.generated_at));
   // One bucket per two pixels at most, so every band is wide enough to see.
-  const bands = stretches(points, labels, width > 0 ? width / 2 : Infinity);
+  const bands = stretches(points, labels, width > 0 ? width / 2 : Infinity, series.urgency);
   return (
     <>
       <div ref={ref} className="relative mt-1.5">
         <div className="relative flex h-24 w-full overflow-hidden rounded" role="img"
-          aria-label={bands.slice(-50).map((b) => `${b.label} ${t(`insights.status-${b.status}` as MessageKey)}`).join(", ")}>
-          {bands.map((b) => (
-            <div key={b.from} className="flex min-w-0 shrink-0 flex-col justify-end px-2 py-1.5 text-[var(--fx-canvas)]"
-              style={{ width: `${(b.runs / n) * 100}%`, background: STATUS_COLOR[b.status] }}>
-              {/* A band too narrow to name stays a plain colour; the crosshair
-                  tooltip still names every run in it. */}
-              {(b.runs / n) * width >= 88 && (
-                <>
-                  <span className="truncate text-xs font-medium">{t(`insights.status-${b.status}` as MessageKey)}</span>
-                  <span className="truncate text-[11px] tabular-nums opacity-80">{b.label}</span>
-                </>
-              )}
-            </div>
-          ))}
+          aria-label={bands.slice(-50).map((b) => `${b.label} ${series.label(b.status)}`).join(", ")}>
+          {bands.map((b) => {
+            const named = (b.runs / n) * width >= 88;
+            return (
+              // Padding only on a named band: on a band narrower than it, the
+              // padding would widen the band past its runs' slots.
+              <div key={b.from} className={cn("flex min-w-0 shrink-0 flex-col justify-end text-[var(--fx-canvas)]", named && "px-2 py-1.5")}
+                style={{ width: `${(b.runs / n) * 100}%`, background: series.color(b.status) }}>
+                {/* A band too narrow to name stays a plain colour; the crosshair
+                    tooltip still names every run in it. */}
+                {named && (
+                  <>
+                    <span className="truncate text-xs font-medium">{series.label(b.status)}</span>
+                    <span className="truncate text-[11px] tabular-nums opacity-80">{b.label}</span>
+                  </>
+                )}
+              </div>
+            );
+          })}
           {width / n >= 4 && points.slice(1).map((p, i) => {
             const change = p.status !== points[i].status;
             return (
@@ -217,7 +228,7 @@ function StatusTimeline({ points, hover, onHover, onZoom }: { points: InsightChe
         </div>
         <ChartHover n={n} layout="slot" index={hover?.index ?? null}
           onIndex={(index) => onHover(index === null ? null : { index, panel: "status" })} onSelect={onZoom}
-          tooltip={hover?.panel === "status" && <RunTooltip point={points[hover.index]} />} />
+          tooltip={hover?.panel === "status" && series.tooltip(points[hover.index])} />
       </div>
       <Axis points={points} width={width} />
     </>
@@ -234,7 +245,7 @@ export function yTicks(max: number): number[] {
 // from zero so a drop to nothing reads as reaching the floor. Every run gets a
 // dot while they fit, and the crosshair gives the figures. The dots are HTML
 // so they stay round on the stretched chart.
-function FlaggedTrend({ points, hover, onHover, onZoom }: { points: InsightCheckPoint[] } & HoverProps) {
+function FlaggedTrend({ points, series, hover, onHover, onZoom }: HoverProps) {
   const [ref, measured] = useWidth<HTMLDivElement>();
   const width = 320;
   const height = 96;
@@ -279,7 +290,7 @@ function FlaggedTrend({ points, hover, onHover, onZoom }: { points: InsightCheck
           })}
           <ChartHover n={n} layout="slot" index={hover?.index ?? null}
             onIndex={(index) => onHover(index === null ? null : { index, panel: "flagged" })} onSelect={onZoom}
-            tooltip={hover?.panel === "flagged" && <RunTooltip point={points[hover.index]} />} />
+            tooltip={hover?.panel === "flagged" && series.tooltip(points[hover.index])} />
         </div>
         <span />
         <Axis points={points} width={measured} />
@@ -290,61 +301,95 @@ function FlaggedTrend({ points, hover, onHover, onZoom }: { points: InsightCheck
 
 export type ZoomRange = { from?: string; to?: string };
 
-// CheckHistory is the Metrics section: how the status changed on the left, how
-// many items were flagged on the right, over the last 30 days. The panels share
-// one crosshair, so pointing at a run in either marks it in both. Dragging
-// across either zooms both into the runs it spans, as in Grafana; the range is
-// kept in the URL (`from`, `to`) so a zoomed view can be shared, and Reset zoom
-// goes back to the whole window.
-export function CheckHistory({ checkId, range, onRange }: {
-  checkId: string;
+// MetricsPanels is a Metrics section: how the status changed on the left, the
+// count per run on the right. The panels share one crosshair, so pointing at a
+// run in either marks it in both. Dragging across either zooms both into the
+// runs it spans, as in Grafana, and Reset zoom goes back to the whole window.
+export function MetricsPanels({ title, points, series, statusTitle, countTitle, days, runs, empty, range, onRange }: {
+  title: string;
+  points: ChartPoint[];
+  series: Series;
+  statusTitle: string;
+  countTitle: string;
+  days: number;
+  runs: { window: MessageKey; zoomed: MessageKey };
+  empty: string;
   range: ZoomRange;
   onRange: (range: ZoomRange) => void;
 }) {
   const { t } = useTranslation();
   const [hover, setHover] = useState<Hover>(null);
-  const query = useQuery({
-    ...openApiQueryOptions.getInsightCheckHistory({ path: { id: checkId }, query: { days: DAYS } }),
-    meta: { suppressGlobalErrorToast: true },
-  });
-  const all = query.data?.points ?? [];
-  if (query.isError) return null;
   const zoomed = Boolean(range.from || range.to);
-  const points = zoomed
-    ? all.filter((p) => (!range.from || p.generated_at >= range.from) && (!range.to || p.generated_at <= range.to))
-    : all;
-  const aside = zoomed && points.length > 0
-    ? t("insights.history-zoomed")
-      .replace("{from}", runLabels([points[0].generated_at, points[points.length - 1].generated_at]).join(" – "))
-      .replace("{runs}", String(points.length))
-    : t("insights.history-window").replace("{days}", String(DAYS)).replace("{runs}", String(points.length));
-  const shown = hover && hover.index < points.length ? hover : null;
+  const shownPoints = zoomed
+    ? points.filter((p) => (!range.from || p.generated_at >= range.from) && (!range.to || p.generated_at <= range.to))
+    : points;
+  const aside = zoomed && shownPoints.length > 0
+    ? t(runs.zoomed)
+      .replace("{from}", runLabels([shownPoints[0].generated_at, shownPoints[shownPoints.length - 1].generated_at]).join(" – "))
+      .replace("{runs}", String(shownPoints.length))
+    : t(runs.window).replace("{days}", String(days)).replace("{runs}", String(shownPoints.length));
+  const shown = hover && hover.index < shownPoints.length ? hover : null;
   const zoom = (first: number, last: number) => {
     setHover(null);
-    onRange({ from: points[first].generated_at, to: points[last].generated_at });
+    onRange({ from: shownPoints[first].generated_at, to: shownPoints[last].generated_at });
   };
-  const empty = <p className="m-0 text-sm text-muted-foreground">{t("insights.history-empty")}</p>;
+  const blank = <p className="m-0 text-sm text-muted-foreground">{empty}</p>;
+  const props = { points: shownPoints, series, hover: shown, onHover: setHover, onZoom: zoom };
   return (
     <section className="mb-5">
       <div className="mb-1.5 flex items-center justify-between gap-3">
-        <h2 className="m-0 text-xs font-medium uppercase tracking-wide text-muted-foreground">{t("insights.metrics")}</h2>
+        <h2 className="m-0 text-xs font-medium uppercase tracking-wide text-muted-foreground">{title}</h2>
         {zoomed ? (
           <Button variant="outline" size="sm" onClick={() => onRange({})}>
             <ZoomOut className="size-3.5" aria-hidden="true" />
             {t("insights.history-reset-zoom")}
           </Button>
         ) : (
-          all.length > 1 && <span className="text-xs text-muted-foreground">{t("insights.history-drag-hint")}</span>
+          points.length > 1 && <span className="text-xs text-muted-foreground">{t("insights.history-drag-hint")}</span>
         )}
       </div>
       <div className="grid gap-3 md:grid-cols-2">
-        <Panel title={t("insights.history-status")} aside={aside}>
-          {points.length === 0 ? empty : <StatusTimeline points={points} hover={shown} onHover={setHover} onZoom={zoom} />}
+        <Panel title={statusTitle} aside={aside}>
+          {shownPoints.length === 0 ? blank : <StatusTimeline {...props} />}
         </Panel>
-        <Panel title={t("insights.history-flagged")} aside={aside}>
-          {points.length === 0 ? empty : <FlaggedTrend points={points} hover={shown} onHover={setHover} onZoom={zoom} />}
+        <Panel title={countTitle} aside={aside}>
+          {shownPoints.length === 0 ? blank : <FlaggedTrend {...props} />}
         </Panel>
       </div>
     </section>
+  );
+}
+
+// CheckHistory is a check's Metrics section over the last 30 days. The zoom is
+// kept in the URL (`from`, `to`) so a zoomed view can be shared.
+export function CheckHistory({ checkId, range, onRange }: {
+  checkId: string;
+  range: ZoomRange;
+  onRange: (range: ZoomRange) => void;
+}) {
+  const { t } = useTranslation();
+  const query = useQuery({
+    ...openApiQueryOptions.getInsightCheckHistory({ path: { id: checkId }, query: { days: DAYS } }),
+    meta: { suppressGlobalErrorToast: true },
+  });
+  if (query.isError) return null;
+  const label = (status: string) => t(`insights.status-${status}` as MessageKey);
+  const series: Series = {
+    color: (status) => STATUS_COLOR[status as Status],
+    label,
+    urgency: URGENCY,
+    tooltip: (point) => (
+      <>
+        <TooltipTime at={point.generated_at} />
+        <TooltipRow color={STATUS_COLOR[point.status as Status]} label={t("insights.status")} value={label(point.status)} />
+        <TooltipRow color="var(--fx-accent-ink)" label={t("insights.history-flagged")} value={point.flagged.toLocaleString()} />
+      </>
+    ),
+  };
+  return (
+    <MetricsPanels title={t("insights.metrics")} points={query.data?.points ?? []} series={series}
+      statusTitle={t("insights.history-status")} countTitle={t("insights.history-flagged")} days={DAYS}
+      runs={{ window: "insights.history-window", zoomed: "insights.history-zoomed" }}
+      empty={t("insights.history-empty")} range={range} onRange={onRange} />
   );
 }

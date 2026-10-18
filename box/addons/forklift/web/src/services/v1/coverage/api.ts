@@ -12,6 +12,8 @@ import { API_PREFIX } from "@/services/paths";
 
 import type {
   GetCoverageGitlabCheckResponse,
+  GetCoverageNotificationHistoryRequest,
+  GetCoverageNotificationHistoryResponse,
   GetCoverageNotificationPreviewResponse,
   GetCoverageProjectLastCommitRequest,
   GetCoverageProjectLastCommitResponse,
@@ -161,6 +163,15 @@ export function postSendCoverageNotification(options?: OpenApiRequestOptions) {
   return client.post<PostSendCoverageNotificationResponse, unknown>(
     `${API_PREFIX}/coverage/notification/send`,
     undefined,
+    requestOptions,
+  );
+}
+
+export function getCoverageNotificationHistory(params: GetCoverageNotificationHistoryRequest, options?: OpenApiRequestOptions) {
+  const { client, requestOptions } = resolveOpenApiRequestOptions(options);
+
+  return client.get<GetCoverageNotificationHistoryResponse>(
+    appendOpenApiQuery(`${API_PREFIX}/coverage/notification/history`, params?.query),
     requestOptions,
   );
 }

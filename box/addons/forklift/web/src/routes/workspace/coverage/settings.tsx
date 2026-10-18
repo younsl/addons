@@ -38,6 +38,7 @@ import { formatMilliseconds } from "@/utils/format-duration";
 import { validateExternalDomain, type HostProblem } from "@/lib/coverage-host";
 import { Redirect } from "@/components/app/redirect";
 import { COMMON_TIMEZONES } from "@/lib/timezones";
+import { AlarmHistory, alarmHistoryKey } from "@/routes/workspace/insights/-components/alarm-history";
 
 export const Route = createFileRoute("/workspace/coverage/settings")({
   component: CoverageSettingsRoute,
@@ -168,6 +169,7 @@ function CoverageSettingsPage() {
 
   const send = useMutation({
     mutationFn: () => postSendCoverageNotification(),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: alarmHistoryKey("coverage") }),
   });
 
   const receiverNames = useMemo(() => receivers.map((r) => r.name), [receivers]);
@@ -590,6 +592,8 @@ function CoverageSettingsPage() {
           </FieldGroup>
         </CardContent>
       </Card>
+
+      <AlarmHistory feature="coverage" />
 
       {/* There is no crawl-tuning panel. How fast the scan may go is discovered
           from how GitLab responds, not configured; the log line that closes a

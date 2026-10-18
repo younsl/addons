@@ -8,6 +8,7 @@ use chrono::{DateTime, TimeDelta, Utc};
 use crate::coverage;
 use crate::meta::{self, Store};
 use crate::repoconfig;
+use crate::storage;
 
 /// Refused requests are judged over the last day, policy blocks over a week.
 pub const AUTH_WINDOW: TimeDelta = TimeDelta::hours(24);
@@ -44,6 +45,9 @@ pub struct DataSnapshot {
     pub block_audit: Vec<meta::AuditCount>,
     pub pending: Vec<meta::PackageApproval>,
     pub coverage: Option<CoverageView>,
+    /// The filesystem holding the data directory, `None` when it cannot be
+    /// measured.
+    pub disk: Option<storage::Disk>,
 }
 
 /// The last completed Forklift coverage scan, when coverage is enabled.
@@ -119,6 +123,17 @@ pub async fn collect(
                 projects: overview.projects,
             })
         }),
+        disk: store
+            .path()
+            .parent()
+            .map(|dir| {
+                if dir.as_os_str().is_empty() {
+                    std::path::Path::new(".")
+                } else {
+                    dir
+                }
+            })
+            .and_then(|dir| storage::disk_usage(dir).ok()),
         repos,
     })
 }

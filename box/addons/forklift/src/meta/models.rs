@@ -130,6 +130,14 @@ pub struct Blob {
     pub created_at: DateTime<Utc>,
 }
 
+/// The deduplicated blob footprint of one repository format.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct FormatUsage {
+    pub format: String,
+    pub blob_count: i64,
+    pub bytes: i64,
+}
+
 /// A local (password) or OIDC-sourced principal.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct User {

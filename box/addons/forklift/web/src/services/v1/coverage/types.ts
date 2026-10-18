@@ -3,6 +3,7 @@
 // OpenAPI: forklift API 0.1.0
 
 import type {
+  AlarmHistory,
   CoverageAlarmPreview,
   CoverageGitlabCheck,
   CoverageGroup,
@@ -55,3 +56,6 @@ export type PostScanCoverageResponse = CoverageScanStarted;
 export type GetCoverageNotificationPreviewResponse = CoverageAlarmPreview;
 
 export type PostSendCoverageNotificationResponse = NotificationSampleReport;
+
+export type GetCoverageNotificationHistoryRequest = { query?: { days?: number } };
+export type GetCoverageNotificationHistoryResponse = AlarmHistory;

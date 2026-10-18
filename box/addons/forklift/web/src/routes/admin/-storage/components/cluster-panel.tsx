@@ -5,7 +5,7 @@ import { StatTile } from "@/routes/admin/-storage/components/stat-tile";
 import { StorageUsageBar } from "@/routes/admin/-storage/components/storage-usage-bar";
 import { formatFileSize } from "@/utils/format-file-size";
 
-import type { ClusterStats } from "@/services/v1/openapi-types";
+import type { ClusterStats, FormatUsage } from "@/services/v1/openapi-types";
 
 const count = (n: number | undefined) => (n === undefined ? "-" : n.toLocaleString());
 
@@ -13,10 +13,14 @@ export function ClusterPanel({
   cluster,
   providerName,
   health,
+  blobBytes,
+  formats,
 }: {
   cluster: ClusterStats;
   providerName?: string;
   health?: ReactNode;
+  blobBytes: number;
+  formats: FormatUsage[];
 }) {
   const { t } = useTranslation();
   // A cluster reporting no capacity has nothing to show a proportion of; the
@@ -36,7 +40,11 @@ export function ClusterPanel({
             <StorageUsageBar
               usedBytes={cluster.used_bytes}
               totalBytes={cluster.total_capacity_bytes}
+              availableBytes={cluster.available_bytes}
               usagePct={usagePct}
+              blobBytes={blobBytes}
+              formats={formats}
+              logicalBytes={cluster.logical_used_bytes}
             />
           )}
         </div>

@@ -177,7 +177,26 @@ async fn deliver_coverage_report(
             );
             return;
         }
-        notifier.notify_coverage_report(&targets, &report);
+        let payload = notifier.build_coverage_report(&report);
+        for target in targets {
+            let error = notifier
+                .send_coverage_report(&target.url, &payload)
+                .await
+                .err()
+                .map(|e| e.to_string());
+            if let Some(err) = &error {
+                tracing::warn!(target: LOG_TARGET, receiver = %target.name, err = %err, "coverage: report delivery failed");
+            }
+            store
+                .log_alarm_delivery(
+                    meta::ALARM_COVERAGE,
+                    &target.name,
+                    meta::ALARM_TRIGGER_SCHEDULE,
+                    error.as_deref().map_or(Ok(()), Err),
+                    report.not_applied + report.partial,
+                )
+                .await;
+        }
     };
     let _ = tokio::time::timeout(COVERAGE_DELIVER_TIMEOUT, deliver).await;
 }

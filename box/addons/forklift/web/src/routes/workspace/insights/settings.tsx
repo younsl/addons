@@ -28,6 +28,7 @@ import { cn } from "@/lib/utils";
 import { openApiQueryKeys, openApiQueryOptions } from "@/query/v1/openapi-query-options";
 import { sendInsightsNotification, updateInsightSettings } from "@/services/v1/insights/api";
 import type { InsightSettings, InsightSettingsInput } from "@/services/v1/openapi-types";
+import { AlarmHistory, alarmHistoryKey } from "./-components/alarm-history";
 import { InsightsTabs } from "./-components/insights-tabs";
 
 export const Route = createFileRoute("/workspace/insights/settings")({
@@ -76,6 +77,7 @@ function InsightSettingsPage() {
   });
   const send = useMutation({
     mutationFn: (id: number) => sendInsightsNotification({ body: { receiver_ids: [id] } }),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: alarmHistoryKey("insights") }),
   });
 
   // Seeded once so a background refetch does not wipe a half-typed form.
@@ -267,6 +269,8 @@ function InsightSettingsPage() {
           </FieldGroup>
         </CardContent>
       </Card>
+
+      <AlarmHistory feature="insights" />
 
       {settings.updated_at && (
         <p className="text-sm text-muted-foreground">

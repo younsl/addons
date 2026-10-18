@@ -1738,6 +1738,26 @@ paths:
         "400": { description: No receiver chosen, or no analysis has run yet }
         "403": { description: Requires admin or security permission }
         "503": { description: Security insights or notifications are not configured }
+  /api/v1/insights/notification/history:
+    get:
+      tags: [insights]
+      operationId: getInsightsNotificationHistory
+      summary: Recent deliveries of the security insight alarm (admin or security)
+      description: >
+        Every delivery attempt, scheduled or manual, one per receiver, kept for
+        90 days. A scheduled run that skips the alarm sends nothing and records nothing.
+      security: [{ basicAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - { name: days, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 90, default: 30 } }
+      responses:
+        "200":
+          description: Deliveries, oldest first.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AlarmHistory" }
+        "400": { description: days out of range }
+        "403": { description: Requires admin or security permission }
+        "503": { description: Security insights are disabled }
   /api/v1/insights/checks/{id}/history:
     get:
       tags: [insights]
@@ -2098,6 +2118,25 @@ paths:
               schema: { $ref: "#/components/schemas/NotificationSampleReport" }
         "400": { description: No scan result yet, or no enabled receiver selected }
         "503": { description: Coverage scanning or notifications are not configured }
+  /api/v1/coverage/notification/history:
+    get:
+      tags: [coverage]
+      operationId: getCoverageNotificationHistory
+      summary: Recent deliveries of the coverage report (admin)
+      description: >
+        Every delivery attempt, scheduled or manual, one per receiver, kept for
+        90 days. A scheduled run skipped for full coverage records nothing.
+      security: [{ basicAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - { name: days, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 90, default: 30 } }
+      responses:
+        "200":
+          description: Deliveries, oldest first.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AlarmHistory" }
+        "400": { description: days out of range }
+        "503": { description: Coverage scanning is not configured }
 
   /cargo/{repo}/config.json:
     get:
@@ -3134,7 +3173,7 @@ components:
       type: object
       required: [kind, label]
       properties:
-        kind: { type: string, enum: [artifact, tag, repository, user, token, client, approval, project, advisory] }
+        kind: { type: string, enum: [artifact, tag, repository, user, token, client, approval, project, advisory, volume] }
         label: { type: string }
         detail: { type: string }
         repo: { type: string }
@@ -3433,7 +3472,7 @@ components:
         The object-storage overview: the active backend and provider, forklift's
         own deduplicated blob footprint, and whichever capacity source the
         backend offers - the volume for fs, the provider's admin API for s3.
-      required: [backend, blob_bytes, blob_count, dangling]
+      required: [backend, blob_bytes, blob_count, usage_by_format, dangling]
       properties:
         backend: { type: string, enum: [fs, s3] }
         provider: { type: string, description: S3 provider id (aws, minio, rustfs, seaweedfs, garage, generic). Absent for fs. }
@@ -3443,6 +3482,13 @@ components:
         prefix: { type: string }
         blob_count: { type: integer }
         blob_bytes: { type: integer }
+        usage_by_format:
+          type: array
+          description: >
+            blob_bytes split by the format of the repositories holding each blob,
+            largest first. A blob shared across formats counts once. Blobs no
+            artifact references (awaiting garbage collection) are in no entry.
+          items: { $ref: "#/components/schemas/FormatUsage" }
         cluster: { $ref: "#/components/schemas/ClusterStats" }
         cluster_error: { type: string, description: Why the cluster metrics are absent. }
         conditional_writes: { type: boolean, description: Whether the store rejected failed S3 preconditions at startup. Absent for fs. }
@@ -3459,6 +3505,13 @@ components:
             re-checked against its artifact row before it is reported, and
             the list is capped at 100.
           items: { $ref: "#/components/schemas/DanglingRef" }
+    FormatUsage:
+      type: object
+      required: [format, blob_count, bytes]
+      properties:
+        format: { type: string, enum: [maven, npm, cargo, go, pypi, raw, oci] }
+        blob_count: { type: integer }
+        bytes: { type: integer }
     StorageHealth:
       type: object
       required: [interval_seconds, checks]
@@ -4007,6 +4060,24 @@ components:
         name: { type: string }
         exists: { type: boolean }
         enabled: { type: boolean }
+    AlarmHistory:
+      type: object
+      required: [deliveries]
+      properties:
+        deliveries:
+          type: array
+          items: { $ref: "#/components/schemas/AlarmDelivery" }
+    AlarmDelivery:
+      type: object
+      description: One attempt to deliver an alarm to one receiver. items is how many findings or projects the message listed. error is set only on a failure.
+      required: [sent_at, receiver, trigger, ok, items]
+      properties:
+        sent_at: { type: string, format: date-time }
+        receiver: { type: string }
+        trigger: { type: string, enum: [schedule, manual] }
+        ok: { type: boolean }
+        error: { type: string }
+        items: { type: integer }
     NotificationSampleReport:
       type: object
       required: [results]

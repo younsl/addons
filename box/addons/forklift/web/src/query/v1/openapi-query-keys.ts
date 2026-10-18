@@ -9,6 +9,7 @@ import type {
   ListVersionDeniesRequest,
 } from "@/services/v1/approvals/types";
 import type {
+  GetCoverageNotificationHistoryRequest,
   GetCoverageProjectLastCommitRequest,
   GetCoverageProjectPipelineRequest,
   GetCoverageProjectRequest,
@@ -19,6 +20,7 @@ import type {
 } from "@/services/v1/ha/types";
 import type {
   GetInsightCheckHistoryRequest,
+  GetInsightsNotificationHistoryRequest,
 } from "@/services/v1/insights/types";
 import type {
   GetRepositoryNotificationSampleRequest,
@@ -114,6 +116,8 @@ export const openApiQueryKeys = {
   getInsights: () => key("GET", "/api/v1/insights"),
   getInsightSettings: () => key("GET", "/api/v1/insights/settings"),
   getInsightsNotificationPreview: () => key("GET", "/api/v1/insights/notification/preview"),
+  getInsightsNotificationHistory: (params?: GetInsightsNotificationHistoryRequest) =>
+    key("GET", "/api/v1/insights/notification/history", params),
   getInsightCheckHistory: (params: GetInsightCheckHistoryRequest) =>
     key("GET", "/api/v1/insights/checks/{id}/history", params),
   getCoverage: () => key("GET", "/api/v1/coverage"),
@@ -129,4 +133,6 @@ export const openApiQueryKeys = {
   getCoverageSettings: () => key("GET", "/api/v1/coverage/settings"),
   getCoverageGitlabCheck: () => key("GET", "/api/v1/coverage/gitlab-check"),
   getCoverageNotificationPreview: () => key("GET", "/api/v1/coverage/notification/preview"),
+  getCoverageNotificationHistory: (params?: GetCoverageNotificationHistoryRequest) =>
+    key("GET", "/api/v1/coverage/notification/history", params),
 } as const;

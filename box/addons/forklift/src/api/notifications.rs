@@ -414,6 +414,62 @@ pub(super) struct NotificationSampleReportDTO {
     pub(super) results: Vec<NotificationSampleResultDTO>,
 }
 
+/// One alarm delivery attempt, as the settings pages chart it.
+#[derive(Debug, Serialize)]
+pub(super) struct AlarmDeliveryDTO {
+    sent_at: chrono::DateTime<chrono::Utc>,
+    receiver: String,
+    trigger: String,
+    ok: bool,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    error: String,
+    items: i64,
+}
+
+#[derive(Debug, Serialize)]
+struct AlarmHistoryDTO {
+    deliveries: Vec<AlarmDeliveryDTO>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+pub(super) struct AlarmHistoryQuery {
+    #[serde(default)]
+    days: Option<i64>,
+}
+
+/// Writes one alarm's deliveries over the last `days` (1 to 90, 30 when
+/// unset), oldest first.
+pub(super) async fn write_alarm_history(
+    h: &Handler,
+    feature: &str,
+    query: &AlarmHistoryQuery,
+) -> Response {
+    let days = query.days.unwrap_or(30);
+    if !(1..=90).contains(&days) {
+        return write_error(StatusCode::BAD_REQUEST, "days must be from 1 to 90");
+    }
+    let since = chrono::Utc::now() - chrono::TimeDelta::days(days);
+    match h.store.alarm_deliveries(feature, since).await {
+        Ok(rows) => write_json(
+            StatusCode::OK,
+            AlarmHistoryDTO {
+                deliveries: rows
+                    .into_iter()
+                    .map(|d| AlarmDeliveryDTO {
+                        sent_at: d.sent_at,
+                        receiver: d.receiver,
+                        trigger: d.trigger,
+                        ok: d.ok,
+                        error: d.error,
+                        items: d.items,
+                    })
+                    .collect(),
+            },
+        ),
+        Err(err) => map_error(err),
+    }
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub(super) struct SampleReceiverInfo {
     pub(super) name: String,

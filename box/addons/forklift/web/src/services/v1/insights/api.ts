@@ -17,6 +17,8 @@ import type {
   GetInsightCheckHistoryRequest,
   GetInsightCheckHistoryResponse,
   GetInsightSettingsResponse,
+  GetInsightsNotificationHistoryRequest,
+  GetInsightsNotificationHistoryResponse,
   GetInsightsNotificationPreviewResponse,
   GetInsightsResponse,
   RefreshInsightsResponse,
@@ -81,6 +83,15 @@ export function sendInsightsNotification(params: SendInsightsNotificationRequest
   return client.post<SendInsightsNotificationResponse, SendInsightsNotificationRequest["body"]>(
     `${API_PREFIX}/insights/notification/send`,
     params.body,
+    requestOptions,
+  );
+}
+
+export function getInsightsNotificationHistory(params: GetInsightsNotificationHistoryRequest, options?: OpenApiRequestOptions) {
+  const { client, requestOptions } = resolveOpenApiRequestOptions(options);
+
+  return client.get<GetInsightsNotificationHistoryResponse>(
+    appendOpenApiQuery(`${API_PREFIX}/insights/notification/history`, params?.query),
     requestOptions,
   );
 }

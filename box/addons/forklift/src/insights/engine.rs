@@ -240,11 +240,22 @@ impl Analyzer {
             tracing::warn!(receiver = %settings.receiver, "security insights: the alarm receiver is missing or disabled");
             return Ok(false);
         };
-        let payload = notifier.build_insights_report(&super::alarm_report(&report));
-        if let Err(err) = notifier
+        let alarm = super::alarm_report(&report);
+        let payload = notifier.build_insights_report(&alarm);
+        let sent = notifier
             .send_insights_report(&receiver.webhook_url, &payload)
-            .await
-        {
+            .await;
+        let error = sent.as_ref().err().map(ToString::to_string);
+        self.store
+            .log_alarm_delivery(
+                meta::ALARM_INSIGHTS,
+                &receiver.name,
+                meta::ALARM_TRIGGER_SCHEDULE,
+                error.as_deref().map_or(Ok(()), Err),
+                alarm.findings.len() as i64,
+            )
+            .await;
+        if let Some(err) = error {
             tracing::warn!(receiver = %receiver.name, err = %err, "security insights: alarm delivery failed");
             return Ok(false);
         }

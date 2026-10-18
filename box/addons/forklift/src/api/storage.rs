@@ -30,6 +30,9 @@ struct StorageStats {
     prefix: String,
     blob_count: i64,
     blob_bytes: i64,
+    /// `blob_bytes` split by the format of the repositories holding each blob,
+    /// largest first, so the usage bar can show what the space is spent on.
+    usage_by_format: Vec<FormatUsageDTO>,
     #[serde(skip_serializing_if = "Option::is_none")]
     cluster: Option<ClusterStats>,
     #[serde(skip_serializing_if = "String::is_empty")]
@@ -53,6 +56,14 @@ struct StorageStats {
     /// disagree; the Storage page is where an operator looks when they need the
     /// whole picture rather than one repository's artifact list.
     dangling: Vec<DanglingRefDTO>,
+}
+
+/// The deduplicated blob footprint of one repository format.
+#[derive(Debug, Clone, Serialize)]
+struct FormatUsageDTO {
+    format: String,
+    blob_count: i64,
+    bytes: i64,
 }
 
 /// One metadata reference whose blob bytes are missing.
@@ -173,6 +184,19 @@ pub(super) async fn get_stats(State(h): State<Arc<Handler>>) -> Response {
         Ok((count, bytes)) => {
             out.blob_count = count;
             out.blob_bytes = bytes;
+        }
+        Err(err) => return map_error(err),
+    }
+    match h.store.blob_usage_by_format().await {
+        Ok(parts) => {
+            out.usage_by_format = parts
+                .into_iter()
+                .map(|p| FormatUsageDTO {
+                    format: p.format,
+                    blob_count: p.blob_count,
+                    bytes: p.bytes,
+                })
+                .collect();
         }
         Err(err) => return map_error(err),
     }
@@ -558,6 +582,48 @@ pub(crate) mod tests {
         let resp = srv.admin_do(Method::GET, "/storage", "").await;
         assert_eq!(resp.status, StatusCode::OK, "{}", resp.text());
         resp.json()
+    }
+
+    /// The usage bar's breakdown comes back with the stats: empty before any
+    /// artifact is stored, then one entry per format holding blobs.
+    #[tokio::test]
+    async fn storage_stats_split_blob_usage_by_format() {
+        let srv = storage_harness("s3", "s3://artifacts").await;
+        assert_eq!(
+            get_storage(&srv).await["usage_by_format"],
+            serde_json::json!([])
+        );
+
+        let repo = srv
+            .store
+            .create_repository(crate::meta::Repository {
+                name: "files".into(),
+                format: crate::meta::FORMAT_RAW.into(),
+                r#type: crate::meta::TYPE_HOSTED.into(),
+                ..Default::default()
+            })
+            .await
+            .expect("create repository");
+        let now = chrono::Utc::now();
+        srv.store
+            .put_artifact(crate::meta::Artifact {
+                repo_id: repo.id,
+                path: "a.bin".into(),
+                blob_sha256: "abc".into(),
+                size: 42,
+                cached_at: now,
+                last_accessed_at: now,
+                ..Default::default()
+            })
+            .await
+            .expect("put artifact");
+        let stats = get_storage(&srv).await;
+        assert_eq!(
+            stats["usage_by_format"],
+            serde_json::json!([{ "format": "raw", "blob_count": 1, "bytes": 42 }]),
+            "{stats}"
+        );
+        assert_eq!(stats["blob_bytes"], 42);
     }
 
     /// The fs backend reports the volume the data directory lives on, which is what

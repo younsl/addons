@@ -7,10 +7,12 @@ use http::StatusCode;
 use serde::{Deserialize, Serialize};
 
 use crate::coverage;
+use crate::meta;
 use crate::notify;
 
 use super::notifications::{
-    NotificationSampleReportDTO, NotificationSampleResultDTO, SampleReceiverInfo,
+    AlarmHistoryQuery, NotificationSampleReportDTO, NotificationSampleResultDTO,
+    SampleReceiverInfo, write_alarm_history,
 };
 use super::{Handler, map_error, principal_name, write_error, write_json};
 
@@ -715,21 +717,40 @@ pub(super) async fn send_alarm(State(h): State<Arc<Handler>>, request: Request) 
     let payload = notifier.build_coverage_report(&report);
     let mut results = Vec::with_capacity(targets.len());
     for target in targets {
-        match notifier.send_coverage_report(&target.url, &payload).await {
-            Ok(()) => results.push(NotificationSampleResultDTO {
-                name: target.name,
-                ok: true,
-                error: String::new(),
-            }),
-            Err(err) => results.push(NotificationSampleResultDTO {
-                name: target.name,
-                ok: false,
-                error: err.to_string(),
-            }),
-        }
+        let error = notifier
+            .send_coverage_report(&target.url, &payload)
+            .await
+            .err()
+            .map(|err| err.to_string());
+        h.store
+            .log_alarm_delivery(
+                meta::ALARM_COVERAGE,
+                &target.name,
+                meta::ALARM_TRIGGER_MANUAL,
+                error.as_deref().map_or(Ok(()), Err),
+                report.not_applied + report.partial,
+            )
+            .await;
+        results.push(NotificationSampleResultDTO {
+            name: target.name,
+            ok: error.is_none(),
+            error: error.unwrap_or_default(),
+        });
     }
     h.audit(&parts, "", "coverage.notify", 200);
     write_json(StatusCode::OK, NotificationSampleReportDTO { results })
+}
+
+/// Lists the coverage report's recent deliveries (admin), so the settings page
+/// can chart how the report went out.
+pub(super) async fn alarm_history(
+    State(h): State<Arc<Handler>>,
+    axum::extract::Query(query): axum::extract::Query<AlarmHistoryQuery>,
+) -> Response {
+    if let Err(response) = h.coverage_ready() {
+        return *response;
+    }
+    write_alarm_history(&h, meta::ALARM_COVERAGE, &query).await
 }
 
 #[cfg(test)]
@@ -861,6 +882,7 @@ pub(crate) mod tests {
             (Method::GET, "/coverage/project/pipeline?path=team/app", ""),
             (Method::GET, "/coverage/notification/preview", ""),
             (Method::POST, "/coverage/notification/send", ""),
+            (Method::GET, "/coverage/notification/history", ""),
         ] {
             let resp = do_as_on(&srv.app, "reader", "pw123456", method.clone(), path, body).await;
             assert_eq!(
@@ -1365,6 +1387,49 @@ pub(crate) mod tests {
             "send with no notifier = {}, want 503",
             resp.status
         );
+    }
+
+    #[tokio::test]
+    async fn coverage_alarm_history_lists_deliveries() {
+        let srv = new_coverage_server().await;
+        let empty = srv
+            .admin_do(Method::GET, "/coverage/notification/history", "")
+            .await;
+        assert_eq!(empty.status, StatusCode::OK, "{}", empty.text());
+        assert_eq!(empty.json()["deliveries"], serde_json::json!([]));
+
+        srv.store
+            .log_alarm_delivery(
+                crate::meta::ALARM_COVERAGE,
+                "slack-devops",
+                crate::meta::ALARM_TRIGGER_SCHEDULE,
+                Err("webhook returned 500"),
+                19,
+            )
+            .await;
+        srv.store
+            .log_alarm_delivery(
+                crate::meta::ALARM_INSIGHTS,
+                "slack-security",
+                crate::meta::ALARM_TRIGGER_MANUAL,
+                Ok(()),
+                4,
+            )
+            .await;
+        let history = srv
+            .admin_do(Method::GET, "/coverage/notification/history?days=7", "")
+            .await
+            .json();
+        let deliveries = history["deliveries"].as_array().expect("deliveries");
+        assert_eq!(deliveries.len(), 1, "only coverage deliveries: {history}");
+        assert_eq!(deliveries[0]["ok"], false, "{history}");
+        assert_eq!(deliveries[0]["error"], "webhook returned 500", "{history}");
+        assert_eq!(deliveries[0]["items"], 19, "{history}");
+
+        let resp = srv
+            .admin_do(Method::GET, "/coverage/notification/history?days=0", "")
+            .await;
+        assert_eq!(resp.status, StatusCode::BAD_REQUEST, "{}", resp.text());
     }
 
     /// A deployment with the credentials set but the switch off reports the two

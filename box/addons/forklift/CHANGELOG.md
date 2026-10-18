@@ -4,6 +4,23 @@ Notable changes per release. Container image versions come from the
 `org.opencontainers.image.version` label in the `Dockerfile`; chart versions from
 `charts/forklift/Chart.yaml`.
 
+## 0.16.1 (2026-10-19)
+
+### Added
+
+- Recent alarms on the Security and Coverage Settings pages: the last 30 days of alarm deliveries charted with the same Metrics panels a check page uses, whether each delivery landed on the left and how many findings or projects it listed on the right, with the same crosshair tooltip (time, result, receiver, scheduled or manual, and the error of a failed one) and drag-to-zoom. A manual Send now shows up on the chart at once. Every delivery attempt, scheduled or manual, is recorded per receiver and kept for 90 days. The API is `GET /api/v1/insights/notification/history` (admin or security) and `GET /api/v1/coverage/notification/history` (admin).
+- Insight check OP-04 Data volume running out of space (`storage-capacity`, Operations, DevOps): the volume holding the data directory, which keeps the metadata database and the filesystem backend's blobs, is Critical at 90% full or more, High at 80% and Medium at 70%. The flagged item names the data directory with its usage and free space and links to the Storage page. It shows as Unavailable when the volume cannot be measured. Security Insights now has 26 checks.
+- The Storage page's Cluster usage bar is split into coloured parts with a legend under it: the four formats using the most space, other forklift data (smaller formats and blobs awaiting cleanup), Other data (objects other clients keep in the store, such as other buckets), System data (disk the objects do not account for: replicas or parity, unreclaimed deletes, store metadata and other files on the same disks, drawn hatched) and Free. Each legend row gives the size and the share of capacity, and hovering or focusing a part shows its share of capacity and of used space. Other data and System data sit at the left end of the bar. A store that does not report its object bytes shows the two as one Other and system data part. `GET /api/v1/storage` returns the split as `usage_by_format`.
+
+### Changed
+
+- The Cluster usage bar no longer turns yellow or red as a whole. The percentage in its header takes the warning or critical colour instead, and the 70% and 90% markers stay. On a phone the marker captions show only the number.
+- The scheduled coverage report waits for each receiver's response, within the existing 30 second bound, so its outcome is logged and recorded.
+
+### Fixed
+
+- Pointing at a run in a status timeline (an insight check's Status over time, and the new Delivery result) could name a different run than the band under the pointer: a band one run wide was drawn wider than its run, pushing every later band to the right.
+
 ## 0.16.0 (2026-10-18)
 
 ### Added

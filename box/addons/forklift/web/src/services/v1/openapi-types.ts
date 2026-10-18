@@ -86,7 +86,7 @@ export interface InsightAck { check_id: string; note: string; flagged: number; a
 
 export interface InsightFinding { id: string; code: string; rationale: string; criteria: string; severity: "critical" | "high" | "medium" | "low" | "info"; category: "supply-chain" | "policy" | "exposure" | "access" | "operations"; audiences: ("devops" | "security" | "developer")[]; title: string; summary: string; recommendation: string; params: Record<string, string>; total: number; affected: InsightAffected[]; by_repo?: Record<string, number>; acknowledged?: boolean; everyone?: boolean; }
 
-export interface InsightAffected { kind: "artifact" | "tag" | "repository" | "user" | "token" | "client" | "approval" | "project" | "advisory"; label: string; detail?: string; repo?: string; repo_id?: number; path?: string; tag?: string; user_id?: number; }
+export interface InsightAffected { kind: "artifact" | "tag" | "repository" | "user" | "token" | "client" | "approval" | "project" | "advisory" | "volume"; label: string; detail?: string; repo?: string; repo_id?: number; path?: string; tag?: string; user_id?: number; }
 
 export interface RetentionPreview { count: number; size?: number; items: RetentionPreviewItem[]; }
 
@@ -128,7 +128,9 @@ export interface TokenScope { repo_pattern: string; actions: ("read" | "write" |
 
 export interface HAStatus { enabled: boolean; mode: string; backend: "fs" | "s3"; storage_endpoint?: string; identity: string; leader: string; is_leader: boolean; role: "leader" | "standby"; lease_name?: string; fencing_token?: number; started_at?: string; version?: string; runtime?: string; }
 
-export interface StorageStats { backend: "fs" | "s3"; provider?: string; provider_name?: string; endpoint?: string; bucket?: string; prefix?: string; blob_count: number; blob_bytes: number; cluster?: ClusterStats; cluster_error?: string; conditional_writes?: boolean; conditional_writes_detail?: string; last_migration?: MigrationSummary; migration_history_error?: string; fs_error?: string; fs?: DiskUsage; dangling: DanglingRef[]; }
+export interface StorageStats { backend: "fs" | "s3"; provider?: string; provider_name?: string; endpoint?: string; bucket?: string; prefix?: string; blob_count: number; blob_bytes: number; usage_by_format: FormatUsage[]; cluster?: ClusterStats; cluster_error?: string; conditional_writes?: boolean; conditional_writes_detail?: string; last_migration?: MigrationSummary; migration_history_error?: string; fs_error?: string; fs?: DiskUsage; dangling: DanglingRef[]; }
+
+export interface FormatUsage { format: "maven" | "npm" | "cargo" | "go" | "pypi" | "raw" | "oci"; blob_count: number; bytes: number; }
 
 export interface StorageHealth { interval_seconds: number; checks: StorageHealthCheck[]; }
 
@@ -201,6 +203,10 @@ export interface CoverageAlarmPreview { payload: CoverageAlarmPayload; sample: b
 export interface NotificationSamplePreview { payload: ApprovalAlarmPayload; receivers: NotificationSampleReceiver[]; }
 
 export interface NotificationSampleReceiver { name: string; exists: boolean; enabled: boolean; }
+
+export interface AlarmHistory { deliveries: AlarmDelivery[]; }
+
+export interface AlarmDelivery { sent_at: string; receiver: string; trigger: "schedule" | "manual"; ok: boolean; error?: string; items: number; }
 
 export interface NotificationSampleReport { results: NotificationSampleResult[]; }
 
