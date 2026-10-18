@@ -245,7 +245,7 @@ impl Analyzer {
         let sent = notifier
             .send_insights_report(&receiver.webhook_url, &payload)
             .await;
-        let error = sent.as_ref().err().map(ToString::to_string);
+        let error = sent.as_ref().err().map(notify::Error::public_detail);
         self.store
             .log_alarm_delivery(
                 meta::ALARM_INSIGHTS,
@@ -255,7 +255,7 @@ impl Analyzer {
                 alarm.findings.len() as i64,
             )
             .await;
-        if let Some(err) = error {
+        if let Err(err) = sent {
             tracing::warn!(receiver = %receiver.name, err = %err, "security insights: alarm delivery failed");
             return Ok(false);
         }

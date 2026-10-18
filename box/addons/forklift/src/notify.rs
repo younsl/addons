@@ -41,6 +41,19 @@ pub enum Error {
     NotConfigured,
 }
 
+impl Error {
+    /// A short reason safe to store and show. A transport error's text can
+    /// carry the webhook URL, whose path is often the channel's secret token.
+    pub fn public_detail(&self) -> String {
+        match self {
+            Self::Http(e) if e.is_builder() => "could not build request".to_string(),
+            Self::Http(_) => "no response from webhook".to_string(),
+            Self::Json(_) => "could not encode the alarm".to_string(),
+            Self::Status(_) | Self::NotConfigured => self.to_string(),
+        }
+    }
+}
+
 /// Result alias for this module.
 pub type Result<T> = std::result::Result<T, Error>;
 
@@ -623,6 +636,28 @@ pub(crate) mod tests {
             );
             let n = Notifier::new(Duration::from_secs(2));
             assert_eq!(n.timeout, Duration::from_secs(2), "custom timeout, want 2s");
+        }
+
+        /// A transport failure's stored reason never repeats the webhook URL,
+        /// whose path is the channel's secret.
+        #[tokio::test]
+        async fn public_detail_hides_the_webhook_url() {
+            install_crypto();
+            let n = Notifier::new(Duration::from_secs(1));
+            let err = n
+                .send_insights_report(
+                    "http://127.0.0.1:1/services/T000/B000/secret-token",
+                    &n.build_insights_report(&InsightsReport::default()),
+                )
+                .await
+                .expect_err("nothing listens on port 1");
+            let detail = err.public_detail();
+            assert_eq!(detail, "no response from webhook");
+            assert!(!detail.contains("secret-token"));
+            assert_eq!(
+                Error::Status(503).public_detail(),
+                "webhook returned status 503"
+            );
         }
 
         /// Verifies the delivery recorder fires after an approval alarm is sent,

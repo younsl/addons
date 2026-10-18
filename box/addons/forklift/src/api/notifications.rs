@@ -578,7 +578,7 @@ pub(super) async fn send_repo_sample(
             Err(err) => results.push(NotificationSampleResultDTO {
                 name: target.name,
                 ok: false,
-                error: err.to_string(),
+                error: err.public_detail(),
             }),
         }
     }

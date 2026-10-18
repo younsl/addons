@@ -20,6 +20,7 @@ Notable changes per release. Container image versions come from the
 ### Fixed
 
 - Pointing at a run in a status timeline (an insight check's Status over time, and the new Delivery result) could name a different run than the band under the pointer: a band one run wide was drawn wider than its run, pushing every later band to the right.
+- A failed webhook delivery is reported with a short reason (the HTTP status, or no response from webhook) in the repository notification test, the Security and Coverage Send now results and the alarm history. The transport error it replaces could repeat the webhook URL, whose path is often the channel's secret token.
 
 ## 0.16.0 (2026-10-18)
 

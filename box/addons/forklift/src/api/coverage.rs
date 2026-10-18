@@ -721,7 +721,7 @@ pub(super) async fn send_alarm(State(h): State<Arc<Handler>>, request: Request) 
             .send_coverage_report(&target.url, &payload)
             .await
             .err()
-            .map(|err| err.to_string());
+            .map(|err| err.public_detail());
         h.store
             .log_alarm_delivery(
                 meta::ALARM_COVERAGE,

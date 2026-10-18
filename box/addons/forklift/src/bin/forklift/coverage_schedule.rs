@@ -179,14 +179,11 @@ async fn deliver_coverage_report(
         }
         let payload = notifier.build_coverage_report(&report);
         for target in targets {
-            let error = notifier
-                .send_coverage_report(&target.url, &payload)
-                .await
-                .err()
-                .map(|e| e.to_string());
-            if let Some(err) = &error {
+            let sent = notifier.send_coverage_report(&target.url, &payload).await;
+            if let Err(err) = &sent {
                 tracing::warn!(target: LOG_TARGET, receiver = %target.name, err = %err, "coverage: report delivery failed");
             }
+            let error = sent.err().map(|e| e.public_detail());
             store
                 .log_alarm_delivery(
                     meta::ALARM_COVERAGE,

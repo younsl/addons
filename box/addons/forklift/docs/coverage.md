@@ -227,6 +227,8 @@ current number is not asking to tell the receiver about it. Sending is its own
 action: **Send now** on the settings page, which posts what the last completed
 scan measured, to the receiver named there.
 
+Every delivery, scheduled or sent by hand, is recorded per receiver and kept for 90 days. **Recent alarms** at the bottom of the settings page charts the last 30 days with the same panels as an insight check page: whether each delivery landed, and how many projects it listed. Pointing at one shows its time, receiver, whether the schedule or a person sent it, and the reason a failed one failed (the HTTP status, or no response from webhook, never the webhook URL). The API is `GET /api/v1/coverage/notification/history?days=N` (1 to 90, admin).
+
 ## Operations
 
 The scan is leader-gated: it writes the result, the history row and the

@@ -340,7 +340,7 @@ pub(super) async fn send_alarm(State(h): State<Arc<Handler>>, request: Request) 
             notifier
                 .send_insights_report(&receiver.webhook_url, &payload)
                 .await
-                .map_err(|err| err.to_string())
+                .map_err(|err| err.public_detail())
         };
         h.store
             .log_alarm_delivery(

@@ -1410,7 +1410,8 @@ paths:
       summary: Object-storage overview — backend, blob footprint, cluster metrics (admin)
       description: >
         Reports the active storage backend and forklift's deduplicated blob
-        footprint (blob_count/blob_bytes). For an S3 provider with an admin API
+        footprint (blob_count/blob_bytes), split by repository format
+        (usage_by_format). For an S3 provider with an admin API
         (MinIO, RustFS, SeaweedFS, Garage) it also returns live cluster capacity,
         usage and storage-unit health (cluster); cluster_error explains why those
         are absent.
@@ -1621,8 +1622,8 @@ paths:
       operationId: getInsights
       summary: Security insights - the newest analysis with its trend
       description: >
-        The leader analyzes every repository, artifact, account, token and the
-        recent audit log on a schedule (FORKLIFT_INSIGHTS_INTERVAL, 1h by
+        The leader analyzes every repository, artifact, account, token, the
+        recent audit log and the data volume on a schedule (FORKLIFT_INSIGHTS_INTERVAL, 1h by
         default) and stores the result. Administrators, auditors and security
         reviewers get the whole report (scope "all") with a 30-day trend. Anyone
         else gets only findings about repositories they can read, narrowed to
@@ -3687,10 +3688,10 @@ components:
         [available_bytes, offline_drives, online_drives, servers, total_capacity_bytes, usage_ratio, used_bytes]
       properties:
         total_capacity_bytes: { type: integer }
-        used_bytes: { type: integer }
+        used_bytes: { type: integer, description: Disk in use on the storage units. Includes replicas or parity, space deleted objects have not given back yet, and files beside the store on the same disks. }
         available_bytes: { type: integer }
         usage_ratio: { type: number }
-        logical_used_bytes: { type: integer }
+        logical_used_bytes: { type: integer, description: Bytes of the objects the store holds across every bucket, each counted once. used_bytes minus this is disk the objects do not account for (System data on the Storage page), and this minus blob_bytes is other clients' objects (Other data). }
         object_count: { type: integer }
         bucket_count: { type: integer }
         online_drives: { type: integer, description: Healthy storage units (drives, volume-server disks or storage nodes). }
@@ -4069,7 +4070,7 @@ components:
           items: { $ref: "#/components/schemas/AlarmDelivery" }
     AlarmDelivery:
       type: object
-      description: One attempt to deliver an alarm to one receiver. items is how many findings or projects the message listed. error is set only on a failure.
+      description: One attempt to deliver an alarm to one receiver. items is how many findings or projects the message listed. error is set only on a failure and is a short reason (the HTTP status, or no response from webhook), never the webhook URL.
       required: [sent_at, receiver, trigger, ok, items]
       properties:
         sent_at: { type: string, format: date-time }
@@ -4087,7 +4088,7 @@ components:
           items: { $ref: "#/components/schemas/NotificationSampleResult" }
     NotificationSampleResult:
       type: object
-      description: One receiver's delivery outcome; error is set only on a failure.
+      description: One receiver's delivery outcome. error is set only on a failure and is a short reason (the HTTP status, or no response from webhook), never the webhook URL.
       required: [name, ok]
       properties:
         name: { type: string }
