@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use futures_util::StreamExt;
-use serde::{Deserialize, Deserializer, Serialize};
+use serde::{Deserialize, Serialize};
 
 use super::cvss::cvss_base_score;
 use super::{Advisory, Finding, Result, Scanner, Severity};
@@ -40,14 +40,6 @@ impl Osv {
     }
 }
 
-fn null_default<'de, D, T>(d: D) -> std::result::Result<T, D::Error>
-where
-    D: Deserializer<'de>,
-    T: Default + Deserialize<'de>,
-{
-    Ok(Option::<T>::deserialize(d)?.unwrap_or_default())
-}
-
 #[derive(Serialize)]
 struct OsvQuery<'a> {
     /// Omitted for a package-level query: OSV then returns every advisory
@@ -68,7 +60,7 @@ struct OsvPackage<'a> {
 #[derive(Debug, Default, Deserialize)]
 #[serde(default)]
 struct OsvResponse {
-    #[serde(deserialize_with = "null_default")]
+    #[serde(deserialize_with = "crate::repoconfig::null_default")]
     vulns: Vec<OsvVuln>,
 }
 
@@ -76,12 +68,12 @@ struct OsvResponse {
 #[serde(default)]
 pub(crate) struct OsvVuln {
     pub(crate) id: String,
-    #[serde(deserialize_with = "null_default")]
+    #[serde(deserialize_with = "crate::repoconfig::null_default")]
     pub(crate) aliases: Vec<String>,
     pub(crate) withdrawn: String,
-    #[serde(deserialize_with = "null_default")]
+    #[serde(deserialize_with = "crate::repoconfig::null_default")]
     pub(crate) severity: Vec<OsvSeverity>,
-    #[serde(deserialize_with = "null_default")]
+    #[serde(deserialize_with = "crate::repoconfig::null_default")]
     pub(crate) database_specific: OsvDatabaseSpecific,
 }
 

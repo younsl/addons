@@ -17,6 +17,7 @@ use super::uiupload::{
     ArtifactUploadManifest, ArtifactUploadResult, PublishResult, StagedUploadAsset, UploadProblem,
     UploadedArtifact, Uploader, upload_problem,
 };
+use super::uiupload_archive::clean_archive_path;
 
 /// PEP 440's version grammar, as the canonicaliser applies it.
 static PYPI_VERSION_GRAMMAR: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
@@ -231,7 +232,7 @@ impl Uploader {
                     "requires_python": distribution.requires_python,
                     "wheel_tags": distribution.wheel_tags,
                 },
-                "managed_by": "ui_upload",
+                "managed_by": meta::MANAGED_BY_UI_UPLOAD,
                 "package": project,
                 "role": "primary",
                 "schema_version": 1,
@@ -1046,21 +1047,4 @@ fn read_sdist_metadata<R: std::io::Read>(
         metadata = Some(bytes);
     }
     Ok(metadata)
-}
-
-/// An entry that cleans to "." yields an empty string, which every caller treats as unsafe.
-fn clean_archive_path(name: &str) -> String {
-    let mut out: Vec<&str> = Vec::new();
-    for segment in name.split('/') {
-        match segment {
-            "" | "." => {}
-            ".." => {
-                if out.pop().is_none() {
-                    out.push("..");
-                }
-            }
-            other => out.push(other),
-        }
-    }
-    out.join("/")
 }

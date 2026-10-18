@@ -12,7 +12,7 @@ use crate::audit;
 use crate::auth;
 use crate::meta::{self, Artifact};
 
-use super::repositories::path_id;
+use super::path_id;
 use super::{Handler, map_error, principal_name, write_error, write_json};
 
 /// One label on one artifact, with who put it there and when, so the console can

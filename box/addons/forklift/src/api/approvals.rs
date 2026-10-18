@@ -13,8 +13,8 @@ use crate::auth;
 use crate::meta::{self, PackageApproval, VulnAdvisory};
 use crate::repo;
 
-use super::repositories::{int_param, path_id};
 use super::{Handler, map_error, principal_name, write_error, write_json};
+use super::{int_param, path_id};
 
 /// The JSON shape for one package approval row.
 #[derive(Debug, Clone, Default, Serialize)]
@@ -49,7 +49,7 @@ struct ApprovalDTO {
     vuln_source: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     vuln_scanned_at: Option<DateTime<Utc>>,
-    #[serde(skip_serializing_if = "is_zero")]
+    #[serde(skip_serializing_if = "super::is_zero")]
     vuln_scan_ms: i64,
     /// Usernames permitted to approve this repository. Populated only on the
     /// single-approval detail endpoint.
@@ -74,14 +74,10 @@ struct ApprovalDTO {
     notified_at: Option<DateTime<Utc>>,
     #[serde(skip_serializing_if = "String::is_empty")]
     notify_result: String,
-    #[serde(skip_serializing_if = "is_zero")]
+    #[serde(skip_serializing_if = "super::is_zero")]
     notify_duration_ms: i64,
     #[serde(skip_serializing_if = "String::is_empty")]
     notify_detail: String,
-}
-
-const fn is_zero(v: &i64) -> bool {
-    *v == 0
 }
 
 fn approval_to_dto(a: PackageApproval) -> ApprovalDTO {

@@ -1,7 +1,6 @@
 //! The Cargo publisher: `.crate` inspection, sparse-index planning and the
 //! atomic commit.
 
-use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use crate::meta::{
@@ -13,6 +12,7 @@ use super::uiupload::{
     ArtifactUploadManifest, ArtifactUploadResult, PublishResult, StagedUploadAsset, UploadProblem,
     UploadedArtifact, Uploader, upload_problem,
 };
+use super::uiupload_archive::{clean_archive_path, sorted_json};
 use super::uiupload_maven::uploaded_result;
 
 /// The identity and index inputs read out of an uploaded `.crate`.
@@ -186,7 +186,7 @@ impl Uploader {
         let owned_metadata = serde_json::to_string(&serde_json::json!({
             "format": "cargo",
             "format_metadata": format_metadata,
-            "managed_by": "ui_upload",
+            "managed_by": meta::MANAGED_BY_UI_UPLOAD,
             "package": pkg.name,
             "role": "primary",
             "schema_version": 1,
@@ -198,7 +198,7 @@ impl Uploader {
         let aggregate_metadata = serde_json::to_string(&serde_json::json!({
             "aggregate_schema_version": 1,
             "format": "cargo",
-            "managed_by": "ui_upload_aggregate",
+            "managed_by": meta::MANAGED_BY_UI_UPLOAD_AGGREGATE,
             "package": requested_name,
             "schema_version": 1,
         }))
@@ -733,26 +733,6 @@ fn toml_to_json(value: &toml::Value) -> serde_json::Value {
     }
 }
 
-fn sorted_json(value: serde_json::Value) -> serde_json::Value {
-    match value {
-        serde_json::Value::Object(object) => {
-            let sorted: BTreeMap<String, serde_json::Value> = object
-                .into_iter()
-                .map(|(k, v)| (k, sorted_json(v)))
-                .collect();
-            let mut out = serde_json::Map::new();
-            for (k, v) in sorted {
-                out.insert(k, v);
-            }
-            serde_json::Value::Object(out)
-        }
-        serde_json::Value::Array(items) => {
-            serde_json::Value::Array(items.into_iter().map(sorted_json).collect())
-        }
-        other => other,
-    }
-}
-
 /// Why a `.crate` archive could not be inspected.
 #[allow(clippy::enum_variant_names)] // Names match the public problem codes.
 enum CrateError {
@@ -818,22 +798,6 @@ fn read_crate_manifest<R: std::io::Read>(
         manifest = Some(bytes);
     }
     Ok((root, manifest))
-}
-
-fn clean_archive_path(name: &str) -> String {
-    let mut out: Vec<&str> = Vec::new();
-    for segment in name.split('/') {
-        match segment {
-            "" | "." => {}
-            ".." => {
-                if out.pop().is_none() {
-                    out.push("..");
-                }
-            }
-            other => out.push(other),
-        }
-    }
-    out.join("/")
 }
 
 pub(crate) fn valid_cargo_name(name: &str) -> bool {

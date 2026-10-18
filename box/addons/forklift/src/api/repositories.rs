@@ -17,23 +17,9 @@ use crate::repoconfig;
 use super::labels::{ArtifactLabelDTO, label_dtos};
 use super::storage::{StatusCountDTO, dangling_refs, status_counts};
 use super::{
-    Handler, NAME_RULE_MSG, map_error, principal_name, valid_name, write_error, write_json,
+    Handler, NAME_RULE_MSG, int_param, map_error, path_id, principal_name, valid_name, write_error,
+    write_json,
 };
-
-pub(super) fn int_param(value: &str, default: i64) -> i64 {
-    if value.is_empty() {
-        return default;
-    }
-    value.parse::<i64>().unwrap_or(default)
-}
-
-/// Parses the `{id}` path parameter, answering 400 when it is not an integer.
-/// The error is boxed because a `Response` is far larger than the `i64` it
-/// competes with in the `Result`.
-pub(super) fn path_id(id: &str) -> Result<i64, Box<Response>> {
-    id.parse::<i64>()
-        .map_err(|_| Box::new(write_error(StatusCode::BAD_REQUEST, "invalid id")))
-}
 
 /// The JSON shape for a repository.
 #[derive(Debug, Clone, Default, Serialize)]
@@ -1084,7 +1070,7 @@ struct ArtifactDTO {
     /// it fails. The flag comes from references observed missing while serving or
     /// publishing, and `blob_missing_since` is when that was first seen. The view
     /// warns on these instead of leaving a user to hit the failure mid-build.
-    #[serde(skip_serializing_if = "is_false")]
+    #[serde(skip_serializing_if = "super::is_false")]
     blob_missing: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     blob_missing_since: Option<DateTime<Utc>>,
@@ -1096,16 +1082,8 @@ struct ArtifactDTO {
     /// saw rather than only at the aggregate.
     #[serde(skip_serializing_if = "Option::is_none")]
     blob_missing_last_seen: Option<DateTime<Utc>>,
-    #[serde(skip_serializing_if = "is_zero")]
+    #[serde(skip_serializing_if = "super::is_zero")]
     blob_missing_last_status: i64,
-}
-
-const fn is_false(v: &bool) -> bool {
-    !*v
-}
-
-const fn is_zero(v: &i64) -> bool {
-    *v == 0
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -1123,7 +1101,7 @@ struct PublicationDTO {
     /// no longer be served. Counted server-side from every tracked reference in
     /// the repository, not from the current artifact page, so paging cannot hide a
     /// broken asset.
-    #[serde(skip_serializing_if = "is_zero")]
+    #[serde(skip_serializing_if = "super::is_zero")]
     broken_assets: i64,
     created_by: String,
     created_at: DateTime<Utc>,

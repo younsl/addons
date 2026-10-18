@@ -142,7 +142,7 @@ async fn run() -> anyhow::Result<()> {
     tokio::select! {
         res = wait(&mut http) => return res,
         res = wait(&mut metrics_http) => return res,
-        () = signals() => {}
+        () = forklift::server::signal::shutdown_signal() => {}
     }
 
     tracing::info!("shutting down");
@@ -160,25 +160,6 @@ async fn wait(handle: &mut tokio::task::JoinHandle<std::io::Result<()>>) -> anyh
         Ok(Ok(())) => Ok(()),
         Ok(Err(e)) => Err(e.into()),
         Err(e) => Err(e.into()),
-    }
-}
-
-async fn signals() {
-    #[cfg(unix)]
-    {
-        use tokio::signal::unix::{SignalKind, signal};
-        let Ok(mut term) = signal(SignalKind::terminate()) else {
-            let _ = tokio::signal::ctrl_c().await;
-            return;
-        };
-        tokio::select! {
-            _ = tokio::signal::ctrl_c() => {}
-            _ = term.recv() => {}
-        }
-    }
-    #[cfg(not(unix))]
-    {
-        let _ = tokio::signal::ctrl_c().await;
     }
 }
 

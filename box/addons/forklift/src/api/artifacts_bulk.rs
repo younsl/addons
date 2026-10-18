@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use crate::meta;
 
 use super::labels::{LABEL_FORBIDDEN_MSG, LABEL_RULE_MSG};
-use super::repositories::path_id;
+use super::path_id;
 use super::{Handler, map_error, principal_name, write_error, write_json};
 
 /// Caps one bulk request.

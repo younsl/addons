@@ -16,6 +16,7 @@ use tokio::io::{AsyncRead, AsyncWriteExt};
 use tokio_util::sync::CancellationToken;
 
 use crate::meta;
+use crate::storage::s3::{is_not_found, is_precondition_failed};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -202,24 +203,6 @@ impl S3Api {
             Err(e) => Err(sdk_error("create bucket", e)),
         }
     }
-}
-
-/// Reports whether `err` is an S3 "no such key"/404, across the SDK's typed
-/// errors and the generic HTTP response error.
-fn is_not_found<E: ProvideErrorMetadata>(err: &SdkError<E, HttpResponse>) -> bool {
-    if matches!(err.code(), Some("NoSuchKey" | "NotFound")) {
-        return true;
-    }
-    err.raw_response().map(|r| r.status().as_u16()) == Some(404)
-}
-
-/// Reports whether `err` is an S3 412 Precondition Failed, returned when a
-/// conditional write (If-Match / If-None-Match) is rejected because another
-/// writer changed the object first. Fencing treats it as "lost the race, skip
-/// this cycle".
-///
-fn is_precondition_failed<E>(err: &SdkError<E, HttpResponse>) -> bool {
-    err.raw_response().map(|r| r.status().as_u16()) == Some(412)
 }
 
 fn sdk_error<E>(op: &'static str, err: SdkError<E, HttpResponse>) -> Error

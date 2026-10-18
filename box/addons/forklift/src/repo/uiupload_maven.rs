@@ -17,6 +17,7 @@ use super::uiupload::{
     ArtifactUploadManifest, ArtifactUploadResult, MavenUploadManifest, PublishResult,
     StagedUploadAsset, UploadProblem, UploadedArtifact, Uploader, upload_problem,
 };
+use super::uiupload_archive::clamp_archive_path;
 
 /// `<versioning>` inside a `maven-metadata.xml` document.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -351,7 +352,10 @@ impl Uploader {
             );
         }
         managed_metadata.insert("format".to_string(), serde_json::json!("maven"));
-        managed_metadata.insert("managed_by".to_string(), serde_json::json!("ui_upload"));
+        managed_metadata.insert(
+            "managed_by".to_string(),
+            serde_json::json!(meta::MANAGED_BY_UI_UPLOAD),
+        );
         managed_metadata.insert("schema_version".to_string(), serde_json::json!(1));
         let managed_json =
             serde_json::to_string(&sorted_object(managed_metadata)).unwrap_or_default();
@@ -1826,7 +1830,7 @@ fn read_plugin_descriptor(
     let mut descriptor: Option<Vec<u8>> = None;
     for i in 0..archive.len() {
         let mut entry = archive.by_index(i).map_err(|_| PluginJarError::Invalid)?;
-        if clean_zip_path(entry.name()) != "META-INF/maven/plugin.xml" {
+        if clamp_archive_path(entry.name()) != "META-INF/maven/plugin.xml" {
             continue;
         }
         if descriptor.is_some() || entry.is_dir() || entry.size() > max_meta_bytes as u64 {
@@ -1844,18 +1848,4 @@ fn read_plugin_descriptor(
         descriptor = Some(bytes);
     }
     descriptor.ok_or(PluginJarError::DescriptorMissing)
-}
-
-fn clean_zip_path(name: &str) -> String {
-    let mut out: Vec<&str> = Vec::new();
-    for segment in name.split('/') {
-        match segment {
-            "" | "." => {}
-            ".." => {
-                out.pop();
-            }
-            other => out.push(other),
-        }
-    }
-    out.join("/")
 }

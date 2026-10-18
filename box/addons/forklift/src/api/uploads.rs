@@ -14,7 +14,7 @@ use crate::meta::{self, Repository};
 use crate::repo::{ArtifactUploadResult, UploadProblem};
 use crate::repoconfig;
 
-use super::repositories::path_id;
+use super::path_id;
 use super::{Handler, map_error, principal_name, write_json};
 
 /// Receives a managed upload: the multipart body is validated and committed by

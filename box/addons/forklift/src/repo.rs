@@ -64,6 +64,7 @@ mod oci_prune;
 mod oci_push;
 mod pypi;
 mod uiupload;
+mod uiupload_archive;
 mod uiupload_cargo;
 mod uiupload_go;
 mod uiupload_lifecycle;

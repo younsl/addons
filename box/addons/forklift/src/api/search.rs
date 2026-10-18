@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::auth;
 
-use super::repositories::int_param;
+use super::int_param;
 use super::{Handler, map_error, write_error, write_json};
 
 // Global search result shapes. Each section is `None` (JSON `null`) when the

@@ -10,14 +10,8 @@ use crate::meta::{self, Repository};
 
 use super::Manager;
 use super::approvalgate::PENDING_MARK_TTL;
-use super::cargo::cargo_package;
-use super::gomod::go_package;
-use super::maven::maven_package;
-use super::npm::npm_package;
-use super::path_base;
-use super::pypi::pypi_package_from_filename;
 use super::reaper::REAP_BATCH;
-use super::vulnscan::version_for_path;
+use super::vulnscan::{package_for_path, version_for_path};
 
 /// Returns the deps.dev system and package name for an artifact path of the
 /// given format, for joining stored license results to listed artifacts. The
@@ -29,13 +23,8 @@ pub fn license_coordinate(format: &str, artifact_path: &str) -> (String, String)
     if system.is_empty() {
         return (String::new(), String::new());
     }
-    let pkg = match format {
-        meta::FORMAT_MAVEN => maven_package(artifact_path),
-        meta::FORMAT_NPM => npm_package(artifact_path),
-        meta::FORMAT_CARGO => cargo_package(artifact_path),
-        meta::FORMAT_GO => go_package(artifact_path),
-        meta::FORMAT_PYPI => pypi_package_from_filename(path_base(artifact_path)),
-        _ => return (String::new(), String::new()),
+    let Some(pkg) = package_for_path(format, artifact_path) else {
+        return (String::new(), String::new());
     };
     (system.to_string(), pkg)
 }

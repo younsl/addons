@@ -12,13 +12,13 @@ use crate::meta::{
 };
 
 use super::uiupload::{UploadProblem, UploadedArtifact, Uploader, upload_problem};
+use super::uiupload_archive::sorted_json;
 use super::uiupload_cargo::cargo_sparse_path;
 use super::uiupload_go::go_path_base;
 use super::uiupload_maven::{
     parse_maven_metadata, parse_maven_plugin_metadata, render_maven_metadata,
     render_maven_plugin_metadata, uploaded_result, valid_maven_plugin_metadata_xml,
 };
-use super::uiupload_npm::sorted_json;
 
 /// What one lifecycle operation removed and rewrote.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

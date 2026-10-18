@@ -10,8 +10,8 @@ use serde::{Deserialize, Serialize};
 use crate::audit;
 use crate::meta;
 
-use super::repositories::{int_param, path_id};
 use super::{Handler, map_error, principal_name, write_error, write_json};
+use super::{int_param, path_id};
 
 /// The JSON shape for one version deny entry.
 #[derive(Debug, Clone, Serialize)]

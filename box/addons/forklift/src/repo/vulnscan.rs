@@ -27,15 +27,24 @@ pub fn vuln_coordinate(format: &str, artifact_path: &str) -> (String, String) {
     if eco.is_empty() {
         return (String::new(), String::new());
     }
-    let pkg = match format {
+    let Some(pkg) = package_for_path(format, artifact_path) else {
+        return (String::new(), String::new());
+    };
+    (eco.to_string(), pkg)
+}
+
+/// Extracts the package name from a stored artifact path using the per-format
+/// rules shared by the OSV and deps.dev coordinates. Returns `None` for a
+/// format with no package coordinate.
+pub(crate) fn package_for_path(format: &str, artifact_path: &str) -> Option<String> {
+    Some(match format {
         meta::FORMAT_MAVEN => maven_package(artifact_path),
         meta::FORMAT_NPM => npm_package(artifact_path),
         meta::FORMAT_CARGO => cargo_package(artifact_path),
         meta::FORMAT_GO => go_package(artifact_path),
         meta::FORMAT_PYPI => pypi_package_from_filename(path_base(artifact_path)),
-        _ => return (String::new(), String::new()),
-    };
-    (eco.to_string(), pkg)
+        _ => return None,
+    })
 }
 
 /// Extracts the version from a stored artifact path using the per-format rules,

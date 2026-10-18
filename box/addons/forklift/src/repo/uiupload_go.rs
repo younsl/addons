@@ -287,7 +287,7 @@ impl Uploader {
         let owned_metadata = serde_json::to_string(&serde_json::json!({
             "format": "go",
             "format_metadata": {"module_time": meta::time::format_time(info_time)},
-            "managed_by": "ui_upload",
+            "managed_by": meta::MANAGED_BY_UI_UPLOAD,
             "package": module_path,
             "role": "primary",
             "schema_version": 1,
@@ -529,7 +529,7 @@ impl Uploader {
         let aggregate_metadata = serde_json::to_string(&serde_json::json!({
             "aggregate_schema_version": 1,
             "format": "go",
-            "managed_by": "ui_upload_aggregate",
+            "managed_by": meta::MANAGED_BY_UI_UPLOAD_AGGREGATE,
             "package": escaped_path,
             "schema_version": 1,
         }))

@@ -6,6 +6,7 @@ use std::collections::HashMap;
 use chrono::{DateTime, Utc};
 use rusqlite::{Connection, OptionalExtension, Row, params};
 
+use super::models::{MANAGED_BY_UI_UPLOAD, MANAGED_BY_UI_UPLOAD_AGGREGATE};
 use super::publication::invalidate_group_caches_for_member;
 use super::repository::query_all;
 use super::time::is_zero;
@@ -616,13 +617,13 @@ pub(crate) fn adjust_ref(conn: &Connection, sha: &str, delta: i64) -> Result<()>
 /// flow, either as a publication asset or as a shared aggregate index.
 pub(crate) fn is_ui_managed_metadata(value: &str) -> bool {
     let managed_by = managed_by_metadata(value);
-    managed_by == "ui_upload" || managed_by == "ui_upload_aggregate"
+    managed_by == MANAGED_BY_UI_UPLOAD || managed_by == MANAGED_BY_UI_UPLOAD_AGGREGATE
 }
 
 /// Identifies shared indexes that may only be mutated by the component-aware
 /// publication planner.
 pub fn is_ui_managed_aggregate_metadata(value: &str) -> bool {
-    managed_by_metadata(value) == "ui_upload_aggregate"
+    managed_by_metadata(value) == MANAGED_BY_UI_UPLOAD_AGGREGATE
 }
 
 fn managed_by_metadata(value: &str) -> String {

@@ -21,6 +21,7 @@ pub mod logging;
 pub mod middleware;
 pub(crate) mod pprof_routes;
 mod serve;
+pub mod signal;
 
 pub use logging::init_logging;
 

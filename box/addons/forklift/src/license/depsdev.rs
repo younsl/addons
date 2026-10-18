@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use futures_util::StreamExt;
-use serde::{Deserialize, Deserializer};
+use serde::Deserialize;
 
 use super::{Error, LicenseResult, Resolver, Result};
 
@@ -41,19 +41,11 @@ impl DepsDev {
     }
 }
 
-fn null_default<'de, D, T>(d: D) -> std::result::Result<T, D::Error>
-where
-    D: Deserializer<'de>,
-    T: Default + Deserialize<'de>,
-{
-    Ok(Option::<T>::deserialize(d)?.unwrap_or_default())
-}
-
 /// The subset of the deps.dev GetVersion response we use.
 #[derive(Debug, Default, Deserialize)]
 #[serde(default)]
 struct DepsDevVersion {
-    #[serde(deserialize_with = "null_default")]
+    #[serde(deserialize_with = "crate::repoconfig::null_default")]
     licenses: Vec<String>,
 }
 

@@ -34,7 +34,7 @@ pub struct HAStatus {
     #[serde(skip_serializing_if = "String::is_empty")]
     pub lease_name: String,
     /// The Lease transition count guarding s3 metadata writes.
-    #[serde(skip_serializing_if = "is_zero")]
+    #[serde(skip_serializing_if = "super::is_zero")]
     pub fencing_token: i64,
     /// This process's start time (RFC3339), for uptime display.
     #[serde(skip_serializing_if = "String::is_empty")]
@@ -45,10 +45,6 @@ pub struct HAStatus {
     /// The Rust toolchain this pod's binary was built with, e.g. "rustc 1.99.0".
     #[serde(skip_serializing_if = "String::is_empty")]
     pub runtime: String,
-}
-
-const fn is_zero(v: &i64) -> bool {
-    *v == 0
 }
 
 impl Handler {

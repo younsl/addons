@@ -14,7 +14,7 @@ path = "src/lib.rs"
 
 [[bin]]
 name = "forklift"
-path = "src/bin/forklift.rs"
+path = "src/bin/forklift/main.rs"
 
 [[bin]]
 name = "forklift-mcp"

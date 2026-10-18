@@ -72,7 +72,7 @@ pub(super) struct DanglingRefDTO {
     /// operator match the row against the error someone reported.
     pub(super) statuses: Vec<StatusCountDTO>,
     /// The code the most recent failure returned.
-    #[serde(skip_serializing_if = "is_zero")]
+    #[serde(skip_serializing_if = "super::is_zero")]
     pub(super) last_status: i64,
 }
 
@@ -81,10 +81,6 @@ pub(super) struct DanglingRefDTO {
 pub(super) struct StatusCountDTO {
     pub(super) code: i64,
     pub(super) count: i64,
-}
-
-const fn is_zero(v: &i64) -> bool {
-    *v == 0
 }
 
 /// Flattens the status histogram into a stable order: most frequent first, then

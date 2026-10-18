@@ -231,6 +231,11 @@ pub const FORMAT_RAW: &str = "raw";
 /// immutable digest-addressed artifact rows; tags live in `oci_tags`.
 pub const FORMAT_OCI: &str = "oci";
 
+/// `managed_by` markers the UI upload flow writes into artifact metadata: a
+/// publication asset, and a shared aggregate index only the planner mutates.
+pub const MANAGED_BY_UI_UPLOAD: &str = "ui_upload";
+pub const MANAGED_BY_UI_UPLOAD_AGGREGATE: &str = "ui_upload_aggregate";
+
 /// Repository type constants.
 pub const TYPE_HOSTED: &str = "hosted";
 pub const TYPE_PROXY: &str = "proxy";

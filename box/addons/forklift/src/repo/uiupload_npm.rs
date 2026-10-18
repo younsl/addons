@@ -14,6 +14,7 @@ use super::uiupload::{
     ArtifactUploadManifest, ArtifactUploadResult, PublishResult, StagedUploadAsset,
     UploadedArtifact, Uploader, upload_problem,
 };
+use super::uiupload_archive::{clamp_archive_path, sorted_json};
 use super::uiupload_maven::uploaded_result;
 
 const NPM_PACKAGE_JSON_PATH: &str = "package/package.json";
@@ -179,7 +180,7 @@ impl Uploader {
                 "format_metadata",
                 serde_json::json!({ "dist_tag": tag.clone() }),
             ),
-            ("managed_by", serde_json::json!("ui_upload")),
+            ("managed_by", serde_json::json!(meta::MANAGED_BY_UI_UPLOAD)),
             ("package", serde_json::json!(pkg.name)),
             ("role", serde_json::json!("primary")),
             ("schema_version", serde_json::json!(1)),
@@ -190,7 +191,10 @@ impl Uploader {
         let aggregate_metadata = json_object(&[
             ("aggregate_schema_version", serde_json::json!(1)),
             ("format", serde_json::json!("npm")),
-            ("managed_by", serde_json::json!("ui_upload_aggregate")),
+            (
+                "managed_by",
+                serde_json::json!(meta::MANAGED_BY_UI_UPLOAD_AGGREGATE),
+            ),
             ("package", serde_json::json!(pkg.name)),
             ("schema_version", serde_json::json!(1)),
         ]);
@@ -582,28 +586,6 @@ fn json_object(pairs: &[(&str, serde_json::Value)]) -> String {
     serde_json::to_string(&serde_json::Value::Object(object)).unwrap_or_default()
 }
 
-/// Recursively re-inserts object keys in sorted order.
-///
-pub(crate) fn sorted_json(value: serde_json::Value) -> serde_json::Value {
-    match value {
-        serde_json::Value::Object(object) => {
-            let sorted: std::collections::BTreeMap<String, serde_json::Value> = object
-                .into_iter()
-                .map(|(k, v)| (k, sorted_json(v)))
-                .collect();
-            let mut out = serde_json::Map::new();
-            for (k, v) in sorted {
-                out.insert(k, v);
-            }
-            serde_json::Value::Object(out)
-        }
-        serde_json::Value::Array(items) => {
-            serde_json::Value::Array(items.into_iter().map(sorted_json).collect())
-        }
-        other => other,
-    }
-}
-
 /// Why an npm tarball could not be inspected.
 enum NpmTarballError {
     Invalid,
@@ -634,7 +616,7 @@ fn read_npm_package_json<R: std::io::Read>(
         }
         let Ok(path) = entry.path() else { continue };
         let name = path.to_string_lossy().to_string();
-        let clean = clean_tar_path(name.strip_prefix("./").unwrap_or(&name));
+        let clean = clamp_archive_path(name.strip_prefix("./").unwrap_or(&name));
         if clean != NPM_PACKAGE_JSON_PATH {
             continue;
         }
@@ -655,20 +637,6 @@ fn read_npm_package_json<R: std::io::Read>(
         package_json = Some(bytes);
     }
     package_json.ok_or(NpmTarballError::PackageJsonMissing)
-}
-
-fn clean_tar_path(name: &str) -> String {
-    let mut out: Vec<&str> = Vec::new();
-    for segment in name.split('/') {
-        match segment {
-            "" | "." => {}
-            ".." => {
-                out.pop();
-            }
-            other => out.push(other),
-        }
-    }
-    out.join("/")
 }
 
 pub(crate) fn valid_npm_name(name: &str) -> bool {

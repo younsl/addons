@@ -10,7 +10,7 @@ use crate::meta::{self, Receiver};
 use crate::notify;
 use crate::repoconfig;
 
-use super::repositories::path_id;
+use super::path_id;
 use super::{
     Handler, NAME_RULE_MSG, StatusMessageDTO, map_error, principal_name, valid_name, write_error,
     write_json,

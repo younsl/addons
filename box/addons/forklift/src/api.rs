@@ -31,6 +31,10 @@ mod ha;
 mod insights;
 mod labels;
 mod notifications;
+#[cfg(test)]
+mod openapi_response_test;
+#[cfg(test)]
+mod openapi_schema_test;
 mod repositories;
 mod search;
 mod storage;
@@ -746,6 +750,29 @@ pub(crate) fn write_json<T: Serialize>(status: StatusCode, value: T) -> Response
 
 pub(crate) fn write_error(status: StatusCode, msg: &str) -> Response {
     write_json(status, serde_json::json!({"error": msg}))
+}
+
+fn int_param(value: &str, default: i64) -> i64 {
+    if value.is_empty() {
+        return default;
+    }
+    value.parse::<i64>().unwrap_or(default)
+}
+
+/// Parses the `{id}` path parameter, answering 400 when it is not an integer.
+/// The error is boxed because a `Response` is far larger than the `i64` it
+/// competes with in the `Result`.
+fn path_id(id: &str) -> Result<i64, Box<Response>> {
+    id.parse::<i64>()
+        .map_err(|_| Box::new(write_error(StatusCode::BAD_REQUEST, "invalid id")))
+}
+
+const fn is_zero(v: &i64) -> bool {
+    *v == 0
+}
+
+const fn is_false(v: &bool) -> bool {
+    !*v
 }
 
 /// The longest `/pattern/` search a listing accepts.

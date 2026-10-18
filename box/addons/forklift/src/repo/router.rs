@@ -23,6 +23,7 @@ use crate::repoconfig::{self, Config};
 use crate::server::http_error;
 use crate::vuln;
 
+use super::counter_vec;
 use super::group_metadata::GroupMetadataLock;
 use super::licensescan::ResolveJob;
 use super::oci_proxy::OciTokenCache;
@@ -623,10 +624,6 @@ pub(crate) fn route_params(path: &str) -> (String, String) {
         Some((repo, rest)) => (repo.to_string(), rest.trim_start_matches('/').to_string()),
         None => (after_prefix.to_string(), String::new()),
     }
-}
-
-fn counter_vec(name: &str, help: &str, labels: &[&str]) -> CounterVec {
-    CounterVec::new(Opts::new(name, help).namespace("forklift"), labels).expect("valid counter")
 }
 
 /// A scrape-time gauge over the OCI upload-session table.
