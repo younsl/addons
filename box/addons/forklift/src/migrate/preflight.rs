@@ -737,6 +737,9 @@ mod tests {
             .event_format(crate::server::logging::SlogFormat::Json)
             .finish();
         let _log = tracing::subscriber::set_default(subscriber);
+        // Another test hitting the same log lines while this subscriber was
+        // being installed can leave them cached as uninteresting.
+        tracing::callsite::rebuild_interest_cache();
         let report = migrate(
             &endpoint(&src),
             &endpoint(&dst),
