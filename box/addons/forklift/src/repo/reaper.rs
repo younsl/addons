@@ -4,7 +4,9 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use chrono::{DateTime, Utc};
 use http::StatusCode;
+use serde::Serialize;
 use tokio_util::sync::CancellationToken;
 
 use crate::audit;
@@ -12,10 +14,55 @@ use crate::meta;
 use crate::repoconfig;
 
 use super::Manager;
+use super::oci::oci_manifest_path;
 
 /// Bounds how many expired artifacts are deleted per repository per query,
 /// keeping the single-writer SQLite responsive on large sweeps.
 pub(crate) const REAP_BATCH: i64 = 256;
+
+/// Explains one retention deletion in its audit entry: the rule, the setting
+/// in force, and the last activity that fell behind it.
+pub(crate) fn retention_detail(
+    ttl: Duration,
+    last_active: DateTime<Utc>,
+    digest: Option<&str>,
+) -> String {
+    let mut detail = serde_json::json!({
+        "reason": "idle_retention",
+        "idle_ttl": crate::repoconfig::Duration::from_std(ttl),
+        "last_active_at": last_active,
+    });
+    if let Some(digest) = digest {
+        detail["manifest_digest"] = serde_json::Value::from(digest);
+    }
+    detail.to_string()
+}
+
+/// Bounds how many rows a retention preview lists; the totals cover them all.
+const PREVIEW_ITEMS: i64 = 20;
+
+/// What the idle reaper would delete right now under a candidate `idle_ttl`.
+/// For OCI the rows are tags and `size` is absent, because layers shared with
+/// kept images stay and the bytes actually freed are unknown up front.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+pub struct RetentionPreview {
+    pub count: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub size: Option<i64>,
+    pub items: Vec<RetentionPreviewItem>,
+}
+
+/// One row of a [`RetentionPreview`], least recently active first.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct RetentionPreviewItem {
+    pub path: String,
+    pub version: String,
+    pub last_active_at: DateTime<Utc>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub size: Option<i64>,
+    /// Who uploaded, pushed or first cached it ("" when anonymous or unknown).
+    pub uploaded_by: String,
+}
 
 impl Manager {
     /// Periodically deletes artifacts that have gone unserved past their
@@ -47,12 +94,6 @@ impl Manager {
         let repos = self.store.list_repositories().await?;
         let mut total = 0;
         for repo in repos {
-            // OCI artifacts are reference-linked (a manifest needs its layer
-            // rows), so per-row idle deletion can break a still-tagged image;
-            // the OCI reachability prune reclaims space for the format instead.
-            if repo.format == meta::FORMAT_OCI {
-                continue;
-            }
             let cfg = match repoconfig::parse(&repo.config_json) {
                 Ok(cfg) => cfg,
                 Err(err) => {
@@ -66,6 +107,16 @@ impl Manager {
             }
             let cutoff = self.engine.now()
                 - chrono::TimeDelta::from_std(ttl).unwrap_or(chrono::TimeDelta::MAX);
+            // OCI artifacts are reference-linked (a manifest needs its layer
+            // rows), so per-row idle deletion can break a still-tagged image.
+            // Idle tags are removed instead and the reachability prune reclaims
+            // what they held.
+            if repo.format == meta::FORMAT_OCI {
+                if repo.r#type != meta::TYPE_GROUP {
+                    total += self.reap_oci_tags(&repo, cutoff, ttl).await?;
+                }
+                continue;
+            }
             loop {
                 let arts = self
                     .store
@@ -90,6 +141,7 @@ impl Manager {
                             path: art.path.clone(),
                             username: "system".to_string(),
                             status: i64::from(StatusCode::OK.as_u16()),
+                            detail_json: retention_detail(ttl, art.last_accessed_at, None),
                             ..Default::default()
                         });
                     }
@@ -104,6 +156,65 @@ impl Manager {
             }
         }
         Ok(total)
+    }
+}
+
+impl Manager {
+    /// Reports what [`Self::reap_once`] would delete from `repo` if its
+    /// retention were `ttl`, without deleting anything.
+    pub async fn preview_retention(
+        &self,
+        repo: &meta::Repository,
+        ttl: Duration,
+    ) -> Result<RetentionPreview, meta::Error> {
+        if ttl.is_zero() || repo.r#type == meta::TYPE_GROUP {
+            return Ok(RetentionPreview::default());
+        }
+        let cutoff =
+            self.engine.now() - chrono::TimeDelta::from_std(ttl).unwrap_or(chrono::TimeDelta::MAX);
+        if repo.format == meta::FORMAT_OCI {
+            let tags = self.idle_oci_tags(repo.id, cutoff).await?;
+            let mut items = Vec::new();
+            for t in tags.iter().take(PREVIEW_ITEMS as usize) {
+                let uploaded_by = self
+                    .store
+                    .get_artifact(repo.id, &oci_manifest_path(&t.name, &t.digest))
+                    .await
+                    .map(|art| art.cached_by)
+                    .unwrap_or_default();
+                items.push(RetentionPreviewItem {
+                    path: oci_manifest_path(&t.name, &t.tag),
+                    version: t.tag.clone(),
+                    last_active_at: t.last_active,
+                    size: None,
+                    uploaded_by,
+                });
+            }
+            return Ok(RetentionPreview {
+                count: tags.len() as i64,
+                size: None,
+                items,
+            });
+        }
+        let (count, size) = self.store.count_expired_artifacts(repo.id, cutoff).await?;
+        let arts = self
+            .store
+            .list_expired_artifacts(repo.id, cutoff, PREVIEW_ITEMS)
+            .await?;
+        Ok(RetentionPreview {
+            count,
+            size: Some(size),
+            items: arts
+                .into_iter()
+                .map(|a| RetentionPreviewItem {
+                    path: a.path,
+                    version: a.version,
+                    last_active_at: a.last_accessed_at,
+                    size: Some(a.size),
+                    uploaded_by: a.cached_by,
+                })
+                .collect(),
+        })
     }
 }
 
@@ -184,6 +295,27 @@ pub(crate) mod tests {
         )
         .await;
 
+        let preview = tm
+            .manager
+            .preview_retention(&gated, std::time::Duration::from_hours(1))
+            .await
+            .expect("preview");
+        assert_eq!(preview.count, 1, "preview counts the idle artifact");
+        assert_eq!(preview.size, Some(4), "preview sums sizes");
+        assert_eq!(preview.items[0].path, "old/-/old-0.1.0.tgz");
+        let wider = tm
+            .manager
+            .preview_retention(&gated, std::time::Duration::from_mins(1))
+            .await
+            .expect("preview");
+        assert_eq!(wider.count, 1, "fresh artifact served now stays out");
+        let off_preview = tm
+            .manager
+            .preview_retention(&off, std::time::Duration::ZERO)
+            .await
+            .expect("preview");
+        assert_eq!(off_preview, super::RetentionPreview::default());
+
         let n = tm.manager.reap_once().await.expect("reap");
         assert_eq!(n, 1, "only the idle artifact in the gated repo is reaped");
 
@@ -211,5 +343,10 @@ pub(crate) mod tests {
         assert_eq!(logs.len(), 1, "ttl.expire audit entries");
         assert_eq!(logs[0].path, "old/-/old-0.1.0.tgz");
         assert_eq!(logs[0].username, "system");
+        let detail: serde_json::Value =
+            serde_json::from_str(&logs[0].detail_json).expect("detail is JSON");
+        assert_eq!(detail["reason"], "idle_retention");
+        assert_eq!(detail["idle_ttl"], "1h0m0s");
+        assert!(detail["last_active_at"].is_string(), "{detail}");
     }
 }

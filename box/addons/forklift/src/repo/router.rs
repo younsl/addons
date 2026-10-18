@@ -189,7 +189,7 @@ impl Manager {
             ),
             ttl_expired: counter_vec(
                 "ttl_expired_total",
-                "Artifacts auto-deleted by the idle retention reaper.",
+                "Artifacts (OCI: tags) auto-deleted by the idle retention reaper.",
                 &["repo"],
             ),
             vuln_blocked: counter_vec(

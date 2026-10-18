@@ -79,6 +79,9 @@ pub struct Config {
     /// Configures the per-repository audit log.
     pub audit: AuditConfig,
 
+    /// Configures the periodic security insight analysis.
+    pub insights: InsightsConfig,
+
     /// Controls the experimental management-API/UI artifact publication
     /// surface. Protocol-native publishing is unaffected when this is
     /// disabled.
@@ -325,6 +328,16 @@ pub struct AuditConfig {
     pub retention: Duration,
 }
 
+/// Configures the periodic security insight analysis.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct InsightsConfig {
+    /// Runs the analysis on the leader.
+    pub enabled: bool,
+    /// How often the leader analyzes. Each run reads every artifact row, so
+    /// keep it at minutes, not seconds.
+    pub interval: Duration,
+}
+
 /// Configures PV-based replication between two replicas.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ReplicationConfig {
@@ -444,6 +457,10 @@ impl Config {
             audit: AuditConfig {
                 enabled: env_bool("FORKLIFT_AUDIT_ENABLED", true),
                 retention: env_duration("FORKLIFT_AUDIT_RETENTION", 90 * 24 * HOUR),
+            },
+            insights: InsightsConfig {
+                enabled: env_bool("FORKLIFT_INSIGHTS_ENABLED", true),
+                interval: env_duration("FORKLIFT_INSIGHTS_INTERVAL", HOUR),
             },
             upload: UploadConfig::from_env()?,
             vuln: VulnConfig {

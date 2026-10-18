@@ -12,8 +12,8 @@ use axum::Router;
 use axum::routing::get;
 use chrono::Utc;
 use forklift::{
-    api, audit, auth, cluster, config, coverage, license, memlimit, meta, metrics, notify,
-    objstore, openapi, replication, repo, server, storage, version, vuln, webui,
+    api, audit, auth, cluster, config, coverage, insights, license, memlimit, meta, metrics,
+    notify, objstore, openapi, replication, repo, server, storage, version, vuln, webui,
 };
 use prometheus::core::{Collector, Desc};
 use prometheus::proto::{Gauge, Metric, MetricFamily, MetricType};
@@ -709,6 +709,46 @@ async fn run(cfg: Arc<config::Config>, cancel: CancellationToken) -> anyhow::Res
         }
     }));
 
+    // Security insights run on the leader only (a run writes the report) and
+    // are served from the stored report by every instance. A manual refresh is
+    // detached from the request like a coverage scan.
+    let insight_analyzer = cfg.insights.enabled.then(|| {
+        insights::Analyzer::new(
+            Arc::clone(&store),
+            Some(Arc::clone(&coverage_scanner)),
+            cfg.insights.interval,
+        )
+    });
+    if let Some(analyzer) = &insight_analyzer {
+        api_handler.set_insights(
+            Arc::clone(analyzer),
+            Arc::new({
+                let leader_state = Arc::clone(&leader_state);
+                let analyzer = Arc::clone(analyzer);
+                let shutdown = shutdown.clone();
+                move |triggered_by: &str| {
+                    if !leader_state.load(Ordering::SeqCst) || analyzer.running() {
+                        return false;
+                    }
+                    let analyzer = Arc::clone(&analyzer);
+                    let shutdown = shutdown.clone();
+                    let triggered_by = triggered_by.to_string();
+                    tokio::spawn(async move {
+                        tokio::select! {
+                            () = shutdown.cancelled() => {}
+                            res = analyzer.run_once(&triggered_by) => {
+                                if let Err(e) = res {
+                                    tracing::warn!(triggered_by = %triggered_by, err = %e, "security insights failed");
+                                }
+                            }
+                        }
+                    });
+                    true
+                }
+            }),
+        );
+    }
+
     let mut elector: Option<Arc<cluster::Elector>> = None;
     if cfg.ha.enabled {
         elector = Some(cluster::Elector::new(cfg.ha.clone()).context("init leader election")?);
@@ -920,6 +960,7 @@ async fn run(cfg: Arc<config::Config>, cancel: CancellationToken) -> anyhow::Res
         manager: Arc::clone(&manager),
         recorder: recorder.clone(),
         coverage: Arc::clone(&coverage_scanner),
+        insights: insight_analyzer.clone(),
         notifier: Arc::clone(&notifier),
         meta_sync: meta_sync.clone(),
         replicator: replicator.clone(),
@@ -1019,6 +1060,7 @@ struct Leadership {
     manager: Arc<repo::Manager>,
     recorder: Option<Arc<audit::Recorder>>,
     coverage: Arc<coverage::Scanner>,
+    insights: Option<Arc<insights::Analyzer>>,
     notifier: Arc<notify::Notifier>,
     meta_sync: Option<Arc<objstore::MetaSync>>,
     replicator: Option<Arc<replication::Replicator>>,
@@ -1153,6 +1195,9 @@ impl Leadership {
                 Duration::from_hours(1),
                 cfg.audit.retention,
             ));
+        }
+        if let Some(analyzer) = &self.insights {
+            tokio::spawn(Arc::clone(analyzer).run(cancel.clone(), Arc::clone(&self.notifier)));
         }
         if self.coverage.enabled() {
             tokio::spawn(run_coverage_schedule(

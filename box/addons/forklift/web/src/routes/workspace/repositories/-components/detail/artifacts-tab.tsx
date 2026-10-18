@@ -25,6 +25,8 @@ import { ArtifactLabels } from "@/components/app-ui/artifact-labels";
 import { Badge } from "@/components/app-ui/badge";
 import { CopyOnHover } from "@/components/app-ui/copy-button";
 import { SeverityBar } from "@/components/app-ui/severity-bar";
+import { IdleExpiry } from "@/routes/workspace/repositories/-components/detail/idle-expiry";
+import { idleTtlDays } from "@/lib/retention";
 import { SortableHead, Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableWrap, useSort } from "@/components/app-ui/table";
 import { TablePager, TableSearchControls, highlightMatches, useTableSearch } from "@/components/app-ui/table-search";
 import { ConfirmModal } from "@/components/overlays/confirm-modal";
@@ -199,11 +201,12 @@ export function Artifacts({ repo, canDelete }: { repo: RepositoryListItem; canDe
   // plain error banner has nowhere to put.
   const [notice, setNotice] = useState("");
 
-  const search = useTableSearch();
+  // The search and page, and a Statistics panel's drill-down, are carried in
+  // the URL. Read without a route binding: the tab also renders on
+  // /workspace/repositories/$id, which has none of them, and a strict read
+  // there throws.
+  const search = useTableSearch({ url: true });
   const { highlightRe } = search;
-  // A Statistics panel's drill-down, carried in the URL. Read without a route
-  // binding: the tab also renders on /workspace/repositories/$id, which has no
-  // `filter`, and a strict read there throws.
   const filter = parseArtifactFilter(useSearch({ strict: false }).filter);
 
   // Paging or searching replaces the rows the last batch was about, so its
@@ -231,6 +234,7 @@ export function Artifacts({ repo, canDelete }: { repo: RepositoryListItem; canDe
   const data = artifactsQuery.data;
   const loadError = getErrorMessageIfAny(artifactsQuery.error);
 
+  const showExpiry = repo.format !== "oci" && idleTtlDays(repo.config.retention?.idle_ttl) > 0;
   const { sorted, sort } = useSort(data?.artifacts ?? [], {
     path: (a) => a.path,
     version: (a) => a.version,
@@ -243,6 +247,7 @@ export function Artifacts({ repo, canDelete }: { repo: RepositoryListItem; canDe
     by: (a) => a.cached_by,
     downloads: (a) => a.downloads_30d,
     accessedBy: (a) => a.last_accessed_by,
+    expires: (a) => a.expires_at,
     labels: (a) => a.labels?.map((l) => l.label).join(",") ?? "",
   });
 
@@ -596,7 +601,7 @@ export function Artifacts({ repo, canDelete }: { repo: RepositoryListItem; canDe
                 disabled={pageActionable.length === 0 || bulkBusy}
                 onCheckedChange={(checked) => togglePage(Boolean(checked))}
               />
-            </TableHead><SortableHead k="path" sort={sort}>{t("common.path")}</SortableHead><SortableHead k="version" sort={sort}>{t("common.version")}</SortableHead><SortableHead k="labels" sort={sort}>{t("common.labels")}</SortableHead><SortableHead k="vuln" sort={sort}>{t("common.vuln")}</SortableHead><SortableHead k="license" sort={sort}>{t("common.license")}</SortableHead><SortableHead k="size" sort={sort}>{t("common.size")}</SortableHead><SortableHead k="type" sort={sort}>{t("common.type")}</SortableHead><SortableHead k="cached" sort={sort}>{t("common.first-cached")}</SortableHead><SortableHead k="downloads" sort={sort}><span title={t("repo.downloads-30d-help")}>{t("repo.downloads-30d")}</span></SortableHead><SortableHead k="accessed" sort={sort}>{t("common.last-accessed")}</SortableHead><SortableHead k="accessedBy" sort={sort}><span title={t("repo.last-accessed-by-help")}>{t("repo.last-accessed-by")}</span></SortableHead><SortableHead k="by" sort={sort}>{t("common.fetched-by")}</SortableHead>{canDelete && <TableHead></TableHead>}</TableRow>
+            </TableHead><SortableHead k="path" sort={sort}>{t("common.path")}</SortableHead><SortableHead k="version" sort={sort}>{t("common.version")}</SortableHead><SortableHead k="labels" sort={sort}>{t("common.labels")}</SortableHead><SortableHead k="vuln" sort={sort}>{t("common.vuln")}</SortableHead><SortableHead k="license" sort={sort}>{t("common.license")}</SortableHead><SortableHead k="size" sort={sort}>{t("common.size")}</SortableHead><SortableHead k="type" sort={sort}>{t("common.type")}</SortableHead><SortableHead k="cached" sort={sort}>{t("common.first-cached")}</SortableHead><SortableHead k="downloads" sort={sort}><span title={t("repo.downloads-30d-help")}>{t("repo.downloads-30d")}</span></SortableHead><SortableHead k="accessed" sort={sort}>{t("common.last-accessed")}</SortableHead><SortableHead k="accessedBy" sort={sort}><span title={t("repo.last-accessed-by-help")}>{t("repo.last-accessed-by")}</span></SortableHead>{showExpiry && <SortableHead k="expires" sort={sort}>{t("repo.auto-delete")}</SortableHead>}<SortableHead k="by" sort={sort}>{t("common.fetched-by")}</SortableHead>{canDelete && <TableHead></TableHead>}</TableRow>
         </TableHeader>
         <TableBody>
           {sorted.map((a) => (
@@ -660,6 +665,7 @@ export function Artifacts({ repo, canDelete }: { repo: RepositoryListItem; canDe
                   ? userLink(a.last_accessed_by, userIds, highlightMatches(a.last_accessed_by, highlightRe))
                   : <span className="text-muted-foreground">-</span>}
               </TableCell>
+              {showExpiry && <TableCell><IdleExpiry at={a.expires_at} /></TableCell>}
               <TableCell className="truncate" title={a.cached_by || t("common.anonymous")}>{a.cached_by ? userLink(a.cached_by, userIds, highlightMatches(a.cached_by, highlightRe)) : <span className="text-muted-foreground">{t("common.anonymous")}</span>}</TableCell>
               {canDelete && (
                 // Deleting is a bulk action now, with one exception that cannot
@@ -675,7 +681,7 @@ export function Artifacts({ repo, canDelete }: { repo: RepositoryListItem; canDe
             </TableRow>
           ))}
           {data && data.artifacts.length === 0 && (
-            <TableRow><TableCell colSpan={13 + (canDelete ? 1 : 0)} className="text-muted-foreground">
+            <TableRow><TableCell colSpan={13 + (showExpiry ? 1 : 0) + (canDelete ? 1 : 0)} className="text-muted-foreground">
               {search.q || filter ? t("common.no-search-matches") : t("repo.no-cached-artifacts")}
             </TableCell></TableRow>
           )}

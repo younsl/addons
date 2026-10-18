@@ -1,6 +1,6 @@
+import { useNavigate, useSearch } from "@tanstack/react-router";
 import type { ListRepositoryAuditLogsRequest } from "@/services/v1/repositories/types";
 import { BrokenArtifact, useUserIds, userLink } from "@/routes/workspace/repositories/-components/detail/artifacts-tab";
-import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { getErrorMessageIfAny } from "@/lib/http/error/api-error";
 import { openApiQueryOptions } from "@/query/v1/openapi-query-options";
@@ -57,8 +57,30 @@ export function AuditLogs({ repo }: { repo: Repository }) {
   // The log stores the path as the client sent it, so a scoped npm package appears
   // percent-encoded (@scope%2Fname) while the registry keys on the decoded
   // identity. Lookups therefore go through auditArtifactPath.
-  const [event, setEvent] = useState<AuditEvent | "">("");
-  const [offset, setOffset] = useState(0);
+  // The event filter and the page live in the URL, so a filtered log can be
+  // linked to (`?event=ttl.expire&page=2`).
+  const urlSearch = useSearch({ strict: false }) as { event?: unknown; page?: unknown };
+  const navigate = useNavigate();
+  const event = (AUDIT_EVENTS as readonly string[]).includes(String(urlSearch.event ?? ""))
+    ? (String(urlSearch.event ?? "") as AuditEvent | "")
+    : "";
+  const offset = Math.max(0, (Number(urlSearch.page) || 1) - 1) * AUDIT_PAGE_SIZE;
+  const setView = (next: { event?: AuditEvent | ""; offset?: number }) =>
+    void navigate({
+      to: ".",
+      search: ((prev: Record<string, unknown>) => {
+        const nextEvent = next.event ?? event;
+        const nextOffset = next.offset ?? offset;
+        return {
+          ...prev,
+          event: nextEvent || undefined,
+          page: nextOffset > 0 ? nextOffset / AUDIT_PAGE_SIZE + 1 : undefined,
+        };
+      }) as never,
+      replace: true,
+    });
+  const setEvent = (value: AuditEvent | "") => setView({ event: value, offset: 0 });
+  const setOffset = (value: number) => setView({ offset: value });
 
   const logsQuery = useQuery({
     ...openApiQueryOptions.listRepositoryAuditLogs({
@@ -99,7 +121,7 @@ export function AuditLogs({ repo }: { repo: Repository }) {
         {data && <span className="text-sm text-muted-foreground">{data.count} events</span>}
       </div>
       <div className="flex min-w-0 items-center gap-2 mb-4 max-sm:flex-wrap items-stretch max-sm:flex-col">
-        <Select value={event} onChange={(v) => { setEvent(v as AuditEvent | ""); setOffset(0); }}
+        <Select value={event} onChange={(v) => setEvent(v as AuditEvent | "")}
           options={AUDIT_EVENTS.map((ev) => ({ value: ev, label: ev || "all events" }))} />
         <Button variant="outline" type="button" onClick={refresh}>{t("common.refresh")}</Button>
       </div>

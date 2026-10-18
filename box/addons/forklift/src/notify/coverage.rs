@@ -192,7 +192,7 @@ impl Notifier {
     /// the outcome, so a manual send can tell the administrator per receiver
     /// whether it landed.
     pub async fn send_coverage_report(&self, url: &str, p: &CoveragePayload) -> Result<()> {
-        let body = serde_json::to_vec(p)?;
+        let body = super::rich::webhook_body(p)?;
         self.send_json(url, body).await
     }
 
@@ -203,7 +203,7 @@ impl Notifier {
         if targets.is_empty() {
             return;
         }
-        let body = match serde_json::to_vec(&self.build_coverage_report(r)) {
+        let body = match super::rich::webhook_body(&self.build_coverage_report(r)) {
             Ok(b) => Bytes::from(b),
             Err(e) => {
                 tracing::error!(err = %e, "notify: marshal coverage payload failed");

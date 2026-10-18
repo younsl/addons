@@ -459,6 +459,25 @@ impl Store {
         .await
     }
 
+    /// Counts the artifacts [`Store::list_expired_artifacts`] would return
+    /// without a limit, and their total size in bytes.
+    pub async fn count_expired_artifacts(
+        &self,
+        repo_id: i64,
+        cutoff: DateTime<Utc>,
+    ) -> Result<(i64, i64)> {
+        let cutoff = format_time(cutoff);
+        self.read(move |conn| {
+            conn.query_row(
+                "SELECT COUNT(*), COALESCE(SUM(size), 0) FROM artifacts WHERE repo_id = ? AND last_accessed_at < ?",
+                params![repo_id, cutoff],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .map_err(|e| Error::sqlite("count expired artifacts", e))
+        })
+        .await
+    }
+
     /// Removes up to `limit` least-recently-accessed artifacts in a repository
     /// and returns how many paths were freed. Blob ref counts are decremented;
     /// unreferenced blobs are reclaimed separately via

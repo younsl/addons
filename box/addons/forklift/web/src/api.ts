@@ -286,6 +286,10 @@ export interface Announcement {
   body: string;
   updated_by?: string;
   updated_at?: string;
+  // When the banner stops showing; absent while it stays up until cleared.
+  expires_at?: string;
+  active: boolean;
+  user_dismissible: boolean;
 }
 
 export interface HAStatus {
@@ -806,7 +810,8 @@ export const api = {
   logout: () => req<void>("POST", "/logout"),
   version: () => req<Version>("GET", "/version"),
   getAnnouncement: () => req<Announcement>("GET", "/announcement"),
-  putAnnouncement: (body: string) => req<Announcement>("PUT", "/announcement", { body }),
+  putAnnouncement: (body: string, expiresAt: string | null = null, userDismissible = false) =>
+    req<Announcement>("PUT", "/announcement", { body, expires_at: expiresAt, user_dismissible: userDismissible }),
   getHA: () => req<HAStatus>("GET", "/ha"),
   getStorage: () => req<StorageStats>("GET", "/storage"),
   stepDownHA: () => req<{ status: string }>("POST", "/ha/step-down"),

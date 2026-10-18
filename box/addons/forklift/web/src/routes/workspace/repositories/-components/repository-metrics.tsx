@@ -1,8 +1,9 @@
-import { Clock, ShieldCheck } from "lucide-react";
+import { Clock, Hourglass, ShieldCheck } from "lucide-react";
 
 import { Badge } from "@/components/app-ui/badge";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useTranslation } from "@/lib/i18n";
+import { idleTtlDays } from "@/lib/retention";
 import { cn } from "@/lib/utils";
 import { formatFileSize } from "@/utils/format-file-size";
 
@@ -123,5 +124,28 @@ export function SecurityIcons({ repo }: { repo: RepositoryListItem }) {
         <TooltipContent>{approvalTip}</TooltipContent>
       </Tooltip>
     </span>
+  );
+}
+
+// RetentionBadge marks a repository whose idle auto-delete is on, with the
+// period, so it stands out in the list without opening the settings.
+export function RetentionBadge({ repo }: { repo: RepositoryListItem }) {
+  const { t } = useTranslation();
+  const days = idleTtlDays(repo.config.retention?.idle_ttl);
+
+  if (repo.type === "group" || !(days > 0)) return null;
+
+  const rounded = String(Math.round(days * 100) / 100);
+  const label = `${rounded}${t("repo.retention-badge-unit")}`;
+  return (
+    <Tooltip>
+      <TooltipTrigger render={<span tabIndex={0} aria-label={`${t("repo.auto-delete")} ${label}`} className="inline-flex shrink-0" />}>
+        <Badge variant="secondary" className="gap-1 px-1.5">
+          <Hourglass className="size-3" aria-hidden="true" />
+          {label}
+        </Badge>
+      </TooltipTrigger>
+      <TooltipContent>{t(days === 1 ? "repo.retention-badge-tip-one" : "repo.retention-badge-tip").replace("{days}", rounded)}</TooltipContent>
+    </Tooltip>
   );
 }

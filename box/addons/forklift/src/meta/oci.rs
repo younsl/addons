@@ -105,6 +105,23 @@ impl Store {
         .await
     }
 
+    /// Returns the number of tags per repository (repositories without tags are
+    /// absent). For an OCI repository this is the image count a person expects,
+    /// where the artifact row count also includes every manifest and blob.
+    pub async fn oci_tag_counts(&self) -> Result<std::collections::HashMap<i64, i64>> {
+        self.read(|conn| {
+            let rows = query_all(
+                conn,
+                "oci tag counts",
+                "SELECT repo_id, COUNT(*) FROM oci_tags GROUP BY repo_id",
+                [],
+                |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?)),
+            )?;
+            Ok(rows.into_iter().collect())
+        })
+        .await
+    }
+
     /// Removes one tag. Deleting a tag never touches the manifest it pointed at
     /// (per the distribution spec); the prune pass collects manifests no tag
     /// reaches. Reports [`Error::NotFound`] when the tag does not exist.
@@ -117,6 +134,32 @@ impl Store {
                     params![repo_id, name, tag],
                 )
                 .map_err(|e| Error::sqlite("delete oci tag", e))?;
+            if n == 0 {
+                return Err(Error::NotFound);
+            }
+            Ok(())
+        })
+        .await
+    }
+
+    /// Removes one tag only while it still points at `digest`, so a tag re-pushed
+    /// onto another manifest after the caller read it survives. Reports
+    /// [`Error::NotFound`] when the tag is gone or now points elsewhere.
+    pub async fn delete_oci_tag_if_digest(
+        &self,
+        repo_id: i64,
+        name: &str,
+        tag: &str,
+        digest: &str,
+    ) -> Result<()> {
+        let (name, tag, digest) = (name.to_string(), tag.to_string(), digest.to_string());
+        self.write(move |conn| {
+            let n = conn
+                .execute(
+                    "DELETE FROM oci_tags WHERE repo_id = ? AND name = ? AND tag = ? AND manifest_digest = ?",
+                    params![repo_id, name, tag, digest],
+                )
+                .map_err(|e| Error::sqlite("delete oci tag if digest", e))?;
             if n == 0 {
                 return Err(Error::NotFound);
             }
@@ -325,6 +368,26 @@ pub(crate) mod tests {
         s.delete_oci_tag(repo.id, "other", "v1").await.unwrap();
         let err = s.delete_oci_tag(repo.id, "other", "v1").await.unwrap_err();
         assert!(err.is_not_found(), "double delete = {err}");
+
+        let counts = s.oci_tag_counts().await.unwrap();
+        assert_eq!(counts.get(&repo.id), None, "no tags left: {counts:?}");
+
+        s.upsert_oci_tag(repo.id, "app", "v3", d1).await.unwrap();
+        let counts = s.oci_tag_counts().await.unwrap();
+        assert_eq!(counts.get(&repo.id), Some(&1), "one tag: {counts:?}");
+        let err = s
+            .delete_oci_tag_if_digest(repo.id, "app", "v3", d2)
+            .await
+            .unwrap_err();
+        assert!(err.is_not_found(), "repointed tag delete = {err}");
+        s.get_oci_tag(repo.id, "app", "v3")
+            .await
+            .expect("tag pointing elsewhere survives");
+        s.delete_oci_tag_if_digest(repo.id, "app", "v3", d1)
+            .await
+            .unwrap();
+        let err = s.get_oci_tag(repo.id, "app", "v3").await.unwrap_err();
+        assert!(err.is_not_found(), "v3 after digest-matched delete: {err}");
     }
 
     #[tokio::test]

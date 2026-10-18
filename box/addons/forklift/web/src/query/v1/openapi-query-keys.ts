@@ -18,12 +18,16 @@ import type {
   GetStorageMigrationRequest,
 } from "@/services/v1/ha/types";
 import type {
+  GetInsightCheckHistoryRequest,
+} from "@/services/v1/insights/types";
+import type {
   GetRepositoryNotificationSampleRequest,
 } from "@/services/v1/notification/types";
 import type {
   GetRepositoryDanglingRequest,
   GetRepositoryOciDetailRequest,
   GetRepositoryRequest,
+  GetRepositoryRetentionPreviewRequest,
   GetRepositoryUploadsRequest,
   GetRepositoryUpstreamHealthRequest,
   ListRepositoryArtifactsLabelsRequest,
@@ -65,6 +69,8 @@ export const openApiQueryKeys = {
   listRepositoryNames: () => key("GET", "/api/v1/repository-names"),
   listRepositoryOciTags: (params: ListRepositoryOciTagsRequest) =>
     key("GET", "/api/v1/repositories/{id}/oci-tags", params),
+  getRepositoryRetentionPreview: (params: GetRepositoryRetentionPreviewRequest) =>
+    key("GET", "/api/v1/repositories/{id}/retention-preview", params),
   getRepositoryOciDetail: (params: GetRepositoryOciDetailRequest) =>
     key("GET", "/api/v1/repositories/{id}/oci-detail", params),
   listRepositoryArtifacts: (params: ListRepositoryArtifactsRequest) =>
@@ -105,6 +111,11 @@ export const openApiQueryKeys = {
   listNotificationReceivers: () => key("GET", "/api/v1/notification/receivers"),
   getRepositoryNotificationSample: (params: GetRepositoryNotificationSampleRequest) =>
     key("GET", "/api/v1/repositories/{id}/notification/sample", params),
+  getInsights: () => key("GET", "/api/v1/insights"),
+  getInsightSettings: () => key("GET", "/api/v1/insights/settings"),
+  getInsightsNotificationPreview: () => key("GET", "/api/v1/insights/notification/preview"),
+  getInsightCheckHistory: (params: GetInsightCheckHistoryRequest) =>
+    key("GET", "/api/v1/insights/checks/{id}/history", params),
   getCoverage: () => key("GET", "/api/v1/coverage"),
   listCoverageGroups: () => key("GET", "/api/v1/coverage/groups"),
   listCoverageHistory: (params?: ListCoverageHistoryRequest) =>

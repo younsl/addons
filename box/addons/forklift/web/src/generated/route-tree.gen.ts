@@ -22,10 +22,12 @@ import { Route as WorkspaceApprovalsRouteImport } from './../routes/workspace/ap
 import { Route as AdminStorageRouteImport } from './../routes/admin/storage'
 import { Route as AdminNotificationsRouteImport } from './../routes/admin/notifications'
 import { Route as AdminHaRouteImport } from './../routes/admin/ha'
+import { Route as AdminAnnouncementRouteImport } from './../routes/admin/announcement'
 import { Route as AccessUsersRouteImport } from './../routes/access/users'
 import { Route as AccessRolesRouteImport } from './../routes/access/roles'
 import { Route as WorkspaceTokensIndexRouteImport } from './../routes/workspace/tokens/index'
 import { Route as WorkspaceRepositoriesIndexRouteImport } from './../routes/workspace/repositories/index'
+import { Route as WorkspaceInsightsIndexRouteImport } from './../routes/workspace/insights/index'
 import { Route as WorkspaceCoverageIndexRouteImport } from './../routes/workspace/coverage/index'
 import { Route as WorkspaceApprovalsIndexRouteImport } from './../routes/workspace/approvals/index'
 import { Route as AdminStorageIndexRouteImport } from './../routes/admin/storage/index'
@@ -35,6 +37,8 @@ import { Route as AccessRolesIndexRouteImport } from './../routes/access/roles/i
 import { Route as WorkspaceTokensNewRouteImport } from './../routes/workspace/tokens/new'
 import { Route as WorkspaceRepositoriesNewRouteImport } from './../routes/workspace/repositories/new'
 import { Route as WorkspaceRepositoriesIdRouteImport } from './../routes/workspace/repositories/$id'
+import { Route as WorkspaceInsightsSettingsRouteImport } from './../routes/workspace/insights/settings'
+import { Route as WorkspaceInsightsIdRouteImport } from './../routes/workspace/insights/$id'
 import { Route as WorkspaceCoverageSettingsRouteImport } from './../routes/workspace/coverage/settings'
 import { Route as WorkspaceCoverageProjectRouteImport } from './../routes/workspace/coverage/project'
 import { Route as WorkspaceCoverageGroupsRouteImport } from './../routes/workspace/coverage/groups'
@@ -119,6 +123,11 @@ const AdminHaRoute = AdminHaRouteImport.update({
   path: '/admin/ha',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AdminAnnouncementRoute = AdminAnnouncementRouteImport.update({
+  id: '/admin/announcement',
+  path: '/admin/announcement',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AccessUsersRoute = AccessUsersRouteImport.update({
   id: '/access/users',
   path: '/access/users',
@@ -140,6 +149,11 @@ const WorkspaceRepositoriesIndexRoute =
     path: '/',
     getParentRoute: () => WorkspaceRepositoriesRoute,
   } as any)
+const WorkspaceInsightsIndexRoute = WorkspaceInsightsIndexRouteImport.update({
+  id: '/insights/',
+  path: '/insights/',
+  getParentRoute: () => WorkspaceRoute,
+} as any)
 const WorkspaceCoverageIndexRoute = WorkspaceCoverageIndexRouteImport.update({
   id: '/coverage/',
   path: '/coverage/',
@@ -185,6 +199,17 @@ const WorkspaceRepositoriesIdRoute = WorkspaceRepositoriesIdRouteImport.update({
   id: '/$id',
   path: '/$id',
   getParentRoute: () => WorkspaceRepositoriesRoute,
+} as any)
+const WorkspaceInsightsSettingsRoute =
+  WorkspaceInsightsSettingsRouteImport.update({
+    id: '/insights/settings',
+    path: '/insights/settings',
+    getParentRoute: () => WorkspaceRoute,
+  } as any)
+const WorkspaceInsightsIdRoute = WorkspaceInsightsIdRouteImport.update({
+  id: '/insights/$id',
+  path: '/insights/$id',
+  getParentRoute: () => WorkspaceRoute,
 } as any)
 const WorkspaceCoverageSettingsRoute =
   WorkspaceCoverageSettingsRouteImport.update({
@@ -291,6 +316,7 @@ export interface FileRoutesByFullPath {
   '/workspace': typeof WorkspaceRouteWithChildren
   '/access/roles': typeof AccessRolesRouteWithChildren
   '/access/users': typeof AccessUsersRouteWithChildren
+  '/admin/announcement': typeof AdminAnnouncementRoute
   '/admin/ha': typeof AdminHaRoute
   '/admin/notifications': typeof AdminNotificationsRouteWithChildren
   '/admin/storage': typeof AdminStorageRouteWithChildren
@@ -311,6 +337,8 @@ export interface FileRoutesByFullPath {
   '/workspace/coverage/groups': typeof WorkspaceCoverageGroupsRoute
   '/workspace/coverage/project': typeof WorkspaceCoverageProjectRoute
   '/workspace/coverage/settings': typeof WorkspaceCoverageSettingsRoute
+  '/workspace/insights/$id': typeof WorkspaceInsightsIdRoute
+  '/workspace/insights/settings': typeof WorkspaceInsightsSettingsRoute
   '/workspace/repositories/$id': typeof WorkspaceRepositoriesIdRouteWithChildren
   '/workspace/repositories/new': typeof WorkspaceRepositoriesNewRoute
   '/workspace/tokens/new': typeof WorkspaceTokensNewRoute
@@ -320,6 +348,7 @@ export interface FileRoutesByFullPath {
   '/admin/storage/': typeof AdminStorageIndexRoute
   '/workspace/approvals/': typeof WorkspaceApprovalsIndexRoute
   '/workspace/coverage/': typeof WorkspaceCoverageIndexRoute
+  '/workspace/insights/': typeof WorkspaceInsightsIndexRoute
   '/workspace/repositories/': typeof WorkspaceRepositoriesIndexRoute
   '/workspace/tokens/': typeof WorkspaceTokensIndexRoute
   '/admin/storage/migrations/$id': typeof AdminStorageMigrationsIdRoute
@@ -334,6 +363,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
   '/settings': typeof SettingsRoute
+  '/admin/announcement': typeof AdminAnnouncementRoute
   '/admin/ha': typeof AdminHaRoute
   '/access': typeof AccessIndexRoute
   '/admin': typeof AdminIndexRoute
@@ -348,6 +378,8 @@ export interface FileRoutesByTo {
   '/workspace/coverage/groups': typeof WorkspaceCoverageGroupsRoute
   '/workspace/coverage/project': typeof WorkspaceCoverageProjectRoute
   '/workspace/coverage/settings': typeof WorkspaceCoverageSettingsRoute
+  '/workspace/insights/$id': typeof WorkspaceInsightsIdRoute
+  '/workspace/insights/settings': typeof WorkspaceInsightsSettingsRoute
   '/workspace/repositories/new': typeof WorkspaceRepositoriesNewRoute
   '/workspace/tokens/new': typeof WorkspaceTokensNewRoute
   '/access/roles': typeof AccessRolesIndexRoute
@@ -356,6 +388,7 @@ export interface FileRoutesByTo {
   '/admin/storage': typeof AdminStorageIndexRoute
   '/workspace/approvals': typeof WorkspaceApprovalsIndexRoute
   '/workspace/coverage': typeof WorkspaceCoverageIndexRoute
+  '/workspace/insights': typeof WorkspaceInsightsIndexRoute
   '/workspace/repositories': typeof WorkspaceRepositoriesIndexRoute
   '/workspace/tokens': typeof WorkspaceTokensIndexRoute
   '/admin/storage/migrations/$id': typeof AdminStorageMigrationsIdRoute
@@ -374,6 +407,7 @@ export interface FileRoutesById {
   '/workspace': typeof WorkspaceRouteWithChildren
   '/access/roles': typeof AccessRolesRouteWithChildren
   '/access/users': typeof AccessUsersRouteWithChildren
+  '/admin/announcement': typeof AdminAnnouncementRoute
   '/admin/ha': typeof AdminHaRoute
   '/admin/notifications': typeof AdminNotificationsRouteWithChildren
   '/admin/storage': typeof AdminStorageRouteWithChildren
@@ -394,6 +428,8 @@ export interface FileRoutesById {
   '/workspace/coverage/groups': typeof WorkspaceCoverageGroupsRoute
   '/workspace/coverage/project': typeof WorkspaceCoverageProjectRoute
   '/workspace/coverage/settings': typeof WorkspaceCoverageSettingsRoute
+  '/workspace/insights/$id': typeof WorkspaceInsightsIdRoute
+  '/workspace/insights/settings': typeof WorkspaceInsightsSettingsRoute
   '/workspace/repositories/$id': typeof WorkspaceRepositoriesIdRouteWithChildren
   '/workspace/repositories/new': typeof WorkspaceRepositoriesNewRoute
   '/workspace/tokens/new': typeof WorkspaceTokensNewRoute
@@ -403,6 +439,7 @@ export interface FileRoutesById {
   '/admin/storage/': typeof AdminStorageIndexRoute
   '/workspace/approvals/': typeof WorkspaceApprovalsIndexRoute
   '/workspace/coverage/': typeof WorkspaceCoverageIndexRoute
+  '/workspace/insights/': typeof WorkspaceInsightsIndexRoute
   '/workspace/repositories/': typeof WorkspaceRepositoriesIndexRoute
   '/workspace/tokens/': typeof WorkspaceTokensIndexRoute
   '/admin/storage/migrations/$id': typeof AdminStorageMigrationsIdRoute
@@ -422,6 +459,7 @@ export interface FileRouteTypes {
     | '/workspace'
     | '/access/roles'
     | '/access/users'
+    | '/admin/announcement'
     | '/admin/ha'
     | '/admin/notifications'
     | '/admin/storage'
@@ -442,6 +480,8 @@ export interface FileRouteTypes {
     | '/workspace/coverage/groups'
     | '/workspace/coverage/project'
     | '/workspace/coverage/settings'
+    | '/workspace/insights/$id'
+    | '/workspace/insights/settings'
     | '/workspace/repositories/$id'
     | '/workspace/repositories/new'
     | '/workspace/tokens/new'
@@ -451,6 +491,7 @@ export interface FileRouteTypes {
     | '/admin/storage/'
     | '/workspace/approvals/'
     | '/workspace/coverage/'
+    | '/workspace/insights/'
     | '/workspace/repositories/'
     | '/workspace/tokens/'
     | '/admin/storage/migrations/$id'
@@ -465,6 +506,7 @@ export interface FileRouteTypes {
     | '/'
     | '/login'
     | '/settings'
+    | '/admin/announcement'
     | '/admin/ha'
     | '/access'
     | '/admin'
@@ -479,6 +521,8 @@ export interface FileRouteTypes {
     | '/workspace/coverage/groups'
     | '/workspace/coverage/project'
     | '/workspace/coverage/settings'
+    | '/workspace/insights/$id'
+    | '/workspace/insights/settings'
     | '/workspace/repositories/new'
     | '/workspace/tokens/new'
     | '/access/roles'
@@ -487,6 +531,7 @@ export interface FileRouteTypes {
     | '/admin/storage'
     | '/workspace/approvals'
     | '/workspace/coverage'
+    | '/workspace/insights'
     | '/workspace/repositories'
     | '/workspace/tokens'
     | '/admin/storage/migrations/$id'
@@ -504,6 +549,7 @@ export interface FileRouteTypes {
     | '/workspace'
     | '/access/roles'
     | '/access/users'
+    | '/admin/announcement'
     | '/admin/ha'
     | '/admin/notifications'
     | '/admin/storage'
@@ -524,6 +570,8 @@ export interface FileRouteTypes {
     | '/workspace/coverage/groups'
     | '/workspace/coverage/project'
     | '/workspace/coverage/settings'
+    | '/workspace/insights/$id'
+    | '/workspace/insights/settings'
     | '/workspace/repositories/$id'
     | '/workspace/repositories/new'
     | '/workspace/tokens/new'
@@ -533,6 +581,7 @@ export interface FileRouteTypes {
     | '/admin/storage/'
     | '/workspace/approvals/'
     | '/workspace/coverage/'
+    | '/workspace/insights/'
     | '/workspace/repositories/'
     | '/workspace/tokens/'
     | '/admin/storage/migrations/$id'
@@ -551,6 +600,7 @@ export interface RootRouteChildren {
   WorkspaceRoute: typeof WorkspaceRouteWithChildren
   AccessRolesRoute: typeof AccessRolesRouteWithChildren
   AccessUsersRoute: typeof AccessUsersRouteWithChildren
+  AdminAnnouncementRoute: typeof AdminAnnouncementRoute
   AdminHaRoute: typeof AdminHaRoute
   AdminNotificationsRoute: typeof AdminNotificationsRouteWithChildren
   AdminStorageRoute: typeof AdminStorageRouteWithChildren
@@ -651,6 +701,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminHaRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/admin/announcement': {
+      id: '/admin/announcement'
+      path: '/admin/announcement'
+      fullPath: '/admin/announcement'
+      preLoaderRoute: typeof AdminAnnouncementRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/access/users': {
       id: '/access/users'
       path: '/access/users'
@@ -678,6 +735,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/workspace/repositories/'
       preLoaderRoute: typeof WorkspaceRepositoriesIndexRouteImport
       parentRoute: typeof WorkspaceRepositoriesRoute
+    }
+    '/workspace/insights/': {
+      id: '/workspace/insights/'
+      path: '/insights'
+      fullPath: '/workspace/insights/'
+      preLoaderRoute: typeof WorkspaceInsightsIndexRouteImport
+      parentRoute: typeof WorkspaceRoute
     }
     '/workspace/coverage/': {
       id: '/workspace/coverage/'
@@ -741,6 +805,20 @@ declare module '@tanstack/react-router' {
       fullPath: '/workspace/repositories/$id'
       preLoaderRoute: typeof WorkspaceRepositoriesIdRouteImport
       parentRoute: typeof WorkspaceRepositoriesRoute
+    }
+    '/workspace/insights/settings': {
+      id: '/workspace/insights/settings'
+      path: '/insights/settings'
+      fullPath: '/workspace/insights/settings'
+      preLoaderRoute: typeof WorkspaceInsightsSettingsRouteImport
+      parentRoute: typeof WorkspaceRoute
+    }
+    '/workspace/insights/$id': {
+      id: '/workspace/insights/$id'
+      path: '/insights/$id'
+      fullPath: '/workspace/insights/$id'
+      preLoaderRoute: typeof WorkspaceInsightsIdRouteImport
+      parentRoute: typeof WorkspaceRoute
     }
     '/workspace/coverage/settings': {
       id: '/workspace/coverage/settings'
@@ -946,7 +1024,10 @@ interface WorkspaceRouteChildren {
   WorkspaceCoverageGroupsRoute: typeof WorkspaceCoverageGroupsRoute
   WorkspaceCoverageProjectRoute: typeof WorkspaceCoverageProjectRoute
   WorkspaceCoverageSettingsRoute: typeof WorkspaceCoverageSettingsRoute
+  WorkspaceInsightsIdRoute: typeof WorkspaceInsightsIdRoute
+  WorkspaceInsightsSettingsRoute: typeof WorkspaceInsightsSettingsRoute
   WorkspaceCoverageIndexRoute: typeof WorkspaceCoverageIndexRoute
+  WorkspaceInsightsIndexRoute: typeof WorkspaceInsightsIndexRoute
 }
 
 const WorkspaceRouteChildren: WorkspaceRouteChildren = {
@@ -957,7 +1038,10 @@ const WorkspaceRouteChildren: WorkspaceRouteChildren = {
   WorkspaceCoverageGroupsRoute: WorkspaceCoverageGroupsRoute,
   WorkspaceCoverageProjectRoute: WorkspaceCoverageProjectRoute,
   WorkspaceCoverageSettingsRoute: WorkspaceCoverageSettingsRoute,
+  WorkspaceInsightsIdRoute: WorkspaceInsightsIdRoute,
+  WorkspaceInsightsSettingsRoute: WorkspaceInsightsSettingsRoute,
   WorkspaceCoverageIndexRoute: WorkspaceCoverageIndexRoute,
+  WorkspaceInsightsIndexRoute: WorkspaceInsightsIndexRoute,
 }
 
 const WorkspaceRouteWithChildren = WorkspaceRoute._addFileChildren(
@@ -1046,6 +1130,7 @@ const rootRouteChildren: RootRouteChildren = {
   WorkspaceRoute: WorkspaceRouteWithChildren,
   AccessRolesRoute: AccessRolesRouteWithChildren,
   AccessUsersRoute: AccessUsersRouteWithChildren,
+  AdminAnnouncementRoute: AdminAnnouncementRoute,
   AdminHaRoute: AdminHaRoute,
   AdminNotificationsRoute: AdminNotificationsRouteWithChildren,
   AdminStorageRoute: AdminStorageRouteWithChildren,

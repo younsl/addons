@@ -7,6 +7,7 @@ use crate::meta;
 
 use super::Manager;
 use super::oci::{oci_index_media_type, oci_manifest_path};
+use super::oci_idle::{OciTagActivity, idle_expiry, propagate_attachment_activity};
 use super::oci_push::OciManifestDoc;
 
 /// One tagged image as the console's Harbor-style view presents it: the tag with
@@ -40,6 +41,10 @@ pub struct OCITagInfo {
     pub pulled_at: Option<DateTime<Utc>>,
     /// Who last pulled (empty when never pulled or anonymous).
     pub pulled_by: String,
+    /// When the idle reaper may remove the tag: its last push or pull plus the
+    /// repository's retention `idle_ttl`. `None` when retention is off.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expires_at: Option<DateTime<Utc>>,
 }
 
 impl Manager {
@@ -47,10 +52,16 @@ impl Manager {
     /// above. Manifest documents are read from the blob store; sizes come from
     /// their descriptors, so nothing is re-hashed. A tag whose manifest is
     /// missing (mid-push, or pruned underneath) is skipped rather than failing
-    /// the listing.
-    pub async fn list_oci_tags(&self, repo_id: i64) -> Result<Vec<OCITagInfo>, meta::Error> {
+    /// the listing. `idle_ttl` is the repository's retention, which sets each
+    /// tag's `expires_at` the same way the idle reaper decides.
+    pub async fn list_oci_tags(
+        &self,
+        repo_id: i64,
+        idle_ttl: std::time::Duration,
+    ) -> Result<Vec<OCITagInfo>, meta::Error> {
         let tags = self.store.list_oci_tag_rows(repo_id).await?;
         let mut out: Vec<OCITagInfo> = Vec::new();
+        let mut activity: Vec<OciTagActivity> = Vec::new();
         for tag in tags {
             let Ok(art) = self
                 .store
@@ -79,6 +90,7 @@ impl Manager {
                 info.pulled_at = Some(art.last_accessed_at);
                 info.pulled_by = art.last_accessed_by.clone();
             }
+            let mut last_active = tag.updated_at.max(art.last_accessed_at);
             info.kind = oci_artifact_kind(&doc);
             if oci_index_media_type(&art.content_type) || !doc.manifests.is_empty() {
                 info.kind = "index".to_string();
@@ -96,6 +108,7 @@ impl Manager {
                     else {
                         continue;
                     };
+                    last_active = last_active.max(child_art.last_accessed_at);
                     let Ok(child_doc) = self.read_oci_manifest(&child_art).await else {
                         continue;
                     };
@@ -104,7 +117,17 @@ impl Manager {
             } else {
                 info.size = art.size + manifest_content_size(&doc);
             }
+            activity.push(OciTagActivity {
+                name: tag.name.clone(),
+                tag: tag.tag.clone(),
+                digest: tag.manifest_digest.clone(),
+                last_active,
+            });
             out.push(info);
+        }
+        propagate_attachment_activity(&mut activity);
+        for (info, entry) in out.iter_mut().zip(&activity) {
+            info.expires_at = idle_expiry(idle_ttl, entry.last_active);
         }
         out.sort_by(|a, b| a.name.cmp(&b.name).then_with(|| a.tag.cmp(&b.tag)));
         Ok(out)

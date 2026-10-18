@@ -425,7 +425,7 @@ pub(super) async fn update_settings(State(h): State<Arc<Handler>>, request: Requ
         let name = receiver.trim().to_string();
         // Empty is how the report is turned off, so only a named one is checked.
         if !name.is_empty()
-            && let Err(msg) = h.validate_coverage_receiver(&name).await
+            && let Err(msg) = h.validate_receiver_name(&name).await
         {
             return write_error(StatusCode::BAD_REQUEST, &msg);
         }
@@ -479,7 +479,7 @@ pub(super) async fn update_settings(State(h): State<Arc<Handler>>, request: Requ
 impl Handler {
     /// Refuses a name that is not an existing receiver, so a typo shows up at
     /// save time instead of as a report that silently goes nowhere.
-    async fn validate_coverage_receiver(&self, name: &str) -> Result<(), String> {
+    pub(super) async fn validate_receiver_name(&self, name: &str) -> Result<(), String> {
         let all = self
             .store
             .list_receivers()

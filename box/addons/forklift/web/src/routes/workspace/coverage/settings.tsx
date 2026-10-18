@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, CheckCircle2, Globe, Send, XCircle } from "lucide-react";
 import { useAuth } from "@/authContext";
 import { Alert } from "@/components/app-ui/alert";
+import { AlarmPreview } from "@/components/app-ui/alarm-preview";
 import { PageDescription, PageHeader } from "@/components/app-ui/page";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -36,6 +37,7 @@ import { cn } from "@/lib/utils";
 import { formatMilliseconds } from "@/utils/format-duration";
 import { validateExternalDomain, type HostProblem } from "@/lib/coverage-host";
 import { Redirect } from "@/components/app/redirect";
+import { COMMON_TIMEZONES } from "@/lib/timezones";
 
 export const Route = createFileRoute("/workspace/coverage/settings")({
   component: CoverageSettingsRoute,
@@ -67,28 +69,6 @@ interface Form {
   use_search: boolean;
 }
 
-// COMMON_TIMEZONES is a shortlist, not the IANA database. It covers the zones a
-// team is most likely to schedule against; anything else is typed straight into
-// the same field, and the server validates it either way.
-//
-// The list is filtered against what has been typed rather than shown whole: a
-// name like Asia/Seoul is reached by typing "seo", and an unfiltered list would
-// make the field behave like a dropdown that ignores the keyboard.
-const COMMON_TIMEZONES = [
-  "UTC",
-  "Asia/Seoul",
-  "Asia/Tokyo",
-  "Asia/Shanghai",
-  "Asia/Singapore",
-  "Asia/Kolkata",
-  "Europe/London",
-  "Europe/Berlin",
-  "Europe/Paris",
-  "America/New_York",
-  "America/Chicago",
-  "America/Los_Angeles",
-  "Australia/Sydney",
-];
 
 // formFromSettings maps the stored settings onto the fields the form edits.
 // The list field is held as the comma-separated text the input works with and
@@ -150,7 +130,7 @@ function CoverageSettingsPage() {
   const queryClient = useQueryClient();
   const [form, setForm] = useState<Form | null>(null);
   const [error, setError] = useState("");
-  const [saved, setSaved] = useState(false);
+  const navigate = useNavigate();
 
   const { data: settings, error: loadError, isLoading } = useQuery({
     ...openApiQueryOptions.getCoverageSettings(),
@@ -173,18 +153,15 @@ function CoverageSettingsPage() {
 
   const save = useMutation({
     mutationFn: (body: CoverageSettingsInput) => updateCoverageSettings({ body }),
+    // A saved settings page goes back to the dashboard it belongs to, like
+    // every page under a parent; a failed save stays to show why.
     onSuccess: (stored) => {
-      setError("");
-      setSaved(true);
-      // Show what was actually stored: the server trims and normalises, so the
-      // field should read back the value that will be used, not the keystrokes.
-      setForm(formFromSettings(stored));
-      queryClient.invalidateQueries({ queryKey: openApiQueryKeys.getCoverageSettings() });
+      queryClient.setQueryData(openApiQueryKeys.getCoverageSettings(), stored);
       queryClient.invalidateQueries({ queryKey: openApiQueryKeys.getCoverage() });
       queryClient.invalidateQueries({ queryKey: openApiQueryKeys.getCoverageNotificationPreview() });
+      navigate({ to: "/workspace/coverage" });
     },
     onError: (e) => {
-      setSaved(false);
       setError((e as Error).message);
     },
   });
@@ -297,14 +274,12 @@ function CoverageSettingsPage() {
   }
 
   const set = <K extends keyof Form>(key: K, value: Form[K]) => {
-    setSaved(false);
     setForm((prev) => (prev ? { ...prev, [key]: value } : prev));
   };
   // The server validates the expression whether or not the schedule is on, so a
   // field left empty would block saving from behind a disabled input. Turning
   // the schedule off restores whatever was last stored.
   const setAutoScan = (enabled: boolean) => {
-    setSaved(false);
     setForm((prev) =>
       prev
         ? {
@@ -359,11 +334,6 @@ function CoverageSettingsPage() {
       <PageDescription>{t("coverage.settings-description")}</PageDescription>
 
       {error && <Alert className="mb-4">{error}</Alert>}
-      {saved && (
-        <div className="mb-4 rounded-md border border-[var(--fx-success)]/50 bg-[var(--fx-success)]/10 px-3 py-2 text-sm">
-          {t("coverage.settings-saved")}
-        </div>
-      )}
 
       <Card className="mb-4">
         <CardContent className="pt-4">
@@ -592,9 +562,7 @@ function CoverageSettingsPage() {
                 {preview.sample && (
                   <p className="text-sm text-muted-foreground">{t("coverage.alarm-preview-sample")}</p>
                 )}
-                <pre className="max-h-72 overflow-auto whitespace-pre-wrap rounded-md border border-[var(--fx-border-subtle)] bg-[var(--fx-surface-panel-raised)] p-3 text-[12px] leading-6">
-                  {preview.payload.text}
-                </pre>
+                <AlarmPreview text={preview.payload.text} />
                 <div className="flex flex-wrap items-center gap-2">
                   <Button
                     variant="outline"

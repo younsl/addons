@@ -1,7 +1,7 @@
 import { type ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertCircle, Check, ExternalLink, Play, RefreshCw, VolumeX, X } from "lucide-react";
+import { AlertCircle, Check, ExternalLink, Play, RefreshCw, Settings, VolumeX, X } from "lucide-react";
 import { useAuth } from "@/authContext";
 import { Alert } from "@/components/app-ui/alert";
 import { PageDescription, PageHeader } from "@/components/app-ui/page";
@@ -23,6 +23,7 @@ import { postScanCoverage } from "@/services/v1/coverage/api";
 import type { CoverageGroup, CoverageOverview } from "@/services/v1/openapi-types";
 import { useDateTime, useTranslation } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
+import { InsightsTabs } from "@/routes/workspace/insights/-components/insights-tabs";
 
 // While a scan runs the picture changes every few seconds, so the page polls;
 // once it settles there is nothing to poll for until the next scan.
@@ -84,6 +85,7 @@ export function CoverageShell({
 
   return (
     <>
+      <InsightsTabs active="coverage" />
       <PageHeader
         title={t("coverage.title")}
         actions={
@@ -93,7 +95,8 @@ export function CoverageShell({
                 to="/workspace/coverage/settings"
                 className={buttonVariants({ variant: "outline" })}
               >
-                {t("coverage.settings")}
+                <Settings className="size-4" aria-hidden="true" />
+                {t("nav.settings")}
               </Link>
               <Button
                 onClick={() => scan.mutate()}

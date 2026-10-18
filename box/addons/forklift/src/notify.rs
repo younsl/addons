@@ -15,11 +15,14 @@ use tokio::task::JoinHandle;
 
 mod batch;
 mod coverage;
+mod insights;
+mod rich;
 
 pub use batch::PreviewPackage;
 pub use coverage::{
     CoveragePayload, CoverageProject, CoverageReport, is_full_coverage, sample_coverage_report,
 };
+pub use insights::{InsightsFindingLine, InsightsPayload, InsightsReport};
 
 /// Errors returned by the synchronous senders.
 #[derive(Debug, thiserror::Error)]
@@ -352,7 +355,7 @@ impl Notifier {
             return;
         }
         let payload = self.build_approval_single(&evt);
-        let body = match serde_json::to_vec(&payload) {
+        let body = match rich::webhook_body(&payload) {
             Ok(b) => Bytes::from(b),
             Err(e) => {
                 tracing::error!(err = %e, "notify: marshal approval payload failed");
@@ -439,7 +442,7 @@ impl Notifier {
             timestamp: timestamp(),
             ..Default::default()
         };
-        let body = serde_json::to_vec(&payload)?;
+        let body = rich::webhook_body(&payload)?;
         self.send_json(url, body).await
     }
 
@@ -488,7 +491,7 @@ impl Notifier {
     /// reports the outcome. Used for the manual sample send so each receiver's
     /// result can be reported.
     pub async fn send_approval_payload(&self, url: &str, p: &ApprovalPayload) -> Result<()> {
-        let body = serde_json::to_vec(p)?;
+        let body = rich::webhook_body(p)?;
         self.send_json(url, body).await
     }
 

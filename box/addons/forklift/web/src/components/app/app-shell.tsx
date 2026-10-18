@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, Outlet, useLocation } from "@tanstack/react-router";
 import {
   Bell,
+  Megaphone,
   BookOpen,
   Boxes,
   ClipboardCheck,
@@ -13,8 +14,8 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Settings,
+  ShieldCheck,
   SlidersHorizontal,
-  Target,
   UserRound,
   UserRoundCog,
   UsersRound,
@@ -22,6 +23,7 @@ import {
 import { api } from "@/api";
 import type { Me } from "@/services/v1/openapi-types";
 import { AuthProvider } from "@/authContext";
+import { AnnouncementBar } from "@/components/app-ui/announcement";
 import { GlobalSearch } from "@/components/app/global-search";
 import { Redirect } from "@/components/app/redirect";
 import { Logo } from "@/components/app/logo";
@@ -71,8 +73,13 @@ export function AppShell() {
               is not the button's decision: the unauthenticated branch above
               redirects to /login, and it is the single place that knows. */}
           <Sidebar me={me} onLogout={() => api.logout().then(refresh)} />
-          <main className="w-full min-w-0 flex-1 px-[var(--fx-main-gutter-x)] py-[var(--fx-main-gutter-y)] max-lg:px-3 max-lg:py-3 max-sm:px-2 max-sm:py-2">
-            <div className="min-h-[calc(100dvh-var(--fx-impersonation-h,0px)-(var(--fx-main-gutter-y)*2))] rounded-[var(--fx-radius-2xl)] border border-[var(--fx-border-subtle)] bg-[var(--fx-surface-panel)] shadow-[var(--fx-panel-highlight)] max-lg:min-h-[calc(100dvh-var(--fx-impersonation-h,0px)-88px)] max-sm:rounded-[var(--fx-radius-lg)]">
+          <div className="w-full min-w-0 flex-1">
+          {/* The announcement runs edge to edge above the page. It is for the
+              people using the console, so it stays out of the Admin pages
+              where it is written. */}
+          {!location.pathname.startsWith("/admin") && <AnnouncementBar />}
+          <main className="w-full min-w-0 px-[var(--fx-main-gutter-x)] py-[var(--fx-main-gutter-y)] max-lg:px-3 max-lg:py-3 max-sm:px-2 max-sm:py-2">
+            <div className="min-h-[calc(100dvh-var(--fx-impersonation-h,0px)-var(--fx-announcement-h,0px)-(var(--fx-main-gutter-y)*2))] rounded-[var(--fx-radius-2xl)] border border-[var(--fx-border-subtle)] bg-[var(--fx-surface-panel)] shadow-[var(--fx-panel-highlight)] max-lg:min-h-[calc(100dvh-var(--fx-impersonation-h,0px)-88px)] max-sm:rounded-[var(--fx-radius-lg)]">
               <div
                 className={cn(
                   "mx-auto w-full py-[var(--fx-page-y)] transition-[max-width,padding] duration-150 max-sm:px-4 max-sm:py-5",
@@ -85,6 +92,7 @@ export function AppShell() {
               </div>
             </div>
           </main>
+          </div>
         </div>
       </TooltipProvider>
     </AuthProvider>
@@ -160,17 +168,19 @@ function Sidebar({ me, onLogout }: { me: Me; onLogout: () => void }) {
     select: (result) => result.count,
     enabled: canApprove,
   });
-  // The headline percentage rides in the sidebar badge, so the migration's
-  // progress is visible from every page rather than only on its own.
-  const { data: coveragePercent = null } = useQuery({
-    ...openApiQueryOptions.getCoverage(),
-    select: (overview) => overview.percent,
-    // Coverage is unconfigured on most deployments, where this 503s; a retrying
-    // query in the shell would then fire on every page.
+  // Critical and high findings ride in the sidebar badge, so urgent security
+  // work is visible from every page rather than only on its own.
+  const { data: urgentFindings = null } = useQuery({
+    ...openApiQueryOptions.getInsights(),
+    select: (overview) => (overview.report ? overview.report.counts.critical + overview.report.counts.high : null),
+    // Insights can be disabled, where this 503s; a retrying query in the shell
+    // would then fire on every page.
     retry: false,
     staleTime: 60_000,
     meta: { suppressGlobalErrorToast: true },
   });
+  const pathname = useLocation({ select: (location) => location.pathname });
+  const insightsActive = pathname.startsWith("/workspace/insights") || pathname.startsWith("/workspace/coverage");
   // The build stamp does not change while the tab is open, and its absence is
   // cosmetic - the sidebar simply omits the line.
   const { data: version = null } = useQuery({
@@ -253,14 +263,13 @@ function Sidebar({ me, onLogout }: { me: Me; onLogout: () => void }) {
               {pendingCount !== null && pendingCount > 0 && <Badge data-testid="value-nav-pending-count" className={cn("ml-2 min-w-5 justify-center bg-primary text-primary-foreground lg:ml-auto", labelClass)}>{pendingCount}</Badge>}
             </Link>
           )}
-          {/* Coverage sits with the workspace rather than under Admin: it is the
-              number the whole organisation is working towards, and hiding it
-              behind admin would make it the number nobody can see. Running a
-              scan and editing what is measured stay admin-only. */}
-          <Link className={navLinkClass()} activeProps={{ className: navLinkClass(true) }} to="/workspace/coverage" title={collapsed ? t("nav.coverage") : undefined}>
-            <Target className="size-4 opacity-75 group-hover:opacity-100" aria-hidden="true" />
-            <span className={labelClass}>{t("nav.coverage")}</span>
-            {coveragePercent !== null && <Badge data-testid="value-nav-coverage-percent" variant="outline" className={cn("ml-2 min-w-5 justify-center px-1.5 lg:ml-auto", labelClass)}>{coveragePercent}%</Badge>}
+          {/* Insights (security analysis and Forklift coverage) sits with the
+              workspace rather than under Admin: every signed-in user acts on
+              it, and the page narrows what each one sees. */}
+          <Link className={navLinkClass(insightsActive)} to="/workspace/insights" title={collapsed ? t("nav.insights") : undefined}>
+            <ShieldCheck className="size-4 opacity-75 group-hover:opacity-100" aria-hidden="true" />
+            <span className={labelClass}>{t("nav.insights")}</span>
+            {urgentFindings !== null && urgentFindings > 0 && <Badge data-testid="value-nav-insights-urgent" className={cn("ml-2 min-w-5 justify-center bg-primary text-primary-foreground lg:ml-auto", labelClass)}>{urgentFindings}</Badge>}
           </Link>
         </NavGroup>
         <NavGroup title={t("nav.group.access")} collapsed={collapsed}>
@@ -289,6 +298,10 @@ function Sidebar({ me, onLogout }: { me: Me; onLogout: () => void }) {
         </NavGroup>
         {me.admin && (
           <NavGroup title={t("nav.group.admin")} collapsed={collapsed}>
+            <Link className={navLinkClass()} activeProps={{ className: navLinkClass(true) }} to="/admin/announcement" title={collapsed ? t("nav.announcement") : undefined}>
+              <Megaphone className="size-4 opacity-75 group-hover:opacity-100" aria-hidden="true" />
+              <span className={labelClass}>{t("nav.announcement")}</span>
+            </Link>
             <Link className={navLinkClass()} activeProps={{ className: navLinkClass(true) }} to="/admin/notifications" title={collapsed ? t("nav.notifications") : undefined}>
               <Bell className="size-4 opacity-75 group-hover:opacity-100" aria-hidden="true" />
               <span className={labelClass}>{t("nav.notifications")}</span>

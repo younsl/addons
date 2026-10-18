@@ -27,6 +27,7 @@ import type {
   RepositoryListItem,
   RepositoryName,
   RepositorySecurityInput,
+  RetentionPreview,
   UploadPlan,
   UploadResult,
   UploadSession,
@@ -62,6 +63,9 @@ export type PostCheckUpstreamRepositoriesResponse = UpstreamHealth;
 
 export type ListRepositoryOciTagsRequest = { path: { id: number } };
 export type ListRepositoryOciTagsResponse = { tags: OCITagInfo[]; };
+
+export type GetRepositoryRetentionPreviewRequest = { path: { id: number }; query?: { days: number } };
+export type GetRepositoryRetentionPreviewResponse = RetentionPreview;
 
 export type GetRepositoryOciDetailRequest = { path: { id: number }; query?: { name: string; ref: string } };
 export type GetRepositoryOciDetailResponse = OCIArtifactDetail;

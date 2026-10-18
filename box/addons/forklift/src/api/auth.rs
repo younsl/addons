@@ -2085,6 +2085,22 @@ pub(crate) mod tests {
                 ("CoverageScanStarted", Shape::Ty("CoverageScanStartedDTO")),
                 ("CoverageAlarmPayload", Shape::Ty("CoveragePayload")),
                 ("CoverageAlarmPreview", Shape::Ty("CoverageAlarmPreviewDTO")),
+                // Security insights.
+                ("InsightsOverview", Shape::Ty("InsightsDTO")),
+                ("InsightSummary", Shape::Ty("InsightSummary")),
+                ("InsightReport", Shape::Ty("insights::model::Report")),
+                ("InsightFinding", Shape::Ty("insights::model::Finding")),
+                ("InsightAffected", Shape::Ty("insights::model::Affected")),
+                ("InsightCheck", Shape::Ty("insights::model::Check")),
+                ("InsightAcknowledgement", Shape::Ty("Acknowledgement")),
+                ("InsightAck", Shape::Ty("AckDTO")),
+                ("InsightCheckPoint", Shape::Ty("CheckPointDTO")),
+                ("InsightsAlarmPreview", Shape::Ty("AlarmPreviewDTO")),
+                ("InsightsAlarmPayload", Shape::Ty("InsightsPayload")),
+                ("InsightSettings", Shape::Ty("InsightSettingsDTO")),
+                ("InsightSeverityCounts", Shape::Ty("SeverityCounts")),
+                ("RetentionPreview", Shape::Ty("RetentionPreview")),
+                ("RetentionPreviewItem", Shape::Ty("RetentionPreviewItem")),
                 // The policy document and each of its sections. Every section is a value
                 // field, so it is always on the wire; a client that had to guard each one
                 // would be guarding a case the server never produces.

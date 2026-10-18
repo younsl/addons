@@ -34,6 +34,8 @@ import { openApiQueryKeys, openApiQueryOptions } from "@/query/v1/openapi-query-
 import { formatFileSize } from "@/utils/format-file-size";
 
 import type { OCITagInfo, Repository } from "@/services/v1/openapi-types";
+import { IdleExpiry } from "@/routes/workspace/repositories/-components/detail/idle-expiry";
+import { idleTtlDays } from "@/lib/retention";
 
 // OCIImagesTab is the Harbor-style artifact view for OCI repositories: one row
 // per tag, with the image name, kind, platforms, content size, digest and push
@@ -65,6 +67,8 @@ export function OCIImagesTab({ repo }: { repo: Repository }) {
       params: { id: String(repo.id) },
       search: { name: row.name, ref: row.tag || row.digest },
     });
+
+  const showExpiry = idleTtlDays(repo.config.retention?.idle_ttl) > 0;
 
   const error = getErrorMessageIfAny(tagsQuery.error);
   if (error) return <Alert className="my-2.5">{error}</Alert>;
@@ -157,6 +161,7 @@ export function OCIImagesTab({ repo }: { repo: Repository }) {
                 <TableHead>{t("oci.pushed-by")}</TableHead>
                 <TableHead>{t("oci.pull-time")}</TableHead>
                 <TableHead>{t("oci.pulled-by")}</TableHead>
+                {showExpiry && <TableHead>{t("repo.auto-delete")}</TableHead>}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -203,6 +208,7 @@ export function OCIImagesTab({ repo }: { repo: Repository }) {
                   <TableCell className="whitespace-nowrap text-muted-foreground">{row.pushed_by || "-"}</TableCell>
                   <TableCell className="whitespace-nowrap text-muted-foreground">{row.pulled_at ? formatDate(row.pulled_at) : "-"}</TableCell>
                   <TableCell className="whitespace-nowrap text-muted-foreground">{row.pulled_by || "-"}</TableCell>
+                  {showExpiry && <TableCell><IdleExpiry at={row.expires_at} /></TableCell>}
                 </TableRow>
               ))}
             </TableBody>

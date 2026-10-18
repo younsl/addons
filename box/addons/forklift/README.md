@@ -48,6 +48,7 @@ Everything below lives in [docs/](docs/), ordered from getting forklift running 
 - [Access control](docs/access-control.md): roles, actions, OIDC group mapping, declarative RBAC, token scopes
 - [Security policies](docs/security-policies.md): approval, version denies, vulnerability (OSV) and license (deps.dev) gates
 - [License scanning](docs/license-scanning.md): end-to-end license workflow and UI surfaces
+- [Security Insights](docs/security-insights.md): the periodic analysis that ranks security improvements for operators, security engineers and developers, and how to link to a view
 - [Coverage](docs/coverage.md): measuring how much of your GitLab actually builds through forklift, and the report that names what is left
 - [Metrics](docs/metrics.md): per-metric meaning, labels, example PromQL queries
 - [MCP server](docs/mcp.md): running `forklift-mcp` and wiring agent runtimes to it

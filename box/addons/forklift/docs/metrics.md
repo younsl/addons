@@ -465,10 +465,11 @@ trying to pull the bad version.
 - Labels: `repo`
 
 OCI artifact rows deleted by the reachability prune: untagged manifests and the
-blobs no live manifest references. The OCI format is exempt from the idle
-retention reaper and LRU cache eviction (either would break still-tagged
-images), so this counter is the format's only automated space reclamation. The
-freed bytes are reclaimed by the ordinary blob sweeper after its grace period.
+blobs no live manifest references. The OCI format is exempt from LRU cache
+eviction, and the idle retention reaper removes only idle tags (deleting rows
+would break still-tagged images), so this counter is the format's only automated
+row deletion. The freed bytes are reclaimed by the ordinary blob sweeper after its
+grace period.
 
 ### forklift_oci_upload_sessions_active
 

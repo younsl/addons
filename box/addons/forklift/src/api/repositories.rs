@@ -187,6 +187,10 @@ pub(super) async fn list(State(h): State<Arc<Handler>>, request: Request) -> Res
         Ok(stats) => stats,
         Err(err) => return map_error(err),
     };
+    let oci_tags = match h.store.oci_tag_counts().await {
+        Ok(counts) => counts,
+        Err(err) => return map_error(err),
+    };
     let pending = match h.store.pending_approval_count_by_repo().await {
         Ok(pending) => pending,
         Err(err) => return map_error(err),
@@ -216,7 +220,12 @@ pub(super) async fn list(State(h): State<Arc<Handler>>, request: Request) -> Res
             Ok(dto) => dto,
             Err(err) => return write_error(StatusCode::INTERNAL_SERVER_ERROR, &err.to_string()),
         };
-        let st = stats.get(&repository.id).copied().unwrap_or_default();
+        let mut st = stats.get(&repository.id).copied().unwrap_or_default();
+        // An OCI image is a tag over several manifest and blob rows, so the
+        // row count overstates what a person counts as images.
+        if repository.format == meta::FORMAT_OCI {
+            st.artifact_count = oci_tags.get(&repository.id).copied().unwrap_or_default();
+        }
         let ratio = ratios.get(&repository.id).copied().unwrap_or_default();
         out.push(RepositoryListItemDTO {
             repository: dto,
@@ -418,7 +427,10 @@ pub(super) async fn list_oci_tags(
             serde_json::json!({"tags": Vec::<OciTagDTO>::new()}),
         );
     };
-    let tags = match manager.list_oci_tags(repository.id).await {
+    let idle_ttl = repoconfig::parse(&repository.config_json)
+        .map(|cfg| cfg.retention.idle_ttl.d())
+        .unwrap_or_default();
+    let tags = match manager.list_oci_tags(repository.id, idle_ttl).await {
         Ok(tags) => tags,
         Err(err) => return map_error(err),
     };
@@ -1025,6 +1037,11 @@ struct ArtifactDTO {
     last_accessed_by: String,
     /// Successful GET responses recorded in retained audit history over 30 days.
     downloads_30d: i64,
+    /// When the idle reaper may delete the artifact (last serve plus the
+    /// repository's retention `idle_ttl`). Absent when retention is off and for
+    /// OCI rows, whose retention applies per tag.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    expires_at: Option<DateTime<Utc>>,
     #[serde(skip_serializing_if = "String::is_empty")]
     publication_id: String,
     #[serde(skip_serializing_if = "String::is_empty")]
@@ -1186,6 +1203,53 @@ impl ArtifactFilter {
 
 /// Returns the artifacts stored (hosted or cached) in a repository, powering the
 /// Nexus-style artifact browser in the UI.
+/// Caps the preview's day count at roughly a century, far past any real
+/// retention and well inside what a `chrono` duration can hold.
+const MAX_RETENTION_PREVIEW_DAYS: i64 = 36_500;
+
+#[derive(Debug, Clone, Default, Deserialize)]
+pub(super) struct RetentionPreviewQuery {
+    #[serde(default)]
+    days: String,
+}
+
+/// Previews what the idle reaper would delete if the repository's retention
+/// were `days`, so the settings form can show the impact before it is saved.
+pub(super) async fn retention_preview(
+    State(h): State<Arc<Handler>>,
+    UrlPath(id): UrlPath<String>,
+    Query(query): Query<RetentionPreviewQuery>,
+    request: Request,
+) -> Response {
+    let (parts, _) = request.into_parts();
+    let id = match path_id(&id) {
+        Ok(id) => id,
+        Err(response) => return *response,
+    };
+    let days = int_param(&query.days, -1);
+    if !(0..=MAX_RETENTION_PREVIEW_DAYS).contains(&days) {
+        return write_error(
+            StatusCode::BAD_REQUEST,
+            &format!("days must be an integer from 0 to {MAX_RETENTION_PREVIEW_DAYS}"),
+        );
+    }
+    let repository = match h.store.get_repository(id).await {
+        Ok(repository) => repository,
+        Err(err) => return map_error(err),
+    };
+    if let Some(response) = h.can_read_repo(&parts, &repository.name) {
+        return response;
+    }
+    let Some(manager) = h.repo_manager() else {
+        return write_json(StatusCode::OK, repo::RetentionPreview::default());
+    };
+    let ttl = std::time::Duration::from_hours(days.unsigned_abs() * 24);
+    match manager.preview_retention(&repository, ttl).await {
+        Ok(preview) => write_json(StatusCode::OK, preview),
+        Err(err) => map_error(err),
+    }
+}
+
 pub(super) async fn list_artifacts(
     State(h): State<Arc<Handler>>,
     UrlPath(id): UrlPath<String>,
@@ -1316,6 +1380,13 @@ pub(super) async fn list_artifacts(
         .map(|publication| (publication.id.clone(), publication.created_by.clone()))
         .collect();
     let label_perm = h.new_label_permission(&parts, &repository.name, publishers);
+    let idle_ttl = if repository.format == meta::FORMAT_OCI {
+        std::time::Duration::ZERO
+    } else {
+        repoconfig::parse(&repository.config_json)
+            .map(|cfg| cfg.retention.idle_ttl.d())
+            .unwrap_or_default()
+    };
     let mut out = Vec::with_capacity(arts.len());
     for a in &arts {
         let mut dto = ArtifactDTO {
@@ -1329,6 +1400,7 @@ pub(super) async fn list_artifacts(
             cached_by: a.cached_by.clone(),
             last_accessed_by: a.last_accessed_by.clone(),
             downloads_30d: downloads.get(&a.path).copied().unwrap_or_default(),
+            expires_at: repo::idle_expiry(idle_ttl, a.last_accessed_at),
             publication_id: a.publication_id.clone(),
             artifact_role: a.artifact_role.clone(),
             labels: label_dtos(labels_by_path.get(&a.path).cloned().unwrap_or_default()),

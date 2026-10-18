@@ -1,4 +1,5 @@
 import { Link } from "@tanstack/react-router";
+import { Globe, Lock } from "lucide-react";
 
 import { CopyIconButton } from "@/components/app-ui/copy-button";
 import { Button } from "@/components/ui/button";
@@ -20,6 +21,7 @@ import {
   ArtifactCount,
   CleanRatio,
   RepoSize,
+  RetentionBadge,
   SecurityIcons,
 } from "@/routes/workspace/repositories/-components/repository-metrics";
 import { getRepositoryEndpoint } from "@/utils/repository-endpoint";
@@ -75,8 +77,15 @@ export function RepositoriesTable({
     <>
       <TableCell>{repo.format}</TableCell>
       <TableCell>{repo.type}</TableCell>
-      <TableCell className="text-muted-foreground">
-        {repo.config.public ? t("repo.public") : t("repo.private")}
+      <TableCell className={repo.config.public ? undefined : "text-muted-foreground"}>
+        <span className="inline-flex items-center gap-1.5">
+          {repo.config.public ? (
+            <Globe className="size-3.5" aria-hidden="true" />
+          ) : (
+            <Lock className="size-3.5" aria-hidden="true" />
+          )}
+          {repo.config.public ? t("repo.public") : t("repo.private")}
+        </span>
       </TableCell>
       {/* The endpoint is a long URL that repeats the host on every row; the
           list shows just the copy action (full URL in the hover title and on
@@ -106,19 +115,21 @@ export function RepositoriesTable({
 
   return (
     <TableWrap>
-      <Table className="min-w-[1200px] table-fixed">
+      {/* Every column shrinks to its content (w-px with nowrap) and the last one
+          takes the spare width, so it never pads out the gaps between columns. */}
+      <Table>
         <TableHeader>
           <TableRow>
-            <SortableHead k="name" sort={sort} className="w-[18%]">{t("common.name")}</SortableHead>
-            <SortableHead k="format" sort={sort} className="w-[7%]">{t("common.format")}</SortableHead>
-            <SortableHead k="type" sort={sort} className="w-[7%]">{t("common.type")}</SortableHead>
-            <SortableHead k="visibility" sort={sort} className="w-[9%]">{t("repo.visibility")}</SortableHead>
-            <TableHead className="w-[7%]">{t("common.endpoint")}</TableHead>
-            <SortableHead k="artifacts" sort={sort} className="w-[10%]">{t("common.artifacts")}</SortableHead>
-            <SortableHead k="size" sort={sort} className="w-[10%]">{t("common.size")}</SortableHead>
-            <SortableHead k="clean" sort={sort} className="w-[11%]">{t("repo.clean-ratio")}</SortableHead>
-            <TableHead className="w-[11%]">{t("common.upstream")}</TableHead>
-            <TableHead className="w-[10%]">{t("common.security")}</TableHead>
+            <SortableHead k="name" sort={sort} className="w-px pr-6">{t("common.name")}</SortableHead>
+            <SortableHead k="format" sort={sort} className="w-px pr-4">{t("common.format")}</SortableHead>
+            <SortableHead k="type" sort={sort} className="w-px pr-4">{t("common.type")}</SortableHead>
+            <SortableHead k="visibility" sort={sort} className="w-px pr-4">{t("repo.visibility")}</SortableHead>
+            <TableHead className="w-px pr-4">{t("common.endpoint")}</TableHead>
+            <SortableHead k="artifacts" sort={sort} className="w-px pr-4">{t("common.artifacts")}</SortableHead>
+            <SortableHead k="size" sort={sort} className="w-px pr-4">{t("common.size")}</SortableHead>
+            <SortableHead k="clean" sort={sort} className="w-px pr-4">{t("repo.clean-ratio")}</SortableHead>
+            <TableHead className="w-px pr-4">{t("common.upstream")}</TableHead>
+            <TableHead>{t("common.security")}</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -146,7 +157,10 @@ export function RepositoriesTable({
                       <span className="text-xs text-muted-foreground">({members.length})</span>
                     </span>
                   ) : (
-                    <RepositoryLink id={repo.id} name={repo.name} />
+                    <span className="inline-flex items-center gap-1.5">
+                      <RepositoryLink id={repo.id} name={repo.name} />
+                      <RetentionBadge repo={repo} />
+                    </span>
                   )}
                 </TableCell>
                 {cells(repo)}
@@ -162,7 +176,10 @@ export function RepositoriesTable({
                   <TableRow key={`r-${repo.id}-m-${name}`} className={cn("bg-muted/20", isLast && "last")}>
                     <TableCell className="overflow-hidden text-ellipsis whitespace-nowrap pl-7">
                       {member ? (
-                        <RepositoryLink id={member.id} name={name} />
+                        <span className="inline-flex items-center gap-1.5">
+                          <RepositoryLink id={member.id} name={name} />
+                          <RetentionBadge repo={member} />
+                        </span>
                       ) : (
                         <span className="text-muted-foreground">{name}</span>
                       )}

@@ -62,7 +62,7 @@ impl Notifier {
             } else {
                 self.build_approval_grouped(&b.evts)
             };
-            let body = match serde_json::to_vec(&payload) {
+            let body = match super::rich::webhook_body(&payload) {
                 Ok(body) => Bytes::from(body),
                 Err(e) => {
                     tracing::error!(err = %e, "notify: marshal grouped approval payload failed");

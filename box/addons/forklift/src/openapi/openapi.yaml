@@ -27,6 +27,7 @@ tags:
   - name: notification
   - name: search
   - name: coverage
+  - name: insights
   - name: cargo
     description: >
       Cargo sparse registry and the Registry Web API subset behind
@@ -157,7 +158,7 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Announcement" }
         "400":
-          description: Body exceeds 1000 characters or 16KiB
+          description: Body exceeds 1000 characters or 16KiB, or expires_at is not in the future
   /api/v1/search:
     get:
       tags: [search]
@@ -372,6 +373,27 @@ paths:
                   tags:
                     type: array
                     items: { $ref: "#/components/schemas/OCITagInfo" }
+        "403": { description: No read permission on the repository }
+        "404": { description: Repository not found }
+  /api/v1/repositories/{id}/retention-preview:
+    get:
+      tags: [repositories]
+      summary: Preview what idle retention would delete
+      description: >
+        Reports what the idle reaper would delete right now if the repository's
+        retention were the given number of days, without deleting anything. OCI
+        repositories list tags and omit sizes, because layers shared with kept
+        images are not freed. Groups and 0 days preview nothing.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+        - { name: days, in: query, required: true, schema: { type: integer, minimum: 0, maximum: 36500 } }
+      responses:
+        "200":
+          description: The matching total and the least recently active rows (at most 20).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RetentionPreview" }
+        "400": { description: days missing or out of range }
         "403": { description: No read permission on the repository }
         "404": { description: Repository not found }
   /api/v1/repositories/{id}/oci-detail:
@@ -1593,6 +1615,199 @@ paths:
         "400": { description: No enabled receivers selected }
         "404": { description: Not found }
         "503": { description: Notifications are not configured }
+  /api/v1/insights:
+    get:
+      tags: [insights]
+      operationId: getInsights
+      summary: Security insights - the newest analysis with its trend
+      description: >
+        The leader analyzes every repository, artifact, account, token and the
+        recent audit log on a schedule (FORKLIFT_INSIGHTS_INTERVAL, 1h by
+        default) and stores the result. Administrators, auditors and security
+        reviewers get the whole report (scope "all") with a 30-day trend. Anyone
+        else gets only findings about repositories they can read, narrowed to
+        those repositories and rescored (scope "repositories"), plus findings
+        marked everyone (Forklift coverage), and no account, token or client
+        findings.
+      security: [{ basicAuth: [] }, { bearerAuth: [] }]
+      responses:
+        "200":
+          description: The report (null before the first run) and the trend.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/InsightsOverview" }
+        "503": { description: Security insights are disabled }
+  /api/v1/insights/refresh:
+    post:
+      tags: [insights]
+      operationId: refreshInsights
+      summary: Run the security analysis now (admin or security)
+      description: The run is detached from the request; poll GET /api/v1/insights until running is false.
+      security: [{ basicAuth: [] }, { bearerAuth: [] }]
+      responses:
+        "200":
+          description: Started
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [started]
+                properties:
+                  started: { type: boolean }
+        "403": { description: Requires admin or security permission }
+        "409": { description: An analysis is already running, or this instance is not the leader }
+        "503": { description: Security insights are disabled }
+  /api/v1/insights/settings:
+    get:
+      tags: [insights]
+      operationId: getInsightSettings
+      summary: Security insight settings (admin or security)
+      description: >
+        When the analysis runs and when its alarm goes out. Before anybody saves,
+        the defaults apply: analysis every FORKLIFT_INSIGHTS_INTERVAL, no scheduled alarm.
+      security: [{ basicAuth: [] }, { bearerAuth: [] }]
+      responses:
+        "200":
+          description: Settings
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/InsightSettings" }
+        "403": { description: Requires admin or security permission }
+        "503": { description: Security insights are disabled }
+    put:
+      tags: [insights]
+      operationId: updateInsightSettings
+      summary: Save security insight settings (admin or security)
+      description: >
+        Every field is optional; an omitted field keeps its stored value. Saved
+        settings take effect on the leader within a minute.
+      security: [{ basicAuth: [] }, { bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/InsightSettingsInput" }
+      responses:
+        "200":
+          description: Saved
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/InsightSettings" }
+        "400": { description: Invalid interval, cron expression, timezone, receiver name or severity }
+        "403": { description: Requires admin or security permission }
+        "503": { description: Security insights are disabled }
+  /api/v1/insights/notification/preview:
+    get:
+      tags: [insights]
+      operationId: getInsightsNotificationPreview
+      summary: Render the security insight alarm without sending it (admin or security)
+      security: [{ basicAuth: [] }, { bearerAuth: [] }]
+      responses:
+        "200":
+          description: The message the newest report would send, and every notification receiver.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/InsightsAlarmPreview" }
+        "400": { description: No analysis has run yet }
+        "403": { description: Requires admin or security permission }
+        "503": { description: Security insights or notifications are not configured }
+  /api/v1/insights/notification/send:
+    post:
+      tags: [insights]
+      operationId: sendInsightsNotification
+      summary: Send the security insight alarm to chosen receivers now (admin or security)
+      security: [{ basicAuth: [] }, { bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [receiver_ids]
+              properties:
+                receiver_ids:
+                  type: array
+                  minItems: 1
+                  items: { type: integer }
+      responses:
+        "200":
+          description: Per-receiver delivery results. A disabled receiver, one without a webhook, or an unknown id is reported as failed.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NotificationSampleReport" }
+        "400": { description: No receiver chosen, or no analysis has run yet }
+        "403": { description: Requires admin or security permission }
+        "503": { description: Security insights or notifications are not configured }
+  /api/v1/insights/checks/{id}/history:
+    get:
+      tags: [insights]
+      operationId: getInsightCheckHistory
+      summary: One check's flagged count and status per analysis run
+      description: >
+        Each analyzer run records every check's status (with the acknowledgements
+        then in force), severity and flagged count, kept for 90 days. Only
+        administrators, auditors and security reviewers may read it: the counts
+        span every repository and cannot be narrowed.
+      security: [{ basicAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: days, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 90, default: 30 } }
+      responses:
+        "200":
+          description: Points, oldest first.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [points]
+                properties:
+                  points:
+                    type: array
+                    items: { $ref: "#/components/schemas/InsightCheckPoint" }
+        "400": { description: days out of range }
+        "403": { description: Requires admin, audit or security permission }
+        "503": { description: Security insights are disabled }
+  /api/v1/insights/checks/{id}/acknowledgement:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string }, description: The check id, for example public-repositories. }
+    put:
+      tags: [insights]
+      operationId: acknowledgeInsightCheck
+      summary: Acknowledge a failing check (admin or security)
+      description: >
+        Takes the check out of the score, the severity counts and the alarms
+        until days pass (30 by default, at most 365) or the check flags more
+        items than it does now. Replaces an earlier acknowledgement.
+      security: [{ basicAuth: [] }, { bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [note]
+              properties:
+                note: { type: string, minLength: 1, maxLength: 1000 }
+                days: { type: integer, minimum: 1, maximum: 365, default: 30 }
+      responses:
+        "200":
+          description: The stored acknowledgement
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/InsightAck" }
+        "400": { description: Missing note, days out of range, no analysis yet, or the check is passing }
+        "403": { description: Requires admin or security permission }
+        "404": { description: No such check }
+        "503": { description: Security insights are disabled }
+    delete:
+      tags: [insights]
+      operationId: unacknowledgeInsightCheck
+      summary: Remove a check's acknowledgement (admin or security)
+      security: [{ basicAuth: [] }, { bearerAuth: [] }]
+      responses:
+        "204": { description: Removed }
+        "403": { description: Requires admin or security permission }
+        "404": { description: The check has no acknowledgement }
   /api/v1/coverage:
     get:
       tags: [coverage]
@@ -2330,6 +2545,10 @@ components:
           description: Last served time; null when never pulled since the push. Minute-grained (serving refreshes it at most once per touch interval).
         pushed_by: { type: string, description: Who stored the manifest; empty for anonymous or unknown. }
         pulled_by: { type: string, description: Who last pulled; empty when never pulled or anonymous. }
+        expires_at:
+          type: string
+          format: date-time
+          description: When the idle reaper may remove the tag (last push or pull plus retention idle_ttl). Absent when retention is off. The reaper runs hourly.
     OCIArtifactDetail:
       type: object
       description: Drill-down view of one OCI artifact.
@@ -2397,11 +2616,14 @@ components:
       description: >
         The site-wide banner. An empty body means there is nothing to show;
         updated_by is absent until someone has set one.
-      required: [body, updated_at]
+      required: [body, updated_at, active, user_dismissible]
       properties:
         body: { type: string, description: Markdown source, rendered by the UI. }
         updated_by: { type: string }
         updated_at: { type: string, format: date-time }
+        expires_at: { type: string, format: date-time, description: When the banner stops showing. Absent when it stays up until cleared. }
+        active: { type: boolean, description: Whether the banner shows now, a non-empty body that has not reached expires_at. }
+        user_dismissible: { type: boolean, description: Whether signed-in users may dismiss the banner. A dismissal lasts until the announcement changes. }
     AnnouncementInput:
       type: object
       required: [body]
@@ -2411,6 +2633,15 @@ components:
           description: >
             Markdown source. Capped at 1000 characters and 16KiB; an empty
             string clears the announcement.
+        expires_at:
+          type: [string, "null"]
+          format: date-time
+          description: >
+            When the banner stops showing, in the future. Absent or null keeps it
+            up until it is cleared. Ignored when body is empty.
+        user_dismissible:
+          type: boolean
+          description: Lets signed-in users dismiss the banner. Defaults to false, as on GitHub Enterprise Server.
     SearchResult:
       type: object
       description: >
@@ -2521,7 +2752,7 @@ components:
           properties:
             artifact_count:
               type: integer
-              description: Stored artifact count.
+              description: Stored artifact count. For an OCI repository, the number of tags (images), not the manifest and blob rows behind them.
             total_size:
               type: integer
               description: Total stored bytes.
@@ -2688,9 +2919,247 @@ components:
           examples: [["slack-security"]]
     RetentionConfig:
       type: object
-      description: Auto-deletes artifacts idle (not served) beyond idle_ttl; "0" disables.
+      description: >
+        Auto-deletes artifacts idle (not served) beyond idle_ttl; "0" disables.
+        The console sets it in whole days. OCI repositories apply it per tag:
+        a tag neither pushed nor pulled within idle_ttl is removed, and the
+        reachability prune reclaims its manifest and layers.
       properties:
         idle_ttl: { type: string, examples: ["30d"] }
+    InsightsAlarmPreview:
+      type: object
+      required: [payload, receivers]
+      properties:
+        payload: { $ref: "#/components/schemas/InsightsAlarmPayload" }
+        receivers:
+          type: array
+          items:
+            type: object
+            required: [id, name, enabled, webhook_configured]
+            properties:
+              id: { type: integer }
+              name: { type: string }
+              enabled: { type: boolean }
+              webhook_configured: { type: boolean }
+    InsightsAlarmPayload:
+      type: object
+      description: The webhook body. text is the Slack/Mattermost message; the other fields carry the figures for other consumers.
+      required: [text, event, score, grade, critical, high, medium, low, info, timestamp]
+      properties:
+        text: { type: string }
+        event: { type: string, enum: [insights.report] }
+        score: { type: integer }
+        grade: { type: string }
+        critical: { type: integer }
+        high: { type: integer }
+        medium: { type: integer }
+        low: { type: integer }
+        info: { type: integer }
+        findings:
+          type: array
+          items: { type: string }
+          description: Ids of the listed findings (at most 20).
+        timestamp: { type: string, format: date-time }
+    InsightsOverview:
+      type: object
+      required: [report, history, scope, running, interval_seconds, can_refresh]
+      properties:
+        report:
+          oneOf:
+            - $ref: "#/components/schemas/InsightReport"
+            - type: "null"
+        history:
+          type: array
+          items: { $ref: "#/components/schemas/InsightSummary" }
+        scope: { type: string, enum: [all, repositories] }
+        running: { type: boolean }
+        interval_seconds: { type: integer }
+        can_refresh: { type: boolean }
+    InsightSeverityCounts:
+      type: object
+      required: [critical, high, medium, low, info]
+      properties:
+        critical: { type: integer }
+        high: { type: integer }
+        medium: { type: integer }
+        low: { type: integer }
+        info: { type: integer }
+    InsightSummary:
+      type: object
+      required: [generated_at, score, grade, counts]
+      properties:
+        generated_at: { type: string, format: date-time }
+        score: { type: integer, description: 100 minus a penalty per finding (critical 25, high 12, medium 5, low 2). }
+        grade: { type: string, enum: [A, B, C, D, F] }
+        counts: { $ref: "#/components/schemas/InsightSeverityCounts" }
+    InsightReport:
+      type: object
+      required: [generated_at, duration_ms, triggered_by, score, grade, counts, inventory, findings, checks]
+      properties:
+        generated_at: { type: string, format: date-time }
+        duration_ms: { type: integer }
+        triggered_by: { type: string, description: '"schedule" or the user who asked for the run.' }
+        score: { type: integer }
+        grade: { type: string, enum: [A, B, C, D, F] }
+        counts: { $ref: "#/components/schemas/InsightSeverityCounts" }
+        inventory:
+          type: object
+          required: [repositories, artifacts, oci_images, scanned, scannable, users, tokens]
+          properties:
+            repositories: { type: integer }
+            artifacts: { type: integer, description: Stored artifacts outside OCI repositories. }
+            oci_images: { type: integer, description: OCI tags. }
+            scanned: { type: integer, description: Package versions with a vulnerability scan. }
+            scannable: { type: integer, description: Package versions a scanner covers. }
+            users: { type: integer, description: Enabled accounts. }
+            tokens: { type: integer }
+        findings:
+          type: array
+          items: { $ref: "#/components/schemas/InsightFinding" }
+        checks:
+          type: array
+          description: Every rule in catalog order, passing or not, after Trusted Advisor's checks.
+          items: { $ref: "#/components/schemas/InsightCheck" }
+    InsightCheck:
+      type: object
+      required: [id, code, category, audiences, title, rationale, criteria, recommendation, status, flagged]
+      properties:
+        id: { type: string }
+        code: { type: string, description: The rule's short code, for example AC-05. }
+        category: { type: string, enum: [supply-chain, policy, exposure, access, operations] }
+        audiences:
+          type: array
+          items: { type: string, enum: [devops, security, developer] }
+        title: { type: string }
+        rationale: { type: string, description: Why the rule matters. }
+        criteria: { type: string, description: When the rule fires and at which severity. }
+        recommendation: { type: string }
+        status:
+          type: string
+          enum: [action, investigate, ok, unavailable, acknowledged]
+          description: action for a critical or high finding, investigate for medium, low or info, ok when nothing was found, unavailable when the rule could not run, acknowledged when a failing check has an acknowledgement in force.
+        flagged: { type: integer, description: Items flagged, 0 when the check passed. }
+        acknowledgement: { $ref: "#/components/schemas/InsightAcknowledgement" }
+    InsightSettings:
+      type: object
+      required: [auto_analyze_enabled, interval_minutes, report_enabled, receiver, report_cron, timezone, min_severity, skip_when_unchanged, updated_by, updated_at, next_analysis_at, next_report_at]
+      properties:
+        auto_analyze_enabled: { type: boolean, description: Runs the analysis on a schedule. }
+        interval_minutes: { type: integer, minimum: 5, maximum: 1440, description: Minutes between scheduled analyses. }
+        report_enabled: { type: boolean, description: Sends the alarm on report_cron. }
+        receiver: { type: string, description: Notification receiver the scheduled alarm goes to, by name. Empty sends nothing. }
+        report_cron: { type: string, description: Five-field cron expression for the scheduled alarm. }
+        timezone: { type: string, description: IANA timezone report_cron is read in. }
+        min_severity: { type: string, enum: [critical, high, medium, low, info], description: The scheduled alarm goes out only while an open finding is at least this severe. }
+        skip_when_unchanged: { type: boolean, description: Holds the scheduled alarm back while no check is newly flagged and none flags more items than at the last alarm. }
+        updated_by: { type: string }
+        updated_at: { type: string, description: RFC 3339, empty before the first save. }
+        next_analysis_at: { type: string, description: RFC 3339, empty while the scheduled analysis is off. }
+        next_report_at: { type: string, description: RFC 3339, empty while the scheduled alarm is off or has no receiver. }
+    InsightSettingsInput:
+      type: object
+      properties:
+        auto_analyze_enabled: { type: boolean }
+        interval_minutes: { type: integer, minimum: 5, maximum: 1440 }
+        report_enabled: { type: boolean }
+        receiver: { type: string }
+        report_cron: { type: string }
+        timezone: { type: string }
+        min_severity: { type: string, enum: [critical, high, medium, low, info] }
+        skip_when_unchanged: { type: boolean }
+    InsightCheckPoint:
+      type: object
+      required: [generated_at, status, flagged]
+      properties:
+        generated_at: { type: string, format: date-time }
+        status: { type: string, enum: [action, investigate, ok, unavailable, acknowledged] }
+        severity: { type: string, enum: [critical, high, medium, low, info], description: Absent when the check passed. }
+        flagged: { type: integer }
+    InsightAcknowledgement:
+      type: object
+      description: Present when a failing check was acknowledged. state is active while it is in force, expired past expires_at, or new_items when the check flags more than flagged; in the last two the check counts again.
+      required: [note, acknowledged_by, acknowledged_at, expires_at, flagged, state]
+      properties:
+        note: { type: string }
+        acknowledged_by: { type: string }
+        acknowledged_at: { type: string, format: date-time }
+        expires_at: { type: string, format: date-time }
+        flagged: { type: integer, description: Items the check flagged when it was acknowledged. }
+        state: { type: string, enum: [active, expired, new_items] }
+    InsightAck:
+      type: object
+      required: [check_id, note, flagged, acknowledged_by, acknowledged_at, expires_at]
+      properties:
+        check_id: { type: string }
+        note: { type: string }
+        flagged: { type: integer }
+        acknowledged_by: { type: string }
+        acknowledged_at: { type: string, format: date-time }
+        expires_at: { type: string, format: date-time }
+    InsightFinding:
+      type: object
+      required: [id, code, severity, category, audiences, title, summary, rationale, criteria, recommendation, params, total, affected]
+      properties:
+        id: { type: string, description: The rule that produced the finding, stable across runs. }
+        code: { type: string, description: The rule's short code, a category prefix (SC, PO, EX, AC, OP) and a number, for example AC-05. Never reused. }
+        rationale: { type: string, description: Why the rule matters. }
+        criteria: { type: string, description: When the rule fires and at which severity. }
+        severity: { type: string, enum: [critical, high, medium, low, info] }
+        category: { type: string, enum: [supply-chain, policy, exposure, access, operations] }
+        audiences:
+          type: array
+          items: { type: string, enum: [devops, security, developer] }
+        title: { type: string }
+        summary: { type: string }
+        recommendation: { type: string }
+        params:
+          type: object
+          additionalProperties: { type: string }
+          description: Figures behind the summary, for clients that render their own text.
+        total: { type: integer }
+        affected:
+          type: array
+          description: At most 100 affected items, worst first.
+          items: { $ref: "#/components/schemas/InsightAffected" }
+        by_repo:
+          type: object
+          additionalProperties: { type: integer }
+        acknowledged:
+          type: boolean
+          description: Left out of the score, the counts and the alarms by an acknowledgement in force. Absent means false.
+        everyone:
+          type: boolean
+          description: Shown whole to every signed-in user because its source (Forklift coverage) is readable by all of them. Absent means false.
+    InsightAffected:
+      type: object
+      required: [kind, label]
+      properties:
+        kind: { type: string, enum: [artifact, tag, repository, user, token, client, approval, project, advisory] }
+        label: { type: string }
+        detail: { type: string }
+        repo: { type: string }
+        repo_id: { type: integer }
+        path: { type: string }
+        tag: { type: string }
+        user_id: { type: integer }
+    RetentionPreview:
+      type: object
+      required: [count, items]
+      properties:
+        count: { type: integer, description: Rows (OCI tags) that would be deleted. }
+        size: { type: integer, description: Their total bytes. Absent for OCI. }
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/RetentionPreviewItem" }
+    RetentionPreviewItem:
+      type: object
+      required: [path, version, last_active_at, uploaded_by]
+      properties:
+        path: { type: string, description: Artifact path, or name/manifests/tag for an OCI tag. }
+        uploaded_by: { type: string, description: Who uploaded, pushed or first cached it; empty for anonymous or unknown. }
+        version: { type: string, description: Version, or the tag for OCI. }
+        last_active_at: { type: string, format: date-time, description: Last download, or last push or pull for an OCI tag. }
+        size: { type: integer, description: Bytes. Absent for OCI. }
     VulnPolicyConfig:
       type: object
       description: >
@@ -3661,6 +4130,10 @@ components:
             introduced. Updates follow the access touch interval (minute-grained),
             so this is not an exact per-request identity and need not identify the
             request represented by last_accessed_at. The field is always present.
+        expires_at:
+          type: string
+          format: date-time
+          description: When the idle reaper may delete the artifact (last_accessed_at plus retention idle_ttl). Absent when retention is off and for OCI rows, whose retention applies per tag. The reaper runs hourly.
         publication_id: { type: string }
         artifact_role: { type: string, enum: [primary, metadata, checksum, index] }
         labels:

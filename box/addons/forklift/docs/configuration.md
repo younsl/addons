@@ -66,6 +66,8 @@ All settings are environment variables (the Helm chart maps values to them).
 | `FORKLIFT_RBAC_ACCOUNTS_DIR` | (none) | Directory of local-account password files (Secret mount) |
 | `FORKLIFT_AUDIT_ENABLED` | `true` | Record per-repository audit events |
 | `FORKLIFT_AUDIT_RETENTION` | `2160h` (90d) | Prune audit entries older than this; `0` keeps forever |
+| `FORKLIFT_INSIGHTS_ENABLED` | `true` | Run the periodic security insight analysis on the leader ([docs](security-insights.md)) |
+| `FORKLIFT_INSIGHTS_INTERVAL` | `1h` | How often the leader analyzes until the interval is saved on the Insights Settings page, which then takes over. `0` starts with the scheduled analysis off |
 | `FORKLIFT_UI_UPLOAD_ENABLED` | `true` | Enable component-aware management API and web UI uploads; set `false` to opt out |
 | `FORKLIFT_UI_UPLOAD_MAX_DURATION` | `30m` | Maximum duration of one upload request |
 | `FORKLIFT_UI_UPLOAD_MAX_CONCURRENT` / `_USER` | `4` / `2` | Process-wide and per-principal upload concurrency limits |

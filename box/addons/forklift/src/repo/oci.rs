@@ -1466,7 +1466,7 @@ pub(crate) mod tests {
     }
 
     #[tokio::test]
-    async fn oci_reaper_and_eviction_skip() {
+    async fn oci_reaper_and_eviction_keep_rows() {
         let tm = new_test_manager().await;
         let _dir = temp_upload_dir(&tm.manager);
         let mut cfg = repoconfig::default();
@@ -1489,9 +1489,17 @@ pub(crate) mod tests {
         .await;
         assert_eq!(resp.status, StatusCode::CREATED, "manifest put");
 
-        // Idle far past the TTL; the reaper must skip the OCI repository entirely.
+        // Idle far past the TTL: the reaper removes only the tag, never a row.
         pin_clock(&tm, Utc::now() + chrono::TimeDelta::hours(48));
-        tm.manager.reap_once().await.expect("reap");
+        assert_eq!(
+            tm.manager.reap_once().await.expect("reap"),
+            1,
+            "idle tag reaped"
+        );
+        assert!(
+            tm.store.get_oci_tag(repo.id, "app", "v1").await.is_err(),
+            "idle tag survived"
+        );
         tm.engine
             .maybe_evict(&FetchSpec {
                 repo: repo.clone(),
@@ -1510,6 +1518,141 @@ pub(crate) mod tests {
                     panic!("OCI artifact deleted by reaper/eviction: {path} ({e})")
                 });
         }
+    }
+
+    async fn backdate_oci_tag(
+        tm: &TestManager,
+        repo_id: i64,
+        name: &str,
+        tag: &str,
+        at: DateTime<Utc>,
+    ) {
+        let digest = tm
+            .store
+            .get_oci_tag(repo_id, name, tag)
+            .await
+            .expect("tag")
+            .manifest_digest;
+        let (name, tag, at) = (name.to_string(), tag.to_string(), meta::format_time(at));
+        tm.store
+            .write(move |conn| {
+                conn.execute(
+                    "UPDATE oci_tags SET updated_at = ?1 WHERE repo_id = ?2 AND name = ?3 AND tag = ?4",
+                    rusqlite::params![at, repo_id, name, tag],
+                )
+                .map_err(|e| meta::Error::sqlite("backdate tag", e))?;
+                conn.execute(
+                    "UPDATE artifacts SET last_accessed_at = ?1 WHERE repo_id = ?2 AND path = ?3",
+                    rusqlite::params![at, repo_id, oci_manifest_path(&name, &digest)],
+                )
+                .map_err(|e| meta::Error::sqlite("backdate manifest", e))?;
+                Ok(())
+            })
+            .await
+            .expect("backdate");
+    }
+
+    #[tokio::test]
+    async fn oci_idle_tags_reaped_signatures_follow_image() {
+        let (tm, rec) = crate::testing::repo::new_test_manager_with_recorder().await;
+        let _dir = temp_upload_dir(&tm.manager);
+        let mut cfg = repoconfig::default();
+        cfg.retention.idle_ttl = Duration(3600 * 1_000_000_000);
+        let repo = mk_oci_repo(&tm.store, "oci-local", meta::TYPE_HOSTED, "", cfg).await;
+        let h = mux(&tm.manager);
+
+        let (old_config, old_layer) = (br#"{"old":1}"#.to_vec(), b"OLDLAYER".to_vec());
+        let (old_manifest, _, _) = oci_image(&old_config, &old_layer);
+        let (new_config, new_layer) = (br#"{"new":1}"#.to_vec(), b"NEWLAYER".to_vec());
+        let (new_manifest, _, _) = oci_image(&new_config, &new_layer);
+        for blob in [&old_config, &old_layer, &new_config, &new_layer] {
+            oci_push_blob(&h, "oci-local", "app", blob).await;
+        }
+        let new_digest = oci_digest_of(&new_manifest);
+        let sig_tag = format!("sha256-{}.sig", new_digest.trim_start_matches("sha256:"));
+        for (tag, manifest) in [
+            ("old", &old_manifest),
+            ("new", &new_manifest),
+            (sig_tag.as_str(), &old_manifest),
+        ] {
+            let resp = put_manifest(
+                &h,
+                &format!("/v2/oci-local/app/manifests/{tag}"),
+                manifest,
+                OCI_MEDIA_MANIFEST,
+            )
+            .await;
+            assert_eq!(resp.status, StatusCode::CREATED, "manifest put {tag}");
+        }
+        let stale = Utc::now() - chrono::TimeDelta::hours(3);
+        backdate_oci_tag(&tm, repo.id, "app", "old", stale).await;
+        backdate_oci_tag(&tm, repo.id, "app", &sig_tag, stale).await;
+
+        let listed = tm
+            .manager
+            .list_oci_tags(repo.id, StdDuration::from_hours(1))
+            .await
+            .expect("tags");
+        let expiry = |tag: &str| {
+            listed
+                .iter()
+                .find(|t| t.tag == tag)
+                .and_then(|t| t.expires_at)
+                .expect("expires_at")
+        };
+        assert!(expiry("old") < Utc::now(), "old tag already eligible");
+        assert!(expiry("new") > Utc::now(), "fresh tag not yet eligible");
+        assert_eq!(
+            expiry(&sig_tag),
+            expiry("new"),
+            "signature follows its image"
+        );
+
+        let preview = tm
+            .manager
+            .preview_retention(&repo, StdDuration::from_hours(1))
+            .await
+            .expect("preview");
+        assert_eq!(preview.count, 1, "preview matches what the reaper removes");
+        assert_eq!(preview.size, None, "OCI preview omits sizes");
+        assert_eq!(preview.items[0].path, "app/manifests/old");
+        assert_eq!(preview.items[0].version, "old");
+
+        assert_eq!(
+            tm.manager.reap_once().await.expect("reap"),
+            1,
+            "only the idle tag"
+        );
+        assert!(
+            tm.store.get_oci_tag(repo.id, "app", "old").await.is_err(),
+            "idle tag survived"
+        );
+        tm.store
+            .get_oci_tag(repo.id, "app", "new")
+            .await
+            .expect("fresh tag removed");
+        tm.store
+            .get_oci_tag(repo.id, "app", &sig_tag)
+            .await
+            .expect("signature tag removed");
+
+        rec.close().await;
+        let logs = tm
+            .store
+            .list_audit_logs("oci-local", meta::EVENT_TTL_EXPIRE, 10, 0)
+            .await
+            .expect("audit logs");
+        assert_eq!(logs.len(), 1, "ttl.expire audit entries");
+        assert_eq!(logs[0].path, "app/manifests/old");
+        let detail: serde_json::Value =
+            serde_json::from_str(&logs[0].detail_json).expect("detail is JSON");
+        assert_eq!(detail["reason"], "idle_retention");
+        assert!(
+            detail["manifest_digest"]
+                .as_str()
+                .is_some_and(|d| d.starts_with("sha256:")),
+            "{detail}"
+        );
     }
 
     #[tokio::test]
@@ -1785,7 +1928,11 @@ pub(crate) mod tests {
         .await;
         assert_eq!(resp.status, StatusCode::CREATED, "manifest put");
 
-        let tags = tm.manager.list_oci_tags(repo.id).await.expect("tags");
+        let tags = tm
+            .manager
+            .list_oci_tags(repo.id, std::time::Duration::ZERO)
+            .await
+            .expect("tags");
         assert_eq!(tags.len(), 1);
         let row = &tags[0];
         assert_eq!(row.name, "app");

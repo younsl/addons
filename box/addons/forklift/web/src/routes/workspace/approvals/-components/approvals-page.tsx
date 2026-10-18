@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useNavigate, useSearch } from "@tanstack/react-router";
 
 import { Button } from "@/components/ui/button";
 import { PageDescription, PageHeader } from "@/components/app-ui/page";
@@ -17,7 +18,14 @@ import { canReviewApprovals } from "@/utils/permissions";
 export function ApprovalsPage() {
   const { t } = useTranslation();
   const { me } = useAuth();
-  const [repo, setRepo] = useState("");
+  const repo = String((useSearch({ strict: false }) as { repo?: unknown }).repo ?? "");
+  const navigate = useNavigate();
+  const setRepo = (value: string) =>
+    void navigate({
+      to: ".",
+      search: ((prev: Record<string, unknown>) => ({ ...prev, repo: value || undefined, page: undefined })) as never,
+      replace: true,
+    });
   const [isAddingRule, setIsAddingRule] = useState(false);
   const { idsByName, names } = useApprovalRepoOptions();
 

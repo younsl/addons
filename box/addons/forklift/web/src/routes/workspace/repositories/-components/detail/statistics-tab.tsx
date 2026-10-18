@@ -71,14 +71,23 @@ export function Statistics({ repo }: { repo: Repository }) {
     ...openApiQueryOptions.listRepositoryArtifacts({ path: { id: repo.id }, query: { limit: 500 } }),
     meta: { suppressGlobalErrorToast: true },
   });
+  // An OCI image is a tag over several manifest and blob rows, so its counts
+  // come from the tag listing the Artifacts tab shows, not the row count.
+  const isOci = repo.format === "oci";
+  const tagsQuery = useQuery({
+    ...openApiQueryOptions.listRepositoryOciTags({ path: { id: repo.id } }),
+    enabled: isOci,
+    meta: { suppressGlobalErrorToast: true },
+  });
   const data = artifactsQuery.data;
-  const error = getErrorMessageIfAny(artifactsQuery.error);
+  const tags = tagsQuery.data?.tags;
+  const error = getErrorMessageIfAny(artifactsQuery.error) || getErrorMessageIfAny(tagsQuery.error);
   // When the numbers were last true, taken from the cache rather than stamped
   // by hand - a failed refresh then leaves it at the last good read.
   const updatedAt = artifactsQuery.dataUpdatedAt ? new Date(artifactsQuery.dataUpdatedAt) : null;
 
   if (error) return <Alert>{error}</Alert>;
-  if (!data) return <div className="text-sm text-muted-foreground">{t("common.loading")}</div>;
+  if (!data || (isOci && !tags)) return <div className="text-sm text-muted-foreground">{t("common.loading")}</div>;
 
   const arts = data.artifacts;
   // Artifacts the server has observed to be unservable: metadata points at blob
@@ -105,7 +114,9 @@ export function Statistics({ repo }: { repo: Repository }) {
 
   // Labeling coverage is counted server-side over the whole repository, not
   // over the 500-artifact sample the scan panels use.
-  const labeledPct = data.count ? Math.round((data.labeled_count / data.count) * 100) : null;
+  const total = isOci ? tags?.length ?? 0 : data.count;
+  const labeledCount = isOci ? (tags ?? []).filter((tag) => (tag.labels ?? []).length > 0).length : data.labeled_count;
+  const labeledPct = total ? Math.round((labeledCount / total) * 100) : null;
 
   // Status tokens rather than Tailwind's palette: emerald-600 measured 2.64:1 on
   // a light panel.
@@ -127,10 +138,10 @@ export function Statistics({ repo }: { repo: Repository }) {
       </div>
       {/* Grafana-style dashboard: each metric is its own titled panel. */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <Panel title={t("common.artifacts")} drill={{ repoId: repo.id }}><BigStat value={data.count.toLocaleString()} /></Panel>
+        <Panel title={isOci ? t("oci.images") : t("common.artifacts")} drill={{ repoId: repo.id }}><BigStat value={total.toLocaleString()} /></Panel>
         <Panel title={t("common.size")} drill={{ repoId: repo.id }}><BigStat value={formatFileSize(data.total_size)} /></Panel>
         <Panel title={t("repo.stat-scanned")} drill={{ repoId: repo.id, filter: "scanned" }}>
-          <BigStat value={scanned.length.toLocaleString()} sub={`/ ${data.count.toLocaleString()}`} />
+          <BigStat value={scanned.length.toLocaleString()} sub={`/ ${total.toLocaleString()}`} />
         </Panel>
         <Panel title={t("repo.clean-ratio")} drill={{ repoId: repo.id, filter: "clean" }}>
           <BigStat value={cleanPct === null ? "-" : `${cleanPct}%`} tone={cleanTone}
@@ -142,13 +153,13 @@ export function Statistics({ repo }: { repo: Repository }) {
         <Panel title={t("repo.stat-licenses")} drill={{ repoId: repo.id, filter: "licensed" }}><BigStat value={licenses.size.toLocaleString()} /></Panel>
         <Panel title={t("repo.stat-labeled")} drill={{ repoId: repo.id, filter: "labeled" }}>
           <BigStat value={labeledPct === null ? "-" : `${labeledPct}%`}
-            sub={labeledPct === null ? undefined : `${data.labeled_count.toLocaleString()} / ${data.count.toLocaleString()}`} />
+            sub={labeledPct === null ? undefined : `${labeledCount.toLocaleString()} / ${total.toLocaleString()}`} />
         </Panel>
         <Panel title={t("repo.stat-broken")} drill={{ repoId: repo.id, filter: "broken" }}>
           <BigStat
             value={broken.length.toLocaleString()}
             tone={broken.length > 0 ? "text-destructive" : undefined}
-            sub={broken.length > 0 ? `/ ${data.count.toLocaleString()}` : undefined}
+            sub={broken.length > 0 && !isOci ? `/ ${data.count.toLocaleString()}` : undefined}
           />
         </Panel>
       </div>

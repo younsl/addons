@@ -1631,7 +1631,7 @@ pub(crate) mod tests {
             );
 
             let set = s
-                .set_announcement("# maintenance window", "admin")
+                .set_announcement("# maintenance window", "admin", None, false)
                 .await
                 .expect("set");
             assert_eq!(set.body, "# maintenance window");
@@ -1645,7 +1645,9 @@ pub(crate) mod tests {
             assert_eq!(got.updated_by, "admin");
 
             // Clearing keeps the row: the console still shows who removed the notice.
-            s.set_announcement("", "operator").await.expect("clear");
+            s.set_announcement("", "operator", None, false)
+                .await
+                .expect("clear");
             let got = s.get_announcement().await.expect("get after clear");
             assert_eq!(
                 (got.body.as_str(), got.updated_by.as_str()),

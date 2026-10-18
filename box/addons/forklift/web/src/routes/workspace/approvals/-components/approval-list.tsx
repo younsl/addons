@@ -1,5 +1,5 @@
-import { useEffect, useState, type ReactNode } from "react";
-import { useNavigate } from "@tanstack/react-router";
+import { useEffect, useRef, type ReactNode } from "react";
+import { useNavigate, useSearch } from "@tanstack/react-router";
 
 import { Alert } from "@/components/app-ui/alert";
 import { Button } from "@/components/ui/button";
@@ -38,8 +38,21 @@ export function ApprovalList({
 }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const [status, setStatus] = useState<string>("pending");
-  const search = useTableSearch();
+  // Status, search and page live in the URL (`?status=approved&q=lodash`), on
+  // the Approvals page and the repository Approvals tab alike.
+  const urlStatus = (useSearch({ strict: false }) as { status?: unknown }).status;
+  const status = typeof urlStatus === "string" && urlStatus !== "" ? urlStatus : "pending";
+  const setStatus = (next: string) =>
+    void navigate({
+      to: ".",
+      search: ((prev: Record<string, unknown>) => ({
+        ...prev,
+        status: next === "pending" ? undefined : next,
+        page: undefined,
+      })) as never,
+      replace: true,
+    });
+  const search = useTableSearch({ url: true });
   const { count, error, pendingCount, rows } = useApprovalQueue({
     repo,
     status,
@@ -51,8 +64,14 @@ export function ApprovalList({
 
   // Changing the repository scope restarts paging: page 3 of one repository's
   // queue is rarely page 3 of another's, and an out-of-range page shows nothing.
+  // The first render keeps the page a shared link asked for.
   const { setPage } = search;
-  useEffect(() => { setPage(0); }, [repo, setPage]);
+  const previousRepo = useRef(repo);
+  useEffect(() => {
+    if (previousRepo.current === repo) return;
+    previousRepo.current = repo;
+    setPage(0);
+  }, [repo, setPage]);
 
   return (
     <section aria-labelledby="approval-queue-title">

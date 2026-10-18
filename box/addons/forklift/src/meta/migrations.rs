@@ -156,4 +156,28 @@ pub(crate) const MIGRATIONS: &[(&str, &str)] = &[
         "0039_artifact_download_counts.sql",
         include_str!("migrations/0039_artifact_download_counts.sql"),
     ),
+    (
+        "0040_security_insights.sql",
+        include_str!("migrations/0040_security_insights.sql"),
+    ),
+    (
+        "0041_insight_acknowledgements.sql",
+        include_str!("migrations/0041_insight_acknowledgements.sql"),
+    ),
+    (
+        "0042_insight_check_history.sql",
+        include_str!("migrations/0042_insight_check_history.sql"),
+    ),
+    (
+        "0043_insight_settings.sql",
+        include_str!("migrations/0043_insight_settings.sql"),
+    ),
+    (
+        "0044_announcement_expiry.sql",
+        include_str!("migrations/0044_announcement_expiry.sql"),
+    ),
+    (
+        "0045_announcement_dismissible.sql",
+        include_str!("migrations/0045_announcement_dismissible.sql"),
+    ),
 ];

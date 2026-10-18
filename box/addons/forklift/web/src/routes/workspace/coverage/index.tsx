@@ -46,10 +46,14 @@ export const Route = createFileRoute("/workspace/coverage/")({
   // status is the filter, held in the URL rather than in component state so the
   // view can be linked to and the back button moves between filters. The alarm
   // uses the same parameter to point at the projects its report was about.
-  validateSearch: (search: Record<string, unknown>): { status?: StatusFilter } =>
-    STATUS_FILTERS.includes(search.status as StatusFilter)
-      ? { status: search.status as StatusFilter }
-      : {},
+  validateSearch: (search: Record<string, unknown>): { status?: StatusFilter; q?: string; page?: number } => {
+    const out: { status?: StatusFilter; q?: string; page?: number } = {};
+    if (STATUS_FILTERS.includes(search.status as StatusFilter)) out.status = search.status as StatusFilter;
+    if (typeof search.q === "string" && search.q !== "") out.q = search.q;
+    const page = Number(search.page);
+    if (Number.isInteger(page) && page > 1) out.page = page;
+    return out;
+  },
   component: CoverageListRoute,
 });
 
@@ -58,7 +62,7 @@ export const Route = createFileRoute("/workspace/coverage/")({
 function CoverageListRoute() {
   const { t } = useTranslation();
   const { status = "all" } = Route.useSearch();
-  const tableSearch = useTableSearch();
+  const tableSearch = useTableSearch({ url: true });
 
   const { data: overview, error, isLoading, scan, gitlab } = useCoverageOverview();
   // No days parameter: the server's default is the retention it actually keeps,

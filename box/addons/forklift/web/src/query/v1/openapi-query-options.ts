@@ -10,6 +10,7 @@ import { createApprovalsOpenApiQueryOptions } from "@/query/v1/approvals/options
 import { createCoverageOpenApiQueryOptions } from "@/query/v1/coverage/options";
 import { createGroupMappingsOpenApiQueryOptions } from "@/query/v1/group-mappings/options";
 import { createHaOpenApiQueryOptions } from "@/query/v1/ha/options";
+import { createInsightsOpenApiQueryOptions } from "@/query/v1/insights/options";
 import { createNotificationOpenApiQueryOptions } from "@/query/v1/notification/options";
 import { createRepositoriesOpenApiQueryOptions } from "@/query/v1/repositories/options";
 import { createRolesOpenApiQueryOptions } from "@/query/v1/roles/options";
@@ -27,6 +28,7 @@ export function createOpenApiQueryOptions(client: HttpClient) {
     ...createCoverageOpenApiQueryOptions(client),
     ...createGroupMappingsOpenApiQueryOptions(client),
     ...createHaOpenApiQueryOptions(client),
+    ...createInsightsOpenApiQueryOptions(client),
     ...createNotificationOpenApiQueryOptions(client),
     ...createRepositoriesOpenApiQueryOptions(client),
     ...createRolesOpenApiQueryOptions(client),

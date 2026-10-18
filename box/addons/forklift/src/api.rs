@@ -14,6 +14,7 @@ use serde::Serialize;
 use crate::audit;
 use crate::auth as auth_service;
 use crate::coverage as coverage_scanner;
+use crate::insights as insight_engine;
 use crate::meta::{self, Store};
 use crate::notify;
 use crate::repo;
@@ -27,6 +28,7 @@ mod auth;
 mod coverage;
 mod denies;
 mod ha;
+mod insights;
 mod labels;
 mod notifications;
 mod repositories;
@@ -44,6 +46,10 @@ pub type HAStepDownFn = Arc<dyn Fn() -> bool + Send + Sync>;
 /// Starts a manual coverage scan detached from the request, reporting whether it
 /// was accepted (false when one is already running).
 pub type CoverageScanFn = Arc<dyn Fn(&str) -> bool + Send + Sync>;
+/// Starts a security insight analysis detached from the request, reporting
+/// whether it was accepted (false when one is running or this instance is not
+/// the leader).
+pub type InsightsRefreshFn = Arc<dyn Fn(&str) -> bool + Send + Sync>;
 /// Queries the object store's admin API for cluster capacity and health.
 pub type ClusterInfoFn = Arc<
     dyn Fn() -> std::pin::Pin<
@@ -84,6 +90,8 @@ struct Injected {
     repo_manager: Option<Arc<repo::Manager>>,
     coverage: Option<Arc<coverage_scanner::Scanner>>,
     coverage_scan: Option<CoverageScanFn>,
+    insights: Option<Arc<insight_engine::Analyzer>>,
+    insights_refresh: Option<InsightsRefreshFn>,
 }
 
 /// Serves the management API.
@@ -158,6 +166,18 @@ impl Handler {
         self.injected.write().coverage = Some(scanner);
     }
 
+    /// Injects the security insight analyzer and the trigger that runs it on
+    /// demand. Absent, the insight endpoints answer 503.
+    pub fn set_insights(
+        &self,
+        analyzer: Arc<insight_engine::Analyzer>,
+        refresh: InsightsRefreshFn,
+    ) {
+        let mut injected = self.injected.write();
+        injected.insights = Some(analyzer);
+        injected.insights_refresh = Some(refresh);
+    }
+
     /// Describes the storage backend the Storage admin page renders.
     pub fn set_storage_backend(&self, backend: StorageBackend, cluster: Option<ClusterInfoFn>) {
         let mut injected = self.injected.write();
@@ -201,6 +221,16 @@ impl Handler {
 
     pub(crate) fn coverage_scan(&self) -> Option<CoverageScanFn> {
         self.injected.read().coverage_scan.clone()
+    }
+
+    pub(crate) fn insights(
+        &self,
+    ) -> Option<(Arc<insight_engine::Analyzer>, Option<InsightsRefreshFn>)> {
+        let injected = self.injected.read();
+        injected
+            .insights
+            .clone()
+            .map(|a| (a, injected.insights_refresh.clone()))
     }
 
     /// Records a repository lifecycle event performed through the management
@@ -302,6 +332,10 @@ pub fn routes(h: Arc<Handler>) -> Router {
             axum::routing::get(repositories::list_oci_tags),
         )
         .route(
+            "/repositories/{id}/retention-preview",
+            axum::routing::get(repositories::retention_preview),
+        )
+        .route(
             "/repositories/{id}/oci-detail",
             axum::routing::get(repositories::get_oci_detail),
         )
@@ -385,6 +419,34 @@ pub fn routes(h: Arc<Handler>) -> Router {
         .route(
             "/coverage/project/last-commit",
             axum::routing::get(coverage::get_project_last_commit),
+        )
+        // Security insights. Every signed-in user reads them; the handler
+        // narrows the report to the repositories the caller can read, and only
+        // administrators, auditors and security reviewers see account and
+        // token findings. Refreshing and sending an alarm check their own
+        // permission.
+        .route("/insights", axum::routing::get(insights::get))
+        .route("/insights/refresh", axum::routing::post(insights::refresh))
+        .route(
+            "/insights/settings",
+            axum::routing::get(insights::get_settings).put(insights::update_settings),
+        )
+        .route(
+            "/insights/notification/preview",
+            axum::routing::get(insights::preview_alarm),
+        )
+        .route(
+            "/insights/notification/send",
+            axum::routing::post(insights::send_alarm),
+        )
+        .route(
+            "/insights/checks/{id}/history",
+            axum::routing::get(insights::check_history),
+        )
+        .route(
+            "/insights/checks/{id}/acknowledgement",
+            axum::routing::put(insights::put_acknowledgement)
+                .delete(insights::delete_acknowledgement),
         );
     if guarded {
         authenticated =

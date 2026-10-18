@@ -11,7 +11,9 @@ use forklift::repo::{Engine, Manager, oci_manifest_path};
 use forklift::storage::{BlobStore, FsStore};
 
 use forklift::api::Handler;
-use forklift::testing::api::{ADMIN_PASS, ADMIN_USER, do_as_on, mk_read_user, query_escape};
+use forklift::testing::api::{
+    ADMIN_PASS, ADMIN_USER, admin_do_on, do_as_on, mk_read_user, query_escape,
+};
 
 /// Wires the console's OCI read surfaces behind a repository manager with a
 /// real blob store, which both of them need: the views read the stored manifest
@@ -405,4 +407,37 @@ async fn oci_views_require_repository_read() {
             resp.status
         );
     }
+}
+
+#[tokio::test]
+async fn repository_list_counts_oci_images_by_tag() {
+    let h = oci_view_harness().await;
+    for tag in ["1.26", "1.27"] {
+        seed_oci_image(
+            &h.store,
+            &h.blobs,
+            &h.repository,
+            "library/nginx",
+            tag,
+            "bob",
+        )
+        .await;
+    }
+    let rows = h
+        .store
+        .count_artifacts(h.repository.id)
+        .await
+        .expect("count rows");
+    assert!(rows > 2, "manifests and blobs are separate rows: {rows}");
+
+    let resp = admin_do_on(&h.app, Method::GET, "/repositories", "").await;
+    assert_eq!(resp.status, StatusCode::OK, "{}", resp.text());
+    let list = resp.json();
+    let repo = list
+        .as_array()
+        .expect("list")
+        .iter()
+        .find(|r| r["name"] == "oci-hosted")
+        .expect("oci repository listed");
+    assert_eq!(repo["artifact_count"], 2, "one per tag: {repo}");
 }

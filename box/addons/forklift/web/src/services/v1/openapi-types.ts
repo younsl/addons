@@ -20,7 +20,7 @@ export interface GroupMapping { id: number; group_name: string; role_id: number;
 
 export interface Me { authenticated: boolean; username?: string; source?: string; admin?: boolean; approver?: boolean; auditor?: boolean; security?: boolean; csrf_token?: string; impersonator?: string; }
 
-export interface OCITagInfo { path: string; labels: ArtifactLabel[]; can_label: boolean; name: string; tag: string; digest: string; media_type: string; kind: "chart" | "image" | "artifact" | "index"; size: number; platforms: string[]; pushed_at: string; pulled_at: string | null; pushed_by: string; pulled_by: string; }
+export interface OCITagInfo { path: string; labels: ArtifactLabel[]; can_label: boolean; name: string; tag: string; digest: string; media_type: string; kind: "chart" | "image" | "artifact" | "index"; size: number; platforms: string[]; pushed_at: string; pulled_at: string | null; pushed_by: string; pulled_by: string; expires_at?: string; }
 
 export interface OCIArtifactDetail { info: OCITagInfo; path: string; labels: ArtifactLabel[]; can_label: boolean; manifest_json: Record<string, unknown>; config_json?: Record<string, unknown>; image?: { os?: string; architecture?: string; created?: string; entrypoint?: string[]; cmd?: string[]; env?: string[]; layers?: number; }; chart?: { values_yaml?: string; readme_md?: string; }; children?: { digest?: string; platform?: string; size?: number; }[]; }
 
@@ -28,9 +28,9 @@ export interface LandingStats { repositories: number; artifacts: number; }
 
 export interface Version { version?: string; commit?: string; oidc_enabled?: boolean; }
 
-export interface Announcement { body: string; updated_by?: string; updated_at: string; }
+export interface Announcement { body: string; updated_by?: string; updated_at: string; expires_at?: string; active: boolean; user_dismissible: boolean; }
 
-export interface AnnouncementInput { body: string; }
+export interface AnnouncementInput { body: string; expires_at?: string | null; user_dismissible?: boolean; }
 
 export interface SearchResult { query?: string; repositories?: { id?: number; name?: string; format?: string; type?: string; }[] | null; artifacts?: { repo_id?: number; repo_name?: string; path?: string; size?: number; }[] | null; labels?: { repo_id?: number; repo_name?: string; path?: string; label?: string; }[] | null; approvals?: ({ id?: number; repo_name?: string; package?: string; status?: "pending" | "approved" | "rejected"; })[] | null; users?: { id?: number; username?: string; robot?: boolean; }[] | null; roles?: { id?: number; name?: string; description?: string; }[] | null; counts?: Record<string, number>; }
 
@@ -59,6 +59,38 @@ export interface IPACLConfig { enabled: boolean; allow?: string[]; }
 export interface NotifyConfig { receivers?: string[]; }
 
 export interface RetentionConfig { idle_ttl?: string; }
+
+export interface InsightsAlarmPreview { payload: InsightsAlarmPayload; receivers: { id: number; name: string; enabled: boolean; webhook_configured: boolean; }[]; }
+
+export interface InsightsAlarmPayload { text: string; event: "insights.report"; score: number; grade: string; critical: number; high: number; medium: number; low: number; info: number; findings?: string[]; timestamp: string; }
+
+export interface InsightsOverview { report: InsightReport | null; history: InsightSummary[]; scope: "all" | "repositories"; running: boolean; interval_seconds: number; can_refresh: boolean; }
+
+export interface InsightSeverityCounts { critical: number; high: number; medium: number; low: number; info: number; }
+
+export interface InsightSummary { generated_at: string; score: number; grade: "A" | "B" | "C" | "D" | "F"; counts: InsightSeverityCounts; }
+
+export interface InsightReport { generated_at: string; duration_ms: number; triggered_by: string; score: number; grade: "A" | "B" | "C" | "D" | "F"; counts: InsightSeverityCounts; inventory: { repositories: number; artifacts: number; oci_images: number; scanned: number; scannable: number; users: number; tokens: number; }; findings: InsightFinding[]; checks: InsightCheck[]; }
+
+export interface InsightCheck { id: string; code: string; category: "supply-chain" | "policy" | "exposure" | "access" | "operations"; audiences: ("devops" | "security" | "developer")[]; title: string; rationale: string; criteria: string; recommendation: string; status: "action" | "investigate" | "ok" | "unavailable" | "acknowledged"; flagged: number; acknowledgement?: InsightAcknowledgement; }
+
+export interface InsightSettings { auto_analyze_enabled: boolean; interval_minutes: number; report_enabled: boolean; receiver: string; report_cron: string; timezone: string; min_severity: "critical" | "high" | "medium" | "low" | "info"; skip_when_unchanged: boolean; updated_by: string; updated_at: string; next_analysis_at: string; next_report_at: string; }
+
+export interface InsightSettingsInput { auto_analyze_enabled?: boolean; interval_minutes?: number; report_enabled?: boolean; receiver?: string; report_cron?: string; timezone?: string; min_severity?: "critical" | "high" | "medium" | "low" | "info"; skip_when_unchanged?: boolean; }
+
+export interface InsightCheckPoint { generated_at: string; status: "action" | "investigate" | "ok" | "unavailable" | "acknowledged"; severity?: "critical" | "high" | "medium" | "low" | "info"; flagged: number; }
+
+export interface InsightAcknowledgement { note: string; acknowledged_by: string; acknowledged_at: string; expires_at: string; flagged: number; state: "active" | "expired" | "new_items"; }
+
+export interface InsightAck { check_id: string; note: string; flagged: number; acknowledged_by: string; acknowledged_at: string; expires_at: string; }
+
+export interface InsightFinding { id: string; code: string; rationale: string; criteria: string; severity: "critical" | "high" | "medium" | "low" | "info"; category: "supply-chain" | "policy" | "exposure" | "access" | "operations"; audiences: ("devops" | "security" | "developer")[]; title: string; summary: string; recommendation: string; params: Record<string, string>; total: number; affected: InsightAffected[]; by_repo?: Record<string, number>; acknowledged?: boolean; everyone?: boolean; }
+
+export interface InsightAffected { kind: "artifact" | "tag" | "repository" | "user" | "token" | "client" | "approval" | "project" | "advisory"; label: string; detail?: string; repo?: string; repo_id?: number; path?: string; tag?: string; user_id?: number; }
+
+export interface RetentionPreview { count: number; size?: number; items: RetentionPreviewItem[]; }
+
+export interface RetentionPreviewItem { path: string; uploaded_by: string; version: string; last_active_at: string; size?: number; }
 
 export interface VulnPolicyConfig { enabled: boolean; threshold?: "critical" | "high" | "medium" | "low"; action?: "block" | "warn" | "audit"; ignore?: string[]; block_unscanned?: boolean; }
 
@@ -182,7 +214,7 @@ export interface ReceiverInput { name: string; description?: string; webhook_url
 
 export interface RepositoryName { name: string; format: string; type: "hosted" | "proxy" | "group"; }
 
-export interface Artifact { path: string; version: string; size: number; content_type: string; published_at: string | null; cached_at: string; last_accessed_at: string; cached_by: string; downloads_30d: number; last_accessed_by: string; publication_id?: string; artifact_role?: "primary" | "metadata" | "checksum" | "index"; labels: ArtifactLabel[]; can_label: boolean; max_severity?: string; vuln_ids?: string[]; vuln_counts?: Record<string, number>; vuln_advisories?: VulnAdvisory[]; vuln_source?: string; vuln_scanned_at?: string | null; licenses?: string[]; license_source?: string; license_resolved_at?: string | null; blob_missing?: boolean; blob_missing_since?: string | null; blob_missing_last_seen?: string | null; blob_missing_last_status?: number; blob_missing_statuses?: { code?: number; count?: number; }[]; }
+export interface Artifact { path: string; version: string; size: number; content_type: string; published_at: string | null; cached_at: string; last_accessed_at: string; cached_by: string; downloads_30d: number; last_accessed_by: string; expires_at?: string; publication_id?: string; artifact_role?: "primary" | "metadata" | "checksum" | "index"; labels: ArtifactLabel[]; can_label: boolean; max_severity?: string; vuln_ids?: string[]; vuln_counts?: Record<string, number>; vuln_advisories?: VulnAdvisory[]; vuln_source?: string; vuln_scanned_at?: string | null; licenses?: string[]; license_source?: string; license_resolved_at?: string | null; blob_missing?: boolean; blob_missing_since?: string | null; blob_missing_last_seen?: string | null; blob_missing_last_status?: number; blob_missing_statuses?: { code?: number; count?: number; }[]; }
 
 export interface ArtifactList { count: number; total_size: number; filtered: number; labeled_count: number; artifacts: Artifact[]; publications: ArtifactPublication[]; }
 

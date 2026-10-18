@@ -57,6 +57,7 @@ mod vulnscan;
 mod npm;
 mod oci;
 mod oci_detail;
+mod oci_idle;
 mod oci_images;
 mod oci_proxy;
 mod oci_prune;
@@ -72,14 +73,18 @@ mod uiupload_pypi;
 
 pub use dangling::DanglingRef;
 pub use group::validate_group_members;
+pub(crate) use licensescan::deps_dev_system;
 pub use licensescan::license_coordinate;
 pub use oci::oci_manifest_path_public as oci_manifest_path;
 pub use oci_detail::OCIArtifactDetail;
+pub use oci_idle::idle_expiry;
 pub use oci_images::OCITagInfo;
+pub use reaper::{RetentionPreview, RetentionPreviewItem};
 pub use seed::{DEFAULT_REPOSITORIES, DefaultRepo, is_default_repo, seed_defaults};
 pub use upload::{UploadError, UploadPlan, UploadResult, UploadValidationError};
 pub use upstreamurl::upstream_package_url;
 pub use vulnscan::osv_ecosystem;
+pub(crate) use vulnscan::version_for_path;
 pub use vulnscan::{ScanRatio, vuln_coordinate};
 
 pub use router::Manager;

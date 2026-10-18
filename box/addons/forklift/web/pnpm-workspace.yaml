@@ -29,6 +29,8 @@ overrides:
   joi@<17.13.8: 17.13.8
   joi@>=18.0.0 <18.2.9: 18.2.9
   postcss-selector-parser@<7.1.6: 7.1.6
+  # pnpm's trust policy rejects semver 6.3.1 (trust downgrade); 6 has no newer release.
+  semver@<7: ^7.8.5
 # No patched release is published yet. Both are dev-only (shadcn, eslint), never bundled.
 auditConfig:
   ignoreGhsas:

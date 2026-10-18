@@ -140,7 +140,19 @@ attempt is written to the repository's audit log as `artifact.label.add` or
 `artifact.label.remove`, including refused ones, with the label in the entry
 detail. A label is removed with the artifact it describes.
 
-The repository's Statistics tab shows the labeling coverage: how many artifacts carry at least one label, as a count and as a percentage of every stored artifact (index and metadata files included, the same total as the Artifacts panel). It covers the whole repository and comes from `labeled_count` in the artifact listing, which ignores the search.
+The repository's Statistics tab shows the labeling coverage: how many artifacts carry at least one label, as a count and as a percentage of every stored artifact (index and metadata files included, the same total as the Artifacts panel). It covers the whole repository and comes from `labeled_count` in the artifact listing, which ignores the search. An OCI repository counts images (tags) instead, matching the Images view and the Repositories list, and a tag counts as labelled when its manifest carries a label.
+
+## Idle retention
+
+Each repository can delete what nobody downloads. Turn on **Settings > Artifact Retention** and set the number of days, or set `retention.idle_ttl` (for example `"30d"`) in the repository config through the API. Off (`0`) keeps everything and is the default. Group repositories hold no artifacts and have no setting.
+
+While the days are being edited, an impact preview lists what the next pass would delete with that value, before anything is saved: the total count (and size, except for OCI) and the 20 least recently used rows. The same data comes from `GET /api/v1/repositories/{id}/retention-preview?days=N`, which needs only read access and deletes nothing.
+
+The reaper runs every hour on the leader. For every format except OCI it deletes an artifact whose last download (`last_accessed_at`) is older than the setting. The access time is refreshed at most every 5 minutes, so it is minute-grained.
+
+OCI repositories apply the setting per tag. A tag that was neither pushed nor pulled within the period is removed, and the reachability prune then reclaims its manifest and the layers no other tag reaches, after the prune's 24 hour grace. A pull of any platform manifest of a multi-platform index counts for the tag. Signature and attestation tags in the cosign form (`sha256-<digest>.sig`, `.att`, `.sbom`) follow the image they belong to.
+
+The Repositories list marks every repository with retention on by an hourglass badge with the period (for example `14d`) next to its name. The artifacts table and the OCI image view show an **Auto-delete** column with the date each row becomes eligible, from `expires_at` in the listing APIs. A past date reads as due and is removed by the next pass. Every removal is written to the repository audit log as `ttl.expire` by `system`, and counted in `forklift_ttl_expired_total`.
 
 ## Related documents
 

@@ -10,6 +10,7 @@ pub mod auth;
 pub mod cluster;
 pub mod config;
 pub mod coverage;
+pub mod insights;
 pub mod license;
 pub mod mcp;
 pub mod memlimit;

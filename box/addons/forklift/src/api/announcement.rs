@@ -26,6 +26,12 @@ struct AnnouncementDTO {
     #[serde(skip_serializing_if = "String::is_empty")]
     updated_by: String,
     updated_at: DateTime<Utc>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    expires_at: Option<DateTime<Utc>>,
+    /// Whether the banner shows now: a body that has not reached its end.
+    active: bool,
+    /// Whether signed-in users may dismiss the banner.
+    user_dismissible: bool,
 }
 
 impl Default for AnnouncementDTO {
@@ -36,6 +42,23 @@ impl Default for AnnouncementDTO {
             updated_at: DateTime::parse_from_rfc3339("0001-01-01T00:00:00Z")
                 .expect("valid instant")
                 .with_timezone(&Utc),
+            expires_at: None,
+            active: false,
+            user_dismissible: false,
+        }
+    }
+}
+
+impl From<meta::Announcement> for AnnouncementDTO {
+    fn from(a: meta::Announcement) -> Self {
+        let active = a.active(Utc::now());
+        Self {
+            body: a.body,
+            updated_by: a.updated_by,
+            updated_at: a.updated_at,
+            expires_at: a.expires_at,
+            active,
+            user_dismissible: a.user_dismissible,
         }
     }
 }
@@ -46,20 +69,20 @@ impl Default for AnnouncementDTO {
 struct AnnouncementInput {
     #[serde(default)]
     body: String,
+    /// When the banner stops showing. Absent or null keeps it up until cleared.
+    #[serde(default)]
+    expires_at: Option<DateTime<Utc>>,
+    /// Lets signed-in users dismiss the banner. Off by default, as on GitHub
+    /// Enterprise Server.
+    #[serde(default)]
+    user_dismissible: bool,
 }
 
 /// Returns the site-wide notice. Never-set and cleared both come back as an
 /// empty body so the UI has one state to handle.
 pub(super) async fn get(State(h): State<Arc<Handler>>) -> Response {
     match h.store.get_announcement().await {
-        Ok(a) => write_json(
-            StatusCode::OK,
-            AnnouncementDTO {
-                body: a.body,
-                updated_by: a.updated_by,
-                updated_at: a.updated_at,
-            },
-        ),
+        Ok(a) => write_json(StatusCode::OK, AnnouncementDTO::from(a)),
         Err(meta::Error::NotFound) => write_json(StatusCode::OK, AnnouncementDTO::default()),
         Err(err) => map_error(err),
     }
@@ -85,19 +108,27 @@ pub(super) async fn put(State(h): State<Arc<Handler>>, request: Request) -> Resp
             "announcement too long (max 1000 characters)",
         );
     }
+    // A cleared notice has nothing to end. A set one must end in the future,
+    // or it would be saved already hidden.
+    let expires_at = if input.body.is_empty() {
+        None
+    } else {
+        input.expires_at
+    };
+    if expires_at.is_some_and(|end| end <= Utc::now()) {
+        return write_error(StatusCode::BAD_REQUEST, "expires_at must be in the future");
+    }
     match h
         .store
-        .set_announcement(&input.body, &principal_name(&parts))
+        .set_announcement(
+            &input.body,
+            &principal_name(&parts),
+            expires_at,
+            input.user_dismissible && !input.body.is_empty(),
+        )
         .await
     {
-        Ok(a) => write_json(
-            StatusCode::OK,
-            AnnouncementDTO {
-                body: a.body,
-                updated_by: a.updated_by,
-                updated_at: a.updated_at,
-            },
-        ),
+        Ok(a) => write_json(StatusCode::OK, AnnouncementDTO::from(a)),
         Err(err) => map_error(err),
     }
 }
@@ -181,12 +212,47 @@ pub(crate) mod tests {
             resp.text()
         );
 
+        // An optional end: past ends are refused, a future one is kept and the
+        // notice stays active until it passes.
+        let resp = srv
+            .admin_do(
+                Method::PUT,
+                "/announcement",
+                r#"{"body":"window","expires_at":"2000-01-01T00:00:00Z"}"#,
+            )
+            .await;
+        assert_eq!(resp.status, StatusCode::BAD_REQUEST, "past end");
+        let resp = srv
+            .admin_do(
+                Method::PUT,
+                "/announcement",
+                r#"{"body":"window","expires_at":"2999-01-01T00:00:00Z"}"#,
+            )
+            .await;
+        assert_eq!(resp.status, StatusCode::OK, "future end: {}", resp.text());
+        let dto = get().await;
+        assert_eq!(dto["expires_at"], "2999-01-01T00:00:00Z", "{dto}");
+        assert_eq!(dto["active"], true, "{dto}");
+        assert_eq!(dto["user_dismissible"], false, "off unless asked: {dto}");
+        let resp = srv
+            .admin_do(
+                Method::PUT,
+                "/announcement",
+                r#"{"body":"window","user_dismissible":true}"#,
+            )
+            .await;
+        assert_eq!(resp.status, StatusCode::OK, "{}", resp.text());
+        assert_eq!(get().await["user_dismissible"], true);
+
         // Clearing stores an empty body.
         let resp = srv
             .admin_do(Method::PUT, "/announcement", r#"{"body":""}"#)
             .await;
         assert_eq!(resp.status, StatusCode::OK, "clear announcement");
-        assert_eq!(get().await["body"], "", "expected a cleared announcement");
+        let cleared = get().await;
+        assert_eq!(cleared["body"], "", "expected a cleared announcement");
+        assert_eq!(cleared["active"], false, "{cleared}");
+        assert!(cleared.get("expires_at").is_none(), "{cleared}");
     }
 
     /// A plain authenticated user can read but not write the announcement.

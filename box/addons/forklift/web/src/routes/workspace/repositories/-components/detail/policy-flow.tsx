@@ -50,29 +50,61 @@ export function LinesInput({ value, onChange, rows = 3, placeholder }: {
 }
 
 // renderMrkdwn renders a Slack/Mattermost mrkdwn string (the exact alarm text)
-// as React: *bold* becomes bold, <url|label> becomes a link, and newlines break
-// lines - so the notification preview shows the real template as it would appear.
+// as React: *bold* becomes bold, <url|label> becomes a link (also inside bold,
+// as in a linked title), and newlines break lines - so the notification preview
+// shows the real template as it would appear.
 export function renderMrkdwn(text: string): ReactNode {
-  return text.split("\n").map((line, li) => {
-    const parts: ReactNode[] = [];
-    const re = /\*([^*]+)\*|<([^|>]+)\|([^>]+)>/g;
-    let last = 0, m: RegExpExecArray | null, k = 0;
-    while ((m = re.exec(line)) !== null) {
-      if (m.index > last) parts.push(line.slice(last, m.index));
-      if (m[1] !== undefined) parts.push(<strong key={k++}>{m[1]}</strong>);
-      else {
-        // Only allow http(s) hrefs; anything else (javascript:, data:) is dropped
-        // to plain text so a crafted link in the payload can't inject a scheme.
-        const safe = /^https?:\/\//i.test(m[2]) ? m[2] : undefined;
-        parts.push(safe
-          ? <a key={k++} href={safe} target="_blank" rel="noreferrer noopener" className="text-accent-ink underline">{m[3]}</a>
-          : <span key={k++}>{m[3]}</span>);
-      }
-      last = re.lastIndex;
+  // Runs of numbered lines render as one ordered list, as Slack shows the
+  // alarm's rich text list.
+  const out: ReactNode[] = [];
+  let items: ReactNode[] = [];
+  const closeList = (key: number) => {
+    if (items.length) out.push(<ol key={`ol-${key}`} className="m-0 list-decimal pl-6">{items}</ol>);
+    items = [];
+  };
+  text.split("\n").forEach((line, li) => {
+    const item = /^\d+\. (.*)$/.exec(line);
+    if (item) {
+      items.push(<li key={li}>{renderInline(item[1], li)}</li>);
+      return;
     }
-    if (last < line.length) parts.push(line.slice(last));
-    return <div key={li}>{parts.length ? parts : " "}</div>;
+    closeList(li);
+    const parts = renderInline(line, li);
+    out.push(<div key={li}>{parts.length ? parts : " "}</div>);
   });
+  closeList(-1);
+  return out;
+}
+
+function renderInline(line: string, li: number): ReactNode[] {
+  const parts: ReactNode[] = [];
+  const re = /\*([^*]+)\*/g;
+  let last = 0, m: RegExpExecArray | null, k = 0;
+  while ((m = re.exec(line)) !== null) {
+    if (m.index > last) parts.push(...renderLinks(line.slice(last, m.index), `${li}-${k++}`));
+    parts.push(<strong key={`${li}-${k++}`}>{renderLinks(m[1], `${li}-${k++}`)}</strong>);
+    last = re.lastIndex;
+  }
+  if (last < line.length) parts.push(...renderLinks(line.slice(last), `${li}-${k++}`));
+  return parts;
+}
+
+function renderLinks(text: string, keyPrefix: string): ReactNode[] {
+  const parts: ReactNode[] = [];
+  const re = /<([^|>]+)\|([^>]+)>/g;
+  let last = 0, m: RegExpExecArray | null, k = 0;
+  while ((m = re.exec(text)) !== null) {
+    if (m.index > last) parts.push(text.slice(last, m.index));
+    // Only allow http(s) hrefs; anything else (javascript:, data:) is dropped
+    // to plain text so a crafted link in the payload can't inject a scheme.
+    const safe = /^https?:\/\//i.test(m[1]) ? m[1] : undefined;
+    parts.push(safe
+      ? <a key={`${keyPrefix}-${k++}`} href={safe} target="_blank" rel="noreferrer noopener" className="text-accent-ink underline">{m[2]}</a>
+      : <span key={`${keyPrefix}-${k++}`}>{m[2]}</span>);
+    last = re.lastIndex;
+  }
+  if (last < text.length) parts.push(text.slice(last));
+  return parts;
 }
 
 export const defaultPolicyOrder: PolicyName[] = ["vulnerability", "license", "age"];

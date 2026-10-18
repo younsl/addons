@@ -1,6 +1,6 @@
 import { useNavigate } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api } from "@/api";
 import type { Repository } from "@/services/v1/openapi-types";
 import { Alert } from "@/components/app-ui/alert";
@@ -12,13 +12,16 @@ import { ConfirmModal } from "@/components/overlays/confirm-modal";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
+import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { InputGroup, InputGroupAddon, InputGroupInput, InputGroupText } from "@/components/ui/input-group";
 import { Switch } from "@/components/ui/switch";
 import { getErrorMessage } from "@/lib/http/error/api-error";
 import { openApiQueryKeys } from "@/query/v1/openapi-query-options";
 import { operationKeyPrefix } from "@/query/query-key-prefix";
 import { useTranslation } from "@/lib/i18n";
+import { cn } from "@/lib/utils";
+import { idleTtlDays, idleTtlFromDays } from "@/lib/retention";
 import { useRepositoryDraft } from "@/routes/workspace/repositories/-hooks/use-repository-draft";
 import {
   useDeleteRepositoryMutation,
@@ -26,6 +29,7 @@ import {
   useUpdateRepositoryMutation,
 } from "@/routes/workspace/repositories/-hooks/use-repository-mutations";
 import { GroupMembers } from "@/routes/workspace/repositories/-components/detail/security-tab";
+import { RetentionPreview } from "@/routes/workspace/repositories/-components/detail/retention-preview";
 
 export function RepositorySaveActions({ saved, onSave }: { saved: boolean; onSave: () => void }) {
   const { t } = useTranslation();
@@ -35,6 +39,13 @@ export function RepositorySaveActions({ saved, onSave }: { saved: boolean; onSav
       {saved && <span className="text-sm text-muted-foreground">{t("common.saved")}</span>}
     </div>
   );
+}
+
+const DEFAULT_IDLE_DAYS = 30;
+
+function idleDaysField(idleTtl?: string): string {
+  const days = idleTtlDays(idleTtl);
+  return Number.isFinite(days) && days > 0 ? String(Math.round(days * 100) / 100) : "";
 }
 
 export function Settings({ repo: fetched, canWrite }: { repo: Repository; canWrite: boolean }) {
@@ -48,6 +59,16 @@ export function Settings({ repo: fetched, canWrite }: { repo: Repository; canWri
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [confirmPurge, setConfirmPurge] = useState(false);
   const [purged, setPurged] = useState<number | null>(null);
+  // The field keeps what was typed (an empty box while editing) and writes whole
+  // days into the draft, so a saved "720h0m0s" opens as 30.
+  const savedIdleTtl = fetched.config.retention?.idle_ttl;
+  const [idleDaysText, setIdleDaysText] = useState(() => idleDaysField(savedIdleTtl));
+  const [retentionOn, setRetentionOn] = useState(() => idleTtlDays(savedIdleTtl) > 0);
+  useEffect(() => {
+    setIdleDaysText(idleDaysField(savedIdleTtl));
+    setRetentionOn(idleTtlDays(savedIdleTtl) > 0);
+  }, [savedIdleTtl]);
+  const idleDays = Math.floor(Number(idleDaysText));
   const updateMutation = useUpdateRepositoryMutation();
   const deleteMutation = useDeleteRepositoryMutation();
   const setDisabledMutation = useSetRepositoryDisabledMutation();
@@ -238,13 +259,48 @@ export function Settings({ repo: fetched, canWrite }: { repo: Repository; canWri
         <Card size="sm" className="mb-4">
           <CardContent>
           <h2 className="m-0 mb-4 text-base font-semibold">{t("repo.artifact-retention")} <span className="text-xs font-normal text-muted-foreground">{t("repo.retention-subtitle")}</span></h2>
-          <Field>
-            <FieldLabel>{t("repo.idle-ttl")}</FieldLabel>
-              <Input value={repo.config.retention?.idle_ttl ?? ""}
-                placeholder="0"
-                onChange={(e) => setRepo({ ...repo, config: { ...repo.config, retention: { idle_ttl: e.target.value } } })} />
-          </Field>
-          <p className="mb-0 mt-4 text-sm text-muted-foreground">Artifacts not served for this long are deleted automatically; each removal is recorded in the audit log. Based on last-served time.</p>
+          <SettingToggle
+            size="sm"
+            label={retentionOn ? t("repo.retention-on") : t("repo.retention-off")}
+            checked={retentionOn}
+            onCheckedChange={(on) => {
+              setRetentionOn(on);
+              // Turning it on starts from the last typed value, or 30 days, so
+              // the switch alone never saves a zero that means "off".
+              const days = on ? Math.max(1, Math.floor(Number(idleDaysText)) || DEFAULT_IDLE_DAYS) : 0;
+              if (on) setIdleDaysText(String(days));
+              setRepo({ ...repo, config: { ...repo.config, retention: { idle_ttl: idleTtlFromDays(days) } } });
+            }}
+          />
+          {retentionOn && (
+            <>
+              <Field className="mt-4">
+                <FieldLabel htmlFor="retention-idle-days">{t("repo.idle-days")}</FieldLabel>
+                <InputGroup className="max-w-xs">
+                  <InputGroupInput
+                    id="retention-idle-days"
+                    type="number"
+                    inputMode="numeric"
+                    min={1}
+                    step={1}
+                    value={idleDaysText}
+                    aria-invalid={!(idleDays >= 1) || undefined}
+                    onChange={(e) => {
+                      const days = Math.floor(Number(e.target.value));
+                      setIdleDaysText(e.target.value);
+                      setRepo({ ...repo, config: { ...repo.config, retention: { idle_ttl: idleTtlFromDays(Number.isFinite(days) ? Math.max(days, 0) : 0) } } });
+                    }}
+                  />
+                  <InputGroupAddon align="inline-end">
+                    <InputGroupText>{t("repo.idle-days-unit")}</InputGroupText>
+                  </InputGroupAddon>
+                </InputGroup>
+                <FieldDescription>{idleDays >= 1 ? t("repo.idle-days-help") : t("repo.idle-days-invalid")}</FieldDescription>
+              </Field>
+              <p className="mb-0 mt-4 text-sm text-muted-foreground">{repo.format === "oci" ? t("repo.retention-note-oci") : t("repo.retention-note")}</p>
+              <RetentionPreview repo={repo} days={idleDays >= 1 ? idleDays : 0} />
+            </>
+          )}
           </CardContent>
         </Card>
       )}
@@ -303,9 +359,6 @@ export function SecurityPanelHeader({
   checked?: boolean;
   onCheckedChange?: (checked: boolean) => void;
 }) {
-  const { t } = useTranslation();
-  const statusLabel = checked ? t("repo.setting-enabled") : t("repo.setting-disabled");
-
   return (
     <div className="mb-5 min-w-0">
       <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5">
@@ -313,12 +366,48 @@ export function SecurityPanelHeader({
         {subtitle && <span className="text-xs text-muted-foreground">{subtitle}</span>}
       </div>
       {toggleLabel && onCheckedChange && (
-        <div className="mt-2 flex min-w-0 items-center gap-2">
-          <Switch checked={!!checked} onCheckedChange={onCheckedChange} aria-label={`${toggleLabel}: ${statusLabel}`} />
-          <span className="text-xs font-medium text-muted-foreground">{statusLabel}</span>
-          <span className="min-w-0 text-xs leading-5 text-muted-foreground">{toggleLabel}</span>
-        </div>
+        <SettingToggle className="mt-2" label={toggleLabel} checked={!!checked} onCheckedChange={onCheckedChange} />
       )}
+    </div>
+  );
+}
+
+// SettingToggle is a switch with its Enabled/Disabled state and a muted
+// description of what the switch governs. "xs" fits the compact security panel
+// headers on one line, "sm" a settings card with the description underneath.
+export function SettingToggle({
+  label,
+  checked,
+  onCheckedChange,
+  size = "xs",
+  className,
+}: {
+  label: string;
+  checked: boolean;
+  onCheckedChange: (checked: boolean) => void;
+  size?: "xs" | "sm";
+  className?: string;
+}) {
+  const { t } = useTranslation();
+  const statusLabel = checked ? t("repo.setting-enabled") : t("repo.setting-disabled");
+
+  if (size === "sm") {
+    return (
+      <div className={cn("min-w-0", className)}>
+        <label className="inline-flex items-center gap-2.5 text-sm">
+          <Switch checked={checked} onCheckedChange={onCheckedChange} aria-label={`${label}: ${statusLabel}`} />
+          <span>{statusLabel}</span>
+        </label>
+        <p className="mb-0 mt-1.5 text-sm leading-relaxed text-muted-foreground">{label}</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className={cn("flex min-w-0 items-center gap-2", className)}>
+      <Switch checked={checked} onCheckedChange={onCheckedChange} aria-label={`${label}: ${statusLabel}`} />
+      <span className="text-xs font-medium text-muted-foreground">{statusLabel}</span>
+      <span className="min-w-0 text-xs leading-5 text-muted-foreground">{label}</span>
     </div>
   );
 }

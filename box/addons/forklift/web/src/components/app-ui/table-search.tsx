@@ -1,4 +1,5 @@
 import { ReactNode, useEffect, useMemo, useState } from "react";
+import { useNavigate, useSearch } from "@tanstack/react-router";
 import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -50,15 +51,36 @@ export interface TableSearch {
 // filtering and pagination run server-side. The query is debounced, then
 // parsed: wrapping it in slashes (/pattern/) turns on regex matching, which is
 // validated locally before it lands in q/regex for the caller's fetch effect.
-export function useTableSearch(): TableSearch {
-  const [query, setQuery] = useState("");
-  const [page, setPage] = useState(0);
-  const [debounced, setDebounced] = useState("");
+//
+// With `url`, the search and page live in the URL as `q` and `page` (1-based),
+// so a link opens the table exactly as it was shared. The route must keep both
+// keys in its validateSearch.
+export function useTableSearch({ url = false }: { url?: boolean } = {}): TableSearch {
+  const urlSearch = useSearch({ strict: false }) as { q?: unknown; page?: unknown };
+  const navigate = useNavigate();
+  const initialQuery = url && typeof urlSearch.q === "string" ? urlSearch.q : "";
+  const initialPage = url ? Math.max(0, (Number(urlSearch.page) || 1) - 1) : 0;
+  const [query, setQuery] = useState(initialQuery);
+  const [page, setPage] = useState(initialPage);
+  const [debounced, setDebounced] = useState(initialQuery.trim());
 
   useEffect(() => {
     const id = setTimeout(() => setDebounced(query.trim()), 300);
     return () => clearTimeout(id);
   }, [query]);
+
+  useEffect(() => {
+    if (!url) return;
+    void navigate({
+      to: ".",
+      search: ((prev: Record<string, unknown>) => ({
+        ...prev,
+        q: debounced || undefined,
+        page: page > 0 ? page + 1 : undefined,
+      })) as never,
+      replace: true,
+    });
+  }, [url, debounced, page, navigate]);
 
   const { term, regex } = useMemo(() => parseQuery(debounced), [debounced]);
 

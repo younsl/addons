@@ -34,6 +34,8 @@ import type {
   GetRepositoryOciDetailResponse,
   GetRepositoryRequest,
   GetRepositoryResponse,
+  GetRepositoryRetentionPreviewRequest,
+  GetRepositoryRetentionPreviewResponse,
   GetRepositoryUploadsRequest,
   GetRepositoryUploadsResponse,
   GetRepositoryUpstreamHealthRequest,
@@ -165,6 +167,15 @@ export function listRepositoryOciTags(params: ListRepositoryOciTagsRequest, opti
 
   return client.get<ListRepositoryOciTagsResponse>(
     buildOpenApiPath(`${API_PREFIX}/repositories/{id}/oci-tags`, params.path),
+    requestOptions,
+  );
+}
+
+export function getRepositoryRetentionPreview(params: GetRepositoryRetentionPreviewRequest, options?: OpenApiRequestOptions) {
+  const { client, requestOptions } = resolveOpenApiRequestOptions(options);
+
+  return client.get<GetRepositoryRetentionPreviewResponse>(
+    appendOpenApiQuery(buildOpenApiPath(`${API_PREFIX}/repositories/{id}/retention-preview`, params.path), params?.query),
     requestOptions,
   );
 }

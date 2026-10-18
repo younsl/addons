@@ -10,6 +10,7 @@ import {
   getRepository,
   getRepositoryDangling,
   getRepositoryOciDetail,
+  getRepositoryRetentionPreview,
   getRepositoryUploads,
   getRepositoryUpstreamHealth,
   listRepositories,
@@ -25,6 +26,7 @@ import type {
   GetRepositoryDanglingRequest,
   GetRepositoryOciDetailRequest,
   GetRepositoryRequest,
+  GetRepositoryRetentionPreviewRequest,
   GetRepositoryUploadsRequest,
   GetRepositoryUpstreamHealthRequest,
   ListRepositoryArtifactsLabelsRequest,
@@ -65,6 +67,12 @@ export function createRepositoriesOpenApiQueryOptions(client: HttpClient) {
         queryKey: openApiQueryKeys.listRepositoryOciTags(params),
         queryFn: ({ signal }) =>
           listRepositoryOciTags(params, { signal, client }),
+      }),
+    getRepositoryRetentionPreview: (params: GetRepositoryRetentionPreviewRequest) =>
+      queryOptions({
+        queryKey: openApiQueryKeys.getRepositoryRetentionPreview(params),
+        queryFn: ({ signal }) =>
+          getRepositoryRetentionPreview(params, { signal, client }),
       }),
     getRepositoryOciDetail: (params: GetRepositoryOciDetailRequest) =>
       queryOptions({

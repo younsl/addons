@@ -161,6 +161,8 @@ settings response reports that default separately from the effective value.
 
 ## Who can do what
 
+Coverage is a tab under Insights, next to [Security Insights](security-insights.md), which turns the projects that do not build through forklift into the `coverage-bypass` (SC-09) finding.
+
 The measurement is what the whole organisation is working towards, so every
 signed-in user can read it: the dashboard, the per-group breakdown, the trend,
 and any project's verdict and evidence.
