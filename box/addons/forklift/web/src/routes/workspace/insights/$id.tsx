@@ -159,7 +159,7 @@ function InsightDetailRoute() {
                 {finding.affected.map((item, i) => (
                   <TableRow key={`${item.kind}:${item.label}:${item.repo ?? ""}:${i}`}>
                     <TableCell className="whitespace-nowrap pr-4 text-muted-foreground">{t(`insights.kind-${item.kind}` as MessageKey)}</TableCell>
-                    <TableCell className="max-w-0 truncate font-mono text-xs"><AffectedLink finding={finding} item={item} /></TableCell>
+                    <TableCell className="min-w-48 whitespace-normal break-all font-mono text-xs"><AffectedLink finding={finding} item={item} /></TableCell>
                     <TableCell className="pr-4 text-muted-foreground">{item.repo || "-"}</TableCell>
                     <TableCell className="text-muted-foreground">{item.detail || "-"}</TableCell>
                   </TableRow>
