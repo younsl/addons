@@ -493,7 +493,7 @@ mod tests {
     #[test]
     fn test_base64_decode_empty() {
         let decoded = base64_decode("").unwrap();
-        assert!(decoded.is_empty(), "{decoded:?}");
+        assert!(decoded.is_empty(), "expected empty output");
     }
 
     #[test]
@@ -510,7 +510,7 @@ mod tests {
     fn test_pem_to_der_certs_empty() {
         let pem = b"no certificates here";
         let certs = pem_to_der_certs(pem).unwrap();
-        assert!(certs.is_empty(), "{certs:?}");
+        assert!(certs.is_empty(), "expected no certificates");
     }
 
     #[test]
