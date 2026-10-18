@@ -413,7 +413,7 @@ mod tests {
             vec!["payments/worker-pdb", "kube-system/coredns-pdb"]
         );
         // Skipped checks flag nothing.
-        assert!(checks[1].resources.is_empty());
+        assert!(checks[1].resources.is_empty(), "{:?}", checks[1].resources);
     }
 
     #[test]

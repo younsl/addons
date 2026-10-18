@@ -250,8 +250,12 @@ mod tests {
         assert_eq!(snap.project, "default");
         assert_eq!(snap.identity, "api");
         assert!(!snap.skip_requested);
-        assert!(snap.live_images.is_empty());
-        assert!(snap.deployed_revisions.is_empty());
+        assert!(snap.live_images.is_empty(), "{:?}", snap.live_images);
+        assert!(
+            snap.deployed_revisions.is_empty(),
+            "{:?}",
+            snap.deployed_revisions
+        );
 
         let obj = json!({"metadata": {"name": "api", "annotations": {SKIP: "yes"}}});
         assert!(!snapshot_from_value(&obj, SKIP).unwrap().skip_requested);

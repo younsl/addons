@@ -183,17 +183,17 @@ mod tests {
         assert_eq!(tagged.repository, "ghcr.io/org/payment-api");
         assert_eq!(tagged.basename, "payment-api");
         assert_eq!(tagged.tag, "1.2.3");
-        assert!(tagged.digest.is_empty());
+        assert!(tagged.digest.is_empty(), "{:?}", tagged.digest);
 
         let pinned = parse_image("ghcr.io/org/payment-api@sha256:abc");
         assert_eq!(pinned.repository, "ghcr.io/org/payment-api");
         assert_eq!(pinned.digest, "sha256:abc");
-        assert!(pinned.tag.is_empty());
+        assert!(pinned.tag.is_empty(), "{:?}", pinned.tag);
 
         let port = parse_image("registry:5000/app");
         assert_eq!(port.repository, "registry:5000/app");
         assert_eq!(port.basename, "app");
-        assert!(port.tag.is_empty());
+        assert!(port.tag.is_empty(), "{:?}", port.tag);
 
         let bare = parse_image("nginx");
         assert_eq!(bare.repository, "nginx");
@@ -240,8 +240,16 @@ mod tests {
         let images = extract_images(&manifest);
         let refs: Vec<&str> = images.iter().map(|i| i.raw.as_str()).collect();
         assert_eq!(refs, vec!["ghcr.io/org/app:2", "debug:3", "busybox:1"]);
-        assert!(extract_images(&json!("scalar")).is_empty());
-        assert!(extract_images(&json!({"containers": "not a list"})).is_empty());
+        assert!(
+            extract_images(&json!("scalar")).is_empty(),
+            "{:?}",
+            extract_images(&json!("scalar"))
+        );
+        assert!(
+            extract_images(&json!({"containers": "not a list"})).is_empty(),
+            "{:?}",
+            extract_images(&json!({"containers": "not a list"}))
+        );
     }
 
     #[test]
@@ -277,6 +285,6 @@ mod tests {
             &[parse_image("b/app:1")],
             &strings(&["app"]),
         );
-        assert!(ignored.is_empty());
+        assert!(ignored.is_empty(), "{ignored:?}");
     }
 }

@@ -554,7 +554,7 @@ mod tests {
         assert_eq!(s.claim_templates, vec!["data"]);
         let d = from_stateful_set(&K8sStatefulSet::default());
         assert_eq!((d.replicas, d.ordinal_start), (1, 0));
-        assert!(d.claim_templates.is_empty());
+        assert!(d.claim_templates.is_empty(), "{:?}", d.claim_templates);
     }
 
     #[test]

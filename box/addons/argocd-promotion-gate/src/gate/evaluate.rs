@@ -486,7 +486,7 @@ mod tests {
         );
         assert_eq!(no_overlap.code, Code::Passed);
         assert!(no_overlap.warnings[0].contains("not checked at all"));
-        assert!(no_overlap.images.is_empty());
+        assert!(no_overlap.images.is_empty(), "{:?}", no_overlap.images);
 
         let matched = evaluate(
             &Input {
@@ -536,7 +536,7 @@ mod tests {
         let verdict = with_upstream(Decision::not_gated("a", "b", "c"), "stg", "stg-a", None);
         let up = verdict.upstream.unwrap();
         assert!(!up.exists);
-        assert!(up.sync_status.is_empty());
+        assert!(up.sync_status.is_empty(), "{:?}", up.sync_status);
 
         let verdict = with_upstream(
             Decision::not_gated("a", "b", "c"),

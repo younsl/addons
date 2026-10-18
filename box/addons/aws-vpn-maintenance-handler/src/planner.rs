@@ -570,7 +570,7 @@ mod tests {
             format!("vpn-1|1.1.1.1|{}", NOW_UNIX + 48 * 3600)
         );
         assert!(c.escalate, "48h is inside the 168h horizon");
-        assert!(c.queue.is_empty());
+        assert!(c.queue.is_empty(), "{:?}", c.queue);
         assert!(!c.chained);
         assert_eq!(c.label(), "prod (vpn-1) tunnel 1.1.1.1");
         assert_eq!(reasons(&plan), vec![Reason::NoPendingMaintenance]);
@@ -603,7 +603,11 @@ mod tests {
         );
         // The sibling is not queued behind the candidate either.
         assert_eq!(plan.candidates.len(), 1);
-        assert!(plan.candidates[0].queue.is_empty());
+        assert!(
+            plan.candidates[0].queue.is_empty(),
+            "{:?}",
+            plan.candidates[0].queue
+        );
     }
 
     #[test]
@@ -736,7 +740,7 @@ mod tests {
         let mut inp = input(conn.clone(), st.clone());
         inp.history.insert("vpn-1".into(), recent("2.2.2.2", false));
         let plan = evaluate(&inp);
-        assert!(plan.candidates.is_empty());
+        assert!(plan.candidates.is_empty(), "{:?}", plan.candidates);
         assert!(plan.blocked[0].detail.contains("did not end healthy"));
 
         // Chaining switched off.
@@ -744,7 +748,7 @@ mod tests {
         inp.history.insert("vpn-1".into(), recent("2.2.2.2", true));
         inp.thresholds.chain_sibling_tunnel = false;
         let plan = evaluate(&inp);
-        assert!(plan.candidates.is_empty());
+        assert!(plan.candidates.is_empty(), "{:?}", plan.candidates);
         assert!(
             plan.blocked[0]
                 .detail

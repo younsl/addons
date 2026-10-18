@@ -570,7 +570,7 @@ mod tests {
     fn defaults() {
         let c = parse(MINIMAL, &env()).unwrap();
         assert_eq!(c.region, "ap-northeast-2");
-        assert!(c.tag_filters.is_empty());
+        assert!(c.tag_filters.is_empty(), "{:?}", c.tag_filters);
         assert!(c.exclude_eks_nodes);
         assert_eq!(c.reconcile_interval, Duration::from_mins(5));
         assert_eq!(c.reconcile_concurrency, 10);
@@ -605,8 +605,8 @@ mod tests {
         assert_eq!(tr.lookback_window, "7d");
         assert_eq!(tr.lookback_duration, Duration::from_hours(168));
         assert!(tr.apply_on_resize);
-        assert!(c.policies.is_empty());
-        assert!(c.pod_name.is_empty());
+        assert!(c.policies.is_empty(), "{:?}", c.policies);
+        assert!(c.pod_name.is_empty(), "{:?}", c.pod_name);
     }
 
     #[test]
@@ -1061,6 +1061,6 @@ mod tests {
         assert_eq!(resolve_path(Some("/x.yaml")), "/x.yaml");
         // With no flag the result is either CONFIG_FILE or the default.
         let p = resolve_path(None);
-        assert!(!p.is_empty());
+        assert!(!p.is_empty(), "p is empty");
     }
 }

@@ -142,7 +142,7 @@ mod tests {
             .verify_access(&DiscoverInput::default())
             .await
             .unwrap();
-        assert!(access.connections.is_empty());
+        assert!(access.connections.is_empty(), "{:?}", access.connections);
     }
 
     #[tokio::test]

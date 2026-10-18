@@ -1068,7 +1068,7 @@ mod tests {
         assert!(posts[0].text.contains("*Summary:* something broke"));
         assert_eq!(posts[1].thread_ts, "1.0");
         assert_eq!(posts[1].text, "*Summary* all good");
-        assert!(posts[1].title.is_empty());
+        assert!(posts[1].title.is_empty(), "{:?}", posts[1].title);
 
         let reqs = agent.requests();
         assert_eq!(reqs.len(), 1);
@@ -1526,7 +1526,7 @@ mod tests {
         post(&g, payload("A", "critical"), None).await;
         drain(&g).await;
         let orphan = &slack.posts()[0];
-        assert!(orphan.thread_ts.is_empty());
+        assert!(orphan.thread_ts.is_empty(), "{:?}", orphan.thread_ts);
         assert_eq!(orphan.title, "🚨 [FIRING] A");
         assert_eq!(orphan.color, "danger");
         assert_eq!(
@@ -1576,7 +1576,11 @@ mod tests {
             ),
             1
         );
-        assert!(slack.posts()[0].thread_ts.is_empty());
+        assert!(
+            slack.posts()[0].thread_ts.is_empty(),
+            "{:?}",
+            slack.posts()[0].thread_ts
+        );
     }
 
     #[tokio::test]
@@ -1605,7 +1609,11 @@ mod tests {
                 .iter()
                 .all(|c| !matches!(c, Call::Find { .. }))
         );
-        assert!(slack.posts()[0].thread_ts.is_empty());
+        assert!(
+            slack.posts()[0].thread_ts.is_empty(),
+            "{:?}",
+            slack.posts()[0].thread_ts
+        );
     }
 
     #[tokio::test]

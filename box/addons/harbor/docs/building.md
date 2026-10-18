@@ -2,7 +2,7 @@
 
 Build, verify, and push the images yourself.
 
-Requirements: a native arm64 Docker host (Linux on Graviton, or Docker Desktop on Apple Silicon), `git`, `make`, and Rust 1.99.0.
+Requirements: a native arm64 Docker host (Linux on Graviton, or Docker Desktop on Apple Silicon), `git`, `make`, and Rust 1.99.1.
 
 ```bash
 cd box/addons/harbor

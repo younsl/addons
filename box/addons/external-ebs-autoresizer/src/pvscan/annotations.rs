@@ -147,7 +147,7 @@ mod tests {
         assert_eq!(a.set[&key(KEY_UNUSED_REASON)], "no_consumer_pod");
         assert_eq!(a.set[&key(KEY_UNUSED_DAYS)], "3");
         assert_eq!(a.set[&key(KEY_VOLUME_ID)], "vol-1");
-        assert!(a.remove.is_empty());
+        assert!(a.remove.is_empty(), "{:?}", a.remove);
 
         let mut f = unused_finding(now);
         f.volume_id = String::new();

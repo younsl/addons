@@ -67,7 +67,7 @@ mod tests {
         let result: PlanResult<String> = PlanResult::new();
         assert_eq!(result.upgrade_count(), 0);
         assert_eq!(result.skipped_count(), 0);
-        assert!(result.upgrades.is_empty());
+        assert!(result.upgrades.is_empty(), "{:?}", result.upgrades);
     }
 
     #[test]

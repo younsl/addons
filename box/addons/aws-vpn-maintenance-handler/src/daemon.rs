@@ -387,7 +387,7 @@ mod tests {
             connections: Vec::new(),
         };
         let v = gate_probe(&access);
-        assert!(v.vpn_connection_id.is_empty());
+        assert!(v.vpn_connection_id.is_empty(), "{:?}", v.vpn_connection_id);
         access
             .connections
             .push(crate::planner::fixtures::connection("vpn-1"));
@@ -438,13 +438,10 @@ mod tests {
 
         // Empty account is a warning, not a failure.
         *ec2.connections.lock().unwrap() = Vec::new();
-        assert!(
-            verify_dependencies(&cfg, &vpn, &Gate::disabled())
-                .await
-                .unwrap()
-                .connections
-                .is_empty()
-        );
+        let report = verify_dependencies(&cfg, &vpn, &Gate::disabled())
+            .await
+            .unwrap();
+        assert!(report.connections.is_empty(), "{:?}", report.connections);
 
         // No credentials fails.
         let vpn = AwsClient::from_parts(

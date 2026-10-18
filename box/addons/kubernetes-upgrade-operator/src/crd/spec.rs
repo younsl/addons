@@ -249,7 +249,7 @@ mod tests {
         let json = r#"{"enabled":true}"#;
         let config: KarpenterNodePoolsConfig = serde_json::from_str(json).unwrap();
         assert!(config.enabled);
-        assert!(config.node_pools.is_empty());
+        assert!(config.node_pools.is_empty(), "{:?}", config.node_pools);
         assert_eq!(config.strategy, KarpenterStrategy::Replace);
         assert_eq!(config.max_unavailable, "1");
         assert_eq!(config.node_drain_timeout_minutes, 15);

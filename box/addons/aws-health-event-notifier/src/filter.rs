@@ -751,11 +751,10 @@ mod tests {
 
     #[test]
     fn effective_allow_regions_appends_global_only_when_configured() {
-        assert!(
-            EventFilter::new(&FilterLists::default())
-                .effective_allow_regions()
-                .is_empty()
-        );
+        let lists = FilterLists::default();
+        let filter = EventFilter::new(&lists);
+        let regions = filter.effective_allow_regions();
+        assert!(regions.is_empty(), "{regions:?}");
         assert_eq!(
             EventFilter::new(&FilterLists {
                 allow_regions: &["ap-northeast-2".into()],
@@ -985,8 +984,20 @@ mod tests {
             &cat,
         );
         assert!(r.is_ok());
-        assert!(r.allow_services.valid.is_empty());
-        assert!(r.allow_regions.valid.is_empty());
-        assert!(r.allow_event_codes.valid.is_empty());
+        assert!(
+            r.allow_services.valid.is_empty(),
+            "{:?}",
+            r.allow_services.valid
+        );
+        assert!(
+            r.allow_regions.valid.is_empty(),
+            "{:?}",
+            r.allow_regions.valid
+        );
+        assert!(
+            r.allow_event_codes.valid.is_empty(),
+            "{:?}",
+            r.allow_event_codes.valid
+        );
     }
 }

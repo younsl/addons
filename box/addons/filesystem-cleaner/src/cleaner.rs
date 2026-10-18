@@ -398,7 +398,7 @@ mod tests {
             Arc::clone(&remover),
         );
         assert_eq!(single_outcome(&at_threshold), Outcome::BelowThreshold);
-        assert!(remover.removed().is_empty());
+        assert_eq!(remover.removed(), Vec::<PathBuf>::new());
 
         let (above, _) = fake_cleaner(
             make_config(dir.path(), 50, CleanupMode::Once, false),
@@ -460,7 +460,7 @@ mod tests {
         assert_eq!(stats.candidate_bytes, 10);
         assert_eq!(stats.deleted, 0);
         assert_eq!(stats.freed_bytes, 0);
-        assert!(remover.removed().is_empty());
+        assert_eq!(remover.removed(), Vec::<PathBuf>::new());
     }
 
     #[test]
@@ -536,7 +536,7 @@ mod tests {
 
         assert!(stats.interrupted);
         assert_eq!(stats.deleted, 0);
-        assert!(remover.removed().is_empty());
+        assert_eq!(remover.removed(), Vec::<PathBuf>::new());
     }
 
     #[test]

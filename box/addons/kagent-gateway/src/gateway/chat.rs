@@ -987,7 +987,7 @@ mod tests {
             },
         )
         .await;
-        assert!(slack.calls().is_empty());
+        assert!(slack.calls().is_empty(), "{:?}", slack.calls());
     }
 
     #[tokio::test]
@@ -1078,7 +1078,7 @@ mod tests {
         let (g, slack, _, metrics) = gateway(chat_config());
         *slack.post_error.lock().unwrap() = Some("channel_not_found".into());
         run(&g, mention("<@UBOT> q")).await;
-        assert!(updates(&slack).is_empty());
+        assert!(updates(&slack).is_empty(), "{:?}", updates(&slack));
         assert_eq!(
             Metrics::counter(
                 &metrics.slack_messages,

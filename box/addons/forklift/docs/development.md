@@ -36,7 +36,7 @@ make helm-lint    # lint the chart
 
 ## Toolchain
 
-The crate pins Rust 1.99.0 in `rust-toolchain.toml`; `rustup` picks it up on
+The crate pins Rust 1.99.1 in `rust-toolchain.toml`; `rustup` picks it up on
 first build. The container image and `make cross` link the Linux binaries with
 [cargo-zigbuild](https://github.com/rust-cross/cargo-zigbuild), which drives a
 `zig cc` cross toolchain for `x86_64-unknown-linux-musl` and
@@ -47,7 +47,7 @@ without QEMU. Install it with `pip install cargo-zigbuild` (ships zig) or
 
 Release binaries are cross-compiled by
 `.github/workflows/_release-rust-scratch-containers.yml`, which pins the same
-Rust 1.99.0 toolchain plus cargo-zigbuild and Zig, then copied into the
+Rust 1.99.1 toolchain plus cargo-zigbuild and Zig, then copied into the
 `scratch` images. The Dockerfiles do not compile anything.
 
 Browser tests also start the Rust binary through `cargo run --locked`. Install

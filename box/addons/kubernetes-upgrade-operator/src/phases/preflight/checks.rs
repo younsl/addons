@@ -339,7 +339,7 @@ mod tests {
             blocking: vec![],
         };
         let check = PreflightCheckResult::pdb_drain_deadlock(&summary);
-        assert!(check.resources.is_empty());
+        assert!(check.resources.is_empty(), "{:?}", check.resources);
     }
 
     #[test]
@@ -391,16 +391,10 @@ mod tests {
 
     #[test]
     fn test_deletion_protection_has_no_resources() {
-        assert!(
-            PreflightCheckResult::deletion_protection(false)
-                .resources
-                .is_empty()
-        );
-        assert!(
-            PreflightCheckResult::karpenter_v1_api(false)
-                .resources
-                .is_empty()
-        );
+        let result = PreflightCheckResult::deletion_protection(false);
+        assert!(result.resources.is_empty(), "{:?}", result.resources);
+        let result = PreflightCheckResult::karpenter_v1_api(false);
+        assert!(result.resources.is_empty(), "{:?}", result.resources);
     }
 
     #[test]
@@ -495,7 +489,11 @@ mod tests {
     fn test_default_has_no_failures() {
         let results = PreflightResults::default();
         assert!(!results.has_mandatory_failures());
-        assert!(results.mandatory_failure_reasons().is_empty());
+        assert!(
+            results.mandatory_failure_reasons().is_empty(),
+            "{:?}",
+            results.mandatory_failure_reasons()
+        );
     }
 
     #[test]

@@ -571,8 +571,14 @@ mod tests {
         assert_eq!(resolve_path(Some("/tmp/x.yaml")), "/tmp/x.yaml");
         // With no flag the answer is either the env var or the default, both
         // non-empty.
-        assert!(!resolve_path(None).is_empty());
-        assert!(!resolve_path(Some("")).is_empty());
+        assert!(
+            !resolve_path(None).is_empty(),
+            "resolve_path(None) is empty"
+        );
+        assert!(
+            !resolve_path(Some("")).is_empty(),
+            "resolve_path(Some('')) is empty"
+        );
     }
 
     #[test]

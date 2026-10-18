@@ -148,8 +148,8 @@ mod tests {
     fn build_info_populated() {
         let info = BuildInfo::CURRENT;
         assert_eq!(info.version, env!("CARGO_PKG_VERSION"));
-        assert!(!info.commit.is_empty());
-        assert!(!info.rustc.is_empty());
+        assert!(!info.commit.is_empty(), "info.commit is empty");
+        assert!(!info.rustc.is_empty(), "info.rustc is empty");
         assert!(const_format().starts_with(info.version));
     }
 }

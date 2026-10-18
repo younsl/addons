@@ -208,7 +208,7 @@ mod tests {
         assert_eq!(node.created_at.unwrap().timestamp(), 1_700_000_000);
         assert_eq!(node.annotations["a"], "b");
         let bare = from_k8s_node(&K8sNode::default());
-        assert!(bare.instance_id.is_empty());
+        assert!(bare.instance_id.is_empty(), "{:?}", bare.instance_id);
         assert!(bare.created_at.is_none());
     }
 }

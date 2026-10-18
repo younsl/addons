@@ -251,8 +251,16 @@ mod tests {
 
     #[test]
     fn tag_filters() {
-        assert!(parse_tag_filters("").unwrap().is_empty());
-        assert!(parse_tag_filters("  ,  ").unwrap().is_empty());
+        assert!(
+            parse_tag_filters("").unwrap().is_empty(),
+            "{:?}",
+            parse_tag_filters("").unwrap()
+        );
+        assert!(
+            parse_tag_filters("  ,  ").unwrap().is_empty(),
+            "{:?}",
+            parse_tag_filters("  ,  ").unwrap()
+        );
         let f = parse_tag_filters("Env=prod, Team = infra ,").unwrap();
         assert_eq!(f.len(), 2);
         assert_eq!(f[0].key, "Env");

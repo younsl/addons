@@ -332,8 +332,8 @@ mod tests {
         let eff = r.resolve("anything", &tags(&[]));
         assert_eq!(eff, from_config(&cfg));
         assert_eq!(eff.policy, DEFAULT_POLICY_NAME);
-        assert!(r.names().is_empty());
-        assert!(r.summaries().is_empty());
+        assert!(r.names().is_empty(), "{:?}", r.names());
+        assert!(r.summaries().is_empty(), "{:?}", r.summaries());
         assert_eq!(r.default(), eff);
         assert!(r.effective_of("x").is_none());
     }

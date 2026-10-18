@@ -190,7 +190,7 @@ mod tests {
             1_700_000_000
         );
         assert_eq!(conns[1].id, "vpn-b");
-        assert!(conns[1].name.is_empty());
+        assert!(conns[1].name.is_empty(), "{:?}", conns[1].name);
     }
 
     #[tokio::test]
@@ -237,7 +237,7 @@ mod tests {
             .build();
         let conn = convert_connection(&v);
         assert_eq!(conn.vpn_gateway_id, "vgw-1");
-        assert!(conn.state.is_empty());
+        assert!(conn.state.is_empty(), "{:?}", conn.state);
         assert_eq!(conn.tunnels.len(), 1);
         assert!(!conn.tunnels[0].up);
         assert!(!conn.tunnels[0].lifecycle_control);

@@ -1,10 +1,10 @@
 # tether
 
 [![GitHub Container Registry](https://img.shields.io/badge/ghcr.io-younsl%2Ftether-000000?style=flat-square&logo=github&logoColor=white)](https://github.com/younsl/addons/pkgs/container/tether)
-[![Rust](https://img.shields.io/badge/rust-1.99.0-000000?style=flat-square&logo=rust&logoColor=white)](https://www.rust-lang.org/)
+[![Rust](https://img.shields.io/badge/rust-1.99.1-000000?style=flat-square&logo=rust&logoColor=white)](https://www.rust-lang.org/)
 [![GitHub license](https://img.shields.io/github/license/younsl/addons?style=flat-square&color=000000)](https://github.com/younsl/addons/blob/main/LICENSE)
 
-A small server that keeps personal macOS dotfiles symlinked into a home directory, plus the dotfiles themselves. Shipped as a statically linked Rust 1.99.0 binary on a scratch image for linux/amd64 and linux/arm64. The image holds only the binary, never the dotfiles.
+A small server that keeps personal macOS dotfiles symlinked into a home directory, plus the dotfiles themselves. Shipped as a statically linked Rust 1.99.1 binary on a scratch image for linux/amd64 and linux/arm64. The image holds only the binary, never the dotfiles.
 
 ![tether container architecture on macOS: clients reach the console over loopback, and the container mounts config.toml, HOME, and /opt/homebrew](docs/assets/architecture.svg)
 

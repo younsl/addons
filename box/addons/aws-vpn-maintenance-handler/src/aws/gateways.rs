@@ -216,7 +216,11 @@ mod tests {
         });
         let conns = client.discover(&DiscoverInput::default()).await.unwrap();
         assert_eq!(conns[0].transit_gateway_id, "tgw-1");
-        assert!(conns[0].transit_gateway_name.is_empty());
+        assert!(
+            conns[0].transit_gateway_name.is_empty(),
+            "{:?}",
+            conns[0].transit_gateway_name
+        );
         assert_eq!(*gw.calls.lock().unwrap(), 3);
         client.discover(&DiscoverInput::default()).await.unwrap();
         assert_eq!(*gw.calls.lock().unwrap(), 3, "misses are cached too");
@@ -228,6 +232,10 @@ mod tests {
         *ec2.connections.lock().unwrap() = vec![vpn_connection("vpn-1", "prod", [true, true])];
         let client = Client::from_parts(Box::new(ec2), None, None);
         let conns = client.discover(&DiscoverInput::default()).await.unwrap();
-        assert!(conns[0].transit_gateway_name.is_empty());
+        assert!(
+            conns[0].transit_gateway_name.is_empty(),
+            "{:?}",
+            conns[0].transit_gateway_name
+        );
     }
 }

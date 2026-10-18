@@ -174,7 +174,7 @@ mod tests {
         assert_eq!(a.set[&key(KEY_RECOMMEND_MIBPS)], "250");
         assert_eq!(a.set[&key(KEY_RECOMMEND_IOPS)], "3000");
         assert_eq!(a.set[&key(KEY_WINDOW)], "7d/p99");
-        assert!(a.remove.is_empty());
+        assert!(a.remove.is_empty(), "{:?}", a.remove);
     }
 
     #[test]

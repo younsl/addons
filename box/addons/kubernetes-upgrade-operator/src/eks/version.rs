@@ -127,10 +127,10 @@ mod tests {
     fn test_calculate_upgrade_path_same_version() {
         // Sync mode: same version returns empty path
         let path = calculate_upgrade_path("1.32", "1.32").unwrap();
-        assert!(path.is_empty());
+        assert!(path.is_empty(), "{path:?}");
 
         let path = calculate_upgrade_path("1.33", "1.33").unwrap();
-        assert!(path.is_empty());
+        assert!(path.is_empty(), "{path:?}");
     }
 
     #[test]
@@ -184,7 +184,7 @@ mod tests {
     #[test]
     fn test_calculate_rollback_path_same_version() {
         let path = calculate_rollback_path("1.32", "1.32").unwrap();
-        assert!(path.is_empty());
+        assert!(path.is_empty(), "{path:?}");
     }
 
     #[test]

@@ -693,7 +693,7 @@ mod tests {
         assert_eq!(uploads.1[&key("unused-days")], "2");
         assert_eq!(uploads.1[&key("volume-id")], "vol-pv-uploads");
         assert!(uploads.1.contains_key(&key("unused-observed-at")));
-        assert!(uploads.2.is_empty());
+        assert!(uploads.2.is_empty(), "{:?}", uploads.2);
         let pending = &patches[1];
         assert!(
             !pending.1.contains_key(&key("volume-id")),

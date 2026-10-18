@@ -893,7 +893,7 @@ mod tests {
         );
         assert_eq!(set[&annotations::key(annotations::KEY_WINDOW)], "7d/p99");
         assert!(set.contains_key(&annotations::key(annotations::KEY_OBSERVED_AT)));
-        assert!(remove.is_empty());
+        assert!(remove.is_empty(), "{remove:?}");
         assert_eq!(
             h.rec.recommendations.lock().unwrap()[0],
             ("increase".to_string(), REASON_ABOVE_PROVISIONED.to_string())
@@ -1366,7 +1366,7 @@ mod tests {
         let peaks = HashMap::from([("n1".to_string(), 50.0)]);
         let samples = HashMap::from([("n1".to_string(), 9000.0)]);
         let obs = observe(&n, &volumes, &caps, &peaks, &samples, false);
-        assert!(obs.blocked.is_empty());
+        assert!(obs.blocked.is_empty(), "{:?}", obs.blocked);
         assert!(obs.has_metrics);
         assert_eq!(obs.input.samples, 9000);
         assert!((obs.input.instance_max_mibps - mbps_to_mibps(650.0)).abs() < f64::EPSILON);
@@ -1479,7 +1479,7 @@ mod tests {
         );
         let (p, err) = h.recommender.probe().await.unwrap_err();
         assert_eq!(err, "timeout");
-        assert!(!p.query.is_empty());
+        assert!(!p.query.is_empty(), "p.query is empty");
 
         let nodes = Arc::new(FakeNodes {
             fail_list: true,

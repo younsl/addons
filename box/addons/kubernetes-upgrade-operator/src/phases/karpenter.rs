@@ -755,12 +755,20 @@ mod tests {
     #[test]
     fn test_stale_targets_all_completed_is_empty() {
         let candidates = vec![("a".to_string(), Some("v1.33.0".to_string()))];
-        assert!(stale_targets(&candidates, &["a".to_string()], 34).is_empty());
+        assert!(
+            stale_targets(&candidates, &["a".to_string()], 34).is_empty(),
+            "{:?}",
+            stale_targets(&candidates, &["a".to_string()], 34)
+        );
     }
 
     #[test]
     fn test_select_batch_empty_stale() {
-        assert!(select_batch(&[], &[], 3).is_empty());
+        assert!(
+            select_batch(&[], &[], 3).is_empty(),
+            "{:?}",
+            select_batch(&[], &[], 3)
+        );
     }
 
     #[test]
@@ -1068,12 +1076,20 @@ mod tests {
         };
         let s = kp_status(pool);
         // Same old and new: no new transitions, no events.
-        assert!(replacement_events(Some(&s), Some(&s)).is_empty());
+        assert!(
+            replacement_events(Some(&s), Some(&s)).is_empty(),
+            "{:?}",
+            replacement_events(Some(&s), Some(&s))
+        );
     }
 
     #[test]
     fn test_replacement_events_none_new_status() {
-        assert!(replacement_events(None, None).is_empty());
+        assert!(
+            replacement_events(None, None).is_empty(),
+            "{:?}",
+            replacement_events(None, None)
+        );
     }
 
     #[test]

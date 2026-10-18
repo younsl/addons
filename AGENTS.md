@@ -46,7 +46,7 @@ Every crate is standalone (no workspace). Match these when adding or touching on
 ### Crate
 
 - `edition = "2024"` in every crate, new ones included.
-- `rust-version` equals the repository toolchain (`1.99.0`). Bump it in every crate together.
+- `rust-version` equals the repository toolchain (`1.99.1`). Bump it in every crate together.
 - `[lints.rust] unsafe_code = "forbid"` and `[lints.clippy]` with `all`, `pedantic`, and `nursery` at `warn`. A lint that fires across the crate is allowed in `Cargo.toml` with a one-line reason, which requires the groups as `{ level = "warn", priority = -1 }` or clippy fails on `lint_groups_priority`. A single site uses an item-level `#[allow]`.
 - `[profile.release]` sets `lto = true`, `codegen-units = 1`, `strip = true`, and `panic = "abort"` for long-running services. `opt-level = "z"` for small I/O-bound services, `3` otherwise.
 - Only the tokio features the crate uses, never `full`.

@@ -203,7 +203,7 @@ mod tests {
                 .message
                 .contains("canary-gate.younsl.github.io/skip")
         );
-        assert!(verdict.rollouts.is_empty());
+        assert!(verdict.rollouts.is_empty(), "{:?}", verdict.rollouts);
     }
 
     #[test]
@@ -243,7 +243,7 @@ mod tests {
         assert!(verdict.allowed);
         assert!(verdict.message.contains("2 Rollouts checked"));
         assert_eq!(verdict.rollouts.len(), 2);
-        assert!(verdict.warnings.is_empty());
+        assert!(verdict.warnings.is_empty(), "{:?}", verdict.warnings);
     }
 
     #[test]
@@ -279,7 +279,7 @@ mod tests {
         assert!(verdict.message.contains("step 3/8, paused"));
         assert!(verdict.message.contains("annotate the Application"));
         assert_eq!(verdict.rollouts[0].name, "api", "in-progress sorts first");
-        assert!(verdict.warnings.is_empty());
+        assert!(verdict.warnings.is_empty(), "{:?}", verdict.warnings);
     }
 
     #[test]
@@ -337,7 +337,7 @@ mod tests {
         assert_eq!(verdict.code, Code::LookupFailed);
         assert!(!verdict.allowed);
         assert!(verdict.message.contains("boom"));
-        assert!(verdict.warnings.is_empty());
+        assert!(verdict.warnings.is_empty(), "{:?}", verdict.warnings);
 
         let allow = Config::parse("onError: allow\n").unwrap();
         let verdict = lookup_failed(&app("prd-api"), "boom", &allow);

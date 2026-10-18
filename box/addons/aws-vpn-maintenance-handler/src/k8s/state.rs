@@ -738,7 +738,11 @@ mod tests {
         assert!(f.run_started_at.is_none());
         assert_eq!(f.thread[0].channel_id, "D1");
         assert!(snap.connections["vpn-1"].last_replacement_at.is_none());
-        assert!(snap.approvals["r"].thread.is_empty());
+        assert!(
+            snap.approvals["r"].thread.is_empty(),
+            "{:?}",
+            snap.approvals["r"].thread
+        );
         assert_eq!(Phase::Waiting.to_string(), "waiting");
 
         // An empty key is a fresh start.

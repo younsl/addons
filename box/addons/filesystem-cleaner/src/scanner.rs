@@ -199,7 +199,7 @@ mod tests {
     #[test]
     fn scan_nonexistent_path() {
         let files = scanner(&["*"], NONE).scan(Path::new("/does/not/exist/zzzz-test"));
-        assert!(files.is_empty());
+        assert!(files.is_empty(), "{files:?}");
     }
 
     #[test]
