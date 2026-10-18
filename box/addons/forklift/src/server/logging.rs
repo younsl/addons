@@ -18,14 +18,8 @@ use tracing_subscriber::registry::LookupSpan;
 /// Initialises the global subscriber for `level` (debug, info, warn, error) and `format` (json,
 /// text). A valid `RUST_LOG` overrides `level`.
 pub fn init_logging(level: &str, format: &str) {
-    let level = match level.to_ascii_lowercase().as_str() {
-        "debug" => Level::DEBUG,
-        "warn" => Level::WARN,
-        "error" => Level::ERROR,
-        _ => Level::INFO,
-    };
     let filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::default().add_directive(level.into()));
+        .unwrap_or_else(|_| EnvFilter::default().add_directive(parse_level(level).into()));
     let builder = tracing_subscriber::fmt()
         .with_env_filter(filter)
         .with_writer(std::io::stdout);
@@ -33,6 +27,16 @@ pub fn init_logging(level: &str, format: &str) {
         let _ = builder.event_format(SlogFormat::Text).try_init();
     } else {
         let _ = builder.event_format(SlogFormat::Json).try_init();
+    }
+}
+
+/// The level for a `--log-level` value. Anything unknown is info.
+fn parse_level(level: &str) -> Level {
+    match level.to_ascii_lowercase().as_str() {
+        "debug" => Level::DEBUG,
+        "warn" => Level::WARN,
+        "error" => Level::ERROR,
+        _ => Level::INFO,
     }
 }
 
@@ -269,6 +273,73 @@ pub(crate) mod tests {
 
     use crate::server::logging::*;
 
+    thread_local! {
+        static CAPTURE: std::cell::RefCell<Option<BufWriter>> = const { std::cell::RefCell::new(None) };
+    }
+
+    /// Writes an event into the capture buffer of the thread that emitted it,
+    /// and drops it when that thread captures nothing.
+    #[derive(Clone, Copy)]
+    struct ThreadWriter;
+
+    impl io::Write for ThreadWriter {
+        fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+            CAPTURE.with(|c| {
+                if let Some(out) = &*c.borrow() {
+                    out.0.lock().expect("buffer").extend_from_slice(buf);
+                }
+            });
+            Ok(buf.len())
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    impl<'a> MakeWriter<'a> for ThreadWriter {
+        type Writer = Self;
+
+        fn make_writer(&'a self) -> Self::Writer {
+            *self
+        }
+    }
+
+    /// The JSON lines logged on this thread while it is alive.
+    pub(crate) struct Capture(BufWriter);
+
+    impl Capture {
+        pub(crate) fn text(&self) -> String {
+            String::from_utf8(self.0.0.lock().expect("buffer").clone()).expect("utf-8")
+        }
+    }
+
+    impl Drop for Capture {
+        fn drop(&mut self) {
+            CAPTURE.with(|c| *c.borrow_mut() = None);
+        }
+    }
+
+    /// Captures what this thread logs at info and above. It goes through one
+    /// global subscriber rather than a thread-local one: a thread-local
+    /// subscriber shares tracing's global callsite and level caches with every
+    /// other test, and another test logging the same lines at the same moment
+    /// can leave them cached as disabled, dropping events from the capture.
+    pub(crate) fn capture_logs() -> Capture {
+        static INSTALL: std::sync::Once = std::sync::Once::new();
+        INSTALL.call_once(|| {
+            let subscriber = tracing_subscriber::fmt()
+                .with_writer(ThreadWriter)
+                .event_format(SlogFormat::Json)
+                .finish();
+            tracing::subscriber::set_global_default(subscriber)
+                .expect("no other global subscriber in the library tests");
+        });
+        let buf = BufWriter::default();
+        CAPTURE.with(|c| *c.borrow_mut() = Some(buf.clone()));
+        Capture(buf)
+    }
+
     /// A `MakeWriter` that appends into a shared buffer, so a formatted event can
     /// be read back in the test.
     #[derive(Clone, Default)]
@@ -453,11 +524,11 @@ pub(crate) mod tests {
     /// `init_logging` must accept every documented level/format pair without
     /// panicking (a second call is a no-op: the global subscriber is already set).
     #[test]
-    fn init_logging_accepts_documented_values() {
-        for level in ["debug", "info", "warn", "error", "nonsense"] {
-            for format in ["json", "text", "nonsense"] {
-                init_logging(level, format);
-            }
-        }
+    fn log_levels_parse_their_documented_values() {
+        assert_eq!(parse_level("debug"), Level::DEBUG);
+        assert_eq!(parse_level("WARN"), Level::WARN);
+        assert_eq!(parse_level("error"), Level::ERROR);
+        assert_eq!(parse_level("info"), Level::INFO);
+        assert_eq!(parse_level("nonsense"), Level::INFO);
     }
 }

@@ -731,15 +731,7 @@ mod tests {
             ],
             held: Box::new(|| true),
         };
-        let logs = crate::server::logging::tests::BufWriter::default();
-        let subscriber = tracing_subscriber::fmt()
-            .with_writer(logs.clone())
-            .event_format(crate::server::logging::SlogFormat::Json)
-            .finish();
-        let _log = tracing::subscriber::set_default(subscriber);
-        // Another test hitting the same log lines while this subscriber was
-        // being installed can leave them cached as uninteresting.
-        tracing::callsite::rebuild_interest_cache();
+        let logs = crate::server::logging::tests::capture_logs();
         let report = migrate(
             &endpoint(&src),
             &endpoint(&dst),
@@ -758,7 +750,7 @@ mod tests {
 
         // Each check is logged as it finishes, with the slow steps announced
         // before they start, so a long run is never silent.
-        let text = String::from_utf8(logs.0.lock().unwrap().clone()).unwrap();
+        let text = logs.text();
         let lines: Vec<serde_json::Value> = text
             .lines()
             .map(|l| serde_json::from_str(l).unwrap())
