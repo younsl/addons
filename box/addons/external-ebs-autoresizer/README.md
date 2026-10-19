@@ -20,6 +20,8 @@ to an opaque SSM runbook, so each action has clear ownership and granular logs.
 Built with Rust 1.99.1 and shipped as a statically linked musl binary
 (cargo-zigbuild) on a `scratch` image for `linux/amd64` and `linux/arm64`.
 
+![external-ebs-autoresizer architecture](docs/assets/architecture-simple.svg)
+
 ## Features
 
 - Grows the root EBS volume and extends the filesystem (ext2/3/4 or XFS) in place. See [How it works](docs/how-it-works.md)
