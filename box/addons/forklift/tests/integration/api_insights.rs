@@ -297,7 +297,11 @@ async fn acknowledging_a_check_takes_it_out_of_the_score() {
         after["report"]["score"].as_i64().expect("score") > score_before,
         "acknowledged high finding stops costing points: {after}"
     );
-    assert_eq!(after["report"]["counts"]["high"], 0, "{after}");
+    assert_eq!(
+        after["report"]["counts"]["high"].as_i64(),
+        before["report"]["counts"]["high"].as_i64().map(|n| n - 1),
+        "{after}"
+    );
 
     let resp = srv.admin_do(Method::DELETE, uri, "").await;
     assert_eq!(resp.status, StatusCode::NO_CONTENT, "{}", resp.text());
