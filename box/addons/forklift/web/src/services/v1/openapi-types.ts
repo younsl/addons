@@ -86,7 +86,7 @@ export interface InsightAck { check_id: string; note: string; flagged: number; a
 
 export interface InsightFinding { id: string; code: string; rationale: string; criteria: string; severity: "critical" | "high" | "medium" | "low" | "info"; category: "supply-chain" | "policy" | "exposure" | "access" | "operations"; audiences: ("devops" | "security" | "developer")[]; title: string; summary: string; recommendation: string; params: Record<string, string>; total: number; affected: InsightAffected[]; by_repo?: Record<string, number>; acknowledged?: boolean; everyone?: boolean; }
 
-export interface InsightAffected { kind: "artifact" | "tag" | "repository" | "user" | "token" | "client" | "approval" | "project" | "advisory" | "volume"; label: string; detail?: string; repo?: string; repo_id?: number; path?: string; tag?: string; user_id?: number; }
+export interface InsightAffected { kind: "artifact" | "tag" | "repository" | "user" | "token" | "client" | "approval" | "project" | "advisory" | "volume" | "role"; label: string; detail?: string; repo?: string; repo_id?: number; path?: string; tag?: string; user_id?: number; role_id?: number; user_count?: number; created_at?: string; }
 
 export interface RetentionPreview { count: number; size?: number; items: RetentionPreviewItem[]; }
 

@@ -7,6 +7,7 @@ import { queryOptions } from "@tanstack/react-query";
 import { type HttpClient } from "@/lib/http/client/http-client";
 import { openApiQueryKeys } from "@/query/v1/openapi-query-keys";
 import {
+  getInsightCheckAffected,
   getInsightCheckHistory,
   getInsightSettings,
   getInsights,
@@ -14,6 +15,7 @@ import {
   getInsightsNotificationPreview,
 } from "@/services/v1/insights/api";
 import type {
+  GetInsightCheckAffectedRequest,
   GetInsightCheckHistoryRequest,
   GetInsightsNotificationHistoryRequest,
 } from "@/services/v1/insights/types";
@@ -48,6 +50,12 @@ export function createInsightsOpenApiQueryOptions(client: HttpClient) {
         queryKey: openApiQueryKeys.getInsightCheckHistory(params),
         queryFn: ({ signal }) =>
           getInsightCheckHistory(params, { signal, client }),
+      }),
+    getInsightCheckAffected: (params: GetInsightCheckAffectedRequest) =>
+      queryOptions({
+        queryKey: openApiQueryKeys.getInsightCheckAffected(params),
+        queryFn: ({ signal }) =>
+          getInsightCheckAffected(params, { signal, client }),
       }),
   } as const;
 }

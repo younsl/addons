@@ -21,6 +21,8 @@ const DORMANT: TimeDelta = TimeDelta::days(90);
 const APPROVAL_AGING: TimeDelta = TimeDelta::days(7);
 /// More global administrators than this is sprawl.
 const ADMIN_LIMIT: usize = 3;
+/// A role this new may still be waiting for its first assignment.
+const ROLE_GRACE: TimeDelta = TimeDelta::days(7);
 /// A client refused at least this often in a day is reported, and ten times
 /// as often is high.
 const AUTH_FAILURE_THRESHOLD: i64 = 20;
@@ -96,6 +98,7 @@ fn findings(s: &DataSnapshot) -> Vec<Finding> {
         unscoped_admin_tokens(s, &admins),
         unused_tokens(s),
         auth_failures(s),
+        unused_roles(s),
         policy_blocks(s),
         aging_approvals(s),
         storage_capacity(s),
@@ -343,6 +346,16 @@ pub const CATALOG: &[Rule] = &[
         rationale: "A burst of refused requests from one client is either a broken CI credential that fails builds or someone probing for valid credentials.",
         criteria: "Red (high): a client was refused (401 or 403) 200 times or more in the last 24 hours. Yellow (medium): 20 times or more.",
         recommendation: "Check whether these are misconfigured CI credentials or someone probing. Block the address at the edge or with the repository IP allow list if it is not yours.",
+    },
+    Rule {
+        id: "unused-roles",
+        code: "AC-08",
+        category: Category::Access,
+        audiences: &[Audience::Security, Audience::Devops],
+        title: "Roles nobody holds",
+        rationale: "A role assigned to no one grants nothing today, but its permissions are rarely reviewed. Assigning it later hands out whatever it was once given, often more than intended.",
+        criteria: "Yellow (low): a role created over 7 days ago is not assigned to any user, not mapped from any OIDC group and is not the default role.",
+        recommendation: "Delete roles that are no longer needed, or remove them from the chart policy for managed ones. Review the grants of a role you keep before assigning it.",
     },
     Rule {
         id: "policy-blocks",
@@ -1302,6 +1315,77 @@ fn stale_accounts(s: &DataSnapshot) -> Option<Finding> {
     )
 }
 
+fn unused_roles(s: &DataSnapshot) -> Option<Finding> {
+    let held: HashSet<i64> = s
+        .roles_by_user
+        .values()
+        .flatten()
+        .map(|r| r.id)
+        .chain(s.group_mappings.iter().map(|m| m.role_id))
+        .collect();
+    let mut roles: Vec<(&meta::Role, Vec<&meta::Permission>)> = s
+        .roles
+        .iter()
+        .filter(|r| {
+            !held.contains(&r.id) && r.name != s.default_role && r.created_at < s.now - ROLE_GRACE
+        })
+        .map(|r| {
+            let grants = s.permissions.iter().filter(|p| p.role_id == r.id).collect();
+            (r, grants)
+        })
+        .collect();
+    let admin = |grants: &[&meta::Permission]| {
+        grants.iter().any(|p| {
+            p.actions
+                .split(',')
+                .any(|a| a.trim() == crate::auth::ACTION_ADMIN)
+        })
+    };
+    roles.sort_by_key(|(r, grants)| (!admin(grants), r.created_at));
+    let count = roles.len();
+    finding(
+        Spec {
+            id: "unused-roles",
+            severity: Severity::Low,
+            summary: format!(
+                "{count} roles are not assigned to any user or mapped from any group."
+            ),
+            params: Vec::new(),
+        },
+        roles
+            .into_iter()
+            .map(|(r, grants)| {
+                let mut detail = if grants.is_empty() {
+                    "no grants".to_string()
+                } else {
+                    grants
+                        .iter()
+                        .map(|p| format!("{} on {}", p.actions, p.repo_pattern))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                };
+                if r.managed {
+                    detail.push_str(" (chart policy)");
+                }
+                Affected {
+                    kind: "role".to_string(),
+                    label: r.name.clone(),
+                    detail,
+                    role_id: Some(r.id),
+                    user_count: Some(
+                        s.roles_by_user
+                            .values()
+                            .filter(|held| held.iter().any(|h| h.id == r.id))
+                            .count() as i64,
+                    ),
+                    created_at: Some(r.created_at),
+                    ..Default::default()
+                }
+            })
+            .collect(),
+    )
+}
+
 fn locked_accounts(s: &DataSnapshot) -> Option<Finding> {
     let rows: Vec<Affected> = s
         .users
@@ -1885,12 +1969,66 @@ mod tests {
                     )
                 })
                 .collect(),
-            permissions: vec![Permission {
-                role_id: 1,
-                repo_pattern: "*".to_string(),
-                actions: "admin".to_string(),
+            roles: vec![
+                Role {
+                    id: 1,
+                    name: "admin".to_string(),
+                    ..Default::default()
+                },
+                Role {
+                    id: 2,
+                    name: "readonly".to_string(),
+                    ..Default::default()
+                },
+                Role {
+                    id: 3,
+                    name: "ci-mapped".to_string(),
+                    ..Default::default()
+                },
+                Role {
+                    id: 4,
+                    name: "legacy-deploy".to_string(),
+                    ..Default::default()
+                },
+                Role {
+                    id: 5,
+                    name: "old-admins".to_string(),
+                    managed: true,
+                    ..Default::default()
+                },
+                Role {
+                    id: 6,
+                    name: "just-made".to_string(),
+                    created_at: now,
+                    ..Default::default()
+                },
+            ],
+            group_mappings: vec![meta::GroupMapping {
+                group_name: "ci".to_string(),
+                role_id: 3,
                 ..Default::default()
             }],
+            default_role: "readonly".to_string(),
+            permissions: vec![
+                Permission {
+                    role_id: 1,
+                    repo_pattern: "*".to_string(),
+                    actions: "admin".to_string(),
+                    ..Default::default()
+                },
+                Permission {
+                    role_id: 4,
+                    repo_pattern: "npm-*".to_string(),
+                    actions: "read,write".to_string(),
+                    ..Default::default()
+                },
+                Permission {
+                    role_id: 5,
+                    repo_pattern: "*".to_string(),
+                    actions: "admin".to_string(),
+                    ..Default::default()
+                },
+            ],
             tokens: vec![
                 Token {
                     id: 1,
@@ -1978,7 +2116,7 @@ mod tests {
             checks.iter().all(|c| c.status != CheckStatus::Ok),
             "every rule trips"
         );
-        assert_eq!(findings.len(), 26, "{:?}", ids(&findings));
+        assert_eq!(findings.len(), 27, "{:?}", ids(&findings));
 
         let used = get(&findings, "vuln-in-use");
         assert_eq!(used.severity, Severity::Critical);
@@ -2032,6 +2170,17 @@ mod tests {
             "user1 / ci"
         );
         assert_eq!(get(&findings, "tokens-unused").total, 1);
+        let roles = get(&findings, "unused-roles");
+        assert_eq!(
+            roles.total, 2,
+            "held, mapped, default and new roles are skipped"
+        );
+        assert_eq!(roles.affected[0].label, "old-admins", "admin grants first");
+        assert_eq!(roles.affected[0].detail, "admin on * (chart policy)");
+        assert_eq!(roles.affected[1].detail, "read,write on npm-*");
+        assert_eq!(roles.affected[1].role_id, Some(4));
+        assert_eq!(roles.affected[1].user_count, Some(0));
+        assert!(roles.affected[1].created_at.is_some());
         let auth = get(&findings, "auth-failures");
         assert_eq!(auth.severity, Severity::High);
         assert_eq!(auth.total, 1, "below-threshold clients are not reported");

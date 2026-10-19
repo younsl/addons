@@ -368,6 +368,7 @@ async fn run(cfg: Arc<config::Config>, cancel: CancellationToken) -> anyhow::Res
             Arc::clone(&store),
             Some(Arc::clone(&coverage_scanner)),
             cfg.insights.interval,
+            cfg.auth.rbac.default_role.clone(),
         )
     });
     if let Some(analyzer) = &insight_analyzer {

@@ -17,7 +17,12 @@ async fn insights_report_is_scoped_to_the_caller() {
         resp.text()
     );
 
-    let analyzer = Analyzer::new(Arc::clone(&srv.store), None, Duration::from_hours(1));
+    let analyzer = Analyzer::new(
+        Arc::clone(&srv.store),
+        None,
+        Duration::from_hours(1),
+        String::new(),
+    );
     srv.handler
         .set_insights(Arc::clone(&analyzer), Arc::new(|_: &str| true));
     let empty = srv.admin_do(Method::GET, "/insights", "").await.json();
@@ -98,7 +103,12 @@ async fn insights_alarm_preview_and_send() {
 
     forklift::server::install_crypto_provider();
     let srv = new_test_server().await;
-    let analyzer = Analyzer::new(Arc::clone(&srv.store), None, Duration::from_hours(1));
+    let analyzer = Analyzer::new(
+        Arc::clone(&srv.store),
+        None,
+        Duration::from_hours(1),
+        String::new(),
+    );
     srv.handler
         .set_insights(Arc::clone(&analyzer), Arc::new(|_: &str| true));
     let resp = srv
@@ -222,7 +232,12 @@ async fn insights_alarm_preview_and_send() {
 #[tokio::test]
 async fn acknowledging_a_check_takes_it_out_of_the_score() {
     let srv = new_test_server().await;
-    let analyzer = Analyzer::new(Arc::clone(&srv.store), None, Duration::from_hours(1));
+    let analyzer = Analyzer::new(
+        Arc::clone(&srv.store),
+        None,
+        Duration::from_hours(1),
+        String::new(),
+    );
     srv.handler
         .set_insights(Arc::clone(&analyzer), Arc::new(|_: &str| true));
     let body = r#"{"name":"open","format":"raw","type":"hosted","config":{"public":true}}"#;
@@ -299,7 +314,12 @@ async fn acknowledging_a_check_takes_it_out_of_the_score() {
 #[tokio::test]
 async fn check_history_records_each_run() {
     let srv = new_test_server().await;
-    let analyzer = Analyzer::new(Arc::clone(&srv.store), None, Duration::from_hours(1));
+    let analyzer = Analyzer::new(
+        Arc::clone(&srv.store),
+        None,
+        Duration::from_hours(1),
+        String::new(),
+    );
     srv.handler
         .set_insights(Arc::clone(&analyzer), Arc::new(|_: &str| true));
     let body = r#"{"name":"open","format":"raw","type":"hosted","config":{"public":true}}"#;
@@ -351,12 +371,78 @@ async fn check_history_records_each_run() {
 }
 
 #[tokio::test]
+async fn check_affected_pages_through_flagged_items() {
+    let srv = new_test_server().await;
+    let uri = "/insights/checks/public-repositories/affected";
+    let resp = srv.admin_do(Method::GET, uri, "").await;
+    assert_eq!(
+        resp.status,
+        StatusCode::SERVICE_UNAVAILABLE,
+        "{}",
+        resp.text()
+    );
+
+    let analyzer = Analyzer::new(
+        Arc::clone(&srv.store),
+        None,
+        Duration::from_hours(1),
+        String::new(),
+    );
+    srv.handler
+        .set_insights(Arc::clone(&analyzer), Arc::new(|_: &str| true));
+    let resp = srv.admin_do(Method::GET, uri, "").await;
+    assert_eq!(resp.status, StatusCode::NOT_FOUND, "{}", resp.text());
+
+    for name in ["open-a", "open-b", "open-c"] {
+        let body = format!(
+            r#"{{"name":"{name}","format":"raw","type":"hosted","config":{{"public":true}}}}"#
+        );
+        srv.admin_do(Method::POST, "/repositories", &body).await;
+    }
+    analyzer.run_once("test").await.expect("analyze");
+
+    let all = srv.admin_do(Method::GET, uri, "").await;
+    assert_eq!(all.status, StatusCode::OK, "{}", all.text());
+    let all = all.json();
+    assert_eq!(all["total"], 3, "{all}");
+    assert_eq!(all["listed"], 3, "{all}");
+    let page = srv
+        .admin_do(Method::GET, &format!("{uri}?offset=1&limit=1"), "")
+        .await
+        .json();
+    assert_eq!(page["items"].as_array().map(Vec::len), Some(1), "{page}");
+    assert_eq!(page["items"][0], all["items"][1], "{page}");
+    let past = srv
+        .admin_do(Method::GET, &format!("{uri}?offset=3"), "")
+        .await
+        .json();
+    assert_eq!(past["items"], serde_json::json!([]), "{past}");
+
+    let resp = srv
+        .admin_do(Method::GET, &format!("{uri}?limit=0"), "")
+        .await;
+    assert_eq!(resp.status, StatusCode::BAD_REQUEST, "{}", resp.text());
+    let resp = srv
+        .admin_do(Method::GET, "/insights/checks/no-such-check/affected", "")
+        .await;
+    assert_eq!(resp.status, StatusCode::NOT_FOUND, "{}", resp.text());
+    mk_read_user(&srv.store, "dev", "*").await;
+    let resp = srv.do_as("dev", USER_PASS, Method::GET, uri, "").await;
+    assert_eq!(resp.status, StatusCode::FORBIDDEN, "{}", resp.text());
+}
+
+#[tokio::test]
 async fn insight_settings_drive_the_scheduled_alarm() {
     use wiremock::matchers::{body_string_contains, method};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     let srv = new_test_server().await;
-    let analyzer = Analyzer::new(Arc::clone(&srv.store), None, Duration::from_hours(1));
+    let analyzer = Analyzer::new(
+        Arc::clone(&srv.store),
+        None,
+        Duration::from_hours(1),
+        String::new(),
+    );
     srv.handler
         .set_insights(Arc::clone(&analyzer), Arc::new(|_: &str| true));
 

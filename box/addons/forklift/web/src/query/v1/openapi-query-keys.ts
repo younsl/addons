@@ -19,6 +19,7 @@ import type {
   GetStorageMigrationRequest,
 } from "@/services/v1/ha/types";
 import type {
+  GetInsightCheckAffectedRequest,
   GetInsightCheckHistoryRequest,
   GetInsightsNotificationHistoryRequest,
 } from "@/services/v1/insights/types";
@@ -120,6 +121,8 @@ export const openApiQueryKeys = {
     key("GET", "/api/v1/insights/notification/history", params),
   getInsightCheckHistory: (params: GetInsightCheckHistoryRequest) =>
     key("GET", "/api/v1/insights/checks/{id}/history", params),
+  getInsightCheckAffected: (params: GetInsightCheckAffectedRequest) =>
+    key("GET", "/api/v1/insights/checks/{id}/affected", params),
   getCoverage: () => key("GET", "/api/v1/coverage"),
   listCoverageGroups: () => key("GET", "/api/v1/coverage/groups"),
   listCoverageHistory: (params?: ListCoverageHistoryRequest) =>

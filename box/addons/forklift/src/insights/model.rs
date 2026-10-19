@@ -76,6 +76,13 @@ pub struct Affected {
     pub tag: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub user_id: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub role_id: Option<i64>,
+    /// Users holding the role, for role rows.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub user_count: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub created_at: Option<DateTime<Utc>>,
 }
 
 /// One improvement the analyzer derived. `title`, `summary` and
@@ -123,8 +130,12 @@ const fn is_false(value: &bool) -> bool {
     !*value
 }
 
-/// Caps the rows one finding carries.
-pub const AFFECTED_LIMIT: usize = 100;
+/// Caps the rows one finding stores.
+pub const AFFECTED_LIMIT: usize = 10_000;
+
+/// Caps the rows each finding carries in the report the view loads. The rest
+/// are paged in one check at a time.
+pub const AFFECTED_PAGE: usize = 100;
 
 /// Per-severity finding counts.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -306,6 +317,13 @@ impl Report {
             score: self.score,
             grade: self.grade.clone(),
             counts: self.counts,
+        }
+    }
+
+    /// Cuts every finding down to its first [`AFFECTED_PAGE`] rows.
+    pub fn truncate_affected(&mut self) {
+        for f in &mut self.findings {
+            f.affected.truncate(AFFECTED_PAGE);
         }
     }
 
@@ -527,5 +545,23 @@ mod tests {
         assert_eq!(grade(60), "C");
         assert_eq!(grade(40), "D");
         assert_eq!(grade(10), "F");
+    }
+
+    #[test]
+    fn truncate_affected_keeps_the_first_page() {
+        let mut long = finding("long", Severity::High, 150);
+        long.affected = vec![Affected::default(); 150];
+        let mut report = Report::new(
+            Utc::now(),
+            1,
+            "schedule",
+            Inventory::default(),
+            vec![long, finding("short", Severity::Low, 0)],
+            Vec::new(),
+        );
+        report.truncate_affected();
+        assert_eq!(report.findings[0].affected.len(), AFFECTED_PAGE);
+        assert_eq!(report.findings[0].total, 150);
+        assert_eq!(report.findings[1].affected.len(), 0);
     }
 }

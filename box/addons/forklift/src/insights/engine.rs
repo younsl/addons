@@ -36,6 +36,8 @@ pub struct Analyzer {
     /// The analysis interval until somebody saves settings
     /// (FORKLIFT_INSIGHTS_INTERVAL).
     default_interval: Duration,
+    /// Counts as assigned to everyone, so it is never reported unused.
+    default_role: String,
     running: AtomicBool,
 }
 
@@ -55,11 +57,13 @@ impl Analyzer {
         store: Arc<Store>,
         coverage: Option<Arc<crate::coverage::Scanner>>,
         default_interval: Duration,
+        default_role: String,
     ) -> Arc<Self> {
         Arc::new(Self {
             store,
             coverage,
             default_interval,
+            default_role,
             running: AtomicBool::new(false),
         })
     }
@@ -106,7 +110,13 @@ impl Analyzer {
         let _guard = RunGuard(&self.running);
         let started = std::time::Instant::now();
         let now = Utc::now();
-        let snapshot = collect(&self.store, self.coverage.as_deref(), now).await?;
+        let snapshot = collect(
+            &self.store,
+            self.coverage.as_deref(),
+            &self.default_role,
+            now,
+        )
+        .await?;
         let (findings, checks) = evaluate(&snapshot);
         let duration_ms = i64::try_from(started.elapsed().as_millis()).unwrap_or(i64::MAX);
         let report = Report::new(
@@ -270,6 +280,13 @@ impl Analyzer {
             Ok(row) if !row.report_json.is_empty() => {
                 let mut report: Report = serde_json::from_str(&row.report_json)?;
                 backfill_codes(&mut report);
+                if needs_role_backfill(&report) {
+                    backfill_roles(
+                        &mut report,
+                        &self.store.list_roles().await?,
+                        &self.store.roles_by_user().await?,
+                    );
+                }
                 Ok(Some(report))
             }
             Ok(_) => Ok(None),
@@ -342,6 +359,42 @@ fn backfill_codes(report: &mut Report) {
     }
 }
 
+fn needs_role_backfill(report: &Report) -> bool {
+    report
+        .findings
+        .iter()
+        .flat_map(|f| &f.affected)
+        .any(|a| a.kind == "role" && (a.user_count.is_none() || a.created_at.is_none()))
+}
+
+/// Gives role items of a report stored before they carried a holder count and
+/// creation time the current values.
+fn backfill_roles(
+    report: &mut Report,
+    roles: &[meta::Role],
+    roles_by_user: &std::collections::HashMap<i64, Vec<meta::Role>>,
+) {
+    for item in report
+        .findings
+        .iter_mut()
+        .flat_map(|f| &mut f.affected)
+        .filter(|a| a.kind == "role")
+    {
+        let Some(id) = item.role_id else { continue };
+        if item.user_count.is_none() {
+            item.user_count = Some(
+                roles_by_user
+                    .values()
+                    .filter(|held| held.iter().any(|r| r.id == id))
+                    .count() as i64,
+            );
+        }
+        if item.created_at.is_none() {
+            item.created_at = roles.iter().find(|r| r.id == id).map(|r| r.created_at);
+        }
+    }
+}
+
 fn inventory(s: &DataSnapshot) -> Inventory {
     let mut scannable: HashSet<(i64, String)> = HashSet::new();
     let mut scanned = 0;
@@ -411,5 +464,59 @@ mod tests {
         );
         backfill_codes(&mut report);
         assert_eq!(report.checks[0].code, "AC-05");
+    }
+
+    #[test]
+    fn backfill_roles_fills_role_items_stored_before_their_columns() {
+        let created = Utc::now() - chrono::TimeDelta::days(40);
+        let mut finding = crate::insights::model::Finding {
+            id: "unused-roles".to_string(),
+            code: "AC-08".to_string(),
+            severity: crate::insights::Severity::Low,
+            category: Category::Access,
+            audiences: Vec::new(),
+            title: String::new(),
+            summary: String::new(),
+            rationale: String::new(),
+            criteria: String::new(),
+            recommendation: String::new(),
+            params: std::collections::BTreeMap::new(),
+            total: 1,
+            affected: vec![crate::insights::Affected {
+                kind: "role".to_string(),
+                label: "legacy".to_string(),
+                role_id: Some(7),
+                ..Default::default()
+            }],
+            by_repo: std::collections::BTreeMap::new(),
+            everyone: false,
+            acknowledged: false,
+        };
+        finding.affected.push(crate::insights::Affected {
+            kind: "user".to_string(),
+            ..Default::default()
+        });
+        let mut report = Report::new(
+            Utc::now(),
+            1,
+            "schedule",
+            Inventory::default(),
+            vec![finding],
+            Vec::new(),
+        );
+        assert!(needs_role_backfill(&report));
+        let role = meta::Role {
+            id: 7,
+            name: "legacy".to_string(),
+            created_at: created,
+            ..Default::default()
+        };
+        let held = std::collections::HashMap::from([(1, vec![role.clone()])]);
+        backfill_roles(&mut report, &[role], &held);
+        let item = &report.findings[0].affected[0];
+        assert_eq!(item.user_count, Some(1));
+        assert_eq!(item.created_at, Some(created));
+        assert_eq!(report.findings[0].affected[1].user_count, None);
+        assert!(!needs_role_backfill(&report));
     }
 }

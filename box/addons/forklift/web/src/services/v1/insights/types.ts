@@ -5,6 +5,7 @@
 import type {
   AlarmHistory,
   InsightAck,
+  InsightAffected,
   InsightCheckPoint,
   InsightSettings,
   InsightSettingsInput,
@@ -32,6 +33,9 @@ export type GetInsightsNotificationHistoryResponse = AlarmHistory;
 
 export type GetInsightCheckHistoryRequest = { path: { id: string }; query?: { days?: number } };
 export type GetInsightCheckHistoryResponse = { points: InsightCheckPoint[]; };
+
+export type GetInsightCheckAffectedRequest = { path: { id: string }; query?: { offset?: number; limit?: number } };
+export type GetInsightCheckAffectedResponse = { total: number; listed: number; items: InsightAffected[]; };
 
 export type AcknowledgeInsightCheckRequest = { path: { id: string }; body: { note: string; days?: number; } };
 export type AcknowledgeInsightCheckResponse = InsightAck;

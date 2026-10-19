@@ -452,6 +452,10 @@ pub fn routes(h: Arc<Handler>) -> Router {
             axum::routing::get(insights::check_history),
         )
         .route(
+            "/insights/checks/{id}/affected",
+            axum::routing::get(insights::check_affected),
+        )
+        .route(
             "/insights/checks/{id}/acknowledgement",
             axum::routing::put(insights::put_acknowledgement)
                 .delete(insights::delete_acknowledgement),

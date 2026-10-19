@@ -112,6 +112,10 @@ export function AffectedLink({ finding, item }: { finding: InsightFinding; item:
       return item.user_id != null ? (
         <Link to="/access/users/$id" params={{ id: String(item.user_id) }}>{item.label}</Link>
       ) : item.label;
+    case "role":
+      return item.role_id != null ? (
+        <Link to="/access/roles/$id" params={{ id: String(item.role_id) }}>{item.label}</Link>
+      ) : item.label;
     case "approval":
       return <Link to="/workspace/approvals">{item.label}</Link>;
     case "advisory":

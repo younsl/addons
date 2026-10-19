@@ -12,7 +12,7 @@ pub mod settings;
 pub use alarm::alarm_report;
 pub use engine::{Analyzer, Error};
 pub use model::{
-    AFFECTED_LIMIT, AckState, Acknowledgement, Affected, Audience, Category, Check, CheckStatus,
-    Finding, InsightSummary, Inventory, Report, ScanCount, Severity, SeverityCounts,
+    AFFECTED_LIMIT, AFFECTED_PAGE, AckState, Acknowledgement, Affected, Audience, Category, Check,
+    CheckStatus, Finding, InsightSummary, Inventory, Report, ScanCount, Severity, SeverityCounts,
 };
 pub use settings::Settings;

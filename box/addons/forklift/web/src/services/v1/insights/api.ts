@@ -14,6 +14,8 @@ import { API_PREFIX } from "@/services/paths";
 import type {
   AcknowledgeInsightCheckRequest,
   AcknowledgeInsightCheckResponse,
+  GetInsightCheckAffectedRequest,
+  GetInsightCheckAffectedResponse,
   GetInsightCheckHistoryRequest,
   GetInsightCheckHistoryResponse,
   GetInsightSettingsResponse,
@@ -101,6 +103,15 @@ export function getInsightCheckHistory(params: GetInsightCheckHistoryRequest, op
 
   return client.get<GetInsightCheckHistoryResponse>(
     appendOpenApiQuery(buildOpenApiPath(`${API_PREFIX}/insights/checks/{id}/history`, params.path), params?.query),
+    requestOptions,
+  );
+}
+
+export function getInsightCheckAffected(params: GetInsightCheckAffectedRequest, options?: OpenApiRequestOptions) {
+  const { client, requestOptions } = resolveOpenApiRequestOptions(options);
+
+  return client.get<GetInsightCheckAffectedResponse>(
+    appendOpenApiQuery(buildOpenApiPath(`${API_PREFIX}/insights/checks/{id}/affected`, params.path), params?.query),
     requestOptions,
   );
 }

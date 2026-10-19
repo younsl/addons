@@ -72,12 +72,13 @@ The categories are:
 | AC-05 | `tokens-unscoped-admin` | High | Access | Security, DevOps | An administrator's token carries no scopes |
 | AC-06 | `tokens-unused` | Medium | Access | Security, DevOps | An unexpired token has not been used for 90 days |
 | AC-07 | `auth-failures` | High (200+ in a day) or Medium | Access | Security, DevOps | A client was refused (401, 403) at least 20 times in 24 hours |
+| AC-08 | `unused-roles` | Low | Access | Security, DevOps | A role older than 7 days is assigned to no user, mapped from no OIDC group and is not the default role |
 | OP-01 | `retention-off` | Low | Operations | DevOps | A repository without idle retention holds at least 10 artifacts not downloaded for 180 days |
 | OP-02 | `policy-blocks` | Low | Operations | Developer | A vulnerability or license policy blocked a path in the last 7 days |
 | OP-03 | `approvals-aging` | Low | Operations | Security, Developer | A package approval has been pending for more than 7 days |
 | OP-04 | `storage-capacity` | Critical (90%+), High (80%+) or Medium (70%+) | Operations | DevOps | The volume holding the data directory (metadata database, and blobs on the filesystem backend) is at least 70% full |
 
-The alert criteria column above is condensed. The check page states each rule's full criteria, and the API returns them as `criteria` along with `rationale` (why it matters) and `recommendation`. Each finding lists up to 100 affected items, worst first, and links each one to where it is fixed: the artifact (the Artifacts tab searched for its path), the image, the repository's Settings, Security or Statistics tab, the user, the approval queue, the project's Coverage page, or the Storage page.
+The alert criteria column above is condensed. The check page states each rule's full criteria, and the API returns them as `criteria` along with `rationale` (why it matters) and `recommendation`. Each finding stores up to 10,000 affected items, worst first, and links each one to where it is fixed: the artifact (the Artifacts tab searched for its path), the image, the repository's Settings, Security or Statistics tab, the user, the role, the approval queue, the project's Coverage page, or the Storage page. The check page numbers the items and shows the first 100. Show more loads the next 100 each time, and leaving the page collapses the list again. The API pages through them at `GET /api/v1/insights/checks/{id}/affected?offset=N&limit=M` (limit 1 to 1000, default 100).
 
 ## Codes
 

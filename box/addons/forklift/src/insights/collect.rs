@@ -39,6 +39,11 @@ pub struct DataSnapshot {
     pub stale: HashMap<i64, (i64, i64)>,
     pub users: Vec<meta::User>,
     pub roles_by_user: HashMap<i64, Vec<meta::Role>>,
+    pub roles: Vec<meta::Role>,
+    pub group_mappings: Vec<meta::GroupMapping>,
+    /// The role every authenticated user holds (`FORKLIFT_RBAC_DEFAULT_ROLE`),
+    /// empty when there is none.
+    pub default_role: String,
     pub permissions: Vec<meta::Permission>,
     pub tokens: Vec<meta::Token>,
     pub auth_audit: Vec<meta::AuditCount>,
@@ -72,6 +77,7 @@ impl DataSnapshot {
 pub async fn collect(
     store: &Store,
     coverage: Option<&coverage::Scanner>,
+    default_role: &str,
     now: DateTime<Utc>,
 ) -> Result<DataSnapshot, meta::Error> {
     let repos = store
@@ -104,6 +110,9 @@ pub async fn collect(
         stale: store.stale_artifact_totals(now - STALE_AFTER).await?,
         users: store.list_users().await?,
         roles_by_user: store.roles_by_user().await?,
+        roles: store.list_roles().await?,
+        group_mappings: store.list_group_mappings().await?,
+        default_role: default_role.to_string(),
         permissions: store.list_permissions().await?,
         tokens: store.list_all_tokens().await?,
         auth_audit: store.audit_security_counts(now - AUTH_WINDOW).await?,

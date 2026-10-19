@@ -10,7 +10,7 @@ use http::request::Parts;
 use serde::Serialize;
 
 use crate::auth;
-use crate::insights::{Category, InsightSummary, Report};
+use crate::insights::{AFFECTED_PAGE, Affected, Category, InsightSummary, Report};
 use crate::meta;
 use crate::notify;
 
@@ -172,6 +172,7 @@ pub(super) async fn get(State(h): State<Arc<Handler>>, request: Request) -> Resp
     };
     if let Some(report) = &mut report {
         report.inventory.scan_by_repo.clear();
+        report.truncate_affected();
     }
     write_json(
         StatusCode::OK,
@@ -582,6 +583,78 @@ pub(super) async fn check_history(
         ),
         Err(err) => write_error(StatusCode::INTERNAL_SERVER_ERROR, &err.to_string()),
     }
+}
+
+/// The most rows one page of a check's flagged items may ask for.
+const MAX_AFFECTED_PAGE: usize = 1000;
+
+#[derive(Debug, Default, serde::Deserialize)]
+pub(super) struct AffectedQuery {
+    #[serde(default)]
+    offset: Option<usize>,
+    #[serde(default)]
+    limit: Option<usize>,
+}
+
+#[derive(Debug, Serialize)]
+struct AffectedPageDTO {
+    total: i64,
+    /// How many of `total` were stored and can be paged through.
+    listed: usize,
+    items: Vec<Affected>,
+}
+
+/// Pages through the items one check flagged in the latest run, past the
+/// first ones the report carries. Only for callers who see the whole report,
+/// the same ones the check page is for.
+pub(super) async fn check_affected(
+    State(h): State<Arc<Handler>>,
+    UrlPath(id): UrlPath<String>,
+    axum::extract::Query(query): axum::extract::Query<AffectedQuery>,
+    request: Request,
+) -> Response {
+    let (parts, _) = request.into_parts();
+    if !sees_everything(&h, &parts) {
+        return write_error(
+            StatusCode::FORBIDDEN,
+            "flagged items require admin, audit or security permission",
+        );
+    }
+    let Some((analyzer, _)) = h.insights() else {
+        return write_error(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "security insights are disabled",
+        );
+    };
+    let limit = query.limit.unwrap_or(AFFECTED_PAGE);
+    if !(1..=MAX_AFFECTED_PAGE).contains(&limit) {
+        return write_error(
+            StatusCode::BAD_REQUEST,
+            &format!("limit must be from 1 to {MAX_AFFECTED_PAGE}"),
+        );
+    }
+    let report = match analyzer.latest().await {
+        Ok(Some(report)) => report,
+        Ok(None) => return write_error(StatusCode::NOT_FOUND, "no analysis has run yet"),
+        Err(err) => return write_error(StatusCode::INTERNAL_SERVER_ERROR, &err.to_string()),
+    };
+    let Some(finding) = report.findings.into_iter().find(|f| f.id == id) else {
+        return write_error(StatusCode::NOT_FOUND, "the check flagged nothing");
+    };
+    let listed = finding.affected.len();
+    write_json(
+        StatusCode::OK,
+        AffectedPageDTO {
+            total: finding.total,
+            listed,
+            items: finding
+                .affected
+                .into_iter()
+                .skip(query.offset.unwrap_or(0))
+                .take(limit)
+                .collect(),
+        },
+    )
 }
 
 #[derive(Debug, Serialize)]

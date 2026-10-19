@@ -1788,6 +1788,39 @@ paths:
         "400": { description: days out of range }
         "403": { description: Requires admin, audit or security permission }
         "503": { description: Security insights are disabled }
+  /api/v1/insights/checks/{id}/affected:
+    get:
+      tags: [insights]
+      operationId: getInsightCheckAffected
+      summary: Page through the items one check flagged
+      description: >
+        The report lists the first 100 flagged items of each finding. This pages
+        through every stored one of the latest run (at most 10000 per finding),
+        worst first. Only administrators, auditors and security reviewers may
+        read it, the same callers the check page is for.
+      security: [{ basicAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string }, description: The check id, for example public-repositories. }
+        - { name: offset, in: query, required: false, schema: { type: integer, minimum: 0, default: 0 } }
+        - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 1000, default: 100 } }
+      responses:
+        "200":
+          description: One page of flagged items.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [total, listed, items]
+                properties:
+                  total: { type: integer, description: How many items the check flagged. }
+                  listed: { type: integer, description: How many of them were stored and can be paged through. }
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/InsightAffected" }
+        "400": { description: limit out of range }
+        "403": { description: Requires admin, audit or security permission }
+        "404": { description: No analysis yet, or the check flagged nothing }
+        "503": { description: Security insights are disabled }
   /api/v1/insights/checks/{id}/acknowledgement:
     parameters:
       - { name: id, in: path, required: true, schema: { type: string }, description: The check id, for example public-repositories. }
@@ -3159,7 +3192,7 @@ components:
         total: { type: integer }
         affected:
           type: array
-          description: At most 100 affected items, worst first.
+          description: At most 100 affected items, worst first. GET /api/v1/insights/checks/{id}/affected pages through the rest.
           items: { $ref: "#/components/schemas/InsightAffected" }
         by_repo:
           type: object
@@ -3174,7 +3207,7 @@ components:
       type: object
       required: [kind, label]
       properties:
-        kind: { type: string, enum: [artifact, tag, repository, user, token, client, approval, project, advisory, volume] }
+        kind: { type: string, enum: [artifact, tag, repository, user, token, client, approval, project, advisory, volume, role] }
         label: { type: string }
         detail: { type: string }
         repo: { type: string }
@@ -3182,6 +3215,9 @@ components:
         path: { type: string }
         tag: { type: string }
         user_id: { type: integer }
+        role_id: { type: integer }
+        user_count: { type: integer, description: Users holding the role, on role items. }
+        created_at: { type: string, format: date-time, description: When the role was created, on role items. }
     RetentionPreview:
       type: object
       required: [count, items]

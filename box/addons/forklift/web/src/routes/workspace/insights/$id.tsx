@@ -7,16 +7,16 @@ import { Alert } from "@/components/app-ui/alert";
 import { Badge } from "@/components/app-ui/badge";
 import { CopyLinkButton } from "@/components/app-ui/copy-button";
 import { PageHeader } from "@/components/app-ui/page";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableWrap } from "@/components/app-ui/table";
 import { Card, CardContent } from "@/components/ui/card";
 import { getErrorMessageIfAny } from "@/lib/http/error/api-error";
 import { useTranslation, type MessageKey } from "@/lib/i18n";
 import { openApiQueryOptions } from "@/query/v1/openapi-query-options";
 import { formatAbsolute, formatRelative } from "@/utils/format-relative";
-import { AffectedLink, InsightSeverityBadge, StatusLabel, useInsightText } from "./-components/finding-card";
+import { InsightSeverityBadge, StatusLabel, useInsightText } from "./-components/finding-card";
 import { AckButton, AckPanel, canAcknowledge } from "./-components/ack-panel";
 import { InsightsTabs } from "./-components/insights-tabs";
 import { CheckHistory } from "./-components/check-history";
+import { FlaggedItems } from "./-components/flagged-items";
 
 // One check on its own page, so it can be linked to: what it looks at, why it
 // matters, when it fires, what to do, and everything it flagged. The layout
@@ -76,7 +76,6 @@ function InsightDetailRoute() {
     return <>{back}<Card><CardContent className="text-sm text-muted-foreground">{t("insights.check-missing")}</CardContent></Card></>;
   }
 
-  const hidden = finding ? finding.total - finding.affected.length : 0;
   return (
     <>
       <InsightsTabs active="security" />
@@ -145,31 +144,7 @@ function InsightDetailRoute() {
 
       {finding && (
         <Section title={`${t("insights.flagged-items")} (${finding.total.toLocaleString()})`}>
-          <TableWrap>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-px pr-4">{t("insights.resource-type")}</TableHead>
-                  <TableHead>{t("insights.affected")}</TableHead>
-                  <TableHead className="w-px pr-4">{t("common.repository")}</TableHead>
-                  <TableHead>{t("insights.detail")}</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {finding.affected.map((item, i) => (
-                  <TableRow key={`${item.kind}:${item.label}:${item.repo ?? ""}:${i}`}>
-                    <TableCell className="whitespace-nowrap pr-4 text-muted-foreground">{t(`insights.kind-${item.kind}` as MessageKey)}</TableCell>
-                    <TableCell className="min-w-48 whitespace-normal break-all font-mono text-xs"><AffectedLink finding={finding} item={item} /></TableCell>
-                    <TableCell className="pr-4 text-muted-foreground">{item.repo || "-"}</TableCell>
-                    <TableCell className="text-muted-foreground">{item.detail || "-"}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </TableWrap>
-          {hidden > 0 && (
-            <p className="mb-0 mt-2 text-xs text-muted-foreground">{t("insights.more").replace("{count}", hidden.toLocaleString())}</p>
-          )}
+          <FlaggedItems key={report.generated_at} finding={finding} generatedAt={report.generated_at} />
         </Section>
       )}
 
