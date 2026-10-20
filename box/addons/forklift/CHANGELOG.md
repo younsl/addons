@@ -16,6 +16,10 @@ Notable changes per release. Container image versions come from the
 - The S3 client ignored `HTTPS_PROXY` and `NO_PROXY`, so object storage behind a forward proxy was unreachable while every other outbound request went through it.
 - Deleting an OCI manifest through the artifact delete or bulk delete API left its tags behind, pointing at a manifest that no longer existed. They are now deleted with it.
 
+### Security
+
+- Dev-only web dependencies are pinned to patched releases: vite 8.1.6 (launch-editor advisories GHSA-587h-7wmj-h5pm and GHSA-698v-4r3x-3vcv), follow-redirects 1.16.1 (GHSA-q3jh-wrc6-jgq8, GHSA-8r9p-f939-6h3c), `@modelcontextprotocol/sdk` 1.32.0 (GHSA-22jm-h49p-29qw, GHSA-46jr-4wx8-v453 and others) and hono 4.13.11 (GHSA-5r4p-p66f-jhc7). They come in through the build toolchain, Storybook, wait-on and shadcn, and none is bundled into the web UI.
+
 ## 0.16.1 (2026-10-19)
 
 ### Added

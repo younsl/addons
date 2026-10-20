@@ -17,7 +17,7 @@ overrides:
   ip-address@<=10.7.0: 10.7.1
   undici@>=7.0.0 <7.29.1: 7.29.1
   postcss@<=8.5.22: 8.5.23
-  hono@<4.13.7: 4.13.7
+  hono@<4.13.11: 4.13.11
   '@hono/node-server@<1.19.15': 1.19.15
   uuid@<11.1.1: 11.1.1
   axios@>=1.0.0 <1.20.0: 1.20.0
@@ -25,7 +25,9 @@ overrides:
   seroval-plugins@<1.6.3: 1.6.8
   proxy-addr@<2.0.8: 2.0.8
   source-map-js@>=1.0.0 <1.2.2: 1.2.2
-  '@modelcontextprotocol/sdk@>=1.12.0 <1.31.0': 1.31.0
+  '@modelcontextprotocol/sdk@<1.32.0': 1.32.0
+  follow-redirects@<1.16.1: 1.16.1
+  vite@>=8.0.0 <8.1.6: 8.1.6
   joi@<17.13.8: 17.13.8
   joi@>=18.0.0 <18.2.9: 18.2.9
   postcss-selector-parser@<7.1.6: 7.1.6
