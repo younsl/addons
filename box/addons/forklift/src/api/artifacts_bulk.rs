@@ -10,6 +10,7 @@ use crate::meta;
 
 use super::labels::{LABEL_FORBIDDEN_MSG, LABEL_RULE_MSG};
 use super::path_id;
+use super::repositories::delete_artifact_row;
 use super::{Handler, map_error, principal_name, write_error, write_json};
 
 /// Caps one bulk request.
@@ -225,7 +226,7 @@ pub(super) async fn bulk_delete(
         ..Default::default()
     };
     for path in paths {
-        if let Err(err) = h.store.delete_artifact(id, &path).await {
+        if let Err(err) = delete_artifact_row(&h, &repo, &path).await {
             out.failed.push(ArtifactBulkFailureDTO {
                 path,
                 error: bulk_error_text(err),
@@ -452,6 +453,53 @@ pub(crate) mod tests {
                 .await
                 .is_err(),
             "the artifact is still present after a bulk delete"
+        );
+    }
+
+    /// Deleting an OCI image removes every tag pointing at its manifest, so the
+    /// images view never lists a tag whose manifest is gone. Tags on other
+    /// manifests stay.
+    #[tokio::test]
+    async fn bulk_delete_oci_image_removes_its_tags() {
+        let (srv, _rec) = new_audit_test_server().await;
+        let resp = srv
+            .admin_do(
+                Method::POST,
+                "/repositories",
+                r#"{"name":"oci-local","format":"oci","type":"hosted"}"#,
+            )
+            .await;
+        assert_eq!(resp.status, StatusCode::CREATED, "{}", resp.text());
+        let repo_id = resp.json()["id"].as_i64().expect("repository id");
+        let deleted = format!("sha256:{}", "a".repeat(64));
+        let kept = format!("sha256:{}", "b".repeat(64));
+        let path = format!("app/manifests/{deleted}");
+        seed_artifacts(
+            &srv,
+            repo_id,
+            &[path.as_str(), format!("app/manifests/{kept}").as_str()],
+        )
+        .await;
+        for (tag, digest) in [("v1", &deleted), ("latest", &deleted), ("v2", &kept)] {
+            srv.store
+                .upsert_oci_tag(repo_id, "app", tag, digest)
+                .await
+                .expect("tag");
+        }
+
+        let resp = srv
+            .admin_do(
+                Method::POST,
+                &format!("/repositories/{repo_id}/artifacts/bulk-delete"),
+                &format!(r#"{{"paths":["{path}"]}}"#),
+            )
+            .await;
+        assert_eq!(resp.status, StatusCode::OK, "{}", resp.text());
+        assert_eq!(resp.json()["succeeded"], 1, "{}", resp.text());
+        assert!(srv.store.get_artifact(repo_id, &path).await.is_err());
+        assert_eq!(
+            srv.store.list_oci_tags(repo_id, "app").await.expect("tags"),
+            vec!["v2".to_string()]
         );
     }
 }

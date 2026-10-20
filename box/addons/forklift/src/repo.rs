@@ -77,6 +77,7 @@ pub use group::validate_group_members;
 pub(crate) use licensescan::deps_dev_system;
 pub use licensescan::license_coordinate;
 pub use oci::oci_manifest_path_public as oci_manifest_path;
+pub use oci::oci_manifest_ref;
 pub use oci_detail::OCIArtifactDetail;
 pub use oci_idle::idle_expiry;
 pub use oci_images::OCITagInfo;
@@ -244,7 +245,7 @@ impl Engine {
         let e = Self {
             store,
             blobs,
-            client: reqwest::Client::builder()
+            client: crate::outbound::client_builder()
                 .timeout(Duration::from_secs(60))
                 // Redirects are followed by hand (see
                 // `strip_auth_on_cross_host_redirect`) because credential

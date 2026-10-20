@@ -20,6 +20,7 @@ pub mod migrate;
 pub mod notify;
 pub mod objstore;
 pub mod openapi;
+pub mod outbound;
 pub mod replication;
 pub mod repo;
 pub mod repoconfig;

@@ -104,6 +104,14 @@ pub fn oci_manifest_path_public(name: &str, digest: &str) -> String {
     oci_manifest_path(name, digest)
 }
 
+/// Splits an OCI manifest artifact path into its image name and digest, the
+/// inverse of [`oci_manifest_path`]. Blob paths and malformed digests are
+/// `None`.
+pub fn oci_manifest_ref(path: &str) -> Option<(&str, &str)> {
+    let (name, digest) = path.rsplit_once("/manifests/")?;
+    (!name.is_empty() && OCI_DIGEST_RE.is_match(digest)).then_some((name, digest))
+}
+
 /// Writes the spec error envelope `{"errors":[{"code":…,"message":…}]}` that
 /// OCI clients parse for diagnostics.
 pub(crate) fn write_oci_error(status: StatusCode, code: &str, message: &str) -> Response {
@@ -926,6 +934,24 @@ pub(crate) mod tests {
         let dir = tempfile::tempdir().expect("temp dir");
         m.set_oci_upload_dir(&dir.path().to_string_lossy());
         dir
+    }
+
+    #[test]
+    fn manifest_ref_splits_manifest_paths_only() {
+        let digest = format!("sha256:{}", "a".repeat(64));
+        assert_eq!(
+            super::oci_manifest_ref(&oci_manifest_path("team/app", &digest)),
+            Some(("team/app", digest.as_str()))
+        );
+        assert_eq!(
+            super::oci_manifest_ref(&oci_blob_path("app", &digest)),
+            None
+        );
+        assert_eq!(super::oci_manifest_ref("app/manifests/v1"), None);
+        assert_eq!(
+            super::oci_manifest_ref(&format!("/manifests/{digest}")),
+            None
+        );
     }
 
     #[tokio::test]

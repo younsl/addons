@@ -175,3 +175,68 @@ test("oci: native push/download/delete and multi-select labels", async ({ signed
     await expect(await adminApi.delete(`/api/v1/repositories/${id}`)).toBeOK();
   }
 });
+
+// Deleting an image from the Images view's Actions menu removes its manifest and
+// every tag pointing at it, and leaves other images alone. Readers get no Delete.
+test("oci: delete images from the actions menu", async ({ signedInAs, adminApi }) => {
+  const name = `${scopedName("release-oci-delete")}-${Date.now().toString(36)}`;
+  const created = await adminApi.post("/api/v1/repositories", {
+    data: { name, format: "oci", type: "hosted", upstream_url: "", config: { age_policy: { enabled: false } } },
+  });
+  expect(created.ok(), await created.text()).toBe(true);
+  const { id } = await created.json();
+  const digest = (bytes: Buffer) => `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
+  const push = async (tags: string[], version: string) => {
+    const config = Buffer.from(JSON.stringify({ architecture: "amd64", os: "linux", config: { Labels: { version } } }));
+    const pushed = await adminApi.post(`/v2/${name}/deleteprobe/blobs/uploads/?digest=${digest(config)}`, {
+      data: config, headers: { "content-type": "application/octet-stream" },
+    });
+    expect(pushed.status(), await pushed.text()).toBe(201);
+    const bytes = Buffer.from(JSON.stringify({
+      schemaVersion: 2, mediaType: "application/vnd.oci.image.manifest.v1+json",
+      config: { mediaType: "application/vnd.oci.image.config.v1+json", digest: digest(config), size: config.length }, layers: [],
+    }));
+    for (const tag of tags) {
+      const published = await adminApi.put(`/v2/${name}/deleteprobe/manifests/${tag}`, {
+        data: bytes, headers: { "content-type": "application/vnd.oci.image.manifest.v1+json" },
+      });
+      expect(published.status(), await published.text()).toBe(201);
+    }
+    return digest(bytes);
+  };
+  const page = await signedInAs("admin");
+  try {
+    const deleted = await push(["1.0.0", "latest"], "1.0.0");
+    await push(["2.0.0"], "2.0.0");
+
+    const reader = await signedInAs("reader");
+    await reader.goto(`/workspace/repositories/${id}/artifacts`);
+    await expect(reader.getByRole("checkbox", { name: "Select deleteprobe:1.0.0", exact: true })).toBeDisabled();
+    await reader.close();
+
+    await page.goto(`/workspace/repositories/${id}/artifacts`);
+    await page.getByRole("checkbox", { name: "Select deleteprobe:1.0.0", exact: true }).check();
+    await page.getByRole("button", { name: "Actions", exact: true }).click();
+    await page.getByRole("button", { name: "Delete", exact: true }).click();
+    const dialog = page.getByRole("alertdialog");
+    const confirm = dialog.getByRole("button", { name: "Delete", exact: true });
+    await expect(confirm).toBeDisabled();
+    await dialog.getByRole("textbox").fill("delete");
+    const done = page.waitForResponse((response) => response.url().endsWith(`/repositories/${id}/artifacts/bulk-delete`) && response.request().method() === "POST");
+    await confirm.click();
+    const outcome = await (await done).json();
+    expect(outcome.succeeded).toBe(1);
+    await expect(dialog).toBeHidden();
+
+    for (const tag of ["1.0.0", "latest"]) {
+      await expect(page.getByRole("checkbox", { name: `Select deleteprobe:${tag}`, exact: true })).toHaveCount(0);
+      expect((await adminApi.get(`/v2/${name}/deleteprobe/manifests/${tag}`)).status()).toBe(404);
+    }
+    expect((await adminApi.get(`/v2/${name}/deleteprobe/manifests/${deleted}`)).status()).toBe(404);
+    await expect(page.getByRole("checkbox", { name: "Select deleteprobe:2.0.0", exact: true })).toBeVisible();
+    expect((await adminApi.get(`/v2/${name}/deleteprobe/manifests/2.0.0`)).status()).toBe(200);
+  } finally {
+    await page.close();
+    await expect(await adminApi.delete(`/api/v1/repositories/${id}`)).toBeOK();
+  }
+});

@@ -777,6 +777,7 @@
   "oci.additions": "Additions",
   "oci.back-to-artifacts": "Back to artifacts",
   "oci.digest": "Digest",
+  "oci.delete-help": "The selected images are deleted together with every tag pointing at them, other tags of the same image included. Layers no remaining image uses are reclaimed by the next prune after a 24 hour grace. A proxy can cache them again on the next pull, hosted pushes cannot be recovered.",
   "oci.image": "Image",
   "oci.image-config": "Image config",
   "oci.images": "Images",

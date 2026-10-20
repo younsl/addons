@@ -20,7 +20,7 @@ use axum::routing::get;
 use chrono::Utc;
 use forklift::{
     api, audit, auth, cluster, config, coverage, insights, license, memlimit, meta, metrics,
-    notify, openapi, replication, repo, server, storage, version, vuln, webui,
+    notify, openapi, outbound, replication, repo, server, storage, version, vuln, webui,
 };
 use prometheus::{GaugeVec, IntCounter, Opts, Registry};
 use tokio_util::sync::CancellationToken;
@@ -79,6 +79,25 @@ fn main() -> std::process::ExitCode {
     }
 }
 
+/// Installs the extra CA bundle before any outbound client is built. The proxy
+/// is logged as set or not, never by URL, which may carry credentials.
+fn init_outbound(cfg: &config::Config) -> anyhow::Result<()> {
+    let extra_ca_certs = match outbound::ExtraRoots::load(&cfg.extra_ca_file)? {
+        Some(roots) => {
+            let n = roots.len();
+            outbound::install(roots)?;
+            n
+        }
+        None => 0,
+    };
+    tracing::info!(
+        extra_ca_certs,
+        proxy = outbound::proxy_configured(),
+        "outbound http configured"
+    );
+    Ok(())
+}
+
 fn migrate_storage(cfg: &config::Config, args: &[String]) -> std::process::ExitCode {
     use forklift::migrate::cli;
     let args = match cli::parse_args(args) {
@@ -103,6 +122,9 @@ fn migrate_storage(cfg: &config::Config, args: &[String]) -> std::process::ExitC
         staging = %args.staging.display(),
         "starting forklift migrate-storage"
     );
+    if let Err(e) = init_outbound(cfg) {
+        return fatal(&format!("{e:#}"));
+    }
     let runtime = match tokio::runtime::Runtime::new() {
         Ok(runtime) => runtime,
         Err(e) => return fatal(&e.to_string()),
@@ -159,6 +181,7 @@ async fn run(cfg: Arc<config::Config>, cancel: CancellationToken) -> anyhow::Res
         data_dir = %cfg.data_dir,
         "starting forklift"
     );
+    init_outbound(&cfg)?;
 
     // Keep the GC ahead of the container memory limit so request bursts degrade
     // into extra allocator work instead of an OOMKill.

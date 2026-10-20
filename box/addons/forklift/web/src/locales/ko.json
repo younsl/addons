@@ -777,6 +777,7 @@
   "oci.additions": "추가 정보",
   "oci.back-to-artifacts": "아티팩트 목록으로",
   "oci.digest": "다이제스트",
+  "oci.delete-help": "선택한 이미지와 그 이미지를 가리키는 모든 태그(같은 이미지의 다른 태그 포함)를 삭제합니다. 남은 이미지가 쓰지 않는 레이어는 24시간 유예 후 다음 정리 주기에 회수됩니다. 프록시는 다음 pull에서 다시 캐시하지만 hosted push는 복구할 수 없습니다.",
   "oci.image": "이미지",
   "oci.image-config": "이미지 설정",
   "oci.images": "이미지",

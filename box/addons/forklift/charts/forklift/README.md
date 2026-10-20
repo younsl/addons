@@ -192,6 +192,11 @@ The following table lists the configurable parameters and their default values.
 | coverageScanning.gitlab.existingSecret | string | `""` | Read the token from this Secret instead, so it never appears in values. |
 | coverageScanning.gitlab.existingSecretKey | string | `"coverage-gitlab-token"` | Key holding the token, in either the chart's Secret or existingSecret. |
 | externalUrl | string | `""` | Public base URL (e.g. https://forklift.example.com) for generated metadata URLs. Empty uses the request host. |
+| outbound.proxy.https | string | `""` | Proxy URL for outbound HTTPS requests (HTTPS_PROXY). Empty connects directly. |
+| outbound.proxy.http | string | `""` | Proxy URL for outbound plain HTTP requests (HTTP_PROXY). Empty connects directly. |
+| outbound.proxy.noProxy | list | `[]` | Hosts, domains (.example.com) and CIDRs that bypass the proxy, added to the in-cluster defaults. |
+| outbound.caBundle.configMap | string | `""` | ConfigMap with private CA certificates (PEM) trusted on top of the system roots. Empty disables. |
+| outbound.caBundle.key | string | `"ca.crt"` | Key in the ConfigMap holding the PEM bundle. |
 | seedDefaultRepos | bool | `true` | Seed default proxy and hosted repositories on first run. Idempotent. |
 | log.level | string | `"info"` | Log level (debug, info, warn, error). |
 | log.format | string | `"json"` | Log format (json, text). |

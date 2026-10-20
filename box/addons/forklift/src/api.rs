@@ -122,7 +122,7 @@ impl Handler {
         Arc::new(Self {
             store,
             authz,
-            client: reqwest::Client::builder()
+            client: crate::outbound::client_builder()
                 .timeout(std::time::Duration::from_secs(5))
                 .redirect(reqwest::redirect::Policy::none())
                 .build()

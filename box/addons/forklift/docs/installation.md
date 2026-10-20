@@ -101,6 +101,29 @@ Set `storage.s3.endpoint`, `storage.s3.forcePathStyle=true`, static keys via `st
 
 HA metadata fencing needs S3 conditional writes (`If-Match`, `If-None-Match`). Forklift probes the store at startup: when the store accepts a write whose precondition failed, a single instance logs a warning and HA (`replicaCount > 1`) refuses to start. Garage ignores the headers by design, so run it with `replicaCount: 1`.
 
+## Outbound proxy and private CA
+
+In a network that reaches the internet only through a forward proxy, or where upstream registries, the OIDC issuer, GitLab or the S3 store present certificates from a private CA, set the `outbound` values. They apply to the server and the storage migration Job.
+
+```yaml
+outbound:
+  proxy:
+    https: http://proxy.example.com:3128
+    http: http://proxy.example.com:3128
+    noProxy:
+      - .example.com
+      - 10.0.0.0/16
+  caBundle:
+    configMap: corp-ca
+    key: ca.crt
+```
+
+The chart sets `HTTPS_PROXY`, `HTTP_PROXY` and `NO_PROXY`, which every outbound client honors, the S3 client included. `NO_PROXY` always starts with `localhost`, `.svc`, `.cluster.local`, the forklift Services and the bundled SeaweedFS Service, so replication and storage traffic never goes through the proxy. List an external S3 endpoint or a migration source store reached by short name in `noProxy` when they must bypass it too.
+
+The CA bundle is mounted at `/etc/forklift/ca` and trusted on top of the image's public roots, so the ConfigMap holds only the private CA certificates. Create it with `kubectl create configmap corp-ca --from-file=ca.crt=corp-ca.pem`. A bundle that cannot be read or holds no certificate fails startup.
+
+A proxy URL with credentials belongs in a Secret: leave `outbound.proxy` empty and set `HTTPS_PROXY` through `extraEnv` with `valueFrom.secretKeyRef`, then list the in-cluster `NO_PROXY` entries yourself.
+
 ## Chart versions
 
 List chart versions with [crane](https://github.com/google/go-containerregistry/blob/main/cmd/crane/README.md):

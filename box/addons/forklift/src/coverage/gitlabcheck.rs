@@ -42,7 +42,7 @@ impl Scanner {
         }
         out.configured = true;
 
-        let client = match reqwest::Client::builder()
+        let client = match crate::outbound::client_builder()
             .timeout(GITLAB_CHECK_TIMEOUT)
             // A redirect would carry the token somewhere the configuration never
             // named, so the check reports the redirect instead of following it.

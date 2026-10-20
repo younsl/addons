@@ -251,7 +251,7 @@ impl Replicator {
             token: o.token,
             interval: o.interval,
             leader_url: o.leader_url,
-            client: reqwest::Client::builder()
+            client: crate::outbound::client_builder()
                 .timeout(Duration::from_mins(5))
                 .build()
                 .expect("build replication http client"),

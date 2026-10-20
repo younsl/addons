@@ -44,6 +44,8 @@ All settings are environment variables (the Helm chart maps values to them).
 | `FORKLIFT_METRICS_ADDR` | `:8081` | Prometheus metrics |
 | `FORKLIFT_PPROF_ADDR` | `127.0.0.1:6060` | `pprof`-compatible CPU profile listener (`/debug/pprof/profile`), loopback-only so it is reachable through `kubectl port-forward` but not through the Service; empty disables it |
 | `FORKLIFT_EXTERNAL_URL` | (request-derived) | Base URL for URLs synthesised in package metadata; set behind a reverse proxy instead of relying on `X-Forwarded-*` |
+| `FORKLIFT_EXTRA_CA_FILE` | (empty) | PEM bundle of private CA certificates trusted by every outbound client (upstreams, OSV, deps.dev, OIDC, webhooks, GitLab, S3) on top of the system roots. A missing, malformed or empty file fails startup |
+| `HTTPS_PROXY` / `HTTP_PROXY` / `ALL_PROXY` / `NO_PROXY` | (empty) | Standard proxy variables, honored by every outbound client including S3. The startup log line `outbound http configured` reports whether a proxy is set and how many extra CA certificates were loaded, never the proxy URL |
 | `FORKLIFT_LOG_LEVEL` / `FORKLIFT_LOG_FORMAT` | `info` / `json` | Logging. Every line carries `time`, `level`, `component` (the module it comes from, such as `migrate`, `objstore` or `api`, `main` for startup) and `msg` |
 | `FORKLIFT_HA_ENABLED` | `false` | Enable Lease leader election |
 | `FORKLIFT_REPLICATION_ENABLED` | `false` | Enable PV-based replication (requires HA) |

@@ -390,8 +390,61 @@ supported so it does not have to live in values.yaml either.
       name: {{ .Values.coverageScanning.gitlab.existingSecret | default (include "forklift.fullname" .) }}
       key: {{ .Values.coverageScanning.gitlab.existingSecretKey | quote }}
 {{- end }}
+{{- include "forklift.outboundEnv" . }}
 {{- with .Values.extraEnv }}
 {{ toYaml . }}
+{{- end }}
+{{- end }}
+
+{{/*
+Outbound proxy and private CA environment, shared by the server and the
+migration Job. NO_PROXY always lists the in-cluster names forklift dials
+(its own Services and the bundled SeaweedFS, addressed by short name), so
+setting a proxy never routes replication or storage through it.
+*/}}
+{{- define "forklift.outboundEnv" -}}
+{{- $o := .Values.outbound }}
+{{- if or $o.proxy.https $o.proxy.http }}
+{{- $noProxy := list "localhost" "127.0.0.1" "::1" ".svc" ".cluster.local" (include "forklift.fullname" .) (include "forklift.headlessServiceName" .) }}
+{{- if .Values.seaweedfs.enabled }}
+{{- $noProxy = append $noProxy (include "forklift.seaweedfsService" .) }}
+{{- end }}
+{{- $noProxy = concat $noProxy ($o.proxy.noProxy | default list) }}
+{{- with $o.proxy.https }}
+- name: HTTPS_PROXY
+  value: {{ . | quote }}
+{{- end }}
+{{- with $o.proxy.http }}
+- name: HTTP_PROXY
+  value: {{ . | quote }}
+{{- end }}
+- name: NO_PROXY
+  value: {{ join "," $noProxy | quote }}
+{{- end }}
+{{- if $o.caBundle.configMap }}
+- name: FORKLIFT_EXTRA_CA_FILE
+  value: {{ printf "/etc/forklift/ca/%s" $o.caBundle.key | quote }}
+{{- end }}
+{{- end }}
+
+{{- define "forklift.outboundVolumeMounts" -}}
+{{- if .Values.outbound.caBundle.configMap }}
+- name: extra-ca
+  mountPath: /etc/forklift/ca
+  readOnly: true
+{{- end }}
+{{- end }}
+
+{{- define "forklift.outboundVolumes" -}}
+{{- with .Values.outbound.caBundle }}
+{{- if .configMap }}
+- name: extra-ca
+  configMap:
+    name: {{ .configMap }}
+    items:
+      - key: {{ .key }}
+        path: {{ .key }}
+{{- end }}
 {{- end }}
 {{- end }}
 

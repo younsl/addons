@@ -29,7 +29,7 @@ impl DepsDev {
     /// `None` client gets a default with a short timeout.
     pub fn new(base_url: &str, client: Option<reqwest::Client>) -> Self {
         let client = client.unwrap_or_else(|| {
-            reqwest::Client::builder()
+            crate::outbound::client_builder()
                 .timeout(Duration::from_secs(10))
                 .build()
                 .unwrap_or_default()

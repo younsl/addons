@@ -70,13 +70,15 @@ spec:
             - name: data
               mountPath: /data
             {{- include "forklift.rbacVolumeMounts" . | nindent 12 }}
-      {{- if or (not .Values.persistence.enabled) .Values.auth.rbac.enabled }}
+            {{- include "forklift.outboundVolumeMounts" . | nindent 12 }}
+      {{- if or (not .Values.persistence.enabled) .Values.auth.rbac.enabled .Values.outbound.caBundle.configMap }}
       volumes:
         {{- if not .Values.persistence.enabled }}
         - name: data
           emptyDir: {}
         {{- end }}
         {{- include "forklift.rbacVolumes" . | nindent 8 }}
+        {{- include "forklift.outboundVolumes" . | nindent 8 }}
       {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:

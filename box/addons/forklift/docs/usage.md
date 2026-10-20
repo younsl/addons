@@ -133,6 +133,8 @@ Deleting takes the same shape at
 is admin-only like deleting one artifact. Both are audited per path, exactly as
 the single-artifact operations are.
 
+The OCI Images view has the same **Actions** menu, with **Delete** for administrators. It deletes each selected image by its manifest path (`<name>/manifests/<digest>`), and every tag pointing at that manifest goes with it, other tags of the same image included. The reachability prune reclaims the layers no remaining image uses after its 24 hour grace. The bulk delete API and the single-artifact delete treat an OCI manifest path the same way.
+
 A label is a bare key or a `key:value` pair, each side ASCII letters, digits, `-`
 and `_`, up to 64 characters in total, and one artifact holds at most 20 of them.
 Surrounding whitespace is trimmed and casing is kept as typed. Every

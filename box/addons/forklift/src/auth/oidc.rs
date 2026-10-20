@@ -387,7 +387,7 @@ impl HttpClient {
         rustls::crypto::aws_lc_rs::default_provider()
             .install_default()
             .ok();
-        let inner = reqwest::Client::builder()
+        let inner = crate::outbound::client_builder()
             .redirect(reqwest::redirect::Policy::none())
             .build()
             .map_err(|e| Error::Oidc(format!("build oidc http client: {e}")))?;

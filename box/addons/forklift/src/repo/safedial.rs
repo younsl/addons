@@ -9,7 +9,7 @@ use url::Url;
 /// base64url file refs) rather than from admin configuration.
 ///
 pub(crate) fn new_public_only_client(timeout: Duration) -> reqwest::Client {
-    reqwest::Client::builder()
+    crate::outbound::client_builder()
         .timeout(timeout)
         .connect_timeout(Duration::from_secs(10))
         // Redirects are followed by hand so credential headers can be dropped

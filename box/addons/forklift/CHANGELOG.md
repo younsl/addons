@@ -4,6 +4,18 @@ Notable changes per release. Container image versions come from the
 `org.opencontainers.image.version` label in the `Dockerfile`; chart versions from
 `charts/forklift/Chart.yaml`.
 
+## Unreleased
+
+### Added
+
+- Outbound proxy and private CA support. `FORKLIFT_EXTRA_CA_FILE` names a PEM bundle of private CA certificates that every outbound client (proxy upstreams, OSV, deps.dev, OIDC, webhooks, GitLab, S3) trusts on top of the system roots. A bundle that cannot be read or holds no certificate fails startup. The chart's `outbound.caBundle` mounts it from a ConfigMap, and `outbound.proxy` sets `HTTPS_PROXY`, `HTTP_PROXY` and a `NO_PROXY` that always keeps in-cluster traffic (forklift's own Services and the bundled SeaweedFS) off the proxy. Both apply to the storage migration Job too. The startup line `outbound http configured` reports whether a proxy is set and how many extra CA certificates were loaded. See `docs/installation.md`.
+- Delete in the OCI Images view's Actions menu, for administrators, as other formats have in their Artifacts tab. Each selected image is deleted with every tag pointing at its manifest, behind the same type-to-confirm guard, and the reachability prune reclaims the unused layers after its 24 hour grace.
+
+### Fixed
+
+- The S3 client ignored `HTTPS_PROXY` and `NO_PROXY`, so object storage behind a forward proxy was unreachable while every other outbound request went through it.
+- Deleting an OCI manifest through the artifact delete or bulk delete API left its tags behind, pointing at a manifest that no longer existed. They are now deleted with it.
+
 ## 0.16.1 (2026-10-19)
 
 ### Added

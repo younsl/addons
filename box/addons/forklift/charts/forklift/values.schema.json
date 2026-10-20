@@ -435,6 +435,46 @@
     "externalUrl": {
       "type": ["string", "null"]
     },
+    "outbound": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "proxy": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "https": {
+              "type": ["string", "null"],
+              "pattern": "^$|^https?://"
+            },
+            "http": {
+              "type": ["string", "null"],
+              "pattern": "^$|^https?://"
+            },
+            "noProxy": {
+              "type": ["array", "null"],
+              "items": {
+                "type": "string",
+                "pattern": "^[^,\\s]+$"
+              }
+            }
+          }
+        },
+        "caBundle": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "configMap": {
+              "type": ["string", "null"]
+            },
+            "key": {
+              "type": "string",
+              "pattern": "^[-._a-zA-Z0-9]+$"
+            }
+          }
+        }
+      }
+    },
     "seedDefaultRepos": {
       "type": "boolean"
     },

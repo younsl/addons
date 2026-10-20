@@ -80,6 +80,7 @@ spec:
             - name: data
               mountPath: /data
             {{- include "forklift.rbacVolumeMounts" . | nindent 12 }}
+            {{- include "forklift.outboundVolumeMounts" . | nindent 12 }}
       volumes:
         - name: data
           {{- if and .Values.persistence.enabled (ne (include "forklift.s3Enabled" .) "true") }}
@@ -89,6 +90,7 @@ spec:
           emptyDir: {}
           {{- end }}
         {{- include "forklift.rbacVolumes" . | nindent 8 }}
+        {{- include "forklift.outboundVolumes" . | nindent 8 }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

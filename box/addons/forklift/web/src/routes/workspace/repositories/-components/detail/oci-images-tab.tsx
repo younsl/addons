@@ -25,8 +25,9 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { ConfirmModal } from "@/components/overlays/confirm-modal";
 import { bulkRetryPaths, runArtifactBulk } from "@/lib/artifact-bulk";
-import { postBulkRepositoryArtifactsLabels } from "@/services/v1/repositories/api";
+import { postBulkDeleteRepositoryArtifacts, postBulkRepositoryArtifactsLabels } from "@/services/v1/repositories/api";
 import { Card, CardContent } from "@/components/ui/card";
 import { getErrorMessageIfAny } from "@/lib/http/error/api-error";
 import { useDateTime, useTranslation } from "@/lib/i18n";
@@ -41,7 +42,7 @@ import { idleTtlDays } from "@/lib/retention";
 // per tag, with the image name, kind, platforms, content size, digest and push
 // time, plus a copyable pull reference. The raw blob/manifest artifact rows
 // stay reachable through the API; this view is what an operator thinks in.
-export function OCIImagesTab({ repo }: { repo: Repository }) {
+export function OCIImagesTab({ repo, canDelete }: { repo: Repository; canDelete: boolean }) {
   const { t } = useTranslation();
   const formatDate = useDateTime();
   const navigate = useNavigate();
@@ -50,7 +51,7 @@ export function OCIImagesTab({ repo }: { repo: Repository }) {
   const [actionError, setActionError] = useState("");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [actionsOpen, setActionsOpen] = useState(false);
-  const [action, setAction] = useState<"add" | "remove" | null>(null);
+  const [action, setAction] = useState<"add" | "remove" | "delete" | null>(null);
   const [label, setLabel] = useState("");
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
@@ -77,9 +78,9 @@ export function OCIImagesTab({ repo }: { repo: Repository }) {
   const tags = tagsQuery.data?.tags ?? [];
   const host = window.location.host;
   // Several tags may refer to one manifest. Mutate each authorized path once.
-  const labelable = [...new Set(tags.filter((row) => row.can_label).map((row) => row.path))];
-  const paths = labelable.filter((path) => selected.has(path));
-  const allSelected = labelable.length > 0 && paths.length === labelable.length;
+  const selectable = [...new Set(tags.filter((row) => row.can_label || canDelete).map((row) => row.path))];
+  const paths = selectable.filter((path) => selected.has(path));
+  const allSelected = selectable.length > 0 && paths.length === selectable.length;
   const toggle = (path: string, checked: boolean) => {
     setNotice("");
     setSelected((previous) => {
@@ -89,27 +90,35 @@ export function OCIImagesTab({ repo }: { repo: Repository }) {
       return next;
     });
   };
-  const openAction = (next: "add" | "remove") => {
+  const openAction = (next: "add" | "remove" | "delete") => {
     setActionsOpen(false);
     setLabel("");
     setAction(next);
   };
   const apply = async () => {
-    if (busy || !action || !label.trim() || paths.length === 0) return;
+    if (busy || !action || paths.length === 0) return;
+    if (action !== "delete" && !label.trim()) return;
     setBusy(true);
     setActionError("");
     setNotice("");
     try {
-      const result = await runArtifactBulk(paths, (batch) => postBulkRepositoryArtifactsLabels({
-        path: { id: repo.id }, body: { paths: batch, label: label.trim(), action },
-      }));
+      const result = action === "delete"
+        ? await runArtifactBulk(paths, (batch) => postBulkDeleteRepositoryArtifacts({
+          path: { id: repo.id }, body: { paths: batch },
+        }))
+        : await runArtifactBulk(paths, (batch) => postBulkRepositoryArtifactsLabels({
+          path: { id: repo.id }, body: { paths: batch, label: label.trim(), action },
+        }));
       setSelected(new Set(bulkRetryPaths(paths, result)));
       setNotice(`${t("repo.bulk-succeeded")} ${result.succeeded} / ${result.requested}`);
       if (result.failed.length) {
         setActionError(`${t("repo.bulk-failed")} ${result.failed.length}\n${result.failed.slice(0, 5).map((failure) => `${failure.path}: ${failure.error}`).join("\n")}`);
       }
       setAction(null);
-      await queryClient.invalidateQueries({ queryKey: openApiQueryKeys.listRepositoryOciTags({ path: { id: repo.id } }) });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: openApiQueryKeys.listRepositoryOciTags({ path: { id: repo.id } }) }),
+        queryClient.invalidateQueries({ queryKey: openApiQueryKeys.listRepositories() }),
+      ]);
     } catch (error) {
       setActionError((error as Error).message);
       setAction(null);
@@ -132,6 +141,9 @@ export function OCIImagesTab({ repo }: { repo: Repository }) {
           <PopoverContent align="end" className="w-auto min-w-0 gap-0 p-1">
             <MenuItem onClick={() => openAction("add")}>{t("repo.bulk-add-label")}</MenuItem>
             <MenuItem onClick={() => openAction("remove")}>{t("repo.bulk-remove-label")}</MenuItem>
+            {canDelete && (
+              <MenuItem variant="danger" onClick={() => openAction("delete")}>{t("repo.bulk-delete")}</MenuItem>
+            )}
           </PopoverContent>
         </Popover>
       </div>
@@ -147,8 +159,8 @@ export function OCIImagesTab({ repo }: { repo: Repository }) {
               <TableRow>
                 <TableHead className="w-6 pr-0">
                   <Checkbox aria-label={t("repo.bulk-select-page")} checked={allSelected}
-                    indeterminate={paths.length > 0 && !allSelected} disabled={labelable.length === 0 || busy}
-                    onCheckedChange={(checked) => { setNotice(""); setSelected(new Set(checked ? labelable : [])); }} />
+                    indeterminate={paths.length > 0 && !allSelected} disabled={selectable.length === 0 || busy}
+                    onCheckedChange={(checked) => { setNotice(""); setSelected(new Set(checked ? selectable : [])); }} />
                 </TableHead>
                 <TableHead>{t("oci.image")}</TableHead>
                 <TableHead>{t("oci.tag")}</TableHead>
@@ -174,7 +186,7 @@ export function OCIImagesTab({ repo }: { repo: Repository }) {
                 >
                   <TableCell className="w-6 pr-0" onClick={(event) => event.stopPropagation()}>
                     <Checkbox aria-label={`${t("repo.bulk-select-row")} ${row.name}:${row.tag || row.digest}`}
-                      checked={selected.has(row.path)} disabled={!row.can_label || busy}
+                      checked={selected.has(row.path)} disabled={!(row.can_label || canDelete) || busy}
                       onCheckedChange={(checked) => toggle(row.path, Boolean(checked))} />
                   </TableCell>
                   <TableCell className="font-mono text-xs" onClick={(e) => e.stopPropagation()}>
@@ -215,7 +227,7 @@ export function OCIImagesTab({ repo }: { repo: Repository }) {
           </Table>
         </TableWrap>
       )}
-      <AlertDialog open={action !== null} onOpenChange={(open) => { if (!open && !busy) setAction(null); }}>
+      <AlertDialog open={action === "add" || action === "remove"} onOpenChange={(open) => { if (!open && !busy) setAction(null); }}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>{action === "remove" ? t("repo.bulk-remove-label") : t("repo.bulk-add-label")}</AlertDialogTitle>
@@ -232,6 +244,16 @@ export function OCIImagesTab({ repo }: { repo: Repository }) {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      <ConfirmModal
+        open={action === "delete"}
+        title={t("repo.bulk-delete")}
+        message={`${paths.length} ${t("repo.bulk-selected")}. ${t("oci.delete-help")}`}
+        confirmLabel={t("common.delete")}
+        danger
+        confirmText="delete"
+        onConfirm={() => void apply()}
+        onCancel={() => { if (!busy) setAction(null); }}
+      />
       </CardContent>
     </Card>
   );

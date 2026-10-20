@@ -134,7 +134,7 @@ export function RepositoryDetail({ me }: { me: Me }) {
       </nav>
 
       {tab === "artifacts" && (repo.format === "oci"
-        ? <OCIImagesTab repo={repo} />
+        ? <OCIImagesTab repo={repo} canDelete={repo.capabilities?.delete ?? !!me.admin} />
         : <Artifacts repo={repo} canDelete={repo.capabilities?.delete ?? !!me.admin} />)}
       {tab === "statistics" && <Statistics repo={repo} />}
       {tab === "permissions" && <RepoPermissions repoId={repo.id} />}

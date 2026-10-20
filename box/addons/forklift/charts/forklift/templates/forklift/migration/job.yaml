@@ -137,6 +137,7 @@ spec:
                   name: {{ include "forklift.fullname" . }}
                   key: s3-admin-token
             {{- end }}
+            {{- include "forklift.outboundEnv" . | nindent 12 }}
           {{- with .Values.storage.migration.resources }}
           resources:
             {{- toYaml . | nindent 12 }}
@@ -144,12 +145,14 @@ spec:
           volumeMounts:
             - name: staging
               mountPath: /tmp
+            {{- include "forklift.outboundVolumeMounts" . | nindent 12 }}
       volumes:
         - name: staging
           emptyDir:
             {{- with .Values.storage.migration.stagingSizeLimit }}
             sizeLimit: {{ . }}
             {{- end }}
+        {{- include "forklift.outboundVolumes" . | nindent 8 }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

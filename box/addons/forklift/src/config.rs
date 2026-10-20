@@ -54,6 +54,10 @@ pub struct Config {
     /// synthesised in package metadata instead of deriving it from request
     /// Host/X-Forwarded-* headers.
     pub external_url: String,
+    /// A PEM bundle of private CA certificates trusted by every outbound
+    /// client on top of the system roots (see [`crate::outbound`]). Empty
+    /// trusts the system roots only.
+    pub extra_ca_file: String,
 
     /// One of debug, info, warn, error.
     pub log_level: String,
@@ -408,6 +412,7 @@ impl Config {
             metrics_addr: env("FORKLIFT_METRICS_ADDR", ":8081"),
             pprof_addr: env("FORKLIFT_PPROF_ADDR", "127.0.0.1:6060"),
             external_url: env("FORKLIFT_EXTERNAL_URL", ""),
+            extra_ca_file: env("FORKLIFT_EXTRA_CA_FILE", ""),
             log_level: env("FORKLIFT_LOG_LEVEL", "info"),
             log_format: env("FORKLIFT_LOG_FORMAT", "json"),
             shutdown_timeout: env_duration("FORKLIFT_SHUTDOWN_TIMEOUT", 15 * SECOND),

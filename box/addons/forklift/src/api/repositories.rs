@@ -1851,11 +1851,30 @@ pub(super) async fn delete_artifact(
     if force {
         return force_delete_artifact(&h, &parts, &repository, &path).await;
     }
-    if let Err(err) = h.store.delete_artifact(id, &path).await {
+    if let Err(err) = delete_artifact_row(&h, &repository, &path).await {
         return map_error(err);
     }
     h.audit_artifact(&parts, &repository.name, &path, 204);
     StatusCode::NO_CONTENT.into_response()
+}
+
+/// Deletes one artifact row. An OCI manifest takes every tag pointing at it
+/// along, so no tag is left naming a manifest that is gone. The tags go first:
+/// a failure after them leaves an untagged manifest, which the reachability
+/// prune collects, never a tag without its manifest.
+pub(super) async fn delete_artifact_row(
+    h: &Handler,
+    repository: &Repository,
+    path: &str,
+) -> meta::Result<()> {
+    if repository.format == meta::FORMAT_OCI
+        && let Some((name, digest)) = repo::oci_manifest_ref(path)
+    {
+        h.store
+            .delete_oci_tags_by_digest(repository.id, name, digest)
+            .await?;
+    }
+    h.store.delete_artifact(repository.id, path).await
 }
 
 /// Removes an artifact whose bytes are gone, which the ordinary delete refuses

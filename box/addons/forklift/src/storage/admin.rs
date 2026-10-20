@@ -163,7 +163,7 @@ pub(crate) fn decode<T: serde::de::DeserializeOwned>(body: &[u8], op: &'static s
 /// The process-wide rustls provider is installed once at startup by the server
 /// binary; building the client here only reads it.
 pub(crate) fn http_client() -> Result<reqwest::Client> {
-    reqwest::Client::builder()
+    crate::outbound::client_builder()
         .redirect(reqwest::redirect::Policy::none())
         .build()
         .map_err(|e| Error::s3("admin client", e))

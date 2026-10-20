@@ -185,7 +185,7 @@ impl Notifier {
         } else {
             timeout
         };
-        let client = reqwest::Client::builder()
+        let client = crate::outbound::client_builder()
             .timeout(timeout)
             .build()
             .unwrap_or_default();

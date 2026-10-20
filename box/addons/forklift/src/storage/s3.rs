@@ -14,8 +14,11 @@ use aws_sdk_s3::Client;
 use aws_sdk_s3::config::{Region, RequestChecksumCalculation, ResponseChecksumValidation};
 use aws_sdk_s3::error::{ProvideErrorMetadata, SdkError};
 use aws_sdk_s3::primitives::{ByteStream, Length};
-use aws_smithy_http_client::tls;
+use aws_smithy_http_client::proxy::ProxyConfig;
+use aws_smithy_http_client::{Connector, tls};
+use aws_smithy_runtime_api::client::http::SharedHttpClient;
 use aws_smithy_runtime_api::client::orchestrator::HttpResponse;
+use aws_smithy_runtime_api::client::runtime_components::RuntimeComponents;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt};
 
 use super::{
@@ -54,11 +57,7 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 /// with no extra code; static keys are used only when both are set. The HTTP
 /// client is rustls over aws-lc-rs so the binary carries no OpenSSL.
 pub async fn new_s3_client(cfg: &S3Config) -> Result<Client> {
-    let http_client = aws_smithy_http_client::Builder::new()
-        .tls_provider(tls::Provider::Rustls(
-            tls::rustls_provider::CryptoMode::AwsLc,
-        ))
-        .build_https();
+    let http_client = https_client()?;
     let mut loader = aws_config::defaults(BehaviorVersion::latest()).http_client(http_client);
     if !cfg.region.is_empty() {
         loader = loader.region(Region::new(cfg.region.clone()));
@@ -94,6 +93,42 @@ pub async fn new_s3_client(cfg: &S3Config) -> Result<Client> {
                 .build(),
         );
     Ok(Client::from_conf(builder.build()))
+}
+
+/// The SDK HTTP client: system roots plus the extra CA bundle from
+/// [`crate::outbound`], and the proxy from the standard environment variables.
+/// The SDK's default connector ignores both. The connector is rebuilt the way
+/// the SDK builds its own (timeouts and sleep from the runtime), and the SDK
+/// caches it per settings.
+pub(crate) fn https_client() -> Result<SharedHttpClient> {
+    let mut trust = tls::TrustStore::default();
+    if let Some(pem) = crate::outbound::extra_roots_pem() {
+        trust = trust.with_pem_certificate(pem.to_vec());
+    }
+    let tls_context = tls::TlsContext::builder()
+        .with_trust_store(trust)
+        .build()
+        .map_err(|e| Error::s3("s3 tls context", e))?;
+    let proxy = ProxyConfig::from_env();
+    Ok(
+        aws_smithy_http_client::Builder::new().build_with_connector_fn(
+            move |settings, components| {
+                let mut builder = Connector::builder().proxy_config(proxy.clone());
+                if let Some(settings) = settings {
+                    builder = builder.connector_settings(settings.clone());
+                }
+                if let Some(sleep) = components.and_then(RuntimeComponents::sleep_impl) {
+                    builder = builder.sleep_impl(sleep);
+                }
+                builder
+                    .tls_provider(tls::Provider::Rustls(
+                        tls::rustls_provider::CryptoMode::AwsLc,
+                    ))
+                    .tls_context(tls_context.clone())
+                    .build()
+            },
+        ),
+    )
 }
 
 /// An S3-backed [`BlobStore`]. Blobs are immutable and content-addressed, so

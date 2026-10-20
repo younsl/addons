@@ -62,7 +62,7 @@ pub struct GitLabClient {
 /// NewGitLabClient builds a client against an API base such as
 /// "https://gitlab.example.com/api/v4".
 pub fn new_gitlab_client(o: GitLabOptions) -> GitLabClient {
-    let client = reqwest::Client::builder()
+    let client = crate::outbound::client_builder()
         .timeout(GITLAB_TIMEOUT)
         // Redirects are never followed. The scan sends the access token in a
         // PRIVATE-TOKEN header, which is not stripped on a cross-host redirect,

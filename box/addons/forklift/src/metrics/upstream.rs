@@ -71,7 +71,7 @@ impl UpstreamProber {
             // are never followed: a redirecting upstream must not bounce them
             // elsewhere, and any HTTP response (a 3xx included) already proves
             // reachability.
-            client: reqwest::Client::builder()
+            client: crate::outbound::client_builder()
                 .timeout(PROBE_TIMEOUT)
                 .redirect(reqwest::redirect::Policy::none())
                 .build()
