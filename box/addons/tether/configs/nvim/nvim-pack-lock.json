@@ -13,7 +13,7 @@
       "src": "https://github.com/windwp/nvim-autopairs"
     },
     "nvim-tree.lua": {
-      "rev": "531b807b8f0d6f75016a0ee1e0cd5ce2086e9d95",
+      "rev": "9a2e0006d42f292eb3ade7dfdff201a7429a780c",
       "src": "https://github.com/nvim-tree/nvim-tree.lua",
       "version": ">=0.0.0"
     },
