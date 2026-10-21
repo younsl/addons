@@ -709,6 +709,21 @@ fn register_leader_metrics(reg: &Registry) -> anyhow::Result<(prometheus::Gauge,
 mod tests {
     use super::*;
 
+    /// A bundle that is set but unusable stops startup instead of leaving the
+    /// process trusting only the system roots, which would surface later as
+    /// TLS failures against every private-CA upstream. An unset bundle passes.
+    #[test]
+    fn init_outbound_refuses_an_unreadable_bundle() {
+        let missing = config::Config {
+            extra_ca_file: "/nonexistent/forklift-ca.pem".to_string(),
+            ..Default::default()
+        };
+        let err = init_outbound(&missing).expect_err("missing bundle");
+        assert!(format!("{err:#}").contains("extra ca file"), "{err:#}");
+
+        init_outbound(&config::Config::default()).expect("unset bundle");
+    }
+
     /// Boots the whole application on ephemeral ports with the filesystem
     /// backend and no external scanners, then cancels the token to confirm a
     /// clean graceful shutdown. It exercises the full `run` wiring: storage,

@@ -170,3 +170,77 @@ async fn delete_artifact() {
         .await;
     assert_eq!(resp.status, StatusCode::NOT_FOUND, "unknown repo");
 }
+
+/// Deleting an OCI manifest by path takes every tag pointing at it along, so no
+/// tag is left naming a manifest that is gone. Deleting a blob path in the same
+/// repository leaves the tags alone: only a manifest path identifies an image.
+#[tokio::test]
+async fn delete_oci_manifest_by_path_removes_its_tags() {
+    let srv = new_test_server().await;
+    let resp = srv
+        .admin_do(
+            Method::POST,
+            "/repositories",
+            r#"{"name":"oci-local","format":"oci","type":"hosted"}"#,
+        )
+        .await;
+    assert_eq!(resp.status, StatusCode::CREATED, "{}", resp.text());
+    let id = resp.json()["id"].as_i64().expect("repository id");
+
+    let deleted = format!("sha256:{}", "a".repeat(64));
+    let kept = format!("sha256:{}", "b".repeat(64));
+    let layer = format!("sha256:{}", "c".repeat(64));
+    for (path, sha) in [
+        (format!("app/manifests/{deleted}"), "m1"),
+        (format!("app/manifests/{kept}"), "m2"),
+        (format!("app/blobs/{layer}"), "l1"),
+    ] {
+        srv.store
+            .put_artifact(forklift::meta::Artifact {
+                repo_id: id,
+                path,
+                blob_sha256: sha.to_string(),
+                size: 1,
+                ..Default::default()
+            })
+            .await
+            .expect("seed artifact");
+    }
+    for (tag, digest) in [("v1", &deleted), ("latest", &deleted), ("v2", &kept)] {
+        srv.store
+            .upsert_oci_tag(id, "app", tag, digest)
+            .await
+            .expect("tag");
+    }
+    let delete = async |path: String| {
+        srv.admin_do(
+            Method::DELETE,
+            &format!("/repositories/{id}/artifacts?path={}", query_escape(&path)),
+            "",
+        )
+        .await
+        .status
+    };
+
+    assert_eq!(
+        delete(format!("app/blobs/{layer}")).await,
+        StatusCode::NO_CONTENT,
+        "blob delete"
+    );
+    assert_eq!(
+        srv.store.list_oci_tags(id, "app").await.expect("tags"),
+        vec!["latest", "v1", "v2"],
+        "a blob delete leaves every tag"
+    );
+
+    assert_eq!(
+        delete(format!("app/manifests/{deleted}")).await,
+        StatusCode::NO_CONTENT,
+        "manifest delete"
+    );
+    assert_eq!(
+        srv.store.list_oci_tags(id, "app").await.expect("tags"),
+        vec!["v2"],
+        "only the other manifest's tag survives"
+    );
+}

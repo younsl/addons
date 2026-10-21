@@ -132,6 +132,8 @@ pretty_assertions = "1.4.1"
 serial_test = "4.0.1"
 # Reads DTO JSON shapes from Rust source (see src/api/openapi_schema_test.rs).
 syn = { version = "3.0.6", features = ["full"] }
+rcgen = { version = "0.14.10", default-features = false, features = ["aws_lc_rs", "pem"] }
+tokio-rustls = { version = "0.26.6", default-features = false, features = ["aws_lc_rs", "tls12"] }
 
 [lints.rust]
 unsafe_code = "forbid"

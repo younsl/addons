@@ -240,4 +240,104 @@ eNgCIQDueZI0VOize04VTG2dv5UFzZ667WXzg1B2PhtNagBdNQ==
             (key == "https_proxy").then(|| "http://proxy.example.com:3128".into())
         }));
     }
+
+    /// The point of the bundle: a server whose certificate chains to a private
+    /// CA verifies once the CA is merged in, and is refused on the system roots
+    /// alone.
+    #[tokio::test]
+    async fn extra_root_trusts_a_private_ca_server() {
+        let server = test_tls::private_ca_server().await;
+        let roots = ExtraRoots::parse("bundle", server.ca_pem.clone().into_bytes()).expect("parse");
+
+        let trusted = with_roots(reqwest::Client::builder().no_proxy(), Some(&roots))
+            .build()
+            .expect("client");
+        let resp = trusted
+            .get(&server.url)
+            .send()
+            .await
+            .expect("trusted request");
+        assert_eq!(resp.text().await.expect("body"), "ok");
+
+        let untrusted = reqwest::Client::builder()
+            .no_proxy()
+            .build()
+            .expect("client");
+        let err = untrusted
+            .get(&server.url)
+            .send()
+            .await
+            .expect_err("system roots alone must refuse a private CA");
+        assert!(err.is_connect(), "{err}");
+    }
+}
+
+/// A TLS listener on 127.0.0.1 whose certificate chains to a CA generated for
+/// the test, so no key is ever committed. It answers every request with `200`
+/// and the body `ok`, enough for an HTTP client or the S3 SDK to prove the
+/// handshake verified.
+#[cfg(test)]
+pub(crate) mod test_tls {
+    use std::sync::Arc;
+
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    pub(crate) struct PrivateCaServer {
+        pub(crate) ca_pem: String,
+        pub(crate) url: String,
+    }
+
+    pub(crate) async fn private_ca_server() -> PrivateCaServer {
+        let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
+        let mut ca_params = rcgen::CertificateParams::new(Vec::<String>::new()).expect("ca params");
+        ca_params.is_ca = rcgen::IsCa::Ca(rcgen::BasicConstraints::Unconstrained);
+        ca_params
+            .distinguished_name
+            .push(rcgen::DnType::CommonName, "forklift test ca");
+        let ca = rcgen::CertifiedIssuer::self_signed(
+            ca_params,
+            rcgen::KeyPair::generate().expect("ca key"),
+        )
+        .expect("ca certificate");
+        let leaf_key = rcgen::KeyPair::generate().expect("leaf key");
+        let leaf = rcgen::CertificateParams::new(vec!["127.0.0.1".to_string()])
+            .expect("leaf params")
+            .signed_by(&leaf_key, &ca)
+            .expect("leaf certificate");
+
+        let config = rustls::ServerConfig::builder()
+            .with_no_client_auth()
+            .with_single_cert(
+                vec![leaf.der().clone()],
+                rustls::pki_types::PrivateKeyDer::Pkcs8(leaf_key.serialize_der().into()),
+            )
+            .expect("server config");
+        let acceptor = tokio_rustls::TlsAcceptor::from(Arc::new(config));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind");
+        let addr = listener.local_addr().expect("addr");
+        tokio::spawn(async move {
+            while let Ok((tcp, _)) = listener.accept().await {
+                let acceptor = acceptor.clone();
+                tokio::spawn(async move {
+                    let Ok(mut tls) = acceptor.accept(tcp).await else {
+                        return;
+                    };
+                    let mut buf = [0u8; 8192];
+                    let _ = tls.read(&mut buf).await;
+                    let _ = tls
+                        .write_all(
+                            b"HTTP/1.1 200 OK\r\ncontent-length: 2\r\nconnection: close\r\n\r\nok",
+                        )
+                        .await;
+                    let _ = tls.shutdown().await;
+                });
+            }
+        });
+        PrivateCaServer {
+            ca_pem: ca.pem(),
+            url: format!("https://{addr}"),
+        }
+    }
 }

@@ -57,7 +57,11 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 /// with no extra code; static keys are used only when both are set. The HTTP
 /// client is rustls over aws-lc-rs so the binary carries no OpenSSL.
 pub async fn new_s3_client(cfg: &S3Config) -> Result<Client> {
-    let http_client = https_client()?;
+    let http_client = https_client(crate::outbound::extra_roots_pem(), ProxyConfig::from_env())?;
+    new_s3_client_with(cfg, http_client).await
+}
+
+async fn new_s3_client_with(cfg: &S3Config, http_client: SharedHttpClient) -> Result<Client> {
     let mut loader = aws_config::defaults(BehaviorVersion::latest()).http_client(http_client);
     if !cfg.region.is_empty() {
         loader = loader.region(Region::new(cfg.region.clone()));
@@ -95,21 +99,20 @@ pub async fn new_s3_client(cfg: &S3Config) -> Result<Client> {
     Ok(Client::from_conf(builder.build()))
 }
 
-/// The SDK HTTP client: system roots plus the extra CA bundle from
-/// [`crate::outbound`], and the proxy from the standard environment variables.
-/// The SDK's default connector ignores both. The connector is rebuilt the way
-/// the SDK builds its own (timeouts and sleep from the runtime), and the SDK
-/// caches it per settings.
-pub(crate) fn https_client() -> Result<SharedHttpClient> {
+/// The SDK HTTP client: system roots plus `extra_roots_pem` (the bundle from
+/// [`crate::outbound`]), and `proxy` (the standard environment variables in
+/// production). The SDK's default connector ignores both. The connector is
+/// rebuilt the way the SDK builds its own (timeouts and sleep from the
+/// runtime), and the SDK caches it per settings.
+fn https_client(extra_roots_pem: Option<&[u8]>, proxy: ProxyConfig) -> Result<SharedHttpClient> {
     let mut trust = tls::TrustStore::default();
-    if let Some(pem) = crate::outbound::extra_roots_pem() {
+    if let Some(pem) = extra_roots_pem {
         trust = trust.with_pem_certificate(pem.to_vec());
     }
     let tls_context = tls::TlsContext::builder()
         .with_trust_store(trust)
         .build()
         .map_err(|e| Error::s3("s3 tls context", e))?;
-    let proxy = ProxyConfig::from_env();
     Ok(
         aws_smithy_http_client::Builder::new().build_with_connector_fn(
             move |settings, components| {
@@ -671,6 +674,95 @@ pub(crate) mod tests {
 
     fn reader(data: Vec<u8>) -> Pin<Box<dyn AsyncRead + Send>> {
         Box::pin(std::io::Cursor::new(data))
+    }
+
+    fn client_cfg(endpoint: &str) -> S3Config {
+        S3Config {
+            bucket: "test-bucket".into(),
+            region: "us-east-1".into(),
+            endpoint: endpoint.into(),
+            force_path_style: true,
+            access_key_id: "test".into(),
+            secret_access_key: "secret".into(),
+            ..Default::default()
+        }
+    }
+
+    async fn head_bucket(client: &Client) -> std::result::Result<(), String> {
+        client
+            .head_bucket()
+            .bucket("test-bucket")
+            .send()
+            .await
+            .map(|_| ())
+            .map_err(|e| format!("{e:?}"))
+    }
+
+    /// The SDK's default connector trusts the system roots only, so a store
+    /// behind a private CA verifies only because the extra bundle reaches it.
+    #[tokio::test]
+    async fn s3_client_trusts_the_extra_ca_bundle() {
+        let server = crate::outbound::test_tls::private_ca_server().await;
+        let cfg = client_cfg(&server.url);
+
+        let trusted = https_client(Some(server.ca_pem.as_bytes()), ProxyConfig::disabled())
+            .expect("http client");
+        let trusted = new_s3_client_with(&cfg, trusted).await.expect("client");
+        head_bucket(&trusted)
+            .await
+            .expect("head bucket over the private CA");
+
+        let untrusted = https_client(None, ProxyConfig::disabled()).expect("http client");
+        let untrusted = new_s3_client_with(&cfg, untrusted).await.expect("client");
+        let err = head_bucket(&untrusted)
+            .await
+            .expect_err("system roots alone must refuse a private CA");
+        assert!(err.starts_with("DispatchFailure"), "{err}");
+    }
+
+    /// The SDK ignores HTTPS_PROXY and NO_PROXY unless the connector is given
+    /// them: a configured proxy receives the request, and a NO_PROXY host
+    /// (in-cluster storage in production) never reaches it.
+    #[tokio::test]
+    async fn s3_client_routes_through_the_proxy_unless_bypassed() {
+        let proxy = MockServer::start().await;
+        Mock::given(any())
+            .respond_with(ResponseTemplate::new(200))
+            .mount(&proxy)
+            .await;
+        let cfg = client_cfg("http://forklift-s3.invalid:9000");
+
+        let via = https_client(None, ProxyConfig::http(proxy.uri()).expect("proxy"))
+            .expect("http client");
+        let via = new_s3_client_with(&cfg, via).await.expect("client");
+        head_bucket(&via)
+            .await
+            .expect("head bucket through the proxy");
+        let seen = proxy.received_requests().await.expect("recorded");
+        assert_eq!(seen.len(), 1, "requests the proxy saw");
+        assert_eq!(
+            seen[0].headers.get("host").and_then(|h| h.to_str().ok()),
+            Some("forklift-s3.invalid:9000"),
+            "the proxy is asked for the store, not addressed as the store"
+        );
+
+        let bypass = https_client(
+            None,
+            ProxyConfig::http(proxy.uri())
+                .expect("proxy")
+                .no_proxy("forklift-s3.invalid"),
+        )
+        .expect("http client");
+        let bypass = new_s3_client_with(&cfg, bypass).await.expect("client");
+        assert!(
+            head_bucket(&bypass).await.is_err(),
+            "a bypassed host is dialled directly and does not resolve"
+        );
+        assert_eq!(
+            proxy.received_requests().await.expect("recorded").len(),
+            1,
+            "a NO_PROXY host must not reach the proxy"
+        );
     }
 
     #[tokio::test]
