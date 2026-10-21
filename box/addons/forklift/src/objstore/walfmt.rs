@@ -80,17 +80,18 @@ impl Cursor {
 pub enum WalRead {
     /// Committed frames after the cursor (possibly none), the cursor past the
     /// last of them, and whether every committed frame in the file was taken.
-    /// `oversized` means the next transaction alone exceeds the limit, so it
-    /// was left unread rather than held in memory.
+    /// The frames may stop inside a transaction when the limit is reached:
+    /// every frame before `end` is committed, so the rest of that transaction
+    /// can be read next. `end` is the boundary after the last commit found,
+    /// which a caller passes back as `known_end` to scan only what follows.
     Frames {
         frames: Vec<Frame>,
         cursor: Option<Cursor>,
         complete: bool,
-        oversized: bool,
+        end: Option<Cursor>,
     },
-    /// The file no longer continues the cursor: it was truncated or restarted
-    /// with new salts since the cursor was taken.
-    Reset,
+    /// The file no longer continues the cursor, for the reason given.
+    Reset(&'static str),
 }
 
 struct Header {
@@ -149,27 +150,35 @@ fn parse_header(b: &[u8; WAL_HEADER_LEN]) -> Option<Header> {
 }
 
 /// Reads the committed frames after `cursor` (or from the start of the file
-/// when `None`), stopping once at least `limit` page bytes have been taken at
-/// a commit boundary, or as soon as one transaction's frames exceed `limit`
-/// before its commit. A missing or empty file, or one without a valid
-/// header, holds no frames.
+/// when `None`), at most `limit` page bytes. A first pass validates the
+/// frames from `known_end` (or the cursor) to find the last commit, and the
+/// second reads frames up to that boundary only, so a torn write or a
+/// rolled-back transaction is never returned and a large transaction can be
+/// read in pieces without holding it whole. A missing or empty file, or one
+/// without a valid header, holds no frames.
 ///
 /// The caller must keep writers out while it reads if it intends to
 /// checkpoint afterwards; the reader itself is safe against a concurrent
 /// writer because it never trusts a frame past the last valid commit.
-pub fn read_committed(wal: &Path, cursor: Option<Cursor>, limit: usize) -> Result<WalRead> {
+pub fn read_committed(
+    wal: &Path,
+    cursor: Option<Cursor>,
+    limit: usize,
+    known_end: Option<Cursor>,
+) -> Result<WalRead> {
+    let empty = || WalRead::Frames {
+        frames: Vec::new(),
+        cursor: None,
+        complete: true,
+        end: None,
+    };
     let mut file = match File::open(wal) {
         Ok(f) => f,
         Err(e) if e.kind() == io::ErrorKind::NotFound => {
             return Ok(if cursor.is_some() {
-                WalRead::Reset
+                WalRead::Reset("the wal file was removed")
             } else {
-                WalRead::Frames {
-                    frames: Vec::new(),
-                    cursor: None,
-                    complete: true,
-                    oversized: false,
-                }
+                empty()
             });
         }
         Err(e) => return Err(io_err("open wal")(e)),
@@ -185,14 +194,9 @@ pub fn read_committed(wal: &Path, cursor: Option<Cursor>, limit: usize) -> Resul
     };
     let Some(header) = header else {
         return Ok(if cursor.is_some() {
-            WalRead::Reset
+            WalRead::Reset("the wal file was truncated")
         } else {
-            WalRead::Frames {
-                frames: Vec::new(),
-                cursor: None,
-                complete: true,
-                oversized: false,
-            }
+            empty()
         });
     };
     let start = match cursor {
@@ -200,9 +204,11 @@ pub fn read_committed(wal: &Path, cursor: Option<Cursor>, limit: usize) -> Resul
             if c.salt != header.salt
                 || c.page_size != header.page_size
                 || c.big_endian != header.big_endian
-                || c.offset > len
             {
-                return Ok(WalRead::Reset);
+                return Ok(WalRead::Reset("the wal restarted with new salts"));
+            }
+            if c.offset > len {
+                return Ok(WalRead::Reset("the wal file shrank below the cursor"));
             }
             c
         }
@@ -214,63 +220,79 @@ pub fn read_committed(wal: &Path, cursor: Option<Cursor>, limit: usize) -> Resul
             page_size: header.page_size,
         },
     };
+    let scan_from = match known_end {
+        Some(e) if e.salt == start.salt && e.offset >= start.offset && e.offset <= len => e,
+        _ => start,
+    };
 
     let page_size = start.page_size as usize;
     let frame_len = (FRAME_HEADER_LEN + page_size) as u64;
+    let mut buf = vec![0u8; FRAME_HEADER_LEN + page_size];
+    let end = {
+        file.seek(SeekFrom::Start(scan_from.offset))
+            .map_err(io_err("seek wal"))?;
+        let mut reader = io::BufReader::with_capacity(1 << 20, &mut file);
+        let mut at = scan_from;
+        let mut end = scan_from;
+        while at.offset + frame_len <= len {
+            reader
+                .read_exact(&mut buf)
+                .map_err(io_err("scan wal frame"))?;
+            let Some(next) = next_frame(&buf, at) else {
+                break;
+            };
+            at = next;
+            if be32(&buf, 4) != 0 {
+                end = at;
+            }
+        }
+        end
+    };
+
     file.seek(SeekFrom::Start(start.offset))
         .map_err(io_err("seek wal"))?;
     let mut reader = io::BufReader::with_capacity(1 << 20, file);
-    let mut buf = vec![0u8; FRAME_HEADER_LEN + page_size];
-    let mut pending: Vec<Frame> = Vec::new();
     let mut frames: Vec<Frame> = Vec::new();
     let mut at = start;
-    let mut committed = start;
-    let mut taken = 0usize;
-    let mut complete = true;
-    let mut oversized = false;
-    while at.offset + frame_len <= len {
-        if taken >= limit {
-            complete = false;
-            break;
-        }
+    while at.offset < end.offset && frames.len() * page_size < limit {
         reader
             .read_exact(&mut buf)
             .map_err(io_err("read wal frame"))?;
-        if [be32(&buf, 8), be32(&buf, 12)] != at.salt {
-            break;
-        }
-        let sum = checksum(&buf[..8], at.big_endian, at.checksum);
-        let sum = checksum(&buf[FRAME_HEADER_LEN..], at.big_endian, sum);
-        if sum != [be32(&buf, 16), be32(&buf, 20)] {
-            break;
-        }
-        let pgno = be32(&buf, 0);
-        if pgno == 0 {
-            break;
-        }
-        let commit = be32(&buf, 4);
-        pending.push(Frame {
-            pgno,
-            commit,
+        let Some(next) = next_frame(&buf, at) else {
+            return Err(Error::Invalid(
+                "a committed wal frame changed while it was read".into(),
+            ));
+        };
+        frames.push(Frame {
+            pgno: be32(&buf, 0),
+            commit: be32(&buf, 4),
             page: buf[FRAME_HEADER_LEN..].to_vec(),
         });
-        at.offset += frame_len;
-        at.checksum = sum;
-        if commit != 0 {
-            taken += pending.len() * page_size;
-            frames.append(&mut pending);
-            committed = at;
-        } else if pending.len() * page_size > limit {
-            complete = false;
-            oversized = true;
-            break;
-        }
+        at = next;
     }
     Ok(WalRead::Frames {
         frames,
-        cursor: Some(committed),
-        complete,
-        oversized,
+        cursor: Some(at),
+        complete: at.offset == end.offset,
+        end: Some(end),
+    })
+}
+
+/// Validates the frame in `buf` against the state at `at` and returns the
+/// state after it, `None` when it does not continue the log.
+fn next_frame(buf: &[u8], at: Cursor) -> Option<Cursor> {
+    if [be32(buf, 8), be32(buf, 12)] != at.salt || be32(buf, 0) == 0 {
+        return None;
+    }
+    let sum = checksum(&buf[..8], at.big_endian, at.checksum);
+    let sum = checksum(&buf[FRAME_HEADER_LEN..], at.big_endian, sum);
+    if sum != [be32(buf, 16), be32(buf, 20)] {
+        return None;
+    }
+    Some(Cursor {
+        offset: at.offset + buf.len() as u64,
+        checksum: sum,
+        ..at
     })
 }
 
@@ -284,17 +306,24 @@ pub struct Segment {
 }
 
 impl Segment {
-    /// Database size in pages after the segment's last commit.
-    pub fn final_pages(&self) -> u32 {
-        self.frames.last().map_or(0, |f| f.commit)
+    /// Database size in pages after the segment's last frame, when that frame
+    /// ends a transaction.
+    pub fn final_pages(&self) -> Option<u32> {
+        self.frames.last().map(|f| f.commit).filter(|&c| c != 0)
+    }
+
+    /// Whether the segment ends on a commit. One that does not carries the
+    /// first part of a transaction that later segments finish.
+    pub fn ends_on_commit(&self) -> bool {
+        self.final_pages().is_some()
     }
 }
 
-/// Packs `frames` (ending on a commit) into a zstd-compressed segment whose
-/// trailing SHA-256 covers everything before it.
+/// Packs `frames` into a zstd-compressed segment whose trailing SHA-256
+/// covers everything before it.
 pub fn encode_segment(page_size: u32, first_frame: u64, frames: &[Frame]) -> Result<Vec<u8>> {
-    if frames.last().is_none_or(|f| f.commit == 0) {
-        return Err(Error::Invalid("segment must end on a commit frame".into()));
+    if frames.is_empty() {
+        return Err(Error::Invalid("segment has no frames".into()));
     }
     let count = u32::try_from(frames.len())
         .map_err(|_| Error::Invalid("too many frames for one segment".into()))?;
@@ -362,8 +391,8 @@ pub fn decode_segment(bytes: &[u8]) -> Result<Segment> {
             page: body[at + SEGMENT_FRAME_HEADER_LEN..at + per].to_vec(),
         });
     }
-    if frames.last().is_none_or(|f| f.commit == 0) {
-        return Err(Error::Invalid("segment does not end on a commit".into()));
+    if frames.is_empty() {
+        return Err(Error::Invalid("segment has no frames".into()));
     }
     Ok(Segment {
         page_size,
@@ -389,9 +418,41 @@ pub fn db_page_size(db: &Path) -> Result<Option<u32>> {
     Ok(Some(if raw == 1 { 65536 } else { u32::from(raw) }))
 }
 
+/// Checks that `db` is a structurally whole SQLite file: the header, a page
+/// size that divides the file length, and, when the header vouches for it,
+/// the page count it records. It reads 100 bytes, so it costs the same for a
+/// database of any size, unlike `PRAGMA quick_check`, which reads every page.
+pub fn check_db_file(db: &Path) -> Result<()> {
+    let mut f = File::open(db).map_err(io_err("open database"))?;
+    let len = f.metadata().map_err(io_err("stat database"))?.len();
+    let mut head = [0u8; 100];
+    f.read_exact(&mut head)
+        .map_err(|_| Error::Invalid(format!("database is {len} bytes, too short for a header")))?;
+    if &head[..16] != b"SQLite format 3\0" {
+        return Err(Error::Invalid("not a SQLite database".into()));
+    }
+    let raw = u16::from_be_bytes([head[16], head[17]]);
+    let page = if raw == 1 { 65536 } else { u64::from(raw) };
+    if !(512..=65536).contains(&page) || !page.is_power_of_two() || len % page != 0 {
+        return Err(Error::Invalid(format!(
+            "database is {len} bytes, not whole {page}-byte pages"
+        )));
+    }
+    let pages = u64::from(be32(&head, 28));
+    let change_counter = be32(&head, 24);
+    let valid_for = be32(&head, 92);
+    if pages != 0 && valid_for == change_counter && pages * page != len {
+        return Err(Error::Invalid(format!(
+            "database header records {pages} pages, the file holds {}",
+            len / page
+        )));
+    }
+    Ok(())
+}
+
 /// Writes the frames of `segment` onto the database file at `db` in order,
-/// resizing the file at every commit, then syncs it. The resulting length is
-/// checked against the last commit.
+/// resizing the file at every commit, then syncs it. When the segment ends a
+/// transaction, the resulting length is checked against that commit.
 pub fn apply_segment(db: &Path, segment: &Segment) -> Result<()> {
     if let Some(size) = db_page_size(db)?
         && size != segment.page_size
@@ -416,12 +477,14 @@ pub fn apply_segment(db: &Path, segment: &Segment) -> Result<()> {
         }
     }
     f.sync_all().map_err(io_err("sync database"))?;
-    let want = u64::from(segment.final_pages()) * page;
-    let got = f.metadata().map_err(io_err("stat database"))?.len();
-    if got != want {
-        return Err(Error::Invalid(format!(
-            "database is {got} bytes after replay, want {want}"
-        )));
+    if let Some(pages) = segment.final_pages() {
+        let want = u64::from(pages) * page;
+        let got = f.metadata().map_err(io_err("stat database"))?.len();
+        if got != want {
+            return Err(Error::Invalid(format!(
+                "database is {got} bytes after replay, want {want}"
+            )));
+        }
     }
     Ok(())
 }
@@ -496,23 +559,19 @@ mod tests {
         limit: usize,
     ) -> Vec<Vec<u8>> {
         let mut out = Vec::new();
-        let mut bound = limit;
+        let mut known = None;
         loop {
             let WalRead::Frames {
                 frames,
                 cursor: c,
                 complete,
-                oversized,
-            } = read_committed(wal, *cursor, bound).unwrap()
+                end,
+            } = read_committed(wal, *cursor, limit, known).unwrap()
             else {
                 panic!("unexpected reset");
             };
-            bound = if oversized && frames.is_empty() {
-                usize::MAX
-            } else {
-                limit
-            };
             *cursor = c;
+            known = end;
             if !frames.is_empty() {
                 let page = c.unwrap().page_size();
                 out.push(encode_segment(page, *next_frame, &frames).unwrap());
@@ -644,10 +703,14 @@ mod tests {
         );
     }
 
+    /// A transaction larger than the limit is read in pieces that end mid
+    /// transaction, and the pieces replay to the same file.
     #[test]
-    fn an_oversized_transaction_is_left_unread() {
+    fn a_large_transaction_is_read_in_pieces() {
         let db = open();
         truncate(&db.conn);
+        let base = db.path.with_extension("base");
+        std::fs::copy(&db.path, &base).unwrap();
         db.conn
             .execute("INSERT INTO t(v) VALUES ('small')", [])
             .unwrap();
@@ -657,38 +720,98 @@ mod tests {
                 .unwrap();
         }
         tx.commit().unwrap();
+
         let WalRead::Frames {
             frames,
             cursor,
             complete,
-            oversized,
-        } = read_committed(&db.wal, None, 64 * 1024).unwrap()
+            end,
+        } = read_committed(&db.wal, None, 64 * 1024, None).unwrap()
         else {
             panic!("reset");
         };
-        assert!(oversized && !complete);
-        assert!(!frames.is_empty() && frames.len() * 4096 <= 64 * 1024);
-        let WalRead::Frames {
-            frames: again,
-            oversized: still,
-            ..
-        } = read_committed(&db.wal, cursor, 64 * 1024).unwrap()
-        else {
-            panic!("reset");
-        };
+        assert!(!complete);
+        assert!(frames.len() * 4096 <= 64 * 1024);
+        assert!(cursor.unwrap().offset < end.unwrap().offset);
+
+        let mut cursor = None;
+        let mut next = 0;
+        let segments = ship(&db.wal, &mut cursor, &mut next, 64 * 1024);
+        let decoded: Vec<_> = segments
+            .iter()
+            .map(|s| decode_segment(s).unwrap())
+            .collect();
+        assert!(decoded.len() > 3);
         assert!(
-            again.is_empty() && still,
-            "the cursor must stay before the big transaction"
+            decoded.iter().any(|s| !s.ends_on_commit()),
+            "some segment must end inside the large transaction"
         );
-        let WalRead::Frames {
-            complete,
-            oversized,
-            ..
-        } = read_committed(&db.wal, cursor, usize::MAX).unwrap()
+        assert!(decoded.last().unwrap().ends_on_commit());
+        let replica = replay(&base, &segments);
+        assert_eq!(truncate(&db.conn).0, 0);
+        assert_eq!(
+            std::fs::read(&replica).unwrap(),
+            std::fs::read(&db.path).unwrap()
+        );
+    }
+
+    /// Passing back the end boundary only rescans what follows it, and still
+    /// finds commits made since.
+    #[test]
+    fn known_end_resumes_the_scan() {
+        let db = open();
+        truncate(&db.conn);
+        db.conn
+            .execute("INSERT INTO t(v) VALUES ('a')", [])
+            .unwrap();
+        let WalRead::Frames { cursor, end, .. } =
+            read_committed(&db.wal, None, 4096, None).unwrap()
         else {
             panic!("reset");
         };
-        assert!(complete && !oversized);
+        db.conn
+            .execute("INSERT INTO t(v) VALUES ('b')", [])
+            .unwrap();
+        let WalRead::Frames {
+            frames, complete, ..
+        } = read_committed(&db.wal, cursor, usize::MAX, end).unwrap()
+        else {
+            panic!("reset");
+        };
+        assert!(complete && !frames.is_empty());
+    }
+
+    #[test]
+    fn check_db_file_catches_structural_damage() {
+        let db = open();
+        db.conn
+            .execute("INSERT INTO t(v) VALUES ('a')", [])
+            .unwrap();
+        truncate(&db.conn);
+        check_db_file(&db.path).unwrap();
+        let bytes = std::fs::read(&db.path).unwrap();
+        let short = db.path.with_extension("short");
+        std::fs::write(&short, &bytes[..bytes.len() - 4096]).unwrap();
+        let err = check_db_file(&short).unwrap_err().to_string();
+        assert!(err.contains("records"), "{err}");
+        std::fs::write(&short, &bytes[..bytes.len() - 100]).unwrap();
+        assert!(
+            check_db_file(&short)
+                .unwrap_err()
+                .to_string()
+                .contains("whole")
+        );
+        std::fs::write(&short, b"nope").unwrap();
+        assert!(check_db_file(&short).is_err());
+        let mut garbage = bytes;
+        garbage[0] = b'X';
+        std::fs::write(&short, &garbage).unwrap();
+        assert!(
+            check_db_file(&short)
+                .unwrap_err()
+                .to_string()
+                .contains("not a SQLite")
+        );
     }
 
     #[test]
@@ -702,7 +825,7 @@ mod tests {
             .execute("INSERT INTO t(v) VALUES ('b')", [])
             .unwrap();
         let WalRead::Frames { frames: all, .. } =
-            read_committed(&db.wal, None, usize::MAX).unwrap()
+            read_committed(&db.wal, None, usize::MAX, None).unwrap()
         else {
             panic!("reset");
         };
@@ -710,7 +833,8 @@ mod tests {
         let last = bytes.len() - 10;
         bytes[last] ^= 0xFF;
         std::fs::write(&db.wal, &bytes).unwrap();
-        let WalRead::Frames { frames, .. } = read_committed(&db.wal, None, usize::MAX).unwrap()
+        let WalRead::Frames { frames, .. } =
+            read_committed(&db.wal, None, usize::MAX, None).unwrap()
         else {
             panic!("reset");
         };
@@ -725,36 +849,37 @@ mod tests {
         db.conn
             .execute("INSERT INTO t(v) VALUES ('a')", [])
             .unwrap();
-        let WalRead::Frames { cursor, .. } = read_committed(&db.wal, None, usize::MAX).unwrap()
+        let WalRead::Frames { cursor, .. } =
+            read_committed(&db.wal, None, usize::MAX, None).unwrap()
         else {
             panic!("reset");
         };
         assert!(matches!(
-            read_committed(&db.wal, cursor, usize::MAX).unwrap(),
+            read_committed(&db.wal, cursor, usize::MAX, None).unwrap(),
             WalRead::Frames { ref frames, .. } if frames.is_empty()
         ));
         truncate(&db.conn);
         assert!(matches!(
-            read_committed(&db.wal, cursor, usize::MAX).unwrap(),
-            WalRead::Reset
+            read_committed(&db.wal, cursor, usize::MAX, None).unwrap(),
+            WalRead::Reset(_)
         ));
         db.conn
             .execute("INSERT INTO t(v) VALUES ('b')", [])
             .unwrap();
         assert!(
             matches!(
-                read_committed(&db.wal, cursor, usize::MAX).unwrap(),
-                WalRead::Reset
+                read_committed(&db.wal, cursor, usize::MAX, None).unwrap(),
+                WalRead::Reset(_)
             ),
             "a new header must not continue the old cursor"
         );
         std::fs::remove_file(&db.wal).unwrap();
         assert!(matches!(
-            read_committed(&db.wal, cursor, usize::MAX).unwrap(),
-            WalRead::Reset
+            read_committed(&db.wal, cursor, usize::MAX, None).unwrap(),
+            WalRead::Reset(_)
         ));
         assert!(matches!(
-            read_committed(&db.wal, None, usize::MAX).unwrap(),
+            read_committed(&db.wal, None, usize::MAX, None).unwrap(),
             WalRead::Frames { ref frames, cursor: None, complete: true, .. } if frames.is_empty()
         ));
     }
@@ -777,7 +902,12 @@ mod tests {
         let seg = decode_segment(&enc).unwrap();
         assert_eq!(seg.first_frame, 40);
         assert_eq!(seg.frames, frames);
-        assert_eq!(seg.final_pages(), 2);
+        assert_eq!(seg.final_pages(), Some(2));
+        let head = decode_segment(&encode_segment(512, 40, &frames[..1]).unwrap()).unwrap();
+        assert!(
+            !head.ends_on_commit(),
+            "a segment may stop inside a transaction"
+        );
 
         let mut raw = zstd::bulk::decompress(&enc, 1 << 20).unwrap();
         raw[30] ^= 1;
@@ -789,10 +919,6 @@ mod tests {
                 .contains("checksum")
         );
         assert!(decode_segment(b"garbage").is_err());
-        assert!(
-            encode_segment(512, 0, &frames[..1]).is_err(),
-            "must end on a commit"
-        );
         assert!(encode_segment(512, 0, &[]).is_err());
         assert!(
             encode_segment(1024, 0, &frames).is_err(),

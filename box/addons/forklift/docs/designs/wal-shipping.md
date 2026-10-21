@@ -38,16 +38,18 @@ SeaweedFS is append-only. An overwritten object stays on disk until vacuum, so t
 | Replay is exact | Base plus frames equals the checkpointed file byte for byte (tested with VACUUM and schema changes) |
 | No gap is ever applied | Segments upload in order, readers stop at the first missing sequence, each segment carries its first frame index |
 | A stale leader cannot win | Base PUT is fenced (term in metadata, `If-Match`), segment PUT is `If-None-Match: *`, every term starts its own generation |
-| A bad copy never serves | SHA-256 on base and segments, `quick_check` before boot and promotion, promotion fails closed |
+| A bad copy never serves | SHA-256 on base and segments, frame checksums, SQLite header against file length before boot and promotion, promotion fails closed. No `quick_check`: it reads every page, about 8 minutes on 5 GB |
 | A cycle is never cut in half | Shipping, demotion and the final flush run on their own task, so a caller timeout cannot separate the cursor from the segments it produced |
-| Memory stays bounded | A transaction larger than one segment is never read into memory, it forces a rotation and rides the new base |
+| Memory stays bounded | The leader scans for the last commit, then reads committed frames 16 MiB at a time, so one large transaction ships as several segments |
+| Only whole transactions apply | Readers spool segments that end mid transaction on disk and apply them with the closing one. A transaction a dead leader never finished is left out whole |
 
 ## Failure handling
 
 | Event | Behavior |
 | --- | --- |
 | Bucket unreachable | Segments queue in order (32 MiB bound), then upload. Past the bound, the generation is replaced. |
-| Transaction over 16 MiB (index build, VACUUM) | Left unread, WAL truncated, new generation |
+| Transaction over 16 MiB (index build, VACUUM, backfill) | Shipped as several segments in the same generation |
+| Leader dies mid transaction | The unfinished transaction is left out, the replica stays on the last commit |
 | Missing segment at boot or promotion | Refused and retried, never restored partially. A standby in the background just waits. |
 | Base replaced while catching up | Boot and promotion retry against the new base |
 | Lost PUT response | Retry gets 412, identical bytes count as shipped |
@@ -63,7 +65,7 @@ SeaweedFS is append-only. An overwritten object stays on disk until vacuum, so t
 | Setting | Value |
 | --- | --- |
 | Ship cadence (RPO) | 5 s |
-| Segment | 16 MiB of pages, zstd, also the largest transaction captured |
+| Segment | 16 MiB of pages, zstd, may end inside a transaction |
 | Unshipped segments held | 32 MiB |
 | Disk peak at rotation | about 1.2x the database (copy plus compressed copy) |
 | Rotation | segments outgrow the base (64 MiB floor), 2000 segments, a lost frame, or a new term |

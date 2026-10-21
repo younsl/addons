@@ -72,6 +72,9 @@ const MAX_ROUNDS: usize = 64;
 pub(super) struct Shipper {
     generation: Option<Generation>,
     cursor: Option<Cursor>,
+    /// The boundary after the last commit the previous read found, so the
+    /// next read validates only what follows it.
+    known_end: Option<Cursor>,
     /// Every committed frame was read and a checkpoint attempted since, so a
     /// WAL restart (new salts) cannot have dropped an unread frame.
     restart_ok: bool,
@@ -109,16 +112,18 @@ struct Pending {
 }
 
 impl Shipper {
-    fn rotation_wanted(&self, final_flush: bool) -> bool {
+    /// Why a new generation is due now, `None` when the current one serves.
+    fn rotation_wanted(&self, final_flush: bool) -> Option<&'static str> {
         match &self.generation {
-            None => true,
-            Some(g) if g.broken => true,
-            Some(_) if final_flush => false,
-            Some(g) => {
-                matches!(g.base, Base::Published)
-                    && (g.segments >= MAX_SEGMENTS
-                        || g.segment_bytes >= g.base_bytes.max(ROTATE_MIN_BYTES))
+            None => Some("no generation in this term"),
+            Some(g) if g.broken => Some("the generation was abandoned"),
+            Some(_) if final_flush => None,
+            Some(g) if !matches!(g.base, Base::Published) => None,
+            Some(g) if g.segments >= MAX_SEGMENTS => Some("segment count limit"),
+            Some(g) if g.segment_bytes >= g.base_bytes.max(ROTATE_MIN_BYTES) => {
+                Some("segments outgrew the base")
             }
+            Some(_) => None,
         }
     }
 
@@ -146,12 +151,18 @@ impl Shipper {
         pending_gauge.set(0.0);
     }
 
-    fn mark_broken(&mut self, why: &str) {
+    /// Stops the current generation taking segments. `warn` is false when a
+    /// rotation replaces it anyway.
+    fn mark_broken(&mut self, why: &str, warn: bool) {
         if let Some(g) = self.generation.as_mut()
             && !g.broken
         {
             g.broken = true;
-            tracing::warn!(generation = %g.id, why, "objstore: wal generation abandoned; the next base carries its changes");
+            if warn {
+                tracing::warn!(generation = %g.id, why, "objstore: wal generation abandoned; the next base carries its changes");
+            } else {
+                tracing::debug!(generation = %g.id, why, "objstore: wal generation retired by rotation");
+            }
         }
     }
 }
@@ -162,26 +173,57 @@ pub(super) struct Replica {
     generation: String,
     base_etag: Option<String>,
     path: PathBuf,
+    /// The next segment to download and the frame it must start at.
     next_seq: u64,
     next_frame: u64,
-    /// Segments were applied since the copy was last integrity-checked.
-    dirty: bool,
+    /// Downloaded segments of a transaction whose last segment has not
+    /// arrived. They are applied together once it does, so the copy only ever
+    /// holds whole transactions, even when the leader dies mid transaction.
+    spool: Vec<PathBuf>,
+}
+
+impl Drop for Replica {
+    fn drop(&mut self) {
+        for p in &self.spool {
+            let _ = std::fs::remove_file(p);
+        }
+    }
+}
+
+/// Spooled segment files are named `spool-<seq>.seg` in the work directory.
+const SPOOL_FILE_PREFIX: &str = "spool-";
+
+/// Applies the spooled segments in order, then `last`, which ends the
+/// transaction they began.
+fn apply_run(db: &Path, spool: &[PathBuf], last: &walfmt::Segment) -> walfmt::Result<()> {
+    for p in spool {
+        let bytes = std::fs::read(p).map_err(|source| walfmt::Error::Io {
+            op: "read spooled segment",
+            source,
+        })?;
+        walfmt::apply_segment(db, &walfmt::decode_segment(&bytes)?)?;
+    }
+    walfmt::apply_segment(db, last)
+}
+
+fn check_db(path: &Path) -> std::result::Result<(), String> {
+    walfmt::check_db_file(path).map_err(|e| e.to_string())
 }
 
 /// What [`capture`] read and did, under the write connection.
 struct Captured {
     batches: Vec<(u32, Vec<Frame>)>,
     cursor: Option<Cursor>,
+    known_end: Option<Cursor>,
     restart_ok: bool,
     truncated: bool,
-    /// The WAL was truncated to start a generation: asked for, or forced by a
-    /// transaction too large to capture.
+    /// The WAL was truncated to start the generation that was asked for.
     rotated: bool,
     /// Every committed frame in the WAL was read.
     drained: bool,
-    /// Committed frames were folded into the database file without being
-    /// captured.
-    lost: bool,
+    /// Why committed frames reached the database file without being
+    /// captured, if they did.
+    lost: Option<String>,
 }
 
 /// Reads committed frames and, when asked or when the WAL is large and fully
@@ -192,6 +234,7 @@ fn capture(
     conn: &rusqlite::Connection,
     wal: &Path,
     mut cursor: Option<Cursor>,
+    mut known_end: Option<Cursor>,
     mut restart_ok: bool,
     rotate: bool,
     read: bool,
@@ -199,29 +242,32 @@ fn capture(
     let mut batches = Vec::new();
     let mut taken = 0usize;
     let mut complete = false;
-    let mut reset = false;
-    let mut oversized = false;
+    let mut reset: Option<&'static str> = None;
     if read {
         loop {
-            let read = walfmt::read_committed(wal, cursor, SEGMENT_FRAME_BYTES)
+            let read = walfmt::read_committed(wal, cursor, SEGMENT_FRAME_BYTES, known_end)
                 .map_err(|e| meta::Error::Other(format!("read wal: {e}")))?;
             match read {
-                WalRead::Reset if restart_ok && cursor.is_some() => {
+                WalRead::Reset(why) if restart_ok && cursor.is_some() => {
+                    tracing::debug!(why, "objstore: wal restarted after a full checkpoint");
                     cursor = None;
+                    known_end = None;
                     restart_ok = false;
                 }
-                WalRead::Reset => {
-                    reset = true;
+                WalRead::Reset(why) => {
+                    reset = Some(why);
                     cursor = None;
+                    known_end = None;
                     break;
                 }
                 WalRead::Frames {
                     frames,
                     cursor: next,
                     complete: done,
-                    oversized: big,
+                    end,
                 } => {
                     cursor = next;
+                    known_end = end;
                     if let Some(c) = next
                         && !frames.is_empty()
                     {
@@ -233,10 +279,6 @@ fn capture(
                         complete = true;
                         break;
                     }
-                    if big {
-                        oversized = true;
-                        break;
-                    }
                     if taken >= CAPTURE_BYTES {
                         break;
                     }
@@ -244,10 +286,10 @@ fn capture(
             }
         }
     }
-    let drained = read && complete && !reset;
+    let drained = read && complete && reset.is_none();
     let wal_len = std::fs::metadata(wal).map_or(0, |m| m.len());
     let mut truncated = false;
-    if rotate || oversized || (drained && wal_len >= CHECKPOINT_WAL_BYTES) {
+    if rotate || (drained && wal_len >= CHECKPOINT_WAL_BYTES) {
         conn.busy_timeout(CHECKPOINT_BUSY)
             .map_err(|e| meta::Error::sqlite("set busy timeout", e))?;
         let busy = conn
@@ -260,19 +302,30 @@ fn capture(
         if busy? == 0 {
             truncated = true;
             cursor = None;
+            known_end = None;
             restart_ok = false;
         } else if drained {
             restart_ok = true;
         }
     }
+    let lost = match reset {
+        Some(why) => Some(format!(
+            "{why} before every frame was read ({wal_len} byte wal)"
+        )),
+        None if truncated && !drained => Some(format!(
+            "the rotation checkpoint folded {wal_len} unread wal bytes into the new base"
+        )),
+        None => None,
+    };
     Ok(Captured {
         batches,
         cursor,
+        known_end,
         restart_ok,
         truncated,
-        rotated: truncated && (rotate || oversized),
+        rotated: truncated && rotate,
         drained,
-        lost: reset || (truncated && !drained),
+        lost,
     })
 }
 
@@ -284,15 +337,15 @@ const BASE_FILE_PREFIX: &str = "base-";
 /// Each is a full database copy, and the work directory outlives a container
 /// restart.
 fn remove_stale_bases(dir: &Path) {
+    remove_with_prefix(dir, BASE_FILE_PREFIX);
+}
+
+fn remove_with_prefix(dir: &Path, prefix: &str) {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return;
     };
     for entry in entries.flatten() {
-        if entry
-            .file_name()
-            .to_string_lossy()
-            .starts_with(BASE_FILE_PREFIX)
-        {
+        if entry.file_name().to_string_lossy().starts_with(prefix) {
             let _ = std::fs::remove_file(entry.path());
         }
     }
@@ -340,25 +393,6 @@ fn sha256_file(path: &Path) -> std::io::Result<String> {
             return Ok(hex::encode(h.finalize()));
         }
         h.update(&buf[..n]);
-    }
-}
-
-/// Runs `PRAGMA quick_check` on a database file without touching it: the
-/// `immutable` URI opens no WAL or shared-memory file next to it.
-fn verify_db(path: &Path) -> std::result::Result<(), String> {
-    let uri = format!("file:{}?immutable=1", path.display());
-    let conn = rusqlite::Connection::open_with_flags(
-        uri,
-        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_URI,
-    )
-    .map_err(|e| format!("open: {e}"))?;
-    let verdict: String = conn
-        .query_row("PRAGMA quick_check", [], |r| r.get(0))
-        .map_err(|e| format!("quick_check: {e}"))?;
-    if verdict == "ok" {
-        Ok(())
-    } else {
-        Err(format!("quick_check: {verdict}"))
     }
 }
 
@@ -415,6 +449,60 @@ pub async fn metadata_version(
     let prefix = format!("{}{generation}/", wal_prefix_for(key));
     let segments = contiguous_segments(api.list_keys(bucket, &prefix).await?, &prefix).len();
     Ok(Some(format!("{etag}|{generation}|{segments}")))
+}
+
+/// Replays the segments at `keys` onto `db` in order. A transaction split
+/// across segments is applied only once its last segment is present: the
+/// segments before it wait in `spool_dir`, and a trailing unfinished one is
+/// left out, so `db` always ends on a commit.
+async fn replay_keys(
+    api: &dyn ObjectApi,
+    bucket: &str,
+    keys: &[String],
+    db: &Path,
+    spool_dir: &Path,
+) -> Result<()> {
+    let mut next_frame = 0u64;
+    let mut spool: Vec<PathBuf> = Vec::new();
+    for (seq, seg_key) in keys.iter().enumerate() {
+        let mut body = api.get_object(bucket, seg_key).await?.body;
+        let mut bytes = Vec::new();
+        body.read_to_end(&mut bytes)
+            .await
+            .map_err(|e| Error::io("download wal segment", e))?;
+        let want = next_frame;
+        let path = db.to_path_buf();
+        let run = std::mem::take(&mut spool);
+        let spooled = spool_dir.join(format!("{seq:020}.seg"));
+        let (frames, run) = tokio::task::spawn_blocking(move || {
+            let seg = walfmt::decode_segment(&bytes)?;
+            if seg.first_frame != want {
+                return Err(walfmt::Error::Invalid(format!(
+                    "segment starts at frame {}, want {want}",
+                    seg.first_frame
+                )));
+            }
+            let frames = seg.frames.len() as u64;
+            if seg.ends_on_commit() {
+                apply_run(&path, &run, &seg)?;
+                Ok((frames, Vec::new()))
+            } else {
+                std::fs::write(&spooled, &bytes).map_err(|source| walfmt::Error::Io {
+                    op: "spool wal segment",
+                    source,
+                })?;
+                let mut run = run;
+                run.push(spooled);
+                Ok((frames, run))
+            }
+        })
+        .await
+        .map_err(blocking_err("replay wal segment"))?
+        .map_err(|e| Error::ObjectStore(format!("wal segment {seg_key}: {e}")))?;
+        spool = run;
+        next_frame += frames;
+    }
+    Ok(())
 }
 
 /// The database [`fetch_metadata`] rebuilt.
@@ -485,31 +573,17 @@ pub async fn fetch_metadata(
         Some(generation) => {
             let prefix = format!("{}{generation}/", wal_prefix_for(key));
             let keys = contiguous_segments(api.list_keys(bucket, &prefix).await?, &prefix);
-            let mut next_frame = 0u64;
-            for seg_key in &keys {
-                let mut body = api.get_object(bucket, seg_key).await?.body;
-                let mut bytes = Vec::new();
-                body.read_to_end(&mut bytes)
-                    .await
-                    .map_err(|e| Error::io("download wal segment", e))?;
-                let path = dst.to_path_buf();
-                let want = next_frame;
-                let frames = tokio::task::spawn_blocking(move || {
-                    let seg = walfmt::decode_segment(&bytes)?;
-                    if seg.first_frame != want {
-                        return Err(walfmt::Error::Invalid(format!(
-                            "segment starts at frame {}, want {want}",
-                            seg.first_frame
-                        )));
-                    }
-                    walfmt::apply_segment(&path, &seg)?;
-                    Ok(seg.frames.len() as u64)
-                })
+            let spool_dir = {
+                let mut p = dst.as_os_str().to_owned();
+                p.push(".spool");
+                PathBuf::from(p)
+            };
+            tokio::fs::create_dir_all(&spool_dir)
                 .await
-                .map_err(blocking_err("replay wal segment"))?
-                .map_err(|e| Error::ObjectStore(format!("wal segment {seg_key}: {e}")))?;
-                next_frame += frames;
-            }
+                .map_err(|e| Error::io("create spool dir", e))?;
+            let replayed = replay_keys(api, bucket, &keys, dst, &spool_dir).await;
+            let _ = tokio::fs::remove_dir_all(&spool_dir).await;
+            replayed?;
             format!("{etag}|{generation}|{}", keys.len())
         }
     };
@@ -539,30 +613,33 @@ impl MetaSync {
     /// is no usable one, since nothing else could carry the changes.
     pub(super) async fn ship(&self, st: &mut SyncState, final_flush: bool) -> Result<()> {
         for _ in 0..MAX_ROUNDS {
-            let rotate = st.ship.rotation_wanted(final_flush);
+            let reason = st.ship.rotation_wanted(final_flush);
+            let rotate = reason.is_some();
             let read = st.ship.generation.as_ref().is_some_and(|g| !g.broken);
             let wal = wal_path(self.store.path());
-            let (cursor, restart_ok) = (st.ship.cursor, st.ship.restart_ok);
+            let (cursor, known_end, restart_ok) =
+                (st.ship.cursor, st.ship.known_end, st.ship.restart_ok);
             let cap = self
                 .store
-                .write(move |conn| capture(conn, &wal, cursor, restart_ok, rotate, read))
+                .write(move |conn| capture(conn, &wal, cursor, known_end, restart_ok, rotate, read))
                 .await
                 .map_err(|e| Error::Meta(e).context("capture wal"))?;
             st.ship.cursor = cap.cursor;
+            st.ship.known_end = cap.known_end;
             st.ship.restart_ok = cap.restart_ok;
-            if cap.lost {
-                st.ship
-                    .mark_broken("wal frames were checkpointed before they were read");
+            if let Some(why) = &cap.lost {
+                st.ship.mark_broken(why, !cap.rotated);
             }
             let progressed = !cap.batches.is_empty();
             self.queue_segments(st, cap.batches).await;
             if cap.rotated {
-                self.start_generation(st).await?;
+                self.start_generation(st, reason.unwrap_or("requested"))
+                    .await?;
             }
             self.wal_pending_bytes.set(st.ship.pending_bytes as f64);
             self.upload_pending(st).await?;
             self.publish_base(st).await?;
-            if cap.drained || cap.truncated || (!progressed && !cap.lost) {
+            if cap.drained || cap.truncated || (!progressed && cap.lost.is_none()) {
                 return Ok(());
             }
         }
@@ -595,11 +672,11 @@ impl MetaSync {
         let encoded = match encoded {
             Ok(Ok(v)) => v,
             Ok(Err(e)) => {
-                st.ship.mark_broken(&format!("encode segment: {e}"));
+                st.ship.mark_broken(&format!("encode segment: {e}"), true);
                 return;
             }
             Err(e) => {
-                st.ship.mark_broken(&format!("encode segment: {e}"));
+                st.ship.mark_broken(&format!("encode segment: {e}"), true);
                 return;
             }
         };
@@ -619,14 +696,14 @@ impl MetaSync {
         g.next_seq = seq;
         if sh.pending_bytes > MAX_PENDING_BYTES {
             sh.drop_pending_of(&id);
-            sh.mark_broken("unshipped segments exceeded the memory bound");
+            sh.mark_broken("unshipped segments exceeded the memory bound", true);
         }
     }
 
     /// Copies the just-checkpointed database file as the base of a new
     /// generation. The file cannot change until the next checkpoint, which only
     /// this task runs, under `sync_mu`.
-    async fn start_generation(&self, st: &mut SyncState) -> Result<()> {
+    async fn start_generation(&self, st: &mut SyncState, reason: &str) -> Result<()> {
         let id = new_generation_id(self.fence.load(Ordering::SeqCst));
         let work_dir = self.work_dir();
         tokio::fs::create_dir_all(&work_dir)
@@ -665,11 +742,11 @@ impl MetaSync {
             Ok(v) => v,
             Err(e) => {
                 self.wal_rotations.with_label_values(&["error"]).inc();
-                st.ship.mark_broken("copy of the new base failed");
+                st.ship.mark_broken("copy of the new base failed", true);
                 return Err(Error::io("copy wal base", e));
             }
         };
-        tracing::info!(generation = %id, bytes = size, "objstore: started wal generation");
+        tracing::info!(generation = %id, bytes = size, reason, "objstore: started wal generation");
         st.ship.generation = Some(Generation {
             id,
             next_seq: 0,
@@ -725,7 +802,7 @@ impl MetaSync {
                         let generation = p.generation.clone();
                         self.wal_segments.with_label_values(&["conflict"]).inc();
                         if sh.generation.as_ref().is_some_and(|g| g.id == generation) {
-                            sh.mark_broken("another writer holds a segment key");
+                            sh.mark_broken("another writer holds a segment key", true);
                         }
                         sh.drop_pending_of(&generation);
                         self.wal_pending_bytes.set(sh.pending_bytes as f64);
@@ -839,7 +916,9 @@ impl MetaSync {
     /// every contiguous segment not yet applied. With `verify` (boot and
     /// promotion) the copy must be complete and current: a missing segment, or
     /// a base replaced while catching up, fails instead of serving a partial
-    /// state, and a copy changed since its last check is integrity-checked.
+    /// state. Every copy passes [`walfmt::check_db_file`], which costs the same
+    /// for any database size, on top of the SHA-256 of the base and of each
+    /// segment and the frame checksums validated when the leader read them.
     pub(super) async fn follow_generation(
         &self,
         st: &mut SyncState,
@@ -875,18 +954,19 @@ impl MetaSync {
             }
             self.snapshot_bytes.set(size as f64);
             let check = path.clone();
-            tokio::task::spawn_blocking(move || verify_db(&check))
+            tokio::task::spawn_blocking(move || check_db(&check))
                 .await
-                .map_err(blocking_err("verify wal base"))?
-                .map_err(|e| Error::ObjectStore(format!("wal base failed verification: {e}")))?;
+                .map_err(blocking_err("check wal base"))?
+                .map_err(|e| Error::ObjectStore(format!("wal base failed its check: {e}")))?;
             self.downloads.with_label_values(&["ok"]).inc();
+            remove_with_prefix(&self.work_dir(), SPOOL_FILE_PREFIX);
             st.replica = Some(Replica {
                 generation: generation.to_owned(),
                 base_etag: etag,
                 path,
                 next_seq: 0,
                 next_frame: 0,
-                dirty: false,
+                spool: Vec::new(),
             });
         }
         let applied = self.apply_segments(st).await;
@@ -911,23 +991,24 @@ impl MetaSync {
             Error::ObjectStore("standby copy discarded after a failed replay".into())
         })?;
         applied?;
-        if verify && replica.dirty {
+        if verify {
             let check = replica.path.clone();
-            tokio::task::spawn_blocking(move || verify_db(&check))
+            tokio::task::spawn_blocking(move || check_db(&check))
                 .await
-                .map_err(blocking_err("verify wal replica"))?
+                .map_err(blocking_err("check wal replica"))?
                 .map_err(|e| {
-                    Error::ObjectStore(format!("replayed database failed verification: {e}"))
+                    Error::ObjectStore(format!("replayed database failed its check: {e}"))
                 })?;
-            replica.dirty = false;
         }
         Ok(replica.path.clone())
     }
 
     /// Applies the replica's next contiguous segments and reports whether a
-    /// gap stopped it. A segment that fails validation leaves the copy as it
-    /// was; one that fails while being written discards the copy, since it is
-    /// then neither the old state nor the new.
+    /// gap stopped it. A segment that ends inside a transaction is spooled to
+    /// disk until the segment ending that transaction arrives. A segment that
+    /// fails validation leaves the copy as it was; one that fails while being
+    /// written discards the copy, since it is then neither the old state nor
+    /// the new.
     async fn apply_segments(&self, st: &mut SyncState) -> Result<bool> {
         let Some(replica) = st.replica.as_mut() else {
             return Ok(false);
@@ -965,7 +1046,7 @@ impl MetaSync {
                 .await
                 .map_err(|e| Error::io("download wal segment", e))?;
             let want_frame = replica.next_frame;
-            let segment = tokio::task::spawn_blocking(move || {
+            let decoded = tokio::task::spawn_blocking(move || {
                 let seg = walfmt::decode_segment(&bytes)?;
                 if seg.first_frame != want_frame {
                     return Err(walfmt::Error::Invalid(format!(
@@ -973,33 +1054,54 @@ impl MetaSync {
                         seg.first_frame
                     )));
                 }
-                Ok(seg)
+                Ok((seg, bytes))
             })
             .await
             .map_err(blocking_err("decode wal segment"))?;
-            let segment = match segment {
-                Ok(s) => s,
+            let (segment, bytes) = match decoded {
+                Ok(v) => v,
                 Err(e) => {
                     self.wal_segments.with_label_values(&["error"]).inc();
                     return Err(Error::ObjectStore(format!("wal segment {key}: {e}")));
                 }
             };
             let frames = segment.frames.len() as u64;
-            let path = replica.path.clone();
-            let applied =
-                tokio::task::spawn_blocking(move || walfmt::apply_segment(&path, &segment))
+            if segment.ends_on_commit() {
+                let spool = std::mem::take(&mut replica.spool);
+                let path = replica.path.clone();
+                let applied = tokio::task::spawn_blocking(move || {
+                    apply_run(&path, &spool, &segment).map(|()| spool)
+                })
+                .await
+                .map_err(blocking_err("apply wal segment"))?;
+                match applied {
+                    Ok(spool) => {
+                        for p in &spool {
+                            let _ = tokio::fs::remove_file(p).await;
+                        }
+                        self.wal_segments
+                            .with_label_values(&["applied"])
+                            .inc_by(spool.len() as u64 + 1);
+                    }
+                    Err(e) => {
+                        self.wal_segments.with_label_values(&["error"]).inc();
+                        let _ = tokio::fs::remove_file(&replica.path).await;
+                        remove_with_prefix(&self.work_dir(), SPOOL_FILE_PREFIX);
+                        st.replica = None;
+                        return Err(Error::ObjectStore(format!("apply wal segment {key}: {e}")));
+                    }
+                }
+            } else {
+                let spooled = self
+                    .work_dir()
+                    .join(format!("{SPOOL_FILE_PREFIX}{seq:020}.seg"));
+                tokio::fs::write(&spooled, &bytes)
                     .await
-                    .map_err(blocking_err("apply wal segment"))?;
-            if let Err(e) = applied {
-                self.wal_segments.with_label_values(&["error"]).inc();
-                let _ = tokio::fs::remove_file(&replica.path).await;
-                st.replica = None;
-                return Err(Error::ObjectStore(format!("apply wal segment {key}: {e}")));
+                    .map_err(|e| Error::io("spool wal segment", e))?;
+                replica.spool.push(spooled);
             }
             replica.next_seq += 1;
             replica.next_frame += frames;
-            replica.dirty = true;
-            self.wal_segments.with_label_values(&["applied"]).inc();
         }
         Ok(false)
     }
@@ -1560,7 +1662,7 @@ mod tests {
         insert(&b.store, 0, 5).await;
         b.sync.sync().await.unwrap();
 
-        a.sync.sync_mu.lock().await.ship.mark_broken("test");
+        a.sync.sync_mu.lock().await.ship.mark_broken("test", true);
         insert(&a.store, 100, 5).await;
         let err = a.sync.sync().await.unwrap_err();
         assert!(err.to_string().contains("fencing"), "{err}");
@@ -1580,7 +1682,11 @@ mod tests {
         let dst = dir.path().join("rebuilt.db");
         let fetched = fetch_metadata(api, "b", KEY, &dst).await.unwrap().unwrap();
         assert_eq!(fetched.version, v1);
-        verify_db(&dst).unwrap();
+        let ok: String = rusqlite::Connection::open(&dst)
+            .unwrap()
+            .query_row("PRAGMA integrity_check", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(ok, "ok");
         let n: i64 = rusqlite::Connection::open(&dst)
             .unwrap()
             .query_row("SELECT COUNT(*) FROM wal_test", [], |r| r.get(0))
@@ -1603,24 +1709,15 @@ mod tests {
         );
     }
 
-    /// One transaction larger than a segment is never held in memory: the
-    /// generation is replaced and the new base carries it.
-    #[tokio::test]
-    async fn an_oversized_transaction_rotates_the_generation() {
-        let bucket = Bucket::new();
-        let a = leader(&bucket, 1).await;
-        a.sync.sync().await.unwrap();
-        let first = bucket.generation().unwrap();
-        insert(&a.store, 0, 10).await;
-        a.sync.sync().await.unwrap();
-        a.store
-            .write(|c| {
+    async fn insert_big(store: &meta::Store, from: i64) {
+        store
+            .write(move |c| {
                 let tx = c.transaction().map_err(|e| meta::Error::sqlite("tx", e))?;
                 for i in 0..48i64 {
                     let v = format!("{i}:{}", "z".repeat(512 * 1024));
                     tx.execute(
                         "INSERT INTO wal_test(id, v) VALUES (?1, ?2)",
-                        rusqlite::params![1000 + i, v],
+                        rusqlite::params![from + i, v],
                     )
                     .map_err(|e| meta::Error::sqlite("insert", e))?;
                 }
@@ -1628,23 +1725,101 @@ mod tests {
             })
             .await
             .unwrap();
+    }
+
+    /// One transaction larger than a segment ships as several segments in the
+    /// same generation, none of them holding the whole transaction.
+    #[tokio::test]
+    async fn a_large_transaction_ships_across_segments() {
+        let bucket = Bucket::new();
+        let a = leader(&bucket, 1).await;
         a.sync.sync().await.unwrap();
-        assert_ne!(
+        let first = bucket.generation().unwrap();
+        insert(&a.store, 0, 10).await;
+        a.sync.sync().await.unwrap();
+        insert_big(&a.store, 1000).await;
+        a.sync.sync().await.unwrap();
+        assert_eq!(
             bucket.generation().unwrap(),
             first,
-            "the big transaction rides the new base"
+            "no rotation for a large transaction"
         );
-        let largest = bucket
-            .segments()
+        let segments = bucket.segments();
+        let decoded: Vec<_> = segments
             .iter()
-            .map(|k| bucket.objects.lock()[k].data.len())
-            .max()
-            .unwrap_or(0);
+            .map(|k| walfmt::decode_segment(&bucket.objects.lock()[k].data).unwrap())
+            .collect();
+        assert!(decoded.iter().any(|s| !s.ends_on_commit()));
         assert!(
-            largest < SEGMENT_FRAME_BYTES,
-            "a segment held the whole transaction"
+            decoded
+                .iter()
+                .all(|s| s.frames.len() * 4096 <= SEGMENT_FRAME_BYTES)
         );
         assert_eq!(restored(&bucket).await, rows(&a.store).await);
+
+        let b = pod(&bucket, SyncMode::Wal).await;
+        b.sync.sync().await.unwrap();
+        b.sync.promote(2).await.unwrap();
+        assert_eq!(rows(&b.store).await, rows(&a.store).await);
+    }
+
+    /// A leader that dies after shipping the first part of a transaction
+    /// leaves a run with no closing segment. Readers leave that transaction
+    /// out whole instead of applying half of it.
+    #[tokio::test]
+    async fn a_transaction_cut_off_by_the_leader_is_left_out_whole() {
+        let bucket = Bucket::new();
+        let a = leader(&bucket, 1).await;
+        a.sync.sync().await.unwrap();
+        insert(&a.store, 0, 10).await;
+        a.sync.sync().await.unwrap();
+        let before = rows(&a.store).await;
+        let b = pod(&bucket, SyncMode::Wal).await;
+        b.sync.sync().await.unwrap();
+
+        insert_big(&a.store, 1000).await;
+        a.sync.sync().await.unwrap();
+        let last = bucket.segments().pop().unwrap();
+        bucket.objects.lock().remove(&last);
+
+        b.sync.sync_mu.lock().await.last_standby = None;
+        b.sync.sync().await.unwrap();
+        assert_ne!(
+            b.sync
+                .sync_mu
+                .lock()
+                .await
+                .replica
+                .as_ref()
+                .unwrap()
+                .spool
+                .len(),
+            0,
+            "the unfinished transaction is spooled"
+        );
+        b.sync.promote(2).await.unwrap();
+        assert_eq!(rows(&b.store).await, before);
+        let work = b.sync.work_dir();
+        let spooled = std::fs::read_dir(&work)
+            .unwrap()
+            .flatten()
+            .filter(|e| {
+                e.file_name()
+                    .to_string_lossy()
+                    .starts_with(SPOOL_FILE_PREFIX)
+            })
+            .count();
+        assert_eq!(spooled, 0, "spooled segments are removed after promotion");
+
+        let api: &dyn ObjectApi = bucket.as_ref();
+        let dir = tempfile::tempdir().unwrap();
+        let dst = dir.path().join("rebuilt.db");
+        fetch_metadata(api, "b", KEY, &dst).await.unwrap().unwrap();
+        let n: i64 = rusqlite::Connection::open(&dst)
+            .unwrap()
+            .query_row("SELECT COUNT(*) FROM wal_test", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(n, before.len() as i64);
     }
 
     /// A demotion whose caller gives up waiting still finishes: the final
