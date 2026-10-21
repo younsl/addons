@@ -2114,11 +2114,8 @@ pub(crate) mod tests {
                 (&["0.0.10", "0.0.9"], "0.0.10"),
             ];
             for (versions, want) in cases {
-                #[allow(clippy::zero_sized_map_values)]
-                let map: BTreeMap<String, ()> =
-                    versions.iter().map(|v| ((*v).to_string(), ())).collect();
                 assert_eq!(
-                    highest_stable_version(&map),
+                    highest_stable_version(versions.iter().copied()),
                     want,
                     "highest_stable_version({versions:?})"
                 );

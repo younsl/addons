@@ -17,7 +17,8 @@
 //! versions newer than the age-policy cooldown are filtered out of the packument
 //! entirely.
 
-use std::collections::BTreeMap;
+use std::borrow::Cow;
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::Arc;
 
 use axum::body::Body;
@@ -44,9 +45,6 @@ use super::{
     FetchKind, FetchSpec, Kind, MAX_METADATA_BYTES, Manager, not_found, path_base,
     retry_after_seconds, username_from_context,
 };
-
-/// A JSON object whose members are kept as raw fragments.
-pub(super) type RawObject = BTreeMap<String, Box<RawValue>>;
 
 /// Serves the npm registry protocol.
 pub(crate) async fn handle_npm(m: Arc<Manager>, req: Request) -> Response {
@@ -477,11 +475,13 @@ impl Manager {
         }
     }
 
-    /// Decodes the cached packument for `art` off its blob reader and rewrites
-    /// it. Decoding straight off the reader holds only the parsed per-version
-    /// fragments in memory — never the raw packument and the parsed document at
-    /// once (see [`rewrite_packument_top`]). `Ok(None)` means the stored
-    /// document is not a packument at all, which the caller serves verbatim.
+    /// Reads the cached packument for `art` and rewrites it. The document is
+    /// read once and every parsed fragment borrows from it (see
+    /// [`rewrite_packument_top`]), and the rewrite runs on the blocking pool
+    /// because a large packument takes tens of milliseconds of CPU that would
+    /// otherwise stall every other request on the same runtime worker.
+    /// `Ok(None)` means the stored document is not a packument at all, which
+    /// the caller serves verbatim.
     ///
     /// The caller must hold a rewrite slot: this is the whole of the work the
     /// gate exists to bound.
@@ -494,8 +494,8 @@ impl Manager {
         base: &str,
     ) -> Result<Option<(Bytes, i64, Option<DateTime<Utc>>)>, ()> {
         let e = &self.engine;
-        let reader = match e.blobs.open(&art.blob_sha256).await {
-            Ok((reader, _)) => reader,
+        let (reader, size) = match e.blobs.open(&art.blob_sha256).await {
+            Ok(opened) => opened,
             Err(err) => {
                 e.note_blob_missing(
                     res.repo.id,
@@ -509,18 +509,29 @@ impl Manager {
                 return Err(());
             }
         };
-        let Some(top) = decode_json_stream::<RawObject, _>(reader, 64 << 20).await else {
+        let mut body = Vec::with_capacity(size.clamp(0, MAX_METADATA_BYTES) as usize);
+        if reader
+            .take(MAX_METADATA_BYTES as u64)
+            .read_to_end(&mut body)
+            .await
+            .is_err()
+        {
             return Ok(None);
-        };
-        Ok(rewrite_packument_top(
-            top,
-            base,
-            &serving_repo_name(parts, &res.repo.name),
-            &res.path,
-            &res.cfg.age_policy,
+        }
+        let (base, serving_repo, pkg, age, now) = (
+            base.to_string(),
+            serving_repo_name(parts, &res.repo.name),
+            res.path.clone(),
+            res.cfg.age_policy.clone(),
             e.now(),
-        )
-        .map(|(body, removed, until)| (Bytes::from(body), removed, until)))
+        );
+        let rendered = tokio::task::spawn_blocking(move || {
+            rewrite_packument_top(&body, &base, &serving_repo, &pkg, &age, now)
+        })
+        .await
+        .ok()
+        .flatten();
+        Ok(rendered.map(|(body, removed, until)| (Bytes::from(body), removed, until)))
     }
 
     /// Runs the final policy gate and writes an already rendered document. The
@@ -690,14 +701,24 @@ pub(crate) fn base64_decode_stream(data: &str) -> Result<Vec<u8>, ()> {
         .map_err(|_| ())
 }
 
+/// Read size for [`decode_json_stream`], matched to the chunks an object store body arrives in.
+const DECODE_BUFFER_BYTES: usize = 64 << 10;
+
 /// Returns `None` when the bytes are not the expected shape, which every caller treats as "not
 /// a packument" rather than an error.
+///
+/// serde_json reads its input one byte at a time, and every read on the bridge blocks on the
+/// runtime, so the bridge sits behind a buffer: unbuffered, the per-byte round trip was most of
+/// the CPU a packument render cost.
 pub(crate) async fn decode_json_stream<T, R>(reader: R, limit: u64) -> Option<T>
 where
     T: serde::de::DeserializeOwned + Send + 'static,
     R: tokio::io::AsyncRead + Send + Unpin + 'static,
 {
-    let bridged = tokio_util::io::SyncIoBridge::new(tokio::io::AsyncReadExt::take(reader, limit));
+    let bridged = std::io::BufReader::with_capacity(
+        DECODE_BUFFER_BYTES,
+        tokio_util::io::SyncIoBridge::new(tokio::io::AsyncReadExt::take(reader, limit)),
+    );
     tokio::task::spawn_blocking(move || serde_json::from_reader::<_, T>(bridged).ok())
         .await
         .ok()
@@ -706,10 +727,10 @@ where
 
 /// Returns the highest plain `x.y.z` version key (pre-release and
 /// build-metadata versions are skipped), or `""` when none parse.
-pub(super) fn highest_stable_version<V>(versions: &BTreeMap<String, V>) -> String {
-    let mut best = String::new();
+pub(super) fn highest_stable_version<'a>(versions: impl IntoIterator<Item = &'a str>) -> String {
+    let mut best = "";
     let mut best_n = [0i64; 3];
-    for ver in versions.keys() {
+    for ver in versions {
         let Some(n) = parse_semver(ver) else {
             continue;
         };
@@ -717,11 +738,11 @@ pub(super) fn highest_stable_version<V>(versions: &BTreeMap<String, V>) -> Strin
             || n[0] > best_n[0]
             || (n[0] == best_n[0] && (n[1] > best_n[1] || (n[1] == best_n[1] && n[2] > best_n[2])))
         {
-            best.clone_from(ver);
+            best = ver;
             best_n = n;
         }
     }
-    best
+    best.to_string()
 }
 
 /// Parses a stable `x.y.z` version, rejecting pre-release/build forms.
@@ -803,10 +824,7 @@ pub(crate) fn rewrite_packument(
     age: &AgePolicyConfig,
     now: DateTime<Utc>,
 ) -> (Bytes, i64) {
-    let Ok(top) = serde_json::from_slice::<RawObject>(body) else {
-        return (Bytes::copy_from_slice(body), 0);
-    };
-    match rewrite_packument_top(top, base, repo_name, pkg, age, now) {
+    match rewrite_packument_top(body, base, repo_name, pkg, age, now) {
         Some((out, removed, _)) => (Bytes::from(out), removed),
         None => (Bytes::copy_from_slice(body), 0),
     }
@@ -823,30 +841,33 @@ pub(crate) fn rewrite_packument(
 /// expanded value tree. A popular package's packument is several megabytes and
 /// expanding every version manifest into nested maps costs an order of magnitude
 /// more memory than the JSON itself; multiplied across a concurrent install
-/// burst that is what OOMs the pod. Here each version stays as raw bytes and
+/// burst that is what OOMs the pod. Here every fragment borrows from `body` and
 /// only the small `dist` object of a version being rewritten is materialized, so
-/// peak memory tracks the document size instead of a multiple of it.
+/// peak memory is the input plus the output.
 pub(crate) fn rewrite_packument_top(
-    mut top: RawObject,
+    body: &[u8],
     base: &str,
     repo_name: &str,
     pkg: &str,
     age: &AgePolicyConfig,
     now: DateTime<Utc>,
 ) -> Option<(Vec<u8>, i64, Option<DateTime<Utc>>)> {
-    let mut versions: RawObject = BTreeMap::new();
-    if let Some(raw) = top.get("versions")
-        && !raw.get().is_empty()
-    {
-        versions = serde_json::from_str(raw.get()).ok()?;
-    }
+    // The version manifests are borrowed from the `versions` fragment and
+    // written straight into the output, never copied into a map of their own
+    // or re-validated: on a large packument each of those was another full pass
+    // over (and another full copy of) the document.
+    let mut top: BTreeMap<JsonStr<'_>, &RawValue> = serde_json::from_slice(body).ok()?;
+    let versions_raw = top.remove("versions");
+    let versions: BTreeMap<JsonStr<'_>, &RawValue> = match &versions_raw {
+        Some(raw) => serde_json::from_str(raw.get()).ok()?,
+        None => BTreeMap::new(),
+    };
 
-    let mut removed = 0i64;
     let mut until: Option<DateTime<Utc>> = None;
-    let mut blocked: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut blocked: HashSet<&str> = HashSet::new();
     if age.enabled && age.action == ACTION_BLOCK {
         // Best-effort; a missing or odd `time` map means no block.
-        let times: BTreeMap<String, String> = top
+        let times: HashMap<JsonStr<'_>, JsonStr<'_>> = top
             .get("time")
             .and_then(|raw| serde_json::from_str(raw.get()).ok())
             .unwrap_or_default();
@@ -854,12 +875,12 @@ pub(crate) fn rewrite_packument_top(
             chrono::TimeDelta::from_std(age.min_age.d()).unwrap_or(chrono::TimeDelta::MAX);
         for ver in versions.keys() {
             let Some(ts) = times.get(ver) else { continue };
-            let Ok(pub_at) = DateTime::parse_from_rfc3339(ts) else {
+            let Ok(pub_at) = DateTime::parse_from_rfc3339(&ts.0) else {
                 continue;
             };
             let pub_at = pub_at.with_timezone(&Utc);
             if now - pub_at < min_age {
-                blocked.insert(ver.clone());
+                blocked.insert(&ver.0);
                 // A version never becomes blocked later (age only grows and
                 // max_age is not applied here), so the first unblock is the only
                 // future instant at which this render changes.
@@ -870,64 +891,162 @@ pub(crate) fn rewrite_packument_top(
             }
         }
     }
-
-    let keys: Vec<String> = versions.keys().cloned().collect();
-    for ver in keys {
-        if blocked.contains(&ver) {
-            versions.remove(&ver);
-            removed += 1;
-            continue;
-        }
-        if let Some(nv) =
-            rewrite_version_tarball(versions[&ver].get().as_bytes(), base, repo_name, pkg)
-            && let Ok(parsed) = RawValue::from_string(nv)
-        {
-            versions.insert(ver, parsed);
-        }
-    }
+    let removed = blocked.len() as i64;
 
     // Prune dist-tags pointing at removed versions. `latest` is remapped to the
     // highest remaining stable version so a bare `npm install <pkg>` resolves to
     // the newest policy-compliant release instead of failing.
+    let mut dist_tags: Option<String> = None;
     if removed > 0
         && let Some(raw) = top.get("dist-tags")
         && let Ok(mut tags) = serde_json::from_str::<BTreeMap<String, String>>(raw.get())
     {
         let mut remap_latest = false;
         tags.retain(|tag, ver| {
-            if blocked.contains(ver) {
+            if blocked.contains(ver.as_str()) {
                 remap_latest = remap_latest || tag == "latest";
                 return false;
             }
             true
         });
         if remap_latest {
-            let best = highest_stable_version(&versions);
+            let best = highest_stable_version(
+                versions
+                    .keys()
+                    .map(|v| v.0.as_ref())
+                    .filter(|v| !blocked.contains(v)),
+            );
             if !best.is_empty() {
                 tags.insert("latest".to_string(), best);
             }
         }
-        if let Ok(nb) = serde_json::to_string(&tags)
-            && let Ok(parsed) = RawValue::from_string(nb)
-        {
-            top.insert("dist-tags".to_string(), parsed);
-        }
+        dist_tags = serde_json::to_string(&tags).ok();
     }
 
-    if top.contains_key("versions") {
-        let nb = marshal_raw_object(&versions)?;
-        top.insert(
-            "versions".to_string(),
-            RawValue::from_string(String::from_utf8(nb).ok()?).ok()?,
-        );
+    let rewritten = versions.len() * (base.len() + repo_name.len() + pkg.len() + 8);
+    let size = top
+        .iter()
+        .map(|(k, v)| k.0.len() + v.get().len() + 4)
+        .sum::<usize>()
+        + dist_tags.as_ref().map_or(0, String::len)
+        + versions_raw.as_ref().map_or(0, |v| v.get().len() + 12)
+        + rewritten
+        + 2;
+    let mut buf = Vec::with_capacity(size);
+    let mut out = ObjectWriter::open(&mut buf);
+    // Members are written in key order, so `versions` goes in where the map
+    // would have sorted it.
+    let mut versions_pending = versions_raw.is_some();
+    for (k, v) in &top {
+        let k = k.0.as_ref();
+        if versions_pending && k > "versions" {
+            out.key("versions")?;
+            write_versions(out.buf(), &versions, &blocked, base, repo_name, pkg)?;
+            versions_pending = false;
+        }
+        out.key(k)?;
+        let value = match &dist_tags {
+            Some(tags) if k == "dist-tags" => tags.as_str(),
+            _ => v.get(),
+        };
+        out.buf().extend_from_slice(value.as_bytes());
     }
-    let out = marshal_raw_object(&top)?;
-    Some((out, removed, until))
+    if versions_pending {
+        out.key("versions")?;
+        write_versions(out.buf(), &versions, &blocked, base, repo_name, pkg)?;
+    }
+    out.close();
+    Some((buf, removed, until))
 }
 
-/// Rewrites the `dist.tarball` URL of a single raw version manifest to point
-/// back at forklift. Returns `None` when nothing was rewritten (the caller
-/// leaves the original fragment untouched).
+/// A JSON string borrowed from the document it was decoded from, owned only when
+/// it carries an escape.
+#[derive(serde::Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash)]
+struct JsonStr<'a>(#[serde(borrow)] Cow<'a, str>);
+
+impl std::borrow::Borrow<str> for JsonStr<'_> {
+    fn borrow(&self) -> &str {
+        &self.0
+    }
+}
+
+/// Writes the `versions` object: every version not in `blocked`, in key order,
+/// with its tarball URL pointed back at forklift.
+fn write_versions(
+    buf: &mut Vec<u8>,
+    versions: &BTreeMap<JsonStr<'_>, &RawValue>,
+    blocked: &HashSet<&str>,
+    base: &str,
+    repo_name: &str,
+    pkg: &str,
+) -> Option<()> {
+    let mut out = ObjectWriter::open(buf);
+    for (ver, raw) in versions {
+        if blocked.contains(ver.0.as_ref()) {
+            continue;
+        }
+        out.key(&ver.0)?;
+        if !splice_version_tarball(out.buf(), raw.get(), base, repo_name, pkg) {
+            out.buf().extend_from_slice(raw.get().as_bytes());
+        }
+    }
+    out.close();
+    Some(())
+}
+
+/// Encodes a JSON object whose member values are already encoded, so nothing
+/// is re-walked or re-validated on the way out.
+struct ObjectWriter<'b> {
+    buf: &'b mut Vec<u8>,
+    first: bool,
+}
+
+impl<'b> ObjectWriter<'b> {
+    fn open(buf: &'b mut Vec<u8>) -> Self {
+        buf.push(b'{');
+        Self { buf, first: true }
+    }
+
+    /// Starts a member; the caller appends its encoded value to [`Self::buf`].
+    fn key(&mut self, name: &str) -> Option<()> {
+        if !self.first {
+            self.buf.push(b',');
+        }
+        self.first = false;
+        serde_json::to_writer(&mut *self.buf, name).ok()?;
+        self.buf.push(b':');
+        Some(())
+    }
+
+    const fn buf(&mut self) -> &mut Vec<u8> {
+        self.buf
+    }
+
+    fn close(self) {
+        self.buf.push(b'}');
+    }
+}
+
+/// Returns `raw` with its tarball URL rewritten (see [`splice_version_tarball`]),
+/// or `None` when there was nothing to rewrite.
+#[cfg(test)]
+pub(super) fn rewrite_version_tarball(
+    raw: &[u8],
+    base: &str,
+    repo_name: &str,
+    pkg: &str,
+) -> Option<String> {
+    let raw = std::str::from_utf8(raw).ok()?;
+    let mut out = Vec::with_capacity(raw.len() + base.len() + repo_name.len() + pkg.len());
+    if !splice_version_tarball(&mut out, raw, base, repo_name, pkg) {
+        return None;
+    }
+    String::from_utf8(out).ok()
+}
+
+/// Appends `raw` to `out` with the `dist.tarball` URL pointed back at forklift,
+/// or appends nothing and returns false when the manifest has no tarball URL
+/// (the caller then copies the original fragment).
 ///
 /// The rewrite is a splice of the tarball string literal, not a decode of the
 /// manifest into a map and back. This runs once per version, so an installer
@@ -937,26 +1056,33 @@ pub(crate) fn rewrite_packument_top(
 /// just been handed. Splicing also leaves every other byte of the manifest
 /// exactly as upstream published it, where the round trip reordered the fields
 /// alphabetically for no reason.
-pub(super) fn rewrite_version_tarball(
-    raw: &[u8],
+fn splice_version_tarball(
+    out: &mut Vec<u8>,
+    raw: &str,
     base: &str,
     repo_name: &str,
     pkg: &str,
-) -> Option<String> {
-    let (dist_start, dist_end) = json_field_span(raw, "dist")?;
-    let (tb_start, tb_end) = json_field_span(&raw[dist_start..dist_end], "tarball")?;
+) -> bool {
+    let bytes = raw.as_bytes();
+    let Some((dist_start, dist_end)) = json_field_span(bytes, "dist") else {
+        return false;
+    };
+    let Some((tb_start, tb_end)) = json_field_span(&bytes[dist_start..dist_end], "tarball") else {
+        return false;
+    };
     let (tb_start, tb_end) = (dist_start + tb_start, dist_start + tb_end);
-    let tb: String = serde_json::from_slice(&raw[tb_start..tb_end]).ok()?;
-    let nb = serde_json::to_string(&format!(
-        "{base}/npm/{repo_name}/{pkg}/-/{}",
-        path_base(&tb)
-    ))
-    .ok()?;
-    let mut out = Vec::with_capacity(raw.len() - (tb_end - tb_start) + nb.len());
-    out.extend_from_slice(&raw[..tb_start]);
-    out.extend_from_slice(nb.as_bytes());
-    out.extend_from_slice(&raw[tb_end..]);
-    String::from_utf8(out).ok()
+    let Ok(tb) = serde_json::from_str::<JsonStr<'_>>(&raw[tb_start..tb_end]) else {
+        return false;
+    };
+    let url = format!("{base}/npm/{repo_name}/{pkg}/-/{}", path_base(&tb.0));
+    let mark = out.len();
+    out.extend_from_slice(&bytes[..tb_start]);
+    if serde_json::to_writer(&mut *out, &url).is_err() {
+        out.truncate(mark);
+        return false;
+    }
+    out.extend_from_slice(&bytes[tb_end..]);
+    true
 }
 
 /// Locates the value of a top-level key inside the JSON object `obj` and returns
@@ -979,7 +1105,12 @@ pub(super) fn json_field_span(obj: &[u8], key: &str) -> Option<(usize, usize)> {
             return None;
         }
         let name_end = skip_string(obj, i)?;
-        let name: String = serde_json::from_slice(&obj[i..name_end]).ok()?;
+        let quoted = &obj[i + 1..name_end - 1];
+        let is_key = if quoted.contains(&b'\\') {
+            serde_json::from_slice::<String>(&obj[i..name_end]).ok()? == key
+        } else {
+            quoted == key.as_bytes()
+        };
         i = skip_ws(obj, name_end);
         if *obj.get(i)? != b':' {
             return None;
@@ -988,7 +1119,7 @@ pub(super) fn json_field_span(obj: &[u8], key: &str) -> Option<(usize, usize)> {
         // the value starts at the first byte that is neither.
         let start = skip_ws(obj, i + 1);
         let end = skip_value(obj, start)?;
-        if name == key {
+        if is_key {
             return Some((start, end));
         }
         i = skip_ws(obj, end);
@@ -1056,31 +1187,6 @@ fn skip_value(b: &[u8], i: usize) -> Option<usize> {
             if j == i { None } else { Some(j) }
         }
     }
-}
-
-/// Encodes an object whose members are already encoded. It exists because re-serializing a
-/// fragment map re-walks, validates and compacts every fragment, which on a packument means a
-/// second full pass over a document the caller just produced. Returns `None` when a key cannot
-/// be encoded.
-pub(super) fn marshal_raw_object(members: &RawObject) -> Option<Vec<u8>> {
-    let size: usize = members
-        .iter()
-        .map(|(k, v)| k.len() + v.get().len() + 4)
-        .sum::<usize>()
-        + 2;
-    let mut buf = Vec::with_capacity(size);
-    buf.push(b'{');
-    for (i, (k, v)) in members.iter().enumerate() {
-        if i > 0 {
-            buf.push(b',');
-        }
-        let name = serde_json::to_string(k).ok()?;
-        buf.extend_from_slice(name.as_bytes());
-        buf.push(b':');
-        buf.extend_from_slice(v.get().as_bytes());
-    }
-    buf.push(b'}');
-    Some(buf)
 }
 
 #[cfg(test)]
@@ -1182,19 +1288,20 @@ pub(crate) mod tests {
         //!
         //! The `metadata_rewrite_*` metrics it refers to are covered by `rewritegate_test.rs`.
 
-        use std::collections::BTreeMap;
         use std::sync::Arc;
         use std::sync::atomic::{AtomicI64, Ordering};
 
         use axum::Router;
         use axum::routing::any;
         use http::{Method, StatusCode, Uri};
-        use serde_json::value::RawValue;
 
         use crate::meta;
         use crate::repoconfig;
 
-        use crate::repo::npm::{json_field_span, marshal_raw_object, rewrite_version_tarball};
+        use chrono::Utc;
+
+        use crate::repo::npm::{json_field_span, rewrite_packument_top, rewrite_version_tarball};
+        use crate::repoconfig::AgePolicyConfig;
         use crate::testing::repo::{call, mk_format_repo, mux, new_test_manager, spawn_upstream};
 
         #[test]
@@ -1295,26 +1402,33 @@ pub(crate) mod tests {
 
         /// Sorted keys keep the served document byte-stable across requests, which is
         /// what `json.Marshal` gave before and what any content hash over the output
-        /// will depend on.
+        /// will depend on. `versions` is written apart from the other members and must
+        /// still land in its sorted place.
         #[test]
-        fn marshal_raw_object_is_sorted_and_verbatim() {
-            let mut members: BTreeMap<String, Box<RawValue>> = BTreeMap::new();
-            for (key, value) in [("b", r#"{"x":1}"#), ("a", "[1,2]"), ("c\"d", r#""v""#)] {
-                members.insert(
-                    key.to_string(),
-                    RawValue::from_string(value.to_string()).expect("raw value"),
-                );
-            }
-            let got = marshal_raw_object(&members).expect("marshal");
-            let want = r#"{"a":[1,2],"b":{"x":1},"c\"d":"v"}"#;
-            assert_eq!(String::from_utf8_lossy(&got), want);
-            let second = marshal_raw_object(&members).expect("marshal");
-            assert_eq!(got, second, "output is not stable across calls");
+        fn rewrite_packument_top_is_sorted_and_verbatim() {
+            let render = |doc: &str| {
+                let (out, removed, until) = rewrite_packument_top(
+                    doc.as_bytes(),
+                    "https://f.example.com",
+                    "npmjs",
+                    "pkg",
+                    &AgePolicyConfig::default(),
+                    Utc::now(),
+                )
+                .expect("rewrite");
+                assert_eq!((removed, until), (0, None), "{doc}: nothing to remove");
+                String::from_utf8(out).expect("utf-8")
+            };
+            let doc = r#"{"zzz":{"x":1},"versions":{"2.0.0":{"v":2},"1.0.0":{"v":1}},"c\"d":"v","a":[1, 2]}"#;
+            let want = r#"{"a":[1, 2],"c\"d":"v","versions":{"1.0.0":{"v":1},"2.0.0":{"v":2}},"zzz":{"x":1}}"#;
+            assert_eq!(render(doc), want);
+            assert_eq!(render(doc), want, "output is not stable across calls");
             assert_eq!(
-                String::from_utf8_lossy(&marshal_raw_object(&BTreeMap::new()).expect("marshal")),
-                "{}",
-                "empty object"
+                render(r#"{"b":1,"a":2}"#),
+                r#"{"a":2,"b":1}"#,
+                "no versions member"
             );
+            assert_eq!(render("{}"), "{}", "empty object");
         }
 
         /// With the age gate off there is nothing the packument timestamp can decide, so

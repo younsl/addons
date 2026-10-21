@@ -1,6 +1,6 @@
 //! In-process cache of rendered metadata documents.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::time::Duration;
 
 use bytes::Bytes;
@@ -47,7 +47,7 @@ pub(crate) struct RenderCache {
 #[derive(Default)]
 struct State {
     entries: HashMap<String, RenderEntry>,
-    order: Vec<String>,
+    order: VecDeque<String>,
     bytes: i64,
 }
 
@@ -96,16 +96,28 @@ impl RenderCache {
         if size == 0 || size > self.limit {
             return;
         }
+        let now = (self.now)();
         let mut state = self.state.lock();
         if state.entries.contains_key(key) {
             drop_locked(&mut state, key);
         }
-        while state.bytes + size > self.limit && !state.order.is_empty() {
-            let oldest = state.order[0].clone();
+        // Entries are inserted in TTL order, so the expired ones sit at the
+        // front. Releasing them here keeps a burst's documents from staying
+        // resident until the byte cap forces them out.
+        while let Some(oldest) = state.order.front()
+            && state.entries.get(oldest).is_none_or(|e| e.expires <= now)
+        {
+            let oldest = oldest.clone();
+            drop_locked(&mut state, &oldest);
+        }
+        while state.bytes + size > self.limit
+            && let Some(oldest) = state.order.front()
+        {
+            let oldest = oldest.clone();
             drop_locked(&mut state, &oldest);
         }
         let mut expires =
-            (self.now)() + chrono::TimeDelta::from_std(self.ttl).unwrap_or(chrono::TimeDelta::MAX);
+            now + chrono::TimeDelta::from_std(self.ttl).unwrap_or(chrono::TimeDelta::MAX);
         if let Some(until) = until
             && until < expires
         {
@@ -119,7 +131,7 @@ impl RenderCache {
                 expires,
             },
         );
-        state.order.push(key.to_string());
+        state.order.push_back(key.to_string());
         state.bytes += size;
     }
 
@@ -133,12 +145,11 @@ impl RenderCache {
 
 /// Removes `key` and its bytes. The caller holds the state lock.
 fn drop_locked(state: &mut State, key: &str) {
-    let Some(entry) = state.entries.remove(key) else {
-        return;
-    };
-    state.bytes -= entry.body.len() as i64;
     if let Some(i) = state.order.iter().position(|k| k == key) {
         state.order.remove(i);
+    }
+    if let Some(entry) = state.entries.remove(key) {
+        state.bytes -= entry.body.len() as i64;
     }
 }
 
@@ -197,6 +208,22 @@ pub(crate) mod tests {
         *now.lock() = unix(1011);
         assert!(c.get("a").is_none(), "expired entry served");
         assert_eq!(c.stats(), (0, 0), "expiry left entries resident");
+    }
+
+    /// An install burst touches most documents once, so an expired entry may never
+    /// be read again: the next insert releases it rather than the byte cap.
+    #[test]
+    fn render_cache_put_releases_expired_entries() {
+        let (c, now) = fixed_cache(100, Duration::from_secs(10), unix(1000));
+        c.put("a", Bytes::from_static(b"0123456789"), 0, None);
+        c.put("b", Bytes::from_static(b"0123456789"), 0, None);
+        *now.lock() = unix(1005);
+        c.put("c", Bytes::from_static(b"01234"), 0, None);
+        assert_eq!(c.stats(), (3, 25), "live entries released early");
+        *now.lock() = unix(1011);
+        c.put("d", Bytes::from_static(b"012"), 0, None);
+        assert_eq!(c.stats(), (2, 8), "expired entries still resident");
+        assert!(c.get("c").is_some(), "unexpired entry released");
     }
 
     #[test]
