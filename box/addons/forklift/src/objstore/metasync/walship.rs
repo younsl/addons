@@ -41,16 +41,22 @@ pub(super) const GENERATION_META_KEY: &str = "generation";
 /// The base object's metadata key holding the SHA-256 of its bytes.
 pub(super) const SHA256_META_KEY: &str = "sha256";
 
-/// Page bytes in one segment.
+/// Page bytes in one segment, and the largest single transaction captured.
+/// A bigger transaction (an index build, a VACUUM) is never held in memory:
+/// the generation is replaced and the new base carries it.
 const SEGMENT_FRAME_BYTES: usize = 16 << 20;
-/// Page bytes captured per cycle, so a burst is shipped over several cycles
-/// instead of being held in memory at once.
-const CAPTURE_BYTES: usize = 64 << 20;
+/// Page bytes captured per round. A cycle runs several rounds, uploading
+/// between them, so memory stays bounded however much the WAL holds.
+const CAPTURE_BYTES: usize = 16 << 20;
 /// The WAL size past which a fully shipped WAL is checkpointed.
 const CHECKPOINT_WAL_BYTES: u64 = 64 << 20;
-/// Encoded segments held while the bucket is unreachable. Past this the
-/// generation is abandoned and the next base carries the changes instead.
-const MAX_PENDING_BYTES: usize = 256 << 20;
+/// How long a checkpoint waits for readers. Short, because it holds the write
+/// connection meanwhile. A busy checkpoint is retried next cycle.
+const CHECKPOINT_BUSY: Duration = Duration::from_millis(250);
+/// Encoded segments held while the bucket is unreachable, kept well under
+/// the chart's default memory limit. Past this the generation is abandoned
+/// and the next base carries the changes instead.
+const MAX_PENDING_BYTES: usize = 32 << 20;
 /// A generation is replaced once its segments outgrow its base (and this
 /// floor), or reach [`MAX_SEGMENTS`], which bounds both restore time and the
 /// garbage a replacement leaves.
@@ -168,6 +174,9 @@ struct Captured {
     cursor: Option<Cursor>,
     restart_ok: bool,
     truncated: bool,
+    /// The WAL was truncated to start a generation: asked for, or forced by a
+    /// transaction too large to capture.
+    rotated: bool,
     /// Every committed frame in the WAL was read.
     drained: bool,
     /// Committed frames were folded into the database file without being
@@ -177,62 +186,78 @@ struct Captured {
 
 /// Reads committed frames and, when asked or when the WAL is large and fully
 /// read, checkpoints it with TRUNCATE. Runs on the write connection, so no
-/// commit can land between the read and the checkpoint.
+/// commit can land between the read and the checkpoint. With `read` false
+/// (no generation could take the frames) it only checkpoints.
 fn capture(
     conn: &rusqlite::Connection,
     wal: &Path,
     mut cursor: Option<Cursor>,
     mut restart_ok: bool,
     rotate: bool,
+    read: bool,
 ) -> meta::Result<Captured> {
     let mut batches = Vec::new();
     let mut taken = 0usize;
     let mut complete = false;
     let mut reset = false;
-    loop {
-        let read = walfmt::read_committed(wal, cursor, SEGMENT_FRAME_BYTES)
-            .map_err(|e| meta::Error::Other(format!("read wal: {e}")))?;
-        match read {
-            WalRead::Reset if restart_ok && cursor.is_some() => {
-                cursor = None;
-                restart_ok = false;
-            }
-            WalRead::Reset => {
-                reset = true;
-                cursor = None;
-                break;
-            }
-            WalRead::Frames {
-                frames,
-                cursor: next,
-                complete: done,
-            } => {
-                cursor = next;
-                if let Some(c) = next
-                    && !frames.is_empty()
-                {
+    let mut oversized = false;
+    if read {
+        loop {
+            let read = walfmt::read_committed(wal, cursor, SEGMENT_FRAME_BYTES)
+                .map_err(|e| meta::Error::Other(format!("read wal: {e}")))?;
+            match read {
+                WalRead::Reset if restart_ok && cursor.is_some() => {
+                    cursor = None;
                     restart_ok = false;
-                    taken += frames.len() * c.page_size() as usize;
-                    batches.push((c.page_size(), frames));
                 }
-                if done {
-                    complete = true;
+                WalRead::Reset => {
+                    reset = true;
+                    cursor = None;
                     break;
                 }
-                if taken >= CAPTURE_BYTES {
-                    break;
+                WalRead::Frames {
+                    frames,
+                    cursor: next,
+                    complete: done,
+                    oversized: big,
+                } => {
+                    cursor = next;
+                    if let Some(c) = next
+                        && !frames.is_empty()
+                    {
+                        restart_ok = false;
+                        taken += frames.len() * c.page_size() as usize;
+                        batches.push((c.page_size(), frames));
+                    }
+                    if done {
+                        complete = true;
+                        break;
+                    }
+                    if big {
+                        oversized = true;
+                        break;
+                    }
+                    if taken >= CAPTURE_BYTES {
+                        break;
+                    }
                 }
             }
         }
     }
-    let drained = complete && !reset;
+    let drained = read && complete && !reset;
     let wal_len = std::fs::metadata(wal).map_or(0, |m| m.len());
     let mut truncated = false;
-    if rotate || (drained && wal_len >= CHECKPOINT_WAL_BYTES) {
-        let busy: i64 = conn
-            .query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |r| r.get(0))
-            .map_err(|e| meta::Error::sqlite("checkpoint wal", e))?;
-        if busy == 0 {
+    if rotate || oversized || (drained && wal_len >= CHECKPOINT_WAL_BYTES) {
+        conn.busy_timeout(CHECKPOINT_BUSY)
+            .map_err(|e| meta::Error::sqlite("set busy timeout", e))?;
+        let busy = conn
+            .query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |r| {
+                r.get::<_, i64>(0)
+            })
+            .map_err(|e| meta::Error::sqlite("checkpoint wal", e));
+        conn.busy_timeout(meta::BUSY_TIMEOUT)
+            .map_err(|e| meta::Error::sqlite("set busy timeout", e))?;
+        if busy? == 0 {
             truncated = true;
             cursor = None;
             restart_ok = false;
@@ -245,9 +270,32 @@ fn capture(
         cursor,
         restart_ok,
         truncated,
+        rotated: truncated && (rotate || oversized),
         drained,
         lost: reset || (truncated && !drained),
     })
+}
+
+/// Local base copies are named `base-<generation>.db[.zst]` in the work
+/// directory.
+const BASE_FILE_PREFIX: &str = "base-";
+
+/// Removes base copies left by an earlier generation or a crashed process.
+/// Each is a full database copy, and the work directory outlives a container
+/// restart.
+fn remove_stale_bases(dir: &Path) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        if entry
+            .file_name()
+            .to_string_lossy()
+            .starts_with(BASE_FILE_PREFIX)
+        {
+            let _ = std::fs::remove_file(entry.path());
+        }
+    }
 }
 
 fn wal_path(db: &Path) -> PathBuf {
@@ -492,11 +540,12 @@ impl MetaSync {
     pub(super) async fn ship(&self, st: &mut SyncState, final_flush: bool) -> Result<()> {
         for _ in 0..MAX_ROUNDS {
             let rotate = st.ship.rotation_wanted(final_flush);
+            let read = st.ship.generation.as_ref().is_some_and(|g| !g.broken);
             let wal = wal_path(self.store.path());
             let (cursor, restart_ok) = (st.ship.cursor, st.ship.restart_ok);
             let cap = self
                 .store
-                .write(move |conn| capture(conn, &wal, cursor, restart_ok, rotate))
+                .write(move |conn| capture(conn, &wal, cursor, restart_ok, rotate, read))
                 .await
                 .map_err(|e| Error::Meta(e).context("capture wal"))?;
             st.ship.cursor = cap.cursor;
@@ -505,14 +554,15 @@ impl MetaSync {
                 st.ship
                     .mark_broken("wal frames were checkpointed before they were read");
             }
+            let progressed = !cap.batches.is_empty();
             self.queue_segments(st, cap.batches).await;
-            if cap.truncated && rotate {
+            if cap.rotated {
                 self.start_generation(st).await?;
             }
             self.wal_pending_bytes.set(st.ship.pending_bytes as f64);
             self.upload_pending(st).await?;
             self.publish_base(st).await?;
-            if cap.drained || cap.truncated {
+            if cap.drained || cap.truncated || (!progressed && !cap.lost) {
                 return Ok(());
             }
         }
@@ -582,24 +632,32 @@ impl MetaSync {
         tokio::fs::create_dir_all(&work_dir)
             .await
             .map_err(|e| Error::io("create objstore dir", e))?;
-        let raw = work_dir.join(format!("base-{id}.db"));
+        let raw = work_dir.join(format!("{BASE_FILE_PREFIX}{id}.db"));
         let db = self.store.path().to_path_buf();
         let compression = self.compression;
         let made =
             tokio::task::spawn_blocking(move || -> std::io::Result<(PathBuf, u64, u64, String)> {
-                std::fs::copy(&db, &raw)?;
-                let raw_size = std::fs::metadata(&raw)?.len();
-                let (path, size) = match compression {
-                    Compression::None => (raw, raw_size),
-                    Compression::Zstd => {
-                        let packed = raw.with_extension("db.zst");
-                        let res = snapcodec::compress(&raw, &packed);
-                        let _ = std::fs::remove_file(&raw);
-                        (packed, res?)
-                    }
-                };
-                let sha = sha256_file(&path)?;
-                Ok((path, size, raw_size, sha))
+                remove_stale_bases(&work_dir);
+                let packed = raw.with_extension("db.zst");
+                let made = (|| {
+                    std::fs::copy(&db, &raw)?;
+                    let raw_size = std::fs::metadata(&raw)?.len();
+                    let (path, size) = match compression {
+                        Compression::None => (raw.clone(), raw_size),
+                        Compression::Zstd => {
+                            let size = snapcodec::compress(&raw, &packed)?;
+                            std::fs::remove_file(&raw)?;
+                            (packed.clone(), size)
+                        }
+                    };
+                    let sha = sha256_file(&path)?;
+                    Ok((path, size, raw_size, sha))
+                })();
+                if made.is_err() {
+                    let _ = std::fs::remove_file(&raw);
+                    let _ = std::fs::remove_file(&packed);
+                }
+                made
             })
             .await
             .map_err(blocking_err("copy wal base"))?;
@@ -611,13 +669,6 @@ impl MetaSync {
                 return Err(Error::io("copy wal base", e));
             }
         };
-        if let Some(Generation {
-            base: Base::Local { path: old, .. },
-            ..
-        }) = &st.ship.generation
-        {
-            let _ = tokio::fs::remove_file(old).await;
-        }
         tracing::info!(generation = %id, bytes = size, "objstore: started wal generation");
         st.ship.generation = Some(Generation {
             id,
@@ -785,8 +836,10 @@ impl MetaSync {
 
     /// Brings the standby's copy of `generation` up to date and returns its
     /// path: a fresh base when the generation or base object changed, then
-    /// every contiguous segment not yet applied. With `verify`, a copy changed
-    /// since its last check is integrity-checked before it is returned.
+    /// every contiguous segment not yet applied. With `verify` (boot and
+    /// promotion) the copy must be complete and current: a missing segment, or
+    /// a base replaced while catching up, fails instead of serving a partial
+    /// state, and a copy changed since its last check is integrity-checked.
     pub(super) async fn follow_generation(
         &self,
         st: &mut SyncState,
@@ -837,6 +890,23 @@ impl MetaSync {
             });
         }
         let applied = self.apply_segments(st).await;
+        if verify && matches!(applied, Ok(true)) {
+            return Err(Error::Unavailable(format!(
+                "wal generation {generation} is missing a segment; refusing a partial restore"
+            )));
+        }
+        if verify {
+            let now = self
+                .api
+                .head_object(&self.bucket, &self.key)
+                .await
+                .map_err(|e| e.context("recheck snapshot"))?;
+            if now.e_tag != head.e_tag {
+                return Err(Error::Unavailable(
+                    "snapshot replaced while catching up; retrying".into(),
+                ));
+            }
+        }
         let replica = st.replica.as_mut().ok_or_else(|| {
             Error::ObjectStore("standby copy discarded after a failed replay".into())
         })?;
@@ -854,12 +924,13 @@ impl MetaSync {
         Ok(replica.path.clone())
     }
 
-    /// Applies the replica's next contiguous segments. A segment that fails
-    /// validation leaves the copy as it was; one that fails while being written
-    /// discards the copy, since it is then neither the old state nor the new.
-    async fn apply_segments(&self, st: &mut SyncState) -> Result<()> {
+    /// Applies the replica's next contiguous segments and reports whether a
+    /// gap stopped it. A segment that fails validation leaves the copy as it
+    /// was; one that fails while being written discards the copy, since it is
+    /// then neither the old state nor the new.
+    async fn apply_segments(&self, st: &mut SyncState) -> Result<bool> {
         let Some(replica) = st.replica.as_mut() else {
-            return Ok(());
+            return Ok(false);
         };
         let prefix = self.generation_prefix(&replica.generation);
         let keys = self
@@ -881,7 +952,7 @@ impl MetaSync {
                     found = seq,
                     "objstore: wal segment missing; waiting for the next base"
                 );
-                break;
+                return Ok(true);
             }
             let out = self
                 .api
@@ -930,7 +1001,7 @@ impl MetaSync {
             replica.dirty = true;
             self.wal_segments.with_label_values(&["applied"]).inc();
         }
-        Ok(())
+        Ok(false)
     }
 
     /// A standby with automatic checkpoints off still writes a little (startup
@@ -1530,6 +1601,111 @@ mod tests {
                 .unwrap(),
             None
         );
+    }
+
+    /// One transaction larger than a segment is never held in memory: the
+    /// generation is replaced and the new base carries it.
+    #[tokio::test]
+    async fn an_oversized_transaction_rotates_the_generation() {
+        let bucket = Bucket::new();
+        let a = leader(&bucket, 1).await;
+        a.sync.sync().await.unwrap();
+        let first = bucket.generation().unwrap();
+        insert(&a.store, 0, 10).await;
+        a.sync.sync().await.unwrap();
+        a.store
+            .write(|c| {
+                let tx = c.transaction().map_err(|e| meta::Error::sqlite("tx", e))?;
+                for i in 0..48i64 {
+                    let v = format!("{i}:{}", "z".repeat(512 * 1024));
+                    tx.execute(
+                        "INSERT INTO wal_test(id, v) VALUES (?1, ?2)",
+                        rusqlite::params![1000 + i, v],
+                    )
+                    .map_err(|e| meta::Error::sqlite("insert", e))?;
+                }
+                tx.commit().map_err(|e| meta::Error::sqlite("commit", e))
+            })
+            .await
+            .unwrap();
+        a.sync.sync().await.unwrap();
+        assert_ne!(
+            bucket.generation().unwrap(),
+            first,
+            "the big transaction rides the new base"
+        );
+        let largest = bucket
+            .segments()
+            .iter()
+            .map(|k| bucket.objects.lock()[k].data.len())
+            .max()
+            .unwrap_or(0);
+        assert!(
+            largest < SEGMENT_FRAME_BYTES,
+            "a segment held the whole transaction"
+        );
+        assert_eq!(restored(&bucket).await, rows(&a.store).await);
+    }
+
+    /// A demotion whose caller gives up waiting still finishes: the final
+    /// flush lands, leadership is released and the shipping state is gone.
+    #[tokio::test]
+    async fn a_timed_out_demotion_still_completes() {
+        let bucket = Bucket::new();
+        let a = leader(&bucket, 1).await;
+        a.sync.sync().await.unwrap();
+        insert(&a.store, 0, 25).await;
+        let _ = tokio::time::timeout(Duration::from_micros(1), a.sync.demote()).await;
+        for _ in 0..200 {
+            if !a.sync.is_leader() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        assert!(!a.sync.is_leader());
+        let st = a.sync.sync_mu.lock().await;
+        assert!(st.ship.generation.is_none() && st.ship.pending.is_empty());
+        drop(st);
+        assert_eq!(restored(&bucket).await.len(), 25);
+    }
+
+    /// Boot and promotion refuse a generation with a hole, rather than serve
+    /// a state that silently drops the segments after it.
+    #[tokio::test]
+    async fn promotion_and_boot_refuse_a_gap() {
+        let bucket = Bucket::new();
+        let a = leader(&bucket, 1).await;
+        a.sync.sync().await.unwrap();
+        for i in 0..3 {
+            insert(&a.store, i * 10, 10).await;
+            a.sync.sync().await.unwrap();
+        }
+        let segments = bucket.segments();
+        bucket.objects.lock().remove(&segments[1]);
+        let b = pod(&bucket, SyncMode::Wal).await;
+        let err = b.sync.promote(2).await.unwrap_err();
+        assert!(err.to_string().contains("missing a segment"), "{err}");
+        assert!(!b.sync.is_leader());
+        let c = pod(&bucket, SyncMode::Wal).await;
+        let err = c.sync.restore_on_boot().await.unwrap_err();
+        assert!(err.is_transient(), "boot retries a gap: {err}");
+    }
+
+    #[tokio::test]
+    async fn stale_base_copies_are_removed() {
+        let bucket = Bucket::new();
+        let a = leader(&bucket, 1).await;
+        let work = a.sync.work_dir();
+        std::fs::create_dir_all(&work).unwrap();
+        std::fs::write(work.join("base-left-by-a-crash.db.zst"), b"old").unwrap();
+        a.sync.sync().await.unwrap();
+        let left: Vec<_> = std::fs::read_dir(&work)
+            .unwrap()
+            .flatten()
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .filter(|n| n.starts_with(BASE_FILE_PREFIX))
+            .collect();
+        assert!(left.is_empty(), "{left:?}");
     }
 
     /// A reader holding a snapshot blocks the rotation's TRUNCATE. The

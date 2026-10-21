@@ -659,14 +659,16 @@ impl MetaSync {
 
     /// Runs one cycle: the leader uploads a fresh snapshot, a standby downloads
     /// the latest one and records it for promotion.
-    pub(crate) async fn sync(&self) -> Result<()> {
+    pub(crate) async fn sync(self: &Arc<Self>) -> Result<()> {
+        if self.mode == SyncMode::Wal && self.is_leader.load(Ordering::SeqCst) {
+            return self.ship_detached().await;
+        }
         let mut st = self.sync_mu.lock().await;
 
         if self.is_leader.load(Ordering::SeqCst) {
             if self.mode == SyncMode::Wal {
-                self.ship(&mut st, false).await?;
-                self.mark_synced();
-                return Ok(());
+                drop(st);
+                return self.ship_detached().await;
             }
             let outcome = match self.upload(&mut st, true).await {
                 Ok(v) => v,
@@ -1002,8 +1004,10 @@ impl MetaSync {
     /// the stale state this function exists to discard. A failed promotion
     /// therefore leaves this process a standby, and its caller must not lead.
     pub async fn promote(&self, fence: i64) -> Result<()> {
-        self.fence.store(fence, Ordering::SeqCst);
         let mut st = self.sync_mu.lock().await;
+        // Stored only under the lock, so a cycle of a previous term still in
+        // flight finishes under that term's fence.
+        self.fence.store(fence, Ordering::SeqCst);
         // The swap below closes the read pool, taking any pinned watch
         // connection with it; the first upload of a term is unconditional
         // anyway.
@@ -1087,30 +1091,64 @@ impl MetaSync {
         Ok(())
     }
 
+    /// One leader WAL cycle on its own task. Shipping advances the capture
+    /// cursor and may checkpoint, and those must land together with the
+    /// segments they produced: a caller that stops waiting (a timeout) must not
+    /// cut a cycle in half and leave a gap the frame numbering cannot reveal.
+    async fn ship_detached(self: &Arc<Self>) -> Result<()> {
+        let this = Arc::clone(self);
+        tokio::spawn(async move {
+            let mut st = this.sync_mu.lock().await;
+            if !this.is_leader.load(Ordering::SeqCst) {
+                return Ok(());
+            }
+            this.ship(&mut st, false).await?;
+            this.mark_synced();
+            Ok(())
+        })
+        .await
+        .map_err(|e| Error::io("ship wal", std::io::Error::other(e)))?
+    }
+
     /// Called when leadership is lost. It flushes one final snapshot before
     /// standing down so the writes made since the last sync cycle reach S3
     /// instead of dying with this leader's local database, then the download
-    /// loop resumes.
-    pub async fn demote(&self) {
-        self.final_sync().await;
-        self.is_leader.store(false, Ordering::SeqCst);
-        let mut st = self.sync_mu.lock().await;
-        drop_watch(&mut st);
-        st.ship.discard(&self.wal_pending_bytes);
+    /// loop resumes. The work runs on its own task and completes even when the
+    /// caller stops waiting, so leadership is always given up and the shipping
+    /// state always discarded.
+    pub async fn demote(self: &Arc<Self>) {
+        let this = Arc::clone(self);
+        let _ = tokio::spawn(async move {
+            let mut st = this.sync_mu.lock().await;
+            if this.is_leader.load(Ordering::SeqCst) {
+                this.final_flush(&mut st).await;
+            }
+            this.is_leader.store(false, Ordering::SeqCst);
+            drop_watch(&mut st);
+            st.ship.discard(&this.wal_pending_bytes);
+        })
+        .await;
     }
 
     /// Uploads a last snapshot if this process is the leader. It is called on
-    /// demotion and on shutdown, where the periodic loop would otherwise stop
-    /// with up to one interval of writes only in the local database. It is
-    /// best-effort: failures are logged, never returned, because nothing can be
-    /// retried at that point.
-    pub async fn final_sync(&self) {
-        if !self.is_leader.load(Ordering::SeqCst) {
-            return;
-        }
-        let mut st = self.sync_mu.lock().await;
+    /// shutdown, where the periodic loop would otherwise stop with up to one
+    /// interval of writes only in the local database. It is best-effort:
+    /// failures are logged, never returned, because nothing can be retried at
+    /// that point. Like [`MetaSync::demote`] it runs on its own task.
+    pub async fn final_sync(self: &Arc<Self>) {
+        let this = Arc::clone(self);
+        let _ = tokio::spawn(async move {
+            let mut st = this.sync_mu.lock().await;
+            if this.is_leader.load(Ordering::SeqCst) {
+                this.final_flush(&mut st).await;
+            }
+        })
+        .await;
+    }
+
+    async fn final_flush(&self, st: &mut SyncState) {
         if self.mode == SyncMode::Wal {
-            match self.ship(&mut st, true).await {
+            match self.ship(st, true).await {
                 Ok(()) => {
                     self.mark_synced();
                     tracing::info!("objstore: final wal segments shipped");
@@ -1121,7 +1159,7 @@ impl MetaSync {
             }
             return;
         }
-        let outcome = match self.upload(&mut st, false).await {
+        let outcome = match self.upload(st, false).await {
             Ok(v) => v,
             Err(e) => {
                 self.uploads.with_label_values(&["error"]).inc();

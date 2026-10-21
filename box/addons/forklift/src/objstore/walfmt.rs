@@ -80,10 +80,13 @@ impl Cursor {
 pub enum WalRead {
     /// Committed frames after the cursor (possibly none), the cursor past the
     /// last of them, and whether every committed frame in the file was taken.
+    /// `oversized` means the next transaction alone exceeds the limit, so it
+    /// was left unread rather than held in memory.
     Frames {
         frames: Vec<Frame>,
         cursor: Option<Cursor>,
         complete: bool,
+        oversized: bool,
     },
     /// The file no longer continues the cursor: it was truncated or restarted
     /// with new salts since the cursor was taken.
@@ -147,8 +150,9 @@ fn parse_header(b: &[u8; WAL_HEADER_LEN]) -> Option<Header> {
 
 /// Reads the committed frames after `cursor` (or from the start of the file
 /// when `None`), stopping once at least `limit` page bytes have been taken at
-/// a commit boundary. A missing or empty file, or one without a valid header,
-/// holds no frames.
+/// a commit boundary, or as soon as one transaction's frames exceed `limit`
+/// before its commit. A missing or empty file, or one without a valid
+/// header, holds no frames.
 ///
 /// The caller must keep writers out while it reads if it intends to
 /// checkpoint afterwards; the reader itself is safe against a concurrent
@@ -164,6 +168,7 @@ pub fn read_committed(wal: &Path, cursor: Option<Cursor>, limit: usize) -> Resul
                     frames: Vec::new(),
                     cursor: None,
                     complete: true,
+                    oversized: false,
                 }
             });
         }
@@ -186,6 +191,7 @@ pub fn read_committed(wal: &Path, cursor: Option<Cursor>, limit: usize) -> Resul
                 frames: Vec::new(),
                 cursor: None,
                 complete: true,
+                oversized: false,
             }
         });
     };
@@ -221,6 +227,7 @@ pub fn read_committed(wal: &Path, cursor: Option<Cursor>, limit: usize) -> Resul
     let mut committed = start;
     let mut taken = 0usize;
     let mut complete = true;
+    let mut oversized = false;
     while at.offset + frame_len <= len {
         if taken >= limit {
             complete = false;
@@ -253,12 +260,17 @@ pub fn read_committed(wal: &Path, cursor: Option<Cursor>, limit: usize) -> Resul
             taken += pending.len() * page_size;
             frames.append(&mut pending);
             committed = at;
+        } else if pending.len() * page_size > limit {
+            complete = false;
+            oversized = true;
+            break;
         }
     }
     Ok(WalRead::Frames {
         frames,
         cursor: Some(committed),
         complete,
+        oversized,
     })
 }
 
@@ -484,14 +496,21 @@ mod tests {
         limit: usize,
     ) -> Vec<Vec<u8>> {
         let mut out = Vec::new();
+        let mut bound = limit;
         loop {
             let WalRead::Frames {
                 frames,
                 cursor: c,
                 complete,
-            } = read_committed(wal, *cursor, limit).unwrap()
+                oversized,
+            } = read_committed(wal, *cursor, bound).unwrap()
             else {
                 panic!("unexpected reset");
+            };
+            bound = if oversized && frames.is_empty() {
+                usize::MAX
+            } else {
+                limit
             };
             *cursor = c;
             if !frames.is_empty() {
@@ -570,8 +589,8 @@ mod tests {
         }
         segments.extend(ship(&db.wal, &mut cursor, &mut next, 64 * 1024));
         assert!(
-            segments.len() > 6,
-            "the limit should split rounds into several segments"
+            segments.len() >= 6,
+            "every round ships at least one segment"
         );
 
         let replica = replay(&base, &segments);
@@ -623,6 +642,53 @@ mod tests {
             rows(&replica).into_values().collect::<Vec<_>>(),
             vec!["kept".to_owned()]
         );
+    }
+
+    #[test]
+    fn an_oversized_transaction_is_left_unread() {
+        let db = open();
+        truncate(&db.conn);
+        db.conn
+            .execute("INSERT INTO t(v) VALUES ('small')", [])
+            .unwrap();
+        let tx = db.conn.unchecked_transaction().unwrap();
+        for i in 0..400 {
+            tx.execute("INSERT INTO t(v) VALUES (?1)", [format!("{i:0>500}")])
+                .unwrap();
+        }
+        tx.commit().unwrap();
+        let WalRead::Frames {
+            frames,
+            cursor,
+            complete,
+            oversized,
+        } = read_committed(&db.wal, None, 64 * 1024).unwrap()
+        else {
+            panic!("reset");
+        };
+        assert!(oversized && !complete);
+        assert!(!frames.is_empty() && frames.len() * 4096 <= 64 * 1024);
+        let WalRead::Frames {
+            frames: again,
+            oversized: still,
+            ..
+        } = read_committed(&db.wal, cursor, 64 * 1024).unwrap()
+        else {
+            panic!("reset");
+        };
+        assert!(
+            again.is_empty() && still,
+            "the cursor must stay before the big transaction"
+        );
+        let WalRead::Frames {
+            complete,
+            oversized,
+            ..
+        } = read_committed(&db.wal, cursor, usize::MAX).unwrap()
+        else {
+            panic!("reset");
+        };
+        assert!(complete && !oversized);
     }
 
     #[test]
@@ -689,7 +755,7 @@ mod tests {
         ));
         assert!(matches!(
             read_committed(&db.wal, None, usize::MAX).unwrap(),
-            WalRead::Frames { ref frames, cursor: None, complete: true } if frames.is_empty()
+            WalRead::Frames { ref frames, cursor: None, complete: true, .. } if frames.is_empty()
         ));
     }
 

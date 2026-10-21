@@ -166,6 +166,9 @@ pub type Result<T> = std::result::Result<T, Error>;
 /// only trips on pathological disk stalls.
 const MIGRATE_TIMEOUT: Duration = Duration::from_secs(60);
 
+/// How long a connection waits on a lock before failing with `SQLITE_BUSY`.
+pub(crate) const BUSY_TIMEOUT: Duration = Duration::from_millis(5000);
+
 /// Bounds the read pool. Metadata point lookups are microseconds long, so a
 /// handful of connections removes head-of-line blocking without meaningfully
 /// raising memory or file-handle cost.
@@ -363,7 +366,7 @@ fn open_connection(path: &Path, role: ConnRole, opts: OpenOptions) -> Result<Con
         | OpenFlags::SQLITE_OPEN_URI;
     let conn =
         Connection::open_with_flags(path, flags).map_err(|e| Error::sqlite("open sqlite", e))?;
-    conn.busy_timeout(Duration::from_millis(5000))
+    conn.busy_timeout(BUSY_TIMEOUT)
         .map_err(|e| Error::sqlite("set busy timeout", e))?;
     conn.execute_batch(
         "PRAGMA journal_mode = WAL;

@@ -39,25 +39,33 @@ SeaweedFS is append-only. An overwritten object stays on disk until vacuum, so t
 | No gap is ever applied | Segments upload in order, readers stop at the first missing sequence, each segment carries its first frame index |
 | A stale leader cannot win | Base PUT is fenced (term in metadata, `If-Match`), segment PUT is `If-None-Match: *`, every term starts its own generation |
 | A bad copy never serves | SHA-256 on base and segments, `quick_check` before boot and promotion, promotion fails closed |
+| A cycle is never cut in half | Shipping, demotion and the final flush run on their own task, so a caller timeout cannot separate the cursor from the segments it produced |
+| Memory stays bounded | A transaction larger than one segment is never read into memory, it forces a rotation and rides the new base |
 
 ## Failure handling
 
 | Event | Behavior |
 | --- | --- |
-| Bucket unreachable | Segments queue in order (256 MiB bound), then upload. Past the bound, the generation is replaced. |
+| Bucket unreachable | Segments queue in order (32 MiB bound), then upload. Past the bound, the generation is replaced. |
+| Transaction over 16 MiB (index build, VACUUM) | Left unread, WAL truncated, new generation |
+| Missing segment at boot or promotion | Refused and retried, never restored partially. A standby in the background just waits. |
+| Base replaced while catching up | Boot and promotion retry against the new base |
 | Lost PUT response | Retry gets 412, identical bytes count as shipped |
 | Foreign segment at our key | Generation abandoned, next base carries the changes |
 | WAL checkpointed or reset outside the shipper | Detected by salt and length, generation abandoned and replaced in the same cycle |
-| Reader blocks `TRUNCATE` | Generation kept, retried next cycle. A WAL restart afterwards is safe because every frame was read. |
-| Writers outpace one cycle | Capture continues for up to 64 rounds, the rest next cycle |
-| Demotion, shutdown | Final flush captures until the WAL is drained |
+| Reader blocks `TRUNCATE` | Waits 250 ms at most, generation kept, retried next cycle. A WAL restart afterwards is safe because every frame was read. |
+| Writers outpace one cycle | Capture continues for up to 64 rounds of 16 MiB, uploading between rounds, the rest next cycle |
+| Demotion, shutdown | Final flush captures until the WAL is drained, and completes even past the caller's timeout |
+| Re-elected while a cycle of the old term runs | The new fence is stored only under the sync lock, after that cycle ends |
 
 ## Bounds
 
 | Setting | Value |
 | --- | --- |
 | Ship cadence (RPO) | 5 s |
-| Segment | 16 MiB of pages, zstd |
+| Segment | 16 MiB of pages, zstd, also the largest transaction captured |
+| Unshipped segments held | 32 MiB |
+| Disk peak at rotation | about 1.2x the database (copy plus compressed copy) |
 | Rotation | segments outgrow the base (64 MiB floor), 2000 segments, a lost frame, or a new term |
 | Leader checkpoint | WAL over 64 MiB and fully shipped |
 
