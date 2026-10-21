@@ -8,7 +8,7 @@ The s3 backend publishes metadata changes as append-only WAL segments on top of 
 
 ## Why
 
-![before and after](wal-shipping-why.svg)
+![before and after](../assets/wal-shipping/why.svg)
 
 | Measured (shared cluster, 2026-10-21) | Value |
 | --- | --- |
@@ -21,11 +21,11 @@ SeaweedFS is append-only. An overwritten object stays on disk until vacuum, so t
 
 ## Architecture
 
-![architecture](wal-shipping-architecture.svg)
+![architecture](../assets/wal-shipping/architecture.svg)
 
 ## Generation lifecycle
 
-![lifecycle](wal-shipping-lifecycle.svg)
+![lifecycle](../assets/wal-shipping/lifecycle.svg)
 
 ## Invariants
 
