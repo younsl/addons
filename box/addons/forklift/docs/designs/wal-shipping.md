@@ -84,6 +84,17 @@ SeaweedFS is append-only. An overwritten object stays on disk until vacuum, so t
 - `forklift_objstore_meta_wal_pending_bytes` stays near 0, `forklift_objstore_meta_wal_segments_total{result="error"}` stays flat.
 - SeaweedFS data PVC stops swinging with business hours.
 
+## Benchmark
+
+![benchmark](../assets/wal-shipping/benchmark.svg)
+
+| SeaweedFS data size | Min | Max | Swing |
+| --- | --- | --- | --- |
+| 0.17.0 snapshot | 230 MiB | 1,683 MiB | 1,453 MiB |
+| 0.18.0 wal (zstd) | 75 MiB | 81 MiB | 6 MiB |
+
+Each version's own `MetaSync` against SeaweedFS 4.48 with production flags, the same audit write load (40 rows/s on a 270 MiB database) for 3 minutes, time compressed: 10 s sync interval for 5 min, a vacuum every 30 s for about 15 min. The download retention change is not included.
+
 ## Conclusion
 
 Overwriting a 4.7 GB snapshot to one key was what filled the append-only store, so forklift now appends only the changed pages and replaces the base rarely. The volume no longer tracks the write rate, and the failover data-loss window drops from the sync interval to about 5 seconds.
