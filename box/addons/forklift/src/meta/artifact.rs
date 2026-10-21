@@ -198,6 +198,37 @@ impl Store {
         .await
     }
 
+    /// Returns which of `paths` hold an artifact in the repository.
+    pub async fn existing_paths(
+        &self,
+        repo_id: i64,
+        paths: Vec<String>,
+    ) -> Result<std::collections::HashSet<String>> {
+        self.read(move |conn| {
+            let mut found = std::collections::HashSet::new();
+            for chunk in paths.chunks(500) {
+                let marks = vec!["?"; chunk.len()].join(",");
+                let sql =
+                    format!("SELECT path FROM artifacts WHERE repo_id = ? AND path IN ({marks})");
+                let mut stmt = conn
+                    .prepare(&sql)
+                    .map_err(|e| Error::sqlite("existing paths", e))?;
+                let args = std::iter::once(&repo_id as &dyn rusqlite::ToSql)
+                    .chain(chunk.iter().map(|p| p as &dyn rusqlite::ToSql));
+                let rows = stmt
+                    .query_map(rusqlite::params_from_iter(args), |row| {
+                        row.get::<_, String>(0)
+                    })
+                    .map_err(|e| Error::sqlite("existing paths", e))?;
+                for row in rows {
+                    found.insert(row.map_err(|e| Error::sqlite("existing paths", e))?);
+                }
+            }
+            Ok(found)
+        })
+        .await
+    }
+
     /// Returns artifacts in a repository whose path begins with `prefix`.
     pub async fn list_artifacts(&self, repo_id: i64, prefix: &str) -> Result<Vec<Artifact>> {
         let like = format!("{prefix}%");

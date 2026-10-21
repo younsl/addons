@@ -88,6 +88,20 @@ curl -u admin:change-me -X PUT http://forklift/api/v1/repositories/<id> \
 - Configure via flags: `--osv-url` (default `https://api.osv.dev`; empty disables scanning), `--vuln-rescan-interval` (default `6h`), `--vuln-ttl` (default `24h`), `--vuln-workers` (default `6`). The matching `FORKLIFT_OSV_URL` / `FORKLIFT_VULN_RESCAN_INTERVAL` / `FORKLIFT_VULN_TTL` / `FORKLIFT_VULN_WORKERS` env vars still seed the defaults; flags take precedence.
 - Blocks are counted in `forklift_vuln_blocked_total{repo,action}` and scans in `forklift_vuln_scans_total{result}`; blocks land in the audit log as `vuln.block` events. Per-version severity shows in the repository's Artifacts tab.
 
+## npm audit
+
+`npm audit` and `pnpm audit` work against an npm repository URL with no extra client setting. Forklift serves the npm bulk advisory endpoint (`POST /npm/<repo>/-/npm/v1/security/advisories/bulk`) from the same OSV data the vulnerability policy uses, so the client report and the gate agree, and the dependency list never leaves forklift for the npm registry.
+
+```bash
+pnpm audit --registry=http://forklift/npm/npm-public/
+```
+
+- Proxy repositories answer every requested package. Hosted repositories answer with no advisories. A group leaves out the packages its hosted members publish, so an internal package is never matched against a public package of the same name.
+- Advisories listed in `vuln.ignore` are left out, matched by id or alias (CVE, GHSA, OSV). A group applies its own list and those of its proxy members. Client-side lists such as pnpm's `auditConfig.ignoreGhsas` keep working, as each advisory links to its GHSA page.
+- A request lists at most 10,000 packages. Each package's advisories are cached for one hour, and at most four uncached lookups reach OSV at once across all requests. A failed OSV lookup answers 502 rather than an empty report, and with scanning disabled (`--osv-url` empty) the endpoint answers 501.
+- Reading needs the repository's `read` permission, as a package download does. Requests are counted in `forklift_npm_audit_requests_total{repo,result}` and are not written to the audit log, as they read nothing from the repository.
+- `vulnerable_versions` comes from OSV and can be wider than the npm registry's (OSV lists every affected release line), and an advisory with only a CVSS v4 vector reports a score of 0.
+
 ## License policy (deps.dev)
 
 Gate package versions by their declared SPDX license, resolved from [deps.dev](https://github.com/google/deps.dev):

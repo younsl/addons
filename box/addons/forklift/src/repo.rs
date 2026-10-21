@@ -55,6 +55,7 @@ mod vulngate;
 mod vulnscan;
 
 mod npm;
+mod npm_audit;
 mod oci;
 mod oci_detail;
 mod oci_idle;

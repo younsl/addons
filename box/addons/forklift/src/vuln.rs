@@ -3,14 +3,17 @@
 //! matching only: the directly requested version is checked, not its
 //! transitive dependencies and not the artifact bytes.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fmt;
+use std::sync::Arc;
 
 use async_trait::async_trait;
 
+mod affected;
 mod cvss;
 mod osv;
 
+pub use affected::{Affected, Event};
 pub use osv::{Osv, OsvScanner};
 
 /// Errors returned by a [`Scanner`].
@@ -26,6 +29,9 @@ pub enum Error {
     /// The advisory source answered with a non-2xx status.
     #[error("osv query: status {0}")]
     Status(u16),
+    /// The scanner has no package-level advisory lookup.
+    #[error("advisory lookup not supported")]
+    Unsupported,
 }
 
 /// Result alias for this module.
@@ -132,6 +138,38 @@ impl Finding {
     }
 }
 
+/// One advisory affecting a package, with the versions it affects, as served
+/// to `npm audit`.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct PackageAdvisory {
+    /// The source id (GHSA for GitHub-reviewed npm advisories).
+    pub id: String,
+    pub aliases: Vec<String>,
+    pub title: String,
+    pub severity: Severity,
+    /// The CVSS base score, when the source gives a usable one.
+    pub score: Option<f64>,
+    /// The CVSS vector string, empty when the source gives a numeric score only.
+    pub vector: String,
+    pub cwe: Vec<String>,
+    pub affected: Affected,
+}
+
+impl PackageAdvisory {
+    /// Returns the GHSA id among the id and its aliases.
+    pub fn ghsa(&self) -> Option<&str> {
+        self.ids().find(|id| id.starts_with("GHSA-"))
+    }
+
+    /// Iterates the id followed by every alias.
+    pub fn ids(&self) -> impl Iterator<Item = &str> {
+        std::iter::once(self.id.as_str()).chain(self.aliases.iter().map(String::as_str))
+    }
+}
+
+/// Advisories per package name, as returned by [`Scanner::advisories`].
+pub type PackageAdvisories = HashMap<String, Arc<Vec<PackageAdvisory>>>;
+
 /// Queries an advisory source for vulnerabilities affecting a coordinate. An
 /// empty version is a package-level query: the result covers every advisory
 /// affecting the package across all versions. `source` names the advisory data
@@ -141,4 +179,15 @@ impl Finding {
 pub trait Scanner: Send + Sync {
     async fn query(&self, ecosystem: &str, pkg: &str, version: &str) -> Result<Finding>;
     fn source(&self) -> &str;
+
+    /// Returns every advisory affecting each package in `packages`, across all
+    /// versions, with the affected version ranges. Packages without an advisory
+    /// may be absent from the result.
+    async fn advisories(
+        &self,
+        _ecosystem: &str,
+        _packages: &[String],
+    ) -> Result<PackageAdvisories> {
+        Err(Error::Unsupported)
+    }
 }

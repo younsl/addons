@@ -13,7 +13,7 @@ use axum::response::Response;
 use chrono::{DateTime, Utc};
 use http::request::Parts;
 use http::{Method, StatusCode};
-use prometheus::{CounterVec, Histogram, HistogramOpts, Opts, Registry};
+use prometheus::{CounterVec, Histogram, HistogramOpts, HistogramVec, Opts, Registry};
 
 use crate::audit;
 use crate::auth;
@@ -23,13 +23,13 @@ use crate::repoconfig::{self, Config};
 use crate::server::http_error;
 use crate::vuln;
 
-use super::counter_vec;
 use super::group_metadata::GroupMetadataLock;
 use super::licensescan::ResolveJob;
 use super::oci_proxy::OciTokenCache;
 use super::uiupload::Uploader;
 use super::vulnscan::{ScanJob, ScanRatio};
 use super::{Engine, NegCache, header_str, username_from_context};
+use super::{counter_vec, histogram_vec};
 
 /// The boxed future every format handler returns, so the router can hold them
 /// as plain function pointers.
@@ -104,6 +104,8 @@ pub struct Manager {
     pub(crate) ttl_expired: CounterVec,
     pub(crate) vuln_blocked: CounterVec,
     pub(crate) vuln_scans: CounterVec,
+    pub(crate) npm_audits: CounterVec,
+    pub(crate) npm_audit_seconds: HistogramVec,
     pub(crate) license_blocked: CounterVec,
     pub(crate) license_resolves: CounterVec,
     pub(crate) ip_blocked: CounterVec,
@@ -203,6 +205,17 @@ impl Manager {
                 "Vulnerability scans performed, by result (clean|vulnerable|error).",
                 &["result"],
             ),
+            npm_audits: counter_vec(
+                "npm_audit_requests_total",
+                "npm bulk advisory (npm audit, pnpm audit) requests, by result (ok|error|disabled).",
+                &["repo", "result"],
+            ),
+            npm_audit_seconds: histogram_vec(
+                "npm_audit_duration_seconds",
+                "Time to answer an npm bulk advisory request, by result.",
+                vec![0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0],
+                &["result"],
+            ),
             license_blocked: counter_vec(
                 "license_blocked_total",
                 "Requests blocked (or counted in warn/audit mode) by the license policy.",
@@ -242,6 +255,8 @@ impl Manager {
                 Box::new(m.ttl_expired.clone()),
                 Box::new(m.vuln_blocked.clone()),
                 Box::new(m.vuln_scans.clone()),
+                Box::new(m.npm_audits.clone()),
+                Box::new(m.npm_audit_seconds.clone()),
                 Box::new(m.license_blocked.clone()),
                 Box::new(m.license_resolves.clone()),
                 Box::new(m.ip_blocked.clone()),
@@ -356,7 +371,7 @@ impl Manager {
     /// /maven/{repo}/<maven coordinate path>
     /// ```
     pub fn register(self: &Arc<Self>, router: Router) -> Router {
-        use super::{cargo, gomod, maven, npm, oci, pypi, raw};
+        use super::{cargo, gomod, maven, npm, npm_audit, oci, pypi, raw};
 
         macro_rules! format_route {
             ($handler:path) => {{
@@ -367,6 +382,16 @@ impl Manager {
                 })
             }};
         }
+
+        // Not audit-logged: a bulk advisory query reads nothing from the
+        // repository, and the log would record its POST as an upload.
+        let npm_bulk_audit = {
+            let mgr = Arc::clone(self);
+            axum::routing::any(move |req: Request| {
+                let mgr = Arc::clone(&mgr);
+                async move { npm_audit::handle_npm_audit(mgr, req).await }
+            })
+        };
 
         let oci_base = {
             let mgr = Arc::clone(self);
@@ -383,6 +408,10 @@ impl Manager {
         router
             .route("/maven/{repo}/", format_route!(maven::handle_maven))
             .route("/maven/{repo}/{*rest}", format_route!(maven::handle_maven))
+            .route(
+                &format!("/npm/{{repo}}/{}", npm_audit::BULK_PATH),
+                npm_bulk_audit,
+            )
             .route("/npm/{repo}/", format_route!(npm::handle_npm))
             .route("/npm/{repo}/{*rest}", format_route!(npm::handle_npm))
             .route("/cargo/{repo}/", format_route!(cargo::handle_cargo))

@@ -44,7 +44,7 @@ API reference: `http://forklift/api-docs` ([Scalar](https://github.com/scalar/sc
 Use a personal access token as the password.
 
 - Maven: mirror `http://forklift/maven/<repo>/` in `settings.xml`
-- npm: `registry=http://forklift/npm/<repo>/` and `_authToken` in `.npmrc`
+- npm: `registry=http://forklift/npm/<repo>/` and `_authToken` in `.npmrc`. `npm audit` and `pnpm audit` use the same URL (see [npm audit](security-policies.md#npm-audit))
 - Cargo: sparse registry `sparse+http://forklift/cargo/<repo>/` in `.cargo/config.toml`. Cargo sends the token as is, so set the bare access token (see [Publish crates with cargo](#publish-crates-with-cargo))
 - Go: `GOPROXY=http://forklift/go/<repo>` with a `.netrc` entry
 - pip: `index-url = http://forklift/pypi/<repo>/simple/` in `pip.conf`; twine uploads POST to `http://forklift/pypi/<repo>`

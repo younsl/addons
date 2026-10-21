@@ -504,6 +504,20 @@ Vulnerability scans performed by the background worker against OSV. `error`
 growth means OSV lookups are failing (unreachable endpoint, rate limit), in
 which case unscanned coordinates fail open unless `block_unscanned` is set.
 
+### forklift_npm_audit_requests_total
+
+- Type: Counter
+- Labels: `repo`, `result` (`ok`, `error`, `disabled`)
+
+npm bulk advisory requests (`npm audit`, `pnpm audit`). `error` growth means OSV lookups or the metadata store are failing, and the clients see a failed audit rather than a clean one. `disabled` counts requests made while vulnerability scanning is off.
+
+### forklift_npm_audit_duration_seconds
+
+- Type: Histogram
+- Labels: `result` (`ok`, `error`, `disabled`)
+
+Time to answer an npm bulk advisory request. A lockfile seen for the first time in an hour costs one OSV batch query plus one lookup per new advisory, and repeats are served from the cache.
+
 ### forklift_license_blocked_total
 
 - Type: Counter
@@ -771,7 +785,7 @@ The metrics answer a few core questions about a forklift deployment:
   `upstream_errors_total`, `upstream_request_duration_seconds`, `upstream_up`
 - Are the supply-chain gates doing their job? `age_policy_violations_total`,
   `approval_blocked_total`, `approval_pending`, `version_deny_blocked_total`,
-  `vuln_blocked_total`, `vuln_scans_total`, `license_blocked_total`,
+  `vuln_blocked_total`, `vuln_scans_total`, `npm_audit_requests_total`, `license_blocked_total`,
   `license_resolves_total`
 - Is auditing complete? `audit_events_dropped_total`
 - In HA, are standbys keeping up? `replication_*`
