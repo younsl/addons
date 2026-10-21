@@ -3,8 +3,8 @@ name: forklift
 description: Lightweight Kubernetes-native artifact repository (Maven, npm, Cargo, Go, PyPI) with proxy caching and supply-chain controls (age policy, package approval, vulnerability scanning)
 type: application
 deprecated: false
-version: 0.18.0
-appVersion: "0.18.0"
+version: 0.18.1
+appVersion: "0.18.1"
 home: https://github.com/younsl/addons/tree/main/box/addons/forklift
 sources:
   - https://github.com/younsl/addons/tree/main/box/addons/forklift/charts/forklift
@@ -28,15 +28,9 @@ keywords:
   - nexus
 annotations:
   artifacthub.io/changes: |
-    - kind: added
-      description: "Storage page shows a live one-hour object-store health timeline from a HeadBucket check every minute"
-    - kind: added
-      description: "forklift_storage_up and forklift_storage_check_duration_seconds metrics for object-store availability"
-    - kind: added
-      description: "Storage overview shows the provider logo, server version and a copyable endpoint"
-    - kind: changed
-      description: "Migration reports open as a linkable page and their JSON includes the report location and size"
-    - kind: changed
-      description: "The bundled SeaweedFS skips its bucket hook Job by default, so an Argo CD sync no longer waits on a hook pod that cannot start"
     - kind: fixed
-      description: "Failing check IDs in the migration history no longer overlap the row arrow"
+      description: "Artifact label changes no longer wait behind audit pruning: prune batches hold the write connection about 200 ms, pause between batches and yield to queued writes"
+    - kind: fixed
+      description: "Download pruning walks audit ids forward instead of rescanning kept entries on every batch"
+    - kind: fixed
+      description: "Management API mutations wait at most 5 seconds for the write connection and answer 503 with Retry-After instead of timing out"

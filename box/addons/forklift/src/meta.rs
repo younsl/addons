@@ -90,6 +90,9 @@ pub enum Error {
     /// An artifact already carries the maximum number of labels.
     #[error("artifact label limit reached")]
     LabelLimit,
+    /// The write connection stayed busy past the caller's wait limit.
+    #[error("database busy")]
+    Busy,
     /// Any SQLite failure not classified above, with the operation it came from.
     #[error("{op}: {source}")]
     Sqlite {
@@ -174,6 +177,23 @@ pub(crate) const BUSY_TIMEOUT: Duration = Duration::from_millis(5000);
 /// raising memory or file-handle cost.
 pub const READ_POOL_SIZE: usize = 8;
 
+/// How long [`Store::yield_to_writers`] defers background work to queued
+/// writes before proceeding anyway, so a steady stream of writes cannot
+/// starve retention forever.
+const MAINTENANCE_YIELD_MAX: Duration = Duration::from_secs(5);
+const MAINTENANCE_YIELD_POLL: Duration = Duration::from_millis(20);
+
+tokio::task_local! {
+    static WRITE_WAIT_LIMIT: Duration;
+}
+
+/// Runs `f` with every write it makes waiting at most `limit` for the write
+/// connection. A write that would wait longer fails with [`Error::Busy`]
+/// instead of queueing until the client gives up.
+pub async fn with_write_wait_limit<F: std::future::Future>(limit: Duration, f: F) -> F::Output {
+    WRITE_WAIT_LIMIT.scope(limit, f).await
+}
+
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct PoolStats {
     /// Maximum connections the pool hands out.
@@ -194,7 +214,10 @@ struct Pool {
     conns: parking_lot::Mutex<Vec<Connection>>,
     permits: Semaphore,
     size: usize,
+    role: ConnRole,
     in_use: AtomicU64,
+    /// Callers queued for a connection right now.
+    waiting: AtomicU64,
     wait_count: AtomicU64,
     wait_nanos: AtomicU64,
     /// Set once the pool has been closed by a swap; connections returned late
@@ -212,7 +235,9 @@ impl Pool {
             conns: parking_lot::Mutex::new(conns),
             permits: Semaphore::new(size),
             size,
+            role,
             in_use: AtomicU64::new(0),
+            waiting: AtomicU64::new(0),
             wait_count: AtomicU64::new(0),
             wait_nanos: AtomicU64::new(0),
             closed: std::sync::atomic::AtomicBool::new(false),
@@ -250,15 +275,25 @@ impl Pool {
             p
         } else {
             let started = Instant::now();
-            let p = self
-                .permits
-                .acquire()
-                .await
-                .map_err(|_| Error::Other("database handle closed".into()))?;
+            let limit = match self.role {
+                ConnRole::Write => WRITE_WAIT_LIMIT.try_with(|d| *d).ok(),
+                ConnRole::Read => None,
+            };
+            let acquired = {
+                let _queued = Queued::new(&self.waiting);
+                match limit {
+                    Some(limit) => tokio::time::timeout(limit, self.permits.acquire())
+                        .await
+                        .ok(),
+                    None => Some(self.permits.acquire().await),
+                }
+            };
             self.wait_count.fetch_add(1, Ordering::Relaxed);
             self.wait_nanos
                 .fetch_add(started.elapsed().as_nanos() as u64, Ordering::Relaxed);
-            p
+            acquired
+                .ok_or(Error::Busy)?
+                .map_err(|_| Error::Other("database handle closed".into()))?
         };
         // The permit guards the count; the connection itself travels with the
         // blocking task, so forget the permit and re-add it on release.
@@ -300,6 +335,23 @@ impl Pool {
             wait_count: self.wait_count.load(Ordering::Relaxed),
             wait_duration: Duration::from_nanos(self.wait_nanos.load(Ordering::Relaxed)),
         }
+    }
+}
+
+/// Counts one caller queued on a pool for as long as it waits, including when
+/// the wait is cancelled or times out.
+struct Queued<'a>(&'a AtomicU64);
+
+impl<'a> Queued<'a> {
+    fn new(waiting: &'a AtomicU64) -> Self {
+        waiting.fetch_add(1, Ordering::Relaxed);
+        Self(waiting)
+    }
+}
+
+impl Drop for Queued<'_> {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::Relaxed);
     }
 }
 
@@ -455,6 +507,21 @@ impl Store {
         let handles = self.handles.load();
         handles.read.close();
         handles.write.close();
+    }
+
+    /// How many callers are queued for the write connection right now.
+    pub fn write_waiters(&self) -> u64 {
+        self.handles.load().write.waiting.load(Ordering::Relaxed)
+    }
+
+    /// Lets queued writes go first: background maintenance calls this before
+    /// each batch so console and API writes do not wait behind a long purge.
+    /// Gives up after [`MAINTENANCE_YIELD_MAX`] so maintenance still advances.
+    pub async fn yield_to_writers(&self) {
+        let deadline = Instant::now() + MAINTENANCE_YIELD_MAX;
+        while self.write_waiters() > 0 && Instant::now() < deadline {
+            tokio::time::sleep(MAINTENANCE_YIELD_POLL).await;
+        }
     }
 
     /// Connection-pool statistics for the write and read pools, in that order.
@@ -1060,6 +1127,71 @@ pub(crate) mod tests {
             assert_eq!(w.wait_count, 1);
             assert!(w.wait_duration > Duration::ZERO);
             assert_eq!(w.in_use, 0);
+        }
+
+        /// Holds the write connection on a blocking task until the returned
+        /// sender fires.
+        async fn hold_writer(
+            store: &std::sync::Arc<Store>,
+        ) -> (
+            tokio::sync::oneshot::Sender<()>,
+            tokio::task::JoinHandle<()>,
+        ) {
+            let (tx, rx) = tokio::sync::oneshot::channel::<()>();
+            let s = std::sync::Arc::clone(store);
+            let hold = tokio::spawn(async move {
+                s.write(move |_c| {
+                    let _ = rx.blocking_recv();
+                    Ok(())
+                })
+                .await
+                .unwrap();
+            });
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            (tx, hold)
+        }
+
+        #[tokio::test]
+        async fn write_wait_limit_answers_busy() {
+            let (store, _dir) = crate::testing::meta::test_store().await;
+            let store = std::sync::Arc::new(store);
+            let (tx, hold) = hold_writer(&store).await;
+            let res =
+                with_write_wait_limit(Duration::from_millis(50), store.write(|_c| Ok(()))).await;
+            assert!(matches!(res, Err(Error::Busy)), "got {res:?}");
+            assert_eq!(store.write_waiters(), 0, "timed-out caller still counted");
+            // Reads are never bounded by the write limit.
+            with_write_wait_limit(Duration::from_millis(50), store.ping())
+                .await
+                .unwrap();
+            let _ = tx.send(());
+            hold.await.unwrap();
+            with_write_wait_limit(Duration::from_millis(50), store.write(|_c| Ok(())))
+                .await
+                .unwrap();
+            let (w, _) = store.pool_stats();
+            assert_eq!(w.wait_count, 1);
+        }
+
+        #[tokio::test]
+        async fn yield_to_writers_waits_for_queued_writes() {
+            let (store, _dir) = crate::testing::meta::test_store().await;
+            let store = std::sync::Arc::new(store);
+            store.yield_to_writers().await;
+            let (tx, hold) = hold_writer(&store).await;
+            let s = std::sync::Arc::clone(&store);
+            let waiter = tokio::spawn(async move { s.write(|_c| Ok(())).await.unwrap() });
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            assert_eq!(store.write_waiters(), 1);
+            let s = std::sync::Arc::clone(&store);
+            let yielding = tokio::spawn(async move { s.yield_to_writers().await });
+            tokio::time::sleep(Duration::from_millis(100)).await;
+            assert!(!yielding.is_finished(), "yielded past a queued write");
+            let _ = tx.send(());
+            hold.await.unwrap();
+            waiter.await.unwrap();
+            yielding.await.unwrap();
+            assert_eq!(store.write_waiters(), 0);
         }
 
         #[tokio::test]

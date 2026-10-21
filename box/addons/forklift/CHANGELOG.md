@@ -4,6 +4,14 @@ Notable changes per release. Container image versions come from the
 `org.opencontainers.image.version` label in the `Dockerfile`; chart versions from
 `charts/forklift/Chart.yaml`.
 
+## 0.18.1 (2026-10-22)
+
+### Fixed
+
+- Artifact label add and remove no longer wait behind audit pruning. After the 0.18.0 upgrade the leader prunes every download entry older than 7 days, and on a 5 GB database with a cold page cache each 5,000-row batch held the single write connection for about 11 seconds, back to back, so a label change averaged 11.7 seconds and some hit the ingress timeout. Prune batches now size themselves to hold the write connection for about 200 ms (100 to 5,000 rows), pause 100 ms between batches, and wait (at most 5 seconds) while other writes are queued. The download backfill waits the same way.
+- Download pruning walks audit ids forward from the previous batch instead of restarting at the oldest entry, so the refused downloads and other events it keeps are read once per run rather than once per batch. An entry recorded out of id order is pruned on a later run.
+- A management API mutation (any method other than GET, HEAD, OPTIONS or TRACE under `/api/v1`) waits at most 5 seconds for the write connection and is answered `503` with `Retry-After: 5` instead of queueing until the client gives up. The console shows the message. Reads and the package protocols are unchanged.
+
 ## 0.18.0 (2026-10-21)
 
 ### Changed

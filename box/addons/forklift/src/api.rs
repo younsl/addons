@@ -686,6 +686,24 @@ pub fn routes(h: Arc<Handler>) -> Router {
         .merge(auditor)
         .merge(admin)
         .with_state(Arc::clone(&h))
+        .layer(axum::middleware::from_fn(bound_write_wait))
+}
+
+/// How long a console or API mutation waits for the write connection before
+/// it is answered with 503.
+const API_WRITE_WAIT: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// The `Retry-After` a busy answer carries, in seconds.
+const BUSY_RETRY_AFTER_SECS: &str = "5";
+
+/// Bounds how long a mutation waits behind other writes, so a long background
+/// write answers the console with a retryable 503 rather than an ingress
+/// timeout. Safe methods are left unbounded.
+async fn bound_write_wait(req: axum::extract::Request, next: axum::middleware::Next) -> Response {
+    if req.method().is_safe() {
+        return next.run(req).await;
+    }
+    meta::with_write_wait_limit(API_WRITE_WAIT, next.run(req)).await
 }
 
 /// Reports the build-time version metadata so the web UI can show it in the
@@ -818,6 +836,17 @@ pub(crate) fn map_error(err: meta::Error) -> Response {
             StatusCode::CONFLICT,
             "managed artifact requires a publication lifecycle operation",
         ),
+        meta::Error::Busy => {
+            let mut resp = write_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "the server is busy with other database writes, retry in a few seconds",
+            );
+            resp.headers_mut().insert(
+                http::header::RETRY_AFTER,
+                http::HeaderValue::from_static(BUSY_RETRY_AFTER_SECS),
+            );
+            resp
+        }
         other => write_error(StatusCode::INTERNAL_SERVER_ERROR, &other.to_string()),
     }
 }
@@ -832,6 +861,76 @@ pub(crate) fn principal_name(parts: &Parts) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn busy_store_answers_retryable_503() {
+        let resp = map_error(meta::Error::Busy);
+        assert_eq!(resp.status(), StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(
+            resp.headers().get(http::header::RETRY_AFTER).unwrap(),
+            BUSY_RETRY_AFTER_SECS
+        );
+    }
+
+    /// A mutation queued behind a held write connection is answered 503 once
+    /// the API wait limit passes, while a safe method keeps waiting. Real time:
+    /// a blocking task in flight stops paused time from advancing.
+    #[tokio::test]
+    async fn mutations_wait_a_bounded_time_for_the_writer() {
+        use axum::body::Body;
+        use tower::ServiceExt as _;
+
+        async fn write(State(store): State<Arc<meta::Store>>) -> Response {
+            match store.write(|_c| Ok(())).await {
+                Ok(()) => StatusCode::NO_CONTENT.into_response(),
+                Err(err) => map_error(err),
+            }
+        }
+
+        let (store, _dir) = crate::testing::meta::test_store().await;
+        let store = Arc::new(store);
+        // route_service rather than route: the OpenAPI coverage test reads
+        // every `route` call in this file as a mounted endpoint.
+        let methods = axum::routing::post(write)
+            .get(write)
+            .with_state(Arc::clone(&store));
+        let app = Router::new()
+            .route_service("/w", methods)
+            .layer(axum::middleware::from_fn(bound_write_wait));
+
+        let (tx, rx) = tokio::sync::oneshot::channel::<()>();
+        let s = Arc::clone(&store);
+        let hold = tokio::spawn(async move {
+            s.write(move |_c| {
+                let _ = rx.blocking_recv();
+                Ok(())
+            })
+            .await
+            .unwrap();
+        });
+        while store.pool_stats().0.in_use == 0 {
+            tokio::task::yield_now().await;
+        }
+
+        // Queued before the POST, so a bound on GET would end it first.
+        let get = tokio::spawn(
+            app.clone()
+                .oneshot(http::Request::get("/w").body(Body::empty()).unwrap()),
+        );
+        let started = std::time::Instant::now();
+        let post = app
+            .clone()
+            .oneshot(http::Request::post("/w").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(post.status(), StatusCode::SERVICE_UNAVAILABLE);
+        assert!(started.elapsed() >= API_WRITE_WAIT);
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+        assert!(!get.is_finished(), "a safe method was bounded");
+        let _ = tx.send(());
+        hold.await.unwrap();
+        assert_eq!(get.await.unwrap().unwrap().status(), StatusCode::NO_CONTENT);
+    }
 
     #[test]
     fn search_regex_is_case_insensitive_and_bounded() {

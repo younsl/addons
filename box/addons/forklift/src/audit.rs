@@ -213,6 +213,7 @@ impl Recorder {
     pub(crate) async fn backfill_download_days(&self, cancel: &CancellationToken) -> bool {
         let mut logged = false;
         loop {
+            self.store.yield_to_writers().await;
             let pause = match self.store.backfill_download_days().await {
                 Ok(true) => {
                     if logged {
@@ -437,13 +438,13 @@ pub(crate) mod tests {
         };
         store
             .insert_audit_logs(vec![
+                entry(meta::EVENT_DOWNLOAD, 200, "old", days_ago(40)),
                 entry(meta::EVENT_DOWNLOAD, 200, "a", days_ago(10)),
                 entry(meta::EVENT_DOWNLOAD, 404, "a", days_ago(10)),
                 entry(meta::EVENT_DOWNLOAD, 401, "a", days_ago(10)),
                 entry(meta::EVENT_DOWNLOAD, 403, "a", days_ago(10)),
                 entry(meta::EVENT_UPLOAD, 201, "a", days_ago(10)),
                 entry(meta::EVENT_DOWNLOAD, 200, "a", days_ago(1)),
-                entry(meta::EVENT_DOWNLOAD, 200, "old", days_ago(40)),
             ])
             .await
             .expect("insert");

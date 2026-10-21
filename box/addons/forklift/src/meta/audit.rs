@@ -1,6 +1,7 @@
 //! Per-repository audit log.
 
 use std::collections::HashMap;
+use std::time::{Duration, Instant};
 
 use chrono::{DateTime, TimeDelta, Utc};
 use rusqlite::{OptionalExtension, Row, Transaction, params, params_from_iter, types::Value};
@@ -64,9 +65,28 @@ const UPSERT_DOWNLOAD_DAY: &str = "INSERT INTO artifact_download_daily(repo_name
 /// older than this are never read and are pruned.
 pub const DOWNLOAD_COUNT_WINDOW: TimeDelta = TimeDelta::days(30);
 
-/// Rows one prune statement deletes, so a large purge never holds the single
-/// write connection for longer than one short transaction.
-const PRUNE_BATCH: i64 = 5_000;
+/// Bounds on the rows one prune batch deletes. The size adapts so each batch
+/// holds the single write connection for about [`PRUNE_BATCH_TARGET`]: on a
+/// large database with a cold page cache a fixed 5,000-row batch took about
+/// 11 seconds, and every console write queued behind it.
+const PRUNE_BATCH_START: i64 = 1_000;
+const PRUNE_BATCH_MIN: i64 = 100;
+const PRUNE_BATCH_MAX: i64 = 5_000;
+const PRUNE_BATCH_TARGET: Duration = Duration::from_millis(200);
+
+/// Pause between prune batches, leaving the write connection free for other
+/// writers.
+const PRUNE_PAUSE: Duration = Duration::from_millis(100);
+
+/// Rows of expired downloads selected per batch: refused downloads and other
+/// events are kept, so the scan walks ids after the previous batch instead of
+/// re-reading every kept row from the oldest one. The `+` operators keep the
+/// planner on the rowid range rather than `idx_audit_created`, which would
+/// restart at the oldest kept entry.
+const SELECT_EXPIRED_DOWNLOADS: &str = "SELECT id FROM audit_logs
+ WHERE id > ?1 AND id <= ?2
+   AND +event = 'download' AND +status NOT IN (401, 403) AND +created_at < ?3
+ ORDER BY id LIMIT ?4";
 
 /// The audit id range one backfill step folds into the daily counts.
 const BACKFILL_CHUNK: i64 = 20_000;
@@ -93,6 +113,19 @@ fn upsert_download_days(tx: &Transaction<'_>, days: DayCounts) -> Result<()> {
             .map_err(|e| Error::sqlite("upsert download day", e))?;
     }
     Ok(())
+}
+
+/// The next prune batch size: halved when the last batch held the write
+/// connection past [`PRUNE_BATCH_TARGET`], doubled when it took under half of
+/// it, within [`PRUNE_BATCH_MIN`] and [`PRUNE_BATCH_MAX`].
+fn next_prune_batch(limit: i64, held: Duration) -> i64 {
+    if held > PRUNE_BATCH_TARGET {
+        (limit / 2).max(PRUNE_BATCH_MIN)
+    } else if held < PRUNE_BATCH_TARGET / 2 {
+        (limit * 2).min(PRUNE_BATCH_MAX)
+    } else {
+        limit
+    }
 }
 
 /// The insert's `created_at` text: the entry's own time, or now when unset.
@@ -278,16 +311,72 @@ impl Store {
     /// Deletes download entries older than `before`, except refused ones (401,
     /// 403) that the security insights read. Used when downloads have a shorter
     /// retention than the rest of the log.
+    ///
+    /// Ids follow arrival order, so the run covers ids up to the newest entry
+    /// older than `before`. An entry recorded out of order past that id is left
+    /// for the next run.
     pub async fn prune_download_audit_logs(&self, before: DateTime<Utc>) -> Result<i64> {
-        self.delete_in_batches(
-            "prune download audit logs",
-            "DELETE FROM audit_logs WHERE id IN (
-                SELECT id FROM audit_logs
-                 WHERE created_at < ?1 AND event = 'download' AND status NOT IN (401, 403)
-                 LIMIT ?2)",
-            format_time(before),
-        )
-        .await
+        let cutoff = format_time(before);
+        let bound = cutoff.clone();
+        let last: Option<i64> = self
+            .read(move |conn| {
+                conn.query_row(
+                    "SELECT id FROM audit_logs WHERE created_at < ?1
+                     ORDER BY created_at DESC, id DESC LIMIT 1",
+                    [bound],
+                    |r| r.get(0),
+                )
+                .optional()
+                .map_err(|e| Error::sqlite("find download prune bound", e))
+            })
+            .await?;
+        let Some(last) = last else {
+            return Ok(0);
+        };
+        let mut after = 0i64;
+        let mut limit = PRUNE_BATCH_START;
+        let mut total = 0i64;
+        loop {
+            self.yield_to_writers().await;
+            let cutoff = cutoff.clone();
+            let (ids, held) = self
+                .write(move |conn| {
+                    let started = Instant::now();
+                    let tx = conn
+                        .transaction()
+                        .map_err(|e| Error::sqlite("begin download prune", e))?;
+                    let ids = {
+                        let mut stmt = tx
+                            .prepare(SELECT_EXPIRED_DOWNLOADS)
+                            .map_err(|e| Error::sqlite("prepare download prune", e))?;
+                        stmt.query_map(params![after, last, cutoff, limit], |r| r.get::<_, i64>(0))
+                            .map_err(|e| Error::sqlite("select expired downloads", e))?
+                            .collect::<rusqlite::Result<Vec<_>>>()
+                            .map_err(|e| Error::sqlite("select expired downloads", e))?
+                    };
+                    {
+                        let mut del = tx
+                            .prepare("DELETE FROM audit_logs WHERE id = ?1")
+                            .map_err(|e| Error::sqlite("prepare download prune", e))?;
+                        for id in &ids {
+                            del.execute([id])
+                                .map_err(|e| Error::sqlite("prune download audit logs", e))?;
+                        }
+                    }
+                    tx.commit()
+                        .map_err(|e| Error::sqlite("commit download prune", e))?;
+                    Ok((ids, started.elapsed()))
+                })
+                .await?;
+            let n = ids.len() as i64;
+            total += n;
+            match ids.last() {
+                Some(&id) if n == limit => after = id,
+                _ => return Ok(total),
+            }
+            limit = next_prune_batch(limit, held);
+            tokio::time::sleep(PRUNE_PAUSE).await;
+        }
     }
 
     /// Deletes daily download counts for days before `before`'s UTC day.
@@ -301,29 +390,34 @@ impl Store {
         .await
     }
 
-    /// Runs `sql` (bound to `bound` and [`PRUNE_BATCH`]) until it deletes less
-    /// than a full batch, one write transaction per batch.
+    /// Runs `sql` (bound to `bound` and the batch size) until it deletes less
+    /// than a full batch, one write transaction per batch, pausing and
+    /// yielding to queued writes between batches.
     async fn delete_in_batches(
         &self,
         op: &'static str,
         sql: &'static str,
         bound: String,
     ) -> Result<i64> {
+        let mut limit = PRUNE_BATCH_START;
         let mut total = 0i64;
         loop {
+            self.yield_to_writers().await;
             let bound = bound.clone();
-            let n = self
+            let (n, held) = self
                 .write(move |conn| {
-                    conn.execute(sql, params![bound, PRUNE_BATCH])
-                        .map(|n| n as i64)
+                    let started = Instant::now();
+                    conn.execute(sql, params![bound, limit])
+                        .map(|n| (n as i64, started.elapsed()))
                         .map_err(|e| Error::sqlite(op, e))
                 })
                 .await?;
             total += n;
-            if n < PRUNE_BATCH {
+            if n < limit {
                 return Ok(total);
             }
-            tokio::task::yield_now().await;
+            limit = next_prune_batch(limit, held);
+            tokio::time::sleep(PRUNE_PAUSE).await;
         }
     }
 
@@ -603,6 +697,124 @@ pub(crate) mod tests {
         assert_eq!(n, 1, "pruned, want 1");
         let left = s.count_audit_logs("r", "").await.unwrap();
         assert_eq!(left, 1, "remaining, want 1");
+    }
+
+    #[test]
+    fn prune_batch_adapts_to_hold_time() {
+        use std::time::Duration as Std;
+
+        use super::{PRUNE_BATCH_MAX, PRUNE_BATCH_MIN, PRUNE_BATCH_TARGET, next_prune_batch};
+
+        assert_eq!(next_prune_batch(1_000, Std::from_secs(11)), 500);
+        assert_eq!(next_prune_batch(1_000, Std::from_millis(10)), 2_000);
+        assert_eq!(next_prune_batch(1_000, PRUNE_BATCH_TARGET), 1_000);
+        assert_eq!(next_prune_batch(150, Std::from_secs(1)), PRUNE_BATCH_MIN);
+        assert_eq!(next_prune_batch(4_000, Std::ZERO), PRUNE_BATCH_MAX);
+    }
+
+    /// Inserts `n` entries of one kind, `age` old, in one batch.
+    async fn insert_entries(s: &Store, n: usize, event: &str, status: i64, age: Duration) {
+        let at = Utc::now() - age;
+        let logs = (0..n)
+            .map(|i| AuditLog {
+                repo_name: "r".into(),
+                event: event.into(),
+                path: format!("p{i}"),
+                method: "GET".into(),
+                status,
+                created_at: at,
+                ..AuditLog::default()
+            })
+            .collect();
+        s.insert_audit_logs(logs).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn prune_audit_logs_spans_batches() {
+        let (s, _dir) = test_store().await;
+        insert_entries(&s, 2_500, EVENT_UPLOAD, 201, Duration::days(10)).await;
+        insert_entries(&s, 3, EVENT_UPLOAD, 201, Duration::zero()).await;
+        let n = s
+            .prune_audit_logs(Utc::now() - Duration::days(1))
+            .await
+            .unwrap();
+        assert_eq!(n, 2_500);
+        assert_eq!(s.count_audit_logs("r", "").await.unwrap(), 3);
+    }
+
+    #[tokio::test]
+    async fn prune_download_audit_logs_keeps_refused_recent_and_other_events() {
+        let (s, _dir) = test_store().await;
+        let old = Duration::days(10);
+        // Kept rows interleave with expired downloads, so the scan has to
+        // step past them across several batches.
+        for _ in 0..3 {
+            insert_entries(&s, 900, EVENT_DOWNLOAD, 200, old).await;
+            insert_entries(&s, 2, EVENT_DOWNLOAD, 401, old).await;
+            insert_entries(&s, 1, EVENT_DOWNLOAD, 403, old).await;
+            insert_entries(&s, 4, EVENT_UPLOAD, 201, old).await;
+        }
+        insert_entries(&s, 5, EVENT_DOWNLOAD, 200, Duration::zero()).await;
+
+        let n = s
+            .prune_download_audit_logs(Utc::now() - Duration::days(1))
+            .await
+            .unwrap();
+        assert_eq!(n, 2_700);
+        assert_eq!(s.count_audit_logs("r", EVENT_UPLOAD).await.unwrap(), 12);
+        assert_eq!(
+            s.count_audit_logs("r", EVENT_DOWNLOAD).await.unwrap(),
+            9 + 5
+        );
+
+        let again = s
+            .prune_download_audit_logs(Utc::now() - Duration::days(1))
+            .await
+            .unwrap();
+        assert_eq!(again, 0);
+    }
+
+    #[tokio::test]
+    async fn prune_download_audit_logs_without_expired_entries() {
+        let (s, _dir) = test_store().await;
+        assert_eq!(
+            s.prune_download_audit_logs(Utc::now()).await.unwrap(),
+            0,
+            "empty log"
+        );
+        insert_entries(&s, 3, EVENT_DOWNLOAD, 200, Duration::zero()).await;
+        let n = s
+            .prune_download_audit_logs(Utc::now() - Duration::days(1))
+            .await
+            .unwrap();
+        assert_eq!(n, 0);
+        assert_eq!(s.count_audit_logs("r", "").await.unwrap(), 3);
+    }
+
+    /// The expired-download scan must walk the rowid range: the created_at
+    /// index restarts at the oldest kept entry on every batch.
+    #[tokio::test]
+    async fn expired_download_scan_uses_the_rowid_range() {
+        let (s, _dir) = test_store().await;
+        let plan = s
+            .read(|conn| {
+                let mut stmt = conn
+                    .prepare(&format!(
+                        "EXPLAIN QUERY PLAN {}",
+                        super::SELECT_EXPIRED_DOWNLOADS
+                    ))
+                    .map_err(|e| Error::sqlite("explain", e))?;
+                let rows = stmt
+                    .query_map(rusqlite::params![0, 10, "z", 10], |r| r.get::<_, String>(3))
+                    .map_err(|e| Error::sqlite("explain", e))?
+                    .collect::<rusqlite::Result<Vec<_>>>()
+                    .map_err(|e| Error::sqlite("explain", e))?;
+                Ok(rows.join("\n"))
+            })
+            .await
+            .unwrap();
+        assert!(plan.contains("INTEGER PRIMARY KEY"), "plan: {plan}");
+        assert!(!plan.contains("idx_audit"), "plan: {plan}");
     }
 
     #[tokio::test]
