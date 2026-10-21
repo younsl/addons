@@ -4,13 +4,19 @@ Notable changes per release. Container image versions come from the
 `org.opencontainers.image.version` label in the `Dockerfile`; chart versions from
 `charts/forklift/Chart.yaml`.
 
-## Unreleased
+## 0.17.0 (2026-10-21)
 
 ### Added
 
 - Outbound proxy and private CA support. `FORKLIFT_EXTRA_CA_FILE` names a PEM bundle of private CA certificates that every outbound client (proxy upstreams, OSV, deps.dev, OIDC, webhooks, GitLab, S3) trusts on top of the system roots. A bundle that cannot be read or holds no certificate fails startup. The chart's `outbound.caBundle` mounts it from a ConfigMap, and `outbound.proxy` sets `HTTPS_PROXY`, `HTTP_PROXY` and a `NO_PROXY` that always keeps in-cluster traffic (forklift's own Services and the bundled SeaweedFS) off the proxy. Both apply to the storage migration Job too. The startup line `outbound http configured` reports whether a proxy is set and how many extra CA certificates were loaded. See `docs/installation.md`.
 - `npm audit` and `pnpm audit` against an npm repository. Forklift answers the npm bulk advisory endpoint (`POST /npm/<repo>/-/npm/v1/security/advisories/bulk`) from the OSV data the vulnerability policy uses, applying the repository's `vuln.ignore` list, so the client report and the gate agree and the dependency list never leaves forklift for the npm registry. Hosted repositories answer with no advisories, and a group leaves out the packages its hosted members publish. A failed OSV lookup fails the audit instead of reporting it clean. A request lists at most 10,000 packages, each package's advisories are cached for one hour, and at most four uncached lookups reach OSV at once. New metrics `forklift_npm_audit_requests_total` and `forklift_npm_audit_duration_seconds`. See `docs/security-policies.md`.
 - Delete in the OCI Images view's Actions menu, for administrators, as other formats have in their Artifacts tab. Each selected image is deleted with every tag pointing at its manifest, behind the same type-to-confirm guard, and the reachability prune reclaims the unused layers after its 24 hour grace.
+
+### Changed
+
+- Rendering an npm packument takes about a tenth of the CPU it did (a 30 MB packument drops from about 850 ms to 60 ms). The JSON decoder read the cached document one byte at a time through a blocking bridge to the async reader, and the rewrite then re-parsed and re-copied every version manifest twice. The document is now read once, parsed in place and written out in a single pass, so peak memory per render is the document plus its output. The rewrite runs on the blocking pool instead of a runtime worker, and rewrite slots free up sooner, which shortens the `forklift_metadata_rewrite_wait_seconds` queue during install bursts. Streaming JSON decodes elsewhere (PyPI index, npm tarball publish time, OCI manifests) are buffered too.
+- The rendered metadata cache releases expired documents on the next insert instead of keeping them resident until the byte cap forces them out.
+- The `forklift` binary allocates through jemalloc on Linux instead of the musl libc allocator, which serializes threads behind one lock and is slow on the many small allocations metadata rendering makes. `forklift-mcp` keeps the libc allocator.
 
 ### Fixed
 

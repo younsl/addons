@@ -30,6 +30,10 @@ use crate::flags::{parse_flags, usage};
 use crate::leadership::{Leadership, apply_declarative_state};
 use crate::storage_setup::{open_blob_store, wire_storage_backend};
 
+#[cfg(target_os = "linux")]
+#[global_allocator]
+static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
+
 /// Event target for the submodules, so their lines keep the `main` log component.
 const LOG_TARGET: &str = "forklift";
 
