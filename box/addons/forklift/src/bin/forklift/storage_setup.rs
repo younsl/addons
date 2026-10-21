@@ -74,6 +74,9 @@ pub(crate) async fn open_blob_store(
         key: objstore::meta_key(&cfg.storage.s3.prefix),
         data_dir: data_dir.to_path_buf(),
         interval: cfg.storage.meta_sync_interval,
+        compression: objstore::Compression::parse(&cfg.storage.meta_compression)
+            .unwrap_or_default(),
+        mode: objstore::SyncMode::parse(&cfg.storage.meta_sync_mode).unwrap_or_default(),
         registry: Some(reg.clone()),
     });
     // Restore the latest snapshot before bootstrap/seed so they see existing
@@ -91,6 +94,8 @@ pub(crate) async fn open_blob_store(
     tracing::info!(target: LOG_TARGET,
         bucket = %cfg.storage.s3.bucket,
         prefix = %cfg.storage.s3.prefix,
+        meta_compression = %cfg.storage.meta_compression,
+        meta_sync_mode = %cfg.storage.meta_sync_mode,
         "storage backend: s3"
     );
     Ok(BlobBackend {

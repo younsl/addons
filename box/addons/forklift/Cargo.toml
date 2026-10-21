@@ -1,6 +1,6 @@
 [package]
 name = "forklift"
-version = "0.17.0"
+version = "0.18.0"
 edition = "2024"
 rust-version = "1.99.1"
 license = "Apache-2.0"
@@ -107,6 +107,7 @@ semver = "1.0.28"
 glob-match = "0.2.1"
 ipnet = "2.12.2"
 flate2 = "1.1.10"
+zstd = { version = "0.14.3", default-features = false }
 tar = "0.4.46"
 zip = { version = "8.6.0", default-features = false, features = ["deflate"] }
 tempfile = "3.27.0"

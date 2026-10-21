@@ -1,11 +1,11 @@
-//! The source metadata snapshot, staged locally so the bytes that are checked
-//! are the bytes that are uploaded.
+//! The source metadata, rebuilt locally as one SQLite file (a WAL-shipped
+//! generation is replayed onto its base) so the bytes that are checked are the
+//! bytes that are uploaded.
 
 use std::collections::BTreeMap;
 use std::path::Path;
 
 use rusqlite::{Connection, OpenFlags, OptionalExtension};
-use tokio::io::AsyncWriteExt;
 
 use super::{Endpoint, Error, Result};
 
@@ -20,7 +20,8 @@ const BLOB_REFERENCES: &[(&str, &str, Option<&str>)] = &[
 pub struct StagedSnapshot {
     pub file: tempfile::NamedTempFile,
     pub size: u64,
-    pub etag: Option<String>,
+    /// [`crate::objstore::metadata_version`] of the source when it was read.
+    pub version: String,
     /// Digest to size; `None` when only a table without a size column names it.
     pub blobs: BTreeMap<String, Option<i64>>,
     /// Digests named by a row but absent from `blobs`.
@@ -28,23 +29,16 @@ pub struct StagedSnapshot {
 }
 
 pub async fn download(src: &Endpoint, staging: &Path) -> Result<StagedSnapshot> {
-    let mut obj = src.objects.get_object(&src.bucket, &src.meta_key).await?;
     let file = tempfile::NamedTempFile::new_in(staging).map_err(|e| io("stage metadata", e))?;
-    let mut out = tokio::fs::File::create(file.path())
-        .await
-        .map_err(|e| io("stage metadata", e))?;
-    let size = tokio::io::copy(&mut obj.body, &mut out)
-        .await
-        .map_err(|e| io("download metadata", e))?;
-    out.flush().await.map_err(|e| io("stage metadata", e))?;
-    out.sync_all().await.map_err(|e| io("stage metadata", e))?;
-    if let Some(want) = obj.content_length
-        && want != size as i64
-    {
-        return Err(Error::Refused(format!(
-            "metadata snapshot download is truncated ({size} of {want} bytes)"
-        )));
-    }
+    let fetched = crate::objstore::fetch_metadata(
+        src.objects.as_ref(),
+        &src.bucket,
+        &src.meta_key,
+        file.path(),
+    )
+    .await?
+    .ok_or(crate::objstore::Error::NotFound)?;
+    let size = fetched.size;
     tracing::info!(
         size = %super::preflight::bytes(size),
         "checking the metadata snapshot's integrity"
@@ -56,7 +50,7 @@ pub async fn download(src: &Endpoint, staging: &Path) -> Result<StagedSnapshot> 
     Ok(StagedSnapshot {
         file,
         size,
-        etag: obj.e_tag,
+        version: fetched.version,
         blobs,
         unrecorded,
     })
@@ -65,6 +59,10 @@ pub async fn download(src: &Endpoint, staging: &Path) -> Result<StagedSnapshot> 
 type Inspected = (BTreeMap<String, Option<i64>>, usize);
 
 pub(crate) fn inspect(path: &Path) -> Result<Inspected> {
+    let dir = path.parent().unwrap_or_else(|| Path::new("."));
+    let decoded = crate::objstore::snapcodec::decoded_copy(path, dir)
+        .map_err(|e| io("decompress metadata", e))?;
+    let path = decoded.as_ref().map_or(path, |f| f.path());
     let sql = |e: rusqlite::Error| {
         Error::Refused(format!(
             "metadata snapshot is not a readable SQLite database: {e}"
@@ -184,6 +182,24 @@ pub(crate) mod tests {
         assert_eq!(blobs[&digest(3)], None, "artifact without a blobs row");
         assert_eq!(blobs[&digest(4)], Some(30));
         assert_eq!(unrecorded, 2);
+    }
+
+    #[test]
+    fn inspects_a_compressed_snapshot() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("db");
+        database(&path, &[(digest(1), 10)], &[]);
+        let packed = dir.path().join("db.zst");
+        crate::objstore::snapcodec::compress(&path, &packed).unwrap();
+
+        let (blobs, unrecorded) = inspect(&packed).unwrap();
+        assert_eq!(blobs[&digest(1)], Some(10));
+        assert_eq!(unrecorded, 0);
+        assert_eq!(
+            std::fs::read_dir(dir.path()).unwrap().count(),
+            2,
+            "decoded copy left behind"
+        );
     }
 
     #[test]

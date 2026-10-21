@@ -203,13 +203,14 @@ impl Leadership {
             cfg.license.rescan_interval,
             cfg.license.ttl,
         ));
-        if let Some(recorder) = &self.recorder
-            && !cfg.audit.retention.is_zero()
-        {
+        if let Some(recorder) = &self.recorder {
             tokio::spawn(Arc::clone(recorder).run_retention(
                 cancel.clone(),
                 Duration::from_hours(1),
-                cfg.audit.retention,
+                audit::Retention {
+                    entries: cfg.audit.retention,
+                    downloads: cfg.audit.download_retention,
+                },
             ));
         }
         if let Some(analyzer) = &self.insights {

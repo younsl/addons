@@ -39,7 +39,9 @@ All settings are environment variables (the Helm chart maps values to them).
 | `FORKLIFT_STORAGE_S3_READ_TIMEOUT` | `10m` | Longest wait for an S3 response to start, upload body included, so a request to a store that went away fails and retries instead of hanging. Connecting times out after 10s. `migrate-storage` takes `FORKLIFT_MIGRATE_TO_S3_READ_TIMEOUT` for the target |
 
 `forklift migrate-storage` additionally reads the target from `FORKLIFT_MIGRATE_TO_S3_BUCKET`, `_PREFIX`, `_REGION`, `_ENDPOINT`, `_FORCE_PATH_STYLE`, `_ACCESS_KEY_ID`, `_SECRET_ACCESS_KEY`, `_CREATE_BUCKET`, `_PROVIDER`, `_ADMIN_ENDPOINT` and `_ADMIN_TOKEN`. See [Storage migration](storage-migration.md).
-| `FORKLIFT_STORAGE_META_SYNC_INTERVAL` | `30s` | s3-mode metadata snapshot cadence (failover data-loss window); must stay shorter than the fixed 24h blob GC grace period |
+| `FORKLIFT_STORAGE_META_SYNC_INTERVAL` | `30s` | s3-mode standby poll cadence; must stay shorter than the fixed 24h blob GC grace period. In `snapshot` mode it is also the upload cadence (failover data-loss window), and uploads are paced to about 4 GiB an hour, so after a large upload the next one can wait up to 15m. In `wal` mode the leader ships every 5s |
+| `FORKLIFT_STORAGE_META_SYNC_MODE` | `wal` | s3-mode metadata publishing: `wal` ships committed WAL frames as append-only segments on a base copy (see `docs/designs/wal-shipping.md`), `snapshot` uploads a whole snapshot per change. Readers follow either, so it can change between terms |
+| `FORKLIFT_STORAGE_META_COMPRESSION` | `zstd` | s3-mode snapshot and base upload encoding, `zstd` or `none`. Readers detect the encoding. Before rolling back below 0.18.0, set `none` and `FORKLIFT_STORAGE_META_SYNC_MODE=snapshot` and let one upload complete, or the older version cannot restore the metadata |
 | `FORKLIFT_HTTP_ADDR` | `:8080` | API, UI and package endpoints |
 | `FORKLIFT_METRICS_ADDR` | `:8081` | Prometheus metrics |
 | `FORKLIFT_PPROF_ADDR` | `127.0.0.1:6060` | `pprof`-compatible CPU profile listener (`/debug/pprof/profile`), loopback-only so it is reachable through `kubectl port-forward` but not through the Service; empty disables it |
@@ -68,6 +70,7 @@ All settings are environment variables (the Helm chart maps values to them).
 | `FORKLIFT_RBAC_ACCOUNTS_DIR` | (none) | Directory of local-account password files (Secret mount) |
 | `FORKLIFT_AUDIT_ENABLED` | `true` | Record per-repository audit events |
 | `FORKLIFT_AUDIT_RETENTION` | `2160h` (90d) | Prune audit entries older than this; `0` keeps forever |
+| `FORKLIFT_AUDIT_DOWNLOAD_RETENTION` | `168h` (7d) | Shorter retention for artifact download entries, the bulk of the log. Refused downloads (401, 403) keep `FORKLIFT_AUDIT_RETENTION` for the security insights, and artifact download counts come from daily totals kept 30 days, so neither is affected. `0`, or a value not below `FORKLIFT_AUDIT_RETENTION`, applies `FORKLIFT_AUDIT_RETENTION` |
 | `FORKLIFT_INSIGHTS_ENABLED` | `true` | Run the periodic security insight analysis on the leader ([docs](security-insights.md)) |
 | `FORKLIFT_INSIGHTS_INTERVAL` | `1h` | How often the leader analyzes until the interval is saved on the Insights Settings page, which then takes over. `0` starts with the scheduled analysis off |
 | `FORKLIFT_UI_UPLOAD_ENABLED` | `true` | Enable component-aware management API and web UI uploads; set `false` to opt out |

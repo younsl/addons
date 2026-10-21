@@ -98,8 +98,12 @@ storage:
     endpoint: ""
     # -- (bool) Path-style addressing. Forced on with bundled SeaweedFS.
     forcePathStyle: false
-    # -- (string) Metadata snapshot sync cadence; the bounded data-loss window on failover.
+    # -- (string) Standby poll cadence, and in snapshot mode the upload cadence and failover data-loss window (plus up to 15m of pacing for a large snapshot). In wal mode the leader ships every 5s.
     metaSyncInterval: 30s
+    # -- (string) How the leader publishes metadata: wal (append-only WAL segments on a base copy) or snapshot (a whole snapshot per change). Readers follow either, so it can change between terms.
+    metaSyncMode: wal
+    # -- (string) Metadata snapshot upload encoding: zstd or none. Readers accept both. Set none and let one upload finish before rolling back to a forklift without this setting.
+    metaCompression: zstd
     # -- (string) Secret with access-key-id, secret-access-key, optional admin-token. Empty uses IRSA/Pod Identity.
     existingSecret: ""
     # -- (string) Store for admin metrics: aws, minio, rustfs, seaweedfs, garage or generic. Empty auto-detects.
@@ -284,6 +288,8 @@ audit:
   enabled: true
   # -- (string) Retention period; the leader prunes older entries. "0" keeps them forever.
   retention: 2160h # 90 days
+  # -- (string) Shorter retention for artifact download entries, except refused (401, 403) ones. Artifact download counts come from daily totals and are unaffected. "0", or a value not below `retention`, applies `retention`.
+  downloadRetention: 168h # 7 days
 
 # Management API and web-console package publication. Enabled by default so an
 # image/chart upgrade exposes the completed format handlers immediately. Set

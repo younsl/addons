@@ -1,7 +1,9 @@
 //! Per-repository audit log.
 
-use chrono::{DateTime, Utc};
-use rusqlite::{Row, params, params_from_iter, types::Value};
+use std::collections::HashMap;
+
+use chrono::{DateTime, TimeDelta, Utc};
+use rusqlite::{OptionalExtension, Row, Transaction, params, params_from_iter, types::Value};
 
 use super::time::{format_time, is_zero, parse_time};
 use super::{Error, Result, Store};
@@ -54,6 +56,45 @@ pub const EVENT_ARTIFACT_LABEL_REMOVE: &str = "artifact.label.remove";
 const INSERT_AUDIT_LOG: &str = "INSERT INTO audit_logs(repo_name, event, path, username, method, status, client_ip, user_agent, request_id, detail_json, created_at)
 		 VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
 
+const UPSERT_DOWNLOAD_DAY: &str = "INSERT INTO artifact_download_daily(repo_name, path, day, count)
+		 VALUES(?, ?, ?, ?)
+		 ON CONFLICT(repo_name, path, day) DO UPDATE SET count = count + excluded.count";
+
+/// The span the artifact page's rolling download counts cover. Daily counts
+/// older than this are never read and are pruned.
+pub const DOWNLOAD_COUNT_WINDOW: TimeDelta = TimeDelta::days(30);
+
+/// Rows one prune statement deletes, so a large purge never holds the single
+/// write connection for longer than one short transaction.
+const PRUNE_BATCH: i64 = 5_000;
+
+/// The audit id range one backfill step folds into the daily counts.
+const BACKFILL_CHUNK: i64 = 20_000;
+
+/// (repo, path, UTC day) to download count.
+type DayCounts = HashMap<(String, String, String), i64>;
+
+/// Whether an entry counts toward an artifact's downloads: a successful GET.
+fn is_counted_download(event: &str, method: &str, status: i64) -> bool {
+    event == EVENT_DOWNLOAD && method == "GET" && matches!(status, 200 | 206)
+}
+
+/// The UTC calendar day of an RFC 3339 timestamp as written by `format_time`.
+fn day_of(created: &str) -> &str {
+    created.get(..10).unwrap_or(created)
+}
+
+fn upsert_download_days(tx: &Transaction<'_>, days: DayCounts) -> Result<()> {
+    let mut stmt = tx
+        .prepare(UPSERT_DOWNLOAD_DAY)
+        .map_err(|e| Error::sqlite("prepare download days", e))?;
+    for ((repo, path, day), n) in days {
+        stmt.execute(params![repo, path, day, n])
+            .map_err(|e| Error::sqlite("upsert download day", e))?;
+    }
+    Ok(())
+}
+
 /// The insert's `created_at` text: the entry's own time, or now when unset.
 fn created_text(l: &AuditLog) -> String {
     if is_zero(l.created_at) {
@@ -66,27 +107,7 @@ fn created_text(l: &AuditLog) -> String {
 impl Store {
     /// Appends one audit log entry. `created_at` defaults to now when unset.
     pub async fn insert_audit_log(&self, l: AuditLog) -> Result<()> {
-        self.write(move |conn| {
-            conn.execute(
-                INSERT_AUDIT_LOG,
-                params![
-                    l.repo_name,
-                    l.event,
-                    l.path,
-                    l.username,
-                    l.method,
-                    l.status,
-                    l.client_ip,
-                    l.user_agent,
-                    l.request_id,
-                    l.detail_json,
-                    created_text(&l)
-                ],
-            )
-            .map(|_| ())
-            .map_err(|e| Error::sqlite("insert audit log", e))
-        })
-        .await
+        self.insert_audit_logs(vec![l]).await
     }
 
     /// Appends logs in one transaction. The audit recorder drains its buffer
@@ -95,7 +116,8 @@ impl Store {
     /// buffer from overflowing (and dropping events) while the single write
     /// connection is busy with artifact writes. Rows are inserted in slice
     /// order, so ids follow arrival order as before. `created_at` defaults to
-    /// now when unset.
+    /// now when unset. Successful GET downloads are also added to the daily
+    /// counts in the same transaction.
     pub async fn insert_audit_logs(&self, logs: Vec<AuditLog>) -> Result<()> {
         if logs.is_empty() {
             return Ok(());
@@ -104,11 +126,22 @@ impl Store {
             let tx = conn
                 .transaction()
                 .map_err(|e| Error::sqlite("begin audit batch", e))?;
+            let mut days = DayCounts::new();
             {
                 let mut stmt = tx
                     .prepare(INSERT_AUDIT_LOG)
                     .map_err(|e| Error::sqlite("prepare audit batch", e))?;
                 for l in &logs {
+                    let created = created_text(l);
+                    if is_counted_download(&l.event, &l.method, l.status) {
+                        *days
+                            .entry((
+                                l.repo_name.clone(),
+                                l.path.clone(),
+                                day_of(&created).to_owned(),
+                            ))
+                            .or_default() += 1;
+                    }
                     stmt.execute(params![
                         l.repo_name,
                         l.event,
@@ -120,20 +153,23 @@ impl Store {
                         l.user_agent,
                         l.request_id,
                         l.detail_json,
-                        created_text(l)
+                        created
                     ])
                     .map_err(|e| Error::sqlite("insert audit log", e))?;
                 }
             }
+            upsert_download_days(&tx, days)?;
             tx.commit()
                 .map_err(|e| Error::sqlite("commit audit batch", e))
         })
         .await
     }
 
-    /// Counts recorded successful GET responses in [since, until] for the
-    /// requested repository-relative paths. Retained audit history is the source;
-    /// requests through a group are recorded against that group, not its members.
+    /// Counts recorded successful GET responses on the UTC days from `since`
+    /// through `until` for the requested repository-relative paths. The daily
+    /// counts are the source, so the window is whole days and does not depend
+    /// on how long download rows stay in the audit log. Requests through a
+    /// group are recorded against that group, not its members.
     pub async fn artifact_download_counts(
         &self,
         repo_name: &str,
@@ -148,15 +184,14 @@ impl Store {
         self.read(move |conn| {
             let placeholders = vec!["?"; paths.len()].join(",");
             let sql = format!(
-                "SELECT path, COUNT(*) FROM audit_logs
-                 WHERE repo_name = ? AND created_at >= ? AND created_at <= ?
-                   AND event = 'download' AND method = 'GET' AND status IN (200, 206)
+                "SELECT path, SUM(count) FROM artifact_download_daily
+                 WHERE repo_name = ? AND day >= ? AND day <= ?
                    AND path IN ({placeholders}) GROUP BY path"
             );
             let mut args = vec![
                 Value::Text(repo_name),
-                Value::Text(format_time(since)),
-                Value::Text(format_time(until)),
+                Value::Text(day_of(&format_time(since)).to_owned()),
+                Value::Text(day_of(&format_time(until)).to_owned()),
             ];
             args.extend(paths.into_iter().map(Value::Text));
             let mut stmt = conn
@@ -231,14 +266,149 @@ impl Store {
     /// Deletes entries older than `before` and reports how many rows were
     /// removed. Used by the retention loop.
     pub async fn prune_audit_logs(&self, before: DateTime<Utc>) -> Result<i64> {
-        self.write(move |conn| {
-            let n = conn
-                .execute(
-                    "DELETE FROM audit_logs WHERE created_at < ?",
-                    params![format_time(before)],
+        self.delete_in_batches(
+            "prune audit logs",
+            "DELETE FROM audit_logs WHERE id IN (
+                SELECT id FROM audit_logs WHERE created_at < ?1 LIMIT ?2)",
+            format_time(before),
+        )
+        .await
+    }
+
+    /// Deletes download entries older than `before`, except refused ones (401,
+    /// 403) that the security insights read. Used when downloads have a shorter
+    /// retention than the rest of the log.
+    pub async fn prune_download_audit_logs(&self, before: DateTime<Utc>) -> Result<i64> {
+        self.delete_in_batches(
+            "prune download audit logs",
+            "DELETE FROM audit_logs WHERE id IN (
+                SELECT id FROM audit_logs
+                 WHERE created_at < ?1 AND event = 'download' AND status NOT IN (401, 403)
+                 LIMIT ?2)",
+            format_time(before),
+        )
+        .await
+    }
+
+    /// Deletes daily download counts for days before `before`'s UTC day.
+    pub async fn prune_download_days(&self, before: DateTime<Utc>) -> Result<i64> {
+        self.delete_in_batches(
+            "prune download days",
+            "DELETE FROM artifact_download_daily WHERE (repo_name, path, day) IN (
+                SELECT repo_name, path, day FROM artifact_download_daily WHERE day < ?1 LIMIT ?2)",
+            day_of(&format_time(before)).to_owned(),
+        )
+        .await
+    }
+
+    /// Runs `sql` (bound to `bound` and [`PRUNE_BATCH`]) until it deletes less
+    /// than a full batch, one write transaction per batch.
+    async fn delete_in_batches(
+        &self,
+        op: &'static str,
+        sql: &'static str,
+        bound: String,
+    ) -> Result<i64> {
+        let mut total = 0i64;
+        loop {
+            let bound = bound.clone();
+            let n = self
+                .write(move |conn| {
+                    conn.execute(sql, params![bound, PRUNE_BATCH])
+                        .map(|n| n as i64)
+                        .map_err(|e| Error::sqlite(op, e))
+                })
+                .await?;
+            total += n;
+            if n < PRUNE_BATCH {
+                return Ok(total);
+            }
+            tokio::task::yield_now().await;
+        }
+    }
+
+    /// Folds the next chunk of pre-cutover audit rows into the daily download
+    /// counts and reports whether the backfill is complete. Each chunk commits
+    /// with its progress marker, so an interrupted backfill resumes without
+    /// counting a row twice. The final step drops the partial index the old
+    /// count query needed.
+    pub async fn backfill_download_days(&self) -> Result<bool> {
+        self.write(|conn| {
+            let tx = conn
+                .transaction()
+                .map_err(|e| Error::sqlite("begin download backfill", e))?;
+            let state: Option<(i64, i64, bool)> = tx
+                .query_row(
+                    "SELECT cutover_id, last_id, done FROM artifact_download_backfill WHERE id = 1",
+                    [],
+                    |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
                 )
-                .map_err(|e| Error::sqlite("prune audit logs", e))?;
-            Ok(n as i64)
+                .optional()
+                .map_err(|e| Error::sqlite("read download backfill", e))?;
+            let Some((cutover, last, false)) = state else {
+                return Ok(true);
+            };
+            if last >= cutover {
+                tx.execute_batch(
+                    "DROP INDEX IF EXISTS idx_audit_artifact_downloads;
+                     UPDATE artifact_download_backfill SET done = 1 WHERE id = 1;",
+                )
+                .map_err(|e| Error::sqlite("finish download backfill", e))?;
+                tx.commit()
+                    .map_err(|e| Error::sqlite("commit download backfill", e))?;
+                return Ok(true);
+            }
+            let upto = cutover.min(last.saturating_add(BACKFILL_CHUNK));
+            let mut days = DayCounts::new();
+            {
+                let mut stmt = tx
+                    .prepare(
+                        "SELECT repo_name, path, created_at FROM audit_logs
+                         WHERE id > ?1 AND id <= ?2
+                           AND event = 'download' AND method = 'GET' AND status IN (200, 206)",
+                    )
+                    .map_err(|e| Error::sqlite("prepare download backfill", e))?;
+                let rows = stmt
+                    .query_map(params![last, upto], |r| {
+                        Ok((
+                            r.get::<_, String>(0)?,
+                            r.get::<_, String>(1)?,
+                            r.get::<_, String>(2)?,
+                        ))
+                    })
+                    .map_err(|e| Error::sqlite("query download backfill", e))?;
+                for row in rows {
+                    let (repo, path, created) =
+                        row.map_err(|e| Error::sqlite("read download backfill", e))?;
+                    let day = day_of(&created).to_owned();
+                    *days.entry((repo, path, day)).or_default() += 1;
+                }
+            }
+            upsert_download_days(&tx, days)?;
+            tx.execute(
+                "UPDATE artifact_download_backfill SET last_id = ?1 WHERE id = 1",
+                [upto],
+            )
+            .map_err(|e| Error::sqlite("advance download backfill", e))?;
+            tx.commit()
+                .map_err(|e| Error::sqlite("commit download backfill", e))?;
+            Ok(false)
+        })
+        .await
+    }
+
+    /// Whether every pre-cutover download row has been counted. Download rows
+    /// must not be pruned before then, or their counts are lost.
+    pub async fn download_backfill_done(&self) -> Result<bool> {
+        self.read(|conn| {
+            conn.query_row(
+                "SELECT done FROM artifact_download_backfill WHERE id = 1",
+                [],
+                |r| r.get::<_, bool>(0),
+            )
+            .optional()
+            .map(|d| d.unwrap_or(true))
+            .map_err(|e| Error::sqlite("read download backfill", e))
         })
         .await
     }
@@ -290,7 +460,7 @@ pub(crate) mod tests {
                 EVENT_DOWNLOAD,
                 "GET",
                 200,
-                since - Duration::seconds(1),
+                since - Duration::days(1),
             ),
             (
                 "r",
@@ -298,7 +468,7 @@ pub(crate) mod tests {
                 EVENT_DOWNLOAD,
                 "GET",
                 200,
-                until + Duration::seconds(1),
+                until + Duration::days(1),
             ),
         ] {
             logs.push(AuditLog {

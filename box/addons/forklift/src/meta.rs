@@ -200,10 +200,10 @@ struct Pool {
 }
 
 impl Pool {
-    fn open(path: &Path, size: usize) -> Result<Arc<Self>> {
+    fn open(path: &Path, size: usize, role: ConnRole, opts: OpenOptions) -> Result<Arc<Self>> {
         let mut conns = Vec::with_capacity(size);
         for _ in 0..size {
-            conns.push(open_connection(path)?);
+            conns.push(open_connection(path, role, opts)?);
         }
         Ok(Arc::new(Self {
             conns: parking_lot::Mutex::new(conns),
@@ -327,6 +327,27 @@ struct Handles {
 pub struct Store {
     handles: ArcSwap<Handles>,
     path: PathBuf,
+    opts: OpenOptions,
+}
+
+/// Which pool a connection belongs to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ConnRole {
+    Write,
+    /// Opened `query_only`, so the write pool's single connection is the only
+    /// one that can change the database. WAL shipping depends on that: it
+    /// checkpoints while holding the write connection, and a commit from any
+    /// other connection could be checkpointed away before it was shipped.
+    Read,
+}
+
+/// How [`Store::open_with`] configures its connections.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct OpenOptions {
+    /// Turns off SQLite's automatic checkpoints, leaving every checkpoint to
+    /// [`Store::with_wal_writer`]. WAL shipping needs this: a checkpoint it did
+    /// not run could fold frames into the database file before they were read.
+    pub manual_checkpoint: bool,
 }
 
 /// Opens one connection with the pragmas every handle needs.
@@ -335,7 +356,7 @@ pub struct Store {
 /// scratch container has no `/tmp` (and `readOnlyRootFilesystem` forbids
 /// creating one), so any file-backed temp object would fail with
 /// `SQLITE_IOERR_GETTEMPPATH`.
-fn open_connection(path: &Path) -> Result<Connection> {
+fn open_connection(path: &Path, role: ConnRole, opts: OpenOptions) -> Result<Connection> {
     let flags = OpenFlags::SQLITE_OPEN_READ_WRITE
         | OpenFlags::SQLITE_OPEN_CREATE
         | OpenFlags::SQLITE_OPEN_NO_MUTEX
@@ -351,6 +372,14 @@ fn open_connection(path: &Path) -> Result<Connection> {
          PRAGMA temp_store = 2;",
     )
     .map_err(|e| Error::sqlite("apply pragmas", e))?;
+    if opts.manual_checkpoint {
+        conn.execute_batch("PRAGMA wal_autocheckpoint = 0;")
+            .map_err(|e| Error::sqlite("disable autocheckpoint", e))?;
+    }
+    if role == ConnRole::Read {
+        conn.execute_batch("PRAGMA query_only = 1;")
+            .map_err(|e| Error::sqlite("set query_only", e))?;
+    }
     Ok(conn)
 }
 
@@ -360,12 +389,23 @@ impl Store {
     /// the single-writer guarantee for HA is provided by leader election, not
     /// the database.
     pub async fn open(path: impl AsRef<Path>) -> Result<Self> {
+        Self::open_with(path, OpenOptions::default()).await
+    }
+
+    /// [`Store::open`] with explicit connection options.
+    pub async fn open_with(path: impl AsRef<Path>, opts: OpenOptions) -> Result<Self> {
         let path = path.as_ref().to_path_buf();
-        let handles = open_handles(&path).await?;
+        let handles = open_handles(&path, opts).await?;
         Ok(Self {
             handles: ArcSwap::from_pointee(handles),
             path,
+            opts,
         })
+    }
+
+    /// The options the store was opened with.
+    pub const fn options(&self) -> OpenOptions {
+        self.opts
     }
 
     /// Opens a store on a fresh temporary file. Test helper.
@@ -453,9 +493,17 @@ impl Store {
         }
         let dst_str = dst.to_string_lossy().into_owned();
         self.read(move |conn| {
-            conn.execute("VACUUM INTO ?1", [dst_str])
+            // VACUUM INTO only writes the destination file, but query_only
+            // refuses it all the same.
+            conn.execute_batch("PRAGMA query_only = 0;")
+                .map_err(|e| Error::sqlite("vacuum into", e))?;
+            let res = conn
+                .execute("VACUUM INTO ?1", [dst_str])
                 .map(|_| ())
-                .map_err(|e| Error::sqlite("vacuum into", e))
+                .map_err(|e| Error::sqlite("vacuum into", e));
+            conn.execute_batch("PRAGMA query_only = 1;")
+                .map_err(|e| Error::sqlite("vacuum into", e))?;
+            res
         })
         .await
     }
@@ -500,7 +548,7 @@ impl Store {
         tokio::fs::rename(&snapshot_path, &self.path)
             .await
             .map_err(|e| Error::io("replace db file", e))?;
-        let handles = open_handles(&self.path).await?;
+        let handles = open_handles(&self.path, self.opts).await?;
         self.handles.store(Arc::new(handles));
         Ok(())
     }
@@ -508,8 +556,8 @@ impl Store {
 
 /// Opens the write pool, migrates, then opens the read pool so it never
 /// observes a half-migrated schema.
-async fn open_handles(path: &Path) -> Result<Handles> {
-    let write = Pool::open(path, 1)?;
+async fn open_handles(path: &Path, opts: OpenOptions) -> Result<Handles> {
+    let write = Pool::open(path, 1, ConnRole::Write, opts)?;
     // Migrations are a startup-critical, atomic step: a shutdown signal must not
     // abort one mid-apply and leave the schema half-migrated. The blocking task
     // is not cancellable, which is what we want; the timeout still bounds it.
@@ -518,7 +566,7 @@ async fn open_handles(path: &Path) -> Result<Handles> {
         Ok(res) => res?,
         Err(_) => return Err(Error::Other("migrate: timed out".into())),
     }
-    let read = Pool::open(path, READ_POOL_SIZE)?;
+    let read = Pool::open(path, READ_POOL_SIZE, ConnRole::Read, opts)?;
     Ok(Handles { write, read })
 }
 
@@ -649,7 +697,13 @@ pub(crate) mod tests {
         #[tokio::test]
         async fn cancelled_query_returns_its_connection_after_it_finishes() {
             let (_store, dir) = crate::testing::meta::test_store().await;
-            let pool = Pool::open(&dir.path().join("forklift.db"), 1).unwrap();
+            let pool = Pool::open(
+                &dir.path().join("forklift.db"),
+                1,
+                ConnRole::Write,
+                OpenOptions::default(),
+            )
+            .unwrap();
             let (started, running) = tokio::sync::oneshot::channel();
             let (release, released) = tokio::sync::oneshot::channel();
             let held_pool = Arc::clone(&pool);
@@ -674,7 +728,13 @@ pub(crate) mod tests {
         #[tokio::test]
         async fn panicking_query_returns_its_connection() {
             let (_store, dir) = crate::testing::meta::test_store().await;
-            let pool = Pool::open(&dir.path().join("forklift.db"), 1).unwrap();
+            let pool = Pool::open(
+                &dir.path().join("forklift.db"),
+                1,
+                ConnRole::Write,
+                OpenOptions::default(),
+            )
+            .unwrap();
             let result: Result<()> = pool.run(|_| panic!("test query panic")).await;
             assert!(matches!(result, Err(Error::Task(_))));
             with_deadline("connection after panic", pool.run(|_| Ok(()))).await;

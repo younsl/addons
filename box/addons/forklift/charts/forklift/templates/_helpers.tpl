@@ -249,6 +249,10 @@ StatefulSet (PV-based replication mode).
   value: {{ or .Values.storage.s3.createBucket .Values.seaweedfs.enabled | quote }}
 - name: FORKLIFT_STORAGE_META_SYNC_INTERVAL
   value: {{ .Values.storage.s3.metaSyncInterval | quote }}
+- name: FORKLIFT_STORAGE_META_COMPRESSION
+  value: {{ .Values.storage.s3.metaCompression | quote }}
+- name: FORKLIFT_STORAGE_META_SYNC_MODE
+  value: {{ .Values.storage.s3.metaSyncMode | quote }}
 {{- /*
 S3 credentials. An explicit existingSecret wins. Otherwise, when SeaweedFS is
 bundled, read the admin credentials forklift mirrors into its own Secret. With
@@ -294,6 +298,8 @@ credential chain (EKS IRSA / Pod Identity).
   value: {{ .Values.audit.enabled | quote }}
 - name: FORKLIFT_AUDIT_RETENTION
   value: {{ .Values.audit.retention | quote }}
+- name: FORKLIFT_AUDIT_DOWNLOAD_RETENTION
+  value: {{ .Values.audit.downloadRetention | quote }}
 - name: FORKLIFT_SESSION_TTL
   value: {{ .Values.auth.sessionTTL | quote }}
 {{- if eq (include "forklift.haEnabled" .) "true" }}

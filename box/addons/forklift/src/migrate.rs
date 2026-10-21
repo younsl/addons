@@ -242,8 +242,9 @@ async fn run(
         opts.concurrency,
     )
     .await?;
-    let current = src.objects.head_object(&src.bucket, &src.meta_key).await?;
-    if current.e_tag != plan.snapshot.etag {
+    let current =
+        crate::objstore::metadata_version(src.objects.as_ref(), &src.bucket, &src.meta_key).await?;
+    if current.as_deref() != Some(plan.snapshot.version.as_str()) {
         return Err(Error::Refused(
             "source metadata changed during the copy; a writer is still running. Stop it and rerun (copied blobs are skipped)".into(),
         ));
@@ -476,6 +477,18 @@ pub(crate) mod tests {
             self.items.lock().remove(key);
             Ok(())
         }
+
+        async fn list_keys(&self, _bucket: &str, prefix: &str) -> objstore::Result<Vec<String>> {
+            let mut keys: Vec<String> = self
+                .items
+                .lock()
+                .keys()
+                .filter(|k| k.starts_with(prefix))
+                .cloned()
+                .collect();
+            keys.sort();
+            Ok(keys)
+        }
     }
 
     pub(crate) struct Side {
@@ -665,7 +678,7 @@ pub(crate) mod tests {
         let src = Side {
             objects: Arc::new(Objects {
                 items: parking_lot::Mutex::new(src.objects.items.lock().clone()),
-                bump_etag_after_heads: Some(0),
+                bump_etag_after_heads: Some(1),
                 ..Objects::default()
             }),
             ..src
@@ -853,7 +866,7 @@ pub(crate) mod tests {
         let src = Side {
             objects: Arc::new(Objects {
                 items: parking_lot::Mutex::new(src.objects.items.lock().clone()),
-                bump_etag_after_heads: Some(1),
+                bump_etag_after_heads: Some(2),
                 ..Objects::default()
             }),
             ..src

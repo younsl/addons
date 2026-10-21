@@ -127,6 +127,14 @@
             "metaSyncInterval": {
               "$ref": "#/definitions/duration"
             },
+            "metaCompression": {
+              "type": "string",
+              "enum": ["none", "zstd"]
+            },
+            "metaSyncMode": {
+              "type": "string",
+              "enum": ["wal", "snapshot"]
+            },
             "existingSecret": {
               "type": ["string", "null"]
             },
@@ -329,6 +337,9 @@
           "type": "boolean"
         },
         "retention": {
+          "$ref": "#/definitions/duration"
+        },
+        "downloadRetention": {
           "$ref": "#/definitions/duration"
         }
       }

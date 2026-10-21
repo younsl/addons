@@ -612,6 +612,28 @@ leader is the idle signature; a leader that only ever reports `ok` is writing
 every interval, and the snapshot cadence, not the change detection, bounds its
 upload traffic.
 
+`forklift_objstore_meta_snapshot_bytes` is the size of the last object
+transferred and `forklift_objstore_meta_database_bytes` the size of the SQLite
+file it holds. They are equal with `FORKLIFT_STORAGE_META_COMPRESSION=none`.
+Each upload overwrites the same key, so on an append-only store such as
+SeaweedFS every upload leaves its predecessor as garbage until the next vacuum:
+the transferred size times the upload rate is the garbage the store has to
+reclaim. In `snapshot` mode the leader therefore paces uploads to about 4 GiB
+an hour: after an upload of N bytes it waits N / 4 GiB hours (at most 15
+minutes) before the next, and counts the cycles it skips as
+`result="deferred"`. The final upload on demotion or shutdown is never
+deferred.
+
+In `wal` mode the snapshot key holds a generation's base, replaced only when
+the generation rotates, and changes ship as WAL segments
+(`docs/designs/wal-shipping.md`).
+
+| Metric | Type | Labels | Meaning |
+| --- | --- | --- | --- |
+| `forklift_objstore_meta_wal_segments_total` | Counter | `result`: `shipped`, `applied`, `error`, `conflict` | Segments the leader uploaded or a standby replayed. `conflict` means another writer held a segment key. |
+| `forklift_objstore_meta_wal_rotations_total` | Counter | `result`: `started`, `published`, `error` | Generations started and bases published |
+| `forklift_objstore_meta_wal_pending_bytes` | Gauge | none | Encoded segments the leader holds that are not yet in the bucket. A value that keeps rising means the bucket is unreachable. |
+
 ## Profiling
 
 Metrics say how much CPU the process burns; only a profile says which code

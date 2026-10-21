@@ -217,7 +217,12 @@ async fn run(cfg: Arc<config::Config>, cancel: CancellationToken) -> anyhow::Res
     let store = Arc::new(
         tokio::time::timeout(
             INIT_TIMEOUT,
-            meta::Store::open(data_dir.join("forklift.db")),
+            meta::Store::open_with(
+                data_dir.join("forklift.db"),
+                meta::OpenOptions {
+                    manual_checkpoint: cfg.storage.manual_checkpoint(),
+                },
+            ),
         )
         .await
         .context("open metadata store: timed out")?

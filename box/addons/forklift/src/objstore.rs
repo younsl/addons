@@ -21,12 +21,16 @@
 
 mod condprobe;
 mod metasync;
+pub mod snapcodec;
+pub mod walfmt;
 
 pub use condprobe::{ConditionalWrites, probe_conditional_writes};
 pub use metasync::{
-    Error, GetObjectOutput, HeadObjectOutput, MetaOptions, MetaSync, ObjectApi, PutBody,
-    PutObjectInput, PutObjectOutput, Result, S3Api,
+    Error, FetchedMetadata, GetObjectOutput, HeadObjectOutput, MetaOptions, MetaSync, ObjectApi,
+    PutBody, PutObjectInput, PutObjectOutput, Result, S3Api, SyncMode, fetch_metadata,
+    metadata_version,
 };
+pub use snapcodec::Compression;
 
 /// The bucket key of the metadata snapshot under `prefix`.
 pub fn meta_key(prefix: &str) -> String {

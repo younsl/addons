@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 330" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">
+  <rect width="880" height="330" fill="#0a0a0a"/>
+
+  <!-- left: snapshot overwrite -->
+  <g>
+    <rect x="24" y="24" width="404" height="282" rx="8" fill="#0e0e0e" stroke="#2a2a2a"/>
+    <text x="44" y="52" fill="#ededed" font-size="13">before: snapshot overwrite</text>
+    <text x="44" y="72" fill="#6e6e6e" font-size="11">4.7 GB PUT to one key, 12x/h, 770 GB/day</text>
+
+    <line x1="56" y1="250" x2="408" y2="250" stroke="#3a3a3a"/>
+    <line x1="56" y1="96" x2="56" y2="250" stroke="#3a3a3a"/>
+    <line x1="56" y1="122" x2="408" y2="122" stroke="#8b8b8b" stroke-dasharray="4 4"/>
+    <text x="404" y="116" fill="#8b8b8b" font-size="10" text-anchor="end">80% alert</text>
+
+    <polyline fill="none" stroke="#ededed" stroke-width="1.6"
+      points="56,200 90,170 116,140 130,118 136,200 170,168 196,138 210,122 216,200 250,166 276,136 290,116 296,200 330,170 356,142 370,124 376,200 408,172"/>
+    <text x="232" y="276" fill="#8b8b8b" font-size="11" text-anchor="middle">overwritten copies pile up as garbage,</text>
+    <text x="232" y="292" fill="#8b8b8b" font-size="11" text-anchor="middle">SeaweedFS vacuum drops them: 19 to 38 GiB</text>
+  </g>
+
+  <!-- right: wal shipping -->
+  <g>
+    <rect x="452" y="24" width="404" height="282" rx="8" fill="#0e0e0e" stroke="#2a2a2a"/>
+    <text x="472" y="52" fill="#ededed" font-size="13">after: WAL shipping</text>
+    <text x="472" y="72" fill="#6e6e6e" font-size="11">changed pages only, each segment a new key</text>
+
+    <line x1="484" y1="250" x2="836" y2="250" stroke="#3a3a3a"/>
+    <line x1="484" y1="96" x2="484" y2="250" stroke="#3a3a3a"/>
+    <line x1="484" y1="122" x2="836" y2="122" stroke="#8b8b8b" stroke-dasharray="4 4"/>
+    <text x="832" y="116" fill="#8b8b8b" font-size="10" text-anchor="end">80% alert</text>
+
+    <polyline fill="none" stroke="#ededed" stroke-width="1.6"
+      points="484,214 600,210 640,206 646,214 760,210 800,206 806,214 836,212"/>
+    <g fill="#8b8b8b" font-size="10">
+      <text x="643" y="196" text-anchor="middle">rotate</text>
+      <text x="803" y="196" text-anchor="middle">rotate</text>
+    </g>
+    <text x="660" y="276" fill="#8b8b8b" font-size="11" text-anchor="middle">garbage only when a generation is replaced:</text>
+    <text x="660" y="292" fill="#8b8b8b" font-size="11" text-anchor="middle">one base plus its segments</text>
+  </g>
+</svg>

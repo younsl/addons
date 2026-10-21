@@ -22,6 +22,29 @@ const BUFFER_SIZE: usize = 1024;
 const BATCH_SIZE: usize = 256;
 
 const FLUSH_TIMEOUT: Duration = Duration::from_secs(5);
+/// Pause between download backfill chunks, leaving the write connection free
+/// for request traffic in between.
+const BACKFILL_PAUSE: Duration = Duration::from_millis(100);
+/// Wait before retrying a failed backfill step.
+const BACKFILL_RETRY: Duration = Duration::from_mins(1);
+
+/// How long audit entries are kept.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Retention {
+    /// Every entry. Zero keeps them forever.
+    pub entries: Duration,
+    /// Download entries other than refused ones (401, 403). Zero, or a value
+    /// not below a non-zero `entries`, leaves downloads to `entries`.
+    pub downloads: Duration,
+}
+
+impl Retention {
+    /// The download retention that prunes sooner than `entries`, if any.
+    fn shorter_downloads(self) -> Option<Duration> {
+        let shorter = self.entries.is_zero() || self.downloads < self.entries;
+        (!self.downloads.is_zero() && shorter).then_some(self.downloads)
+    }
+}
 
 /// One auditable occurrence on a repository.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -162,15 +185,16 @@ impl Recorder {
         }
     }
 
-    /// Periodically prunes audit log entries older than `retention`. It must be
+    /// Finishes the daily download count backfill, then periodically prunes
+    /// audit entries and daily counts past their retention. It must be
     /// leader-gated by the caller in HA mode (single SQLite writer).
     pub async fn run_retention(
         self: Arc<Self>,
         cancel: CancellationToken,
         interval: Duration,
-        retention: Duration,
+        retention: Retention,
     ) {
-        if retention.is_zero() {
+        if !self.backfill_download_days(&cancel).await {
             return;
         }
         let mut ticker = tokio::time::interval(interval);
@@ -185,13 +209,59 @@ impl Recorder {
         }
     }
 
-    pub(crate) async fn prune_once(&self, retention: Duration) {
-        let before =
-            (self.now)() - chrono::Duration::from_std(retention).unwrap_or(chrono::Duration::MAX);
-        match self.store.prune_audit_logs(before).await {
-            Err(e) => tracing::error!(err = %e, "audit retention prune failed"),
-            Ok(n) if n > 0 => tracing::info!(count = n, "audit retention pruned entries"),
-            Ok(_) => {}
+    /// Steps the backfill until it completes (true) or `cancel` fires (false).
+    pub(crate) async fn backfill_download_days(&self, cancel: &CancellationToken) -> bool {
+        let mut logged = false;
+        loop {
+            let pause = match self.store.backfill_download_days().await {
+                Ok(true) => {
+                    if logged {
+                        tracing::info!("audit download count backfill complete");
+                    }
+                    return true;
+                }
+                Ok(false) => {
+                    if !logged {
+                        tracing::info!("audit download count backfill started");
+                        logged = true;
+                    }
+                    BACKFILL_PAUSE
+                }
+                Err(e) => {
+                    tracing::error!(err = %e, "audit download count backfill failed");
+                    BACKFILL_RETRY
+                }
+            };
+            tokio::select! {
+                () = cancel.cancelled() => return false,
+                () = tokio::time::sleep(pause) => {}
+            }
+        }
+    }
+
+    pub(crate) async fn prune_once(&self, retention: Retention) {
+        let now = (self.now)();
+        let ago =
+            |d: Duration| now - chrono::Duration::from_std(d).unwrap_or(chrono::Duration::MAX);
+        if !retention.entries.is_zero() {
+            match self.store.prune_audit_logs(ago(retention.entries)).await {
+                Err(e) => tracing::error!(err = %e, "audit retention prune failed"),
+                Ok(n) if n > 0 => tracing::info!(count = n, "audit retention pruned entries"),
+                Ok(_) => {}
+            }
+        }
+        if let Some(downloads) = retention.shorter_downloads() {
+            match self.store.prune_download_audit_logs(ago(downloads)).await {
+                Err(e) => tracing::error!(err = %e, "audit download retention prune failed"),
+                Ok(n) if n > 0 => {
+                    tracing::info!(count = n, "audit download retention pruned entries");
+                }
+                Ok(_) => {}
+            }
+        }
+        let window = meta::DOWNLOAD_COUNT_WINDOW + chrono::Duration::days(1);
+        if let Err(e) = self.store.prune_download_days(now - window).await {
+            tracing::error!(err = %e, "download count prune failed");
         }
     }
 }
@@ -309,7 +379,10 @@ pub(crate) mod tests {
                 .run_retention(
                     CancellationToken::new(),
                     Duration::from_secs(3600),
-                    Duration::from_secs(3600),
+                    Retention {
+                        entries: Duration::from_secs(3600),
+                        downloads: Duration::ZERO,
+                    },
                 )
                 .await;
         }
@@ -337,9 +410,189 @@ pub(crate) mod tests {
         });
         rec.close().await;
 
-        rec.prune_once(Duration::from_hours(24)).await;
+        rec.prune_once(Retention {
+            entries: Duration::from_hours(24),
+            downloads: Duration::ZERO,
+        })
+        .await;
         let n = store.count_audit_logs("r", "").await.expect("count");
         assert_eq!(n, 1, "remaining = {n}, want 1");
+    }
+
+    /// Downloads expire on their own retention, refused requests and other
+    /// events keep the full one, and daily counts outlive the rows they
+    /// summarize until the count window passes.
+    #[tokio::test]
+    async fn prune_once_applies_download_retention() {
+        let (rec, store, _dir) = new_recorder().await;
+        let days_ago = |d: i64| Utc::now() - chrono::Duration::days(d);
+        let entry = |event: &str, status: i64, path: &str, created_at| AuditLog {
+            repo_name: "r".into(),
+            event: event.into(),
+            method: "GET".into(),
+            path: path.into(),
+            status,
+            created_at,
+            ..Default::default()
+        };
+        store
+            .insert_audit_logs(vec![
+                entry(meta::EVENT_DOWNLOAD, 200, "a", days_ago(10)),
+                entry(meta::EVENT_DOWNLOAD, 404, "a", days_ago(10)),
+                entry(meta::EVENT_DOWNLOAD, 401, "a", days_ago(10)),
+                entry(meta::EVENT_DOWNLOAD, 403, "a", days_ago(10)),
+                entry(meta::EVENT_UPLOAD, 201, "a", days_ago(10)),
+                entry(meta::EVENT_DOWNLOAD, 200, "a", days_ago(1)),
+                entry(meta::EVENT_DOWNLOAD, 200, "old", days_ago(40)),
+            ])
+            .await
+            .expect("insert");
+
+        rec.prune_once(Retention {
+            entries: Duration::from_hours(90 * 24),
+            downloads: Duration::from_hours(7 * 24),
+        })
+        .await;
+
+        let left: Vec<_> = store
+            .list_audit_logs("r", "", 100, 0)
+            .await
+            .expect("list")
+            .into_iter()
+            .map(|l| (l.event, l.status))
+            .collect();
+        assert_eq!(
+            left,
+            vec![
+                (meta::EVENT_DOWNLOAD.to_owned(), 200),
+                (meta::EVENT_UPLOAD.to_owned(), 201),
+                (meta::EVENT_DOWNLOAD.to_owned(), 403),
+                (meta::EVENT_DOWNLOAD.to_owned(), 401),
+            ]
+        );
+        let counts = store
+            .artifact_download_counts(
+                "r",
+                vec!["a".into(), "old".into()],
+                Utc::now() - chrono::Duration::days(60),
+                Utc::now(),
+            )
+            .await
+            .expect("counts");
+        assert_eq!(
+            counts,
+            std::collections::HashMap::from([("a".into(), 2)]),
+            "pruned rows keep their daily count, counts past the window go"
+        );
+    }
+
+    /// Rows written before the daily counts existed are folded in once, rows
+    /// written after are not counted twice, and the old partial index goes.
+    #[tokio::test]
+    async fn backfill_counts_rows_from_before_the_cutover() {
+        let (rec, store, _dir) = new_recorder().await;
+        let yesterday = meta::format_time(Utc::now() - chrono::Duration::days(1));
+        store
+            .write(move |conn| {
+                conn.execute_batch(
+                    "CREATE INDEX IF NOT EXISTS idx_audit_artifact_downloads ON audit_logs(repo_name, path, created_at)
+                     WHERE event = 'download' AND method = 'GET' AND status IN (200, 206);",
+                )
+                .map_err(|e| meta::Error::sqlite("recreate index", e))?;
+                for (path, method, status) in [("a", "GET", 200), ("a", "GET", 206), ("a", "HEAD", 200), ("b", "GET", 404)] {
+                    conn.execute(
+                        "INSERT INTO audit_logs(repo_name, event, path, method, status, created_at)
+                         VALUES('r', 'download', ?1, ?2, ?3, ?4)",
+                        rusqlite::params![path, method, status, yesterday],
+                    )
+                    .map_err(|e| meta::Error::sqlite("insert legacy row", e))?;
+                }
+                conn.execute(
+                    "UPDATE artifact_download_backfill
+                        SET cutover_id = (SELECT MAX(id) FROM audit_logs), last_id = 0, done = 0",
+                    [],
+                )
+                .map_err(|e| meta::Error::sqlite("reset backfill", e))?;
+                Ok(())
+            })
+            .await
+            .expect("seed legacy rows");
+        assert!(!store.download_backfill_done().await.expect("state"));
+        store
+            .insert_audit_log(AuditLog {
+                repo_name: "r".into(),
+                event: meta::EVENT_DOWNLOAD.into(),
+                method: "GET".into(),
+                path: "a".into(),
+                status: 200,
+                ..Default::default()
+            })
+            .await
+            .expect("live row");
+
+        assert!(rec.backfill_download_days(&CancellationToken::new()).await);
+        assert!(store.download_backfill_done().await.expect("state"));
+        let counts = store
+            .artifact_download_counts(
+                "r",
+                vec!["a".into(), "b".into()],
+                Utc::now() - chrono::Duration::days(30),
+                Utc::now(),
+            )
+            .await
+            .expect("counts");
+        assert_eq!(counts, std::collections::HashMap::from([("a".into(), 3)]));
+        let index: i64 = store
+            .read(|conn| {
+                conn.query_row(
+                    "SELECT COUNT(*) FROM sqlite_master WHERE name = 'idx_audit_artifact_downloads'",
+                    [],
+                    |r| r.get(0),
+                )
+                .map_err(|e| meta::Error::sqlite("read index", e))
+            })
+            .await
+            .expect("index");
+        assert_eq!(index, 0, "partial index not dropped");
+        assert!(
+            rec.backfill_download_days(&CancellationToken::new()).await,
+            "done stays done"
+        );
+        rec.close().await;
+    }
+
+    #[tokio::test]
+    async fn backfill_stops_on_cancel() {
+        let (rec, store, _dir) = new_recorder().await;
+        store
+            .write(|conn| {
+                conn.execute(
+                    "UPDATE artifact_download_backfill SET cutover_id = 1000000, done = 0",
+                    [],
+                )
+                .map_err(|e| meta::Error::sqlite("reset backfill", e))
+            })
+            .await
+            .expect("reset");
+        let cancel = CancellationToken::new();
+        cancel.cancel();
+        assert!(!rec.backfill_download_days(&cancel).await);
+        Arc::clone(&rec)
+            .run_retention(cancel, Duration::from_secs(3600), Retention::default())
+            .await;
+        assert!(!store.download_backfill_done().await.expect("state"));
+        rec.close().await;
+    }
+
+    #[test]
+    fn shorter_downloads_only_when_it_prunes_sooner() {
+        let h = Duration::from_hours;
+        let r = |entries, downloads| Retention { entries, downloads }.shorter_downloads();
+        assert_eq!(r(h(2160), h(168)), Some(h(168)));
+        assert_eq!(r(Duration::ZERO, h(168)), Some(h(168)));
+        assert_eq!(r(h(24), h(168)), None);
+        assert_eq!(r(h(168), h(168)), None);
+        assert_eq!(r(h(2160), Duration::ZERO), None);
     }
 
     #[tokio::test]
@@ -349,7 +602,10 @@ pub(crate) mod tests {
         let task = tokio::spawn(Arc::clone(&rec).run_retention(
             cancel.clone(),
             Duration::from_secs(3600),
-            Duration::from_hours(24),
+            Retention {
+                entries: Duration::from_hours(24),
+                downloads: Duration::ZERO,
+            },
         ));
         cancel.cancel();
         tokio::time::timeout(Duration::from_secs(2), task)

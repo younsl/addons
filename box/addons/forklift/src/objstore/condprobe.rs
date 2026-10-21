@@ -122,6 +122,10 @@ mod tests {
             self.objects.lock().remove(key);
             Ok(())
         }
+
+        async fn list_keys(&self, _bucket: &str, _prefix: &str) -> Result<Vec<String>> {
+            Ok(Vec::new())
+        }
     }
 
     #[tokio::test]

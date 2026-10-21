@@ -1307,7 +1307,7 @@ pub(super) async fn list_artifacts(
         .artifact_download_counts(
             &repository.name,
             arts.iter().map(|a| a.path.clone()).collect(),
-            now - chrono::Duration::days(30),
+            now - meta::DOWNLOAD_COUNT_WINDOW,
             now,
         )
         .await

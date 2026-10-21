@@ -15,8 +15,10 @@ use prometheus::{Gauge, IntCounterVec, Opts, Registry};
 use tokio::io::{AsyncRead, AsyncWriteExt};
 use tokio_util::sync::CancellationToken;
 
+use super::snapcodec::{self, Compression};
 use crate::meta;
 use crate::storage::s3::{is_not_found, is_precondition_failed};
+use sha2::{Digest, Sha256};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -147,6 +149,8 @@ pub trait ObjectApi: Send + Sync {
     async fn get_object(&self, bucket: &str, key: &str) -> Result<GetObjectOutput>;
     async fn head_object(&self, bucket: &str, key: &str) -> Result<HeadObjectOutput>;
     async fn delete_object(&self, bucket: &str, key: &str) -> Result<()>;
+    /// Every key under `prefix`, in lexicographic order.
+    async fn list_keys(&self, bucket: &str, prefix: &str) -> Result<Vec<String>>;
 }
 
 /// [`ObjectApi`] over the AWS SDK's S3 client, the one production
@@ -313,6 +317,61 @@ impl ObjectApi for S3Api {
             .map(|_| ())
             .map_err(|e| sdk_error("delete object", e))
     }
+
+    async fn list_keys(&self, bucket: &str, prefix: &str) -> Result<Vec<String>> {
+        let mut pages = self
+            .0
+            .list_objects_v2()
+            .bucket(bucket)
+            .prefix(prefix)
+            .into_paginator()
+            .send();
+        let mut keys = Vec::new();
+        while let Some(page) = pages.next().await {
+            let page = page.map_err(|e| sdk_error("list objects", e))?;
+            keys.extend(
+                page.contents()
+                    .iter()
+                    .filter_map(|o| o.key().map(str::to_owned)),
+            );
+        }
+        keys.sort();
+        Ok(keys)
+    }
+}
+
+mod walship;
+
+pub use walship::{FetchedMetadata, fetch_metadata, metadata_version};
+
+/// How the leader keeps the metadata in the bucket current.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum SyncMode {
+    /// Ships committed WAL frames as append-only segments on top of a base
+    /// copy of the database file, replacing the base only when the segments
+    /// outgrow it.
+    #[default]
+    Wal,
+    /// Uploads a whole `VACUUM INTO` snapshot whenever something changed.
+    Snapshot,
+}
+
+impl SyncMode {
+    /// Parses the configuration value; `None` for an unknown name.
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "" | "wal" => Some(Self::Wal),
+            "snapshot" => Some(Self::Snapshot),
+            _ => None,
+        }
+    }
+
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Wal => "wal",
+            Self::Snapshot => "snapshot",
+        }
+    }
 }
 
 /// Configures a [`MetaSync`].
@@ -324,6 +383,11 @@ pub struct MetaOptions {
     pub key: String,
     pub data_dir: PathBuf,
     pub interval: Duration,
+    /// How the leader encodes uploads. Downloads accept either encoding.
+    pub compression: Compression,
+    /// How the leader publishes changes. Readers follow either layout, so the
+    /// mode can change between terms.
+    pub mode: SyncMode,
     pub registry: Option<Registry>,
 }
 
@@ -347,6 +411,15 @@ struct SyncState {
     /// `have_uploaded`.
     uploaded_version: i64,
     have_uploaded: bool,
+    /// When the last upload finished and how many bytes it sent, for pacing.
+    last_upload: Option<(tokio::time::Instant, u64)>,
+    /// The leader's WAL shipping state in [`SyncMode::Wal`].
+    ship: walship::Shipper,
+    /// The standby's copy of a WAL generation, kept current segment by segment.
+    replica: Option<walship::Replica>,
+    /// When a standby last checked the bucket, so the faster WAL-mode tick
+    /// still polls at the configured interval.
+    last_standby: Option<tokio::time::Instant>,
 }
 
 /// Uploads the leader's database snapshot to S3 and restores it on standbys.
@@ -360,6 +433,8 @@ pub struct MetaSync {
     key: String,
     data_dir: PathBuf,
     interval: Duration,
+    compression: Compression,
+    mode: SyncMode,
 
     is_leader: AtomicBool,
     /// The current leadership term (Lease transition count). Snapshot uploads
@@ -376,6 +451,46 @@ pub struct MetaSync {
     promotions: IntCounterVec,
     last_sync_unix: Gauge,
     snapshot_bytes: Gauge,
+    database_bytes: Gauge,
+    wal_segments: IntCounterVec,
+    wal_rotations: IntCounterVec,
+    wal_pending_bytes: Gauge,
+}
+
+/// The upload volume the leader paces itself to. Every upload overwrites
+/// the snapshot key, and an append-only store keeps each overwritten copy
+/// until its next vacuum, so this rate, not the sync interval, bounds how
+/// much garbage a large database leaves behind between vacuums.
+const UPLOAD_BYTES_PER_HOUR: u64 = 4 << 30;
+
+/// The longest the pacing defers an upload, which bounds the failover
+/// data-loss window it adds on top of the sync interval.
+const MAX_UPLOAD_GAP: Duration = Duration::from_mins(15);
+
+/// The minimum time after an upload of `size` bytes before the next one.
+fn upload_gap(size: u64) -> Duration {
+    let secs = u128::from(size) * 3600 / u128::from(UPLOAD_BYTES_PER_HOUR);
+    Duration::from_secs(u64::try_from(secs).unwrap_or(u64::MAX)).min(MAX_UPLOAD_GAP)
+}
+
+/// What one upload attempt did.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Upload {
+    Uploaded,
+    /// Nothing committed since the last upload.
+    Unchanged,
+    /// Changes are pending, but the last upload was too recent for its size.
+    Deferred,
+}
+
+impl Upload {
+    const fn label(self) -> &'static str {
+        match self {
+            Self::Uploaded => "ok",
+            Self::Unchanged => "unchanged",
+            Self::Deferred => "deferred",
+        }
+    }
 }
 
 /// The S3 user-metadata key holding the leadership term that wrote the
@@ -400,6 +515,8 @@ impl MetaSync {
             key: o.key,
             data_dir: o.data_dir,
             interval: o.interval,
+            compression: o.compression,
+            mode: o.mode,
             is_leader: AtomicBool::new(false),
             fence: AtomicI64::new(0),
             sync_mu: tokio::sync::Mutex::new(SyncState::default()),
@@ -423,13 +540,40 @@ impl MetaSync {
                 "objstore_meta_snapshot_bytes",
                 "Size of the last metadata snapshot transferred.",
             ),
+            database_bytes: gauge(
+                "objstore_meta_database_bytes",
+                "Uncompressed size of the last metadata snapshot transferred.",
+            ),
+            wal_segments: counter(
+                "objstore_meta_wal_segments_total",
+                "WAL segments shipped by the leader or applied by a standby, by result.",
+            ),
+            wal_rotations: counter(
+                "objstore_meta_wal_rotations_total",
+                "WAL generations started and base copies published, by result.",
+            ),
+            wal_pending_bytes: gauge(
+                "objstore_meta_wal_pending_bytes",
+                "Encoded WAL segment bytes the leader holds that are not yet in the bucket.",
+            ),
         };
         if let Some(reg) = o.registry {
-            for c in [&m.uploads, &m.downloads, &m.promotions] {
+            for c in [
+                &m.uploads,
+                &m.downloads,
+                &m.promotions,
+                &m.wal_segments,
+                &m.wal_rotations,
+            ] {
                 reg.register(Box::new(c.clone()))
                     .expect("register objstore counter");
             }
-            for g in [&m.last_sync_unix, &m.snapshot_bytes] {
+            for g in [
+                &m.last_sync_unix,
+                &m.snapshot_bytes,
+                &m.database_bytes,
+                &m.wal_pending_bytes,
+            ] {
                 reg.register(Box::new(g.clone()))
                     .expect("register objstore gauge");
             }
@@ -452,8 +596,30 @@ impl MetaSync {
     /// on restart. An empty bucket (no snapshot yet) is a no-op: the process
     /// starts with its local (fresh) database and the leader will upload it.
     pub async fn restore_on_boot(&self) -> Result<()> {
+        let mut st = self.sync_mu.lock().await;
+        let head = match self.api.head_object(&self.bucket, &self.key).await {
+            Ok(head) => Some(head),
+            Err(e) if e.is_not_found() => None,
+            Err(e) => return Err(e.context("head snapshot")),
+        };
+        if let Some(head) = &head
+            && let Some(generation) = walship::generation_of(head)
+        {
+            let path = self
+                .follow_generation(&mut st, head, &generation, true)
+                .await
+                .map_err(|e| e.context("restore wal generation"))?;
+            st.replica = None;
+            self.store
+                .swap_from_snapshot(&path)
+                .await
+                .map_err(|e| Error::Meta(e).context("apply boot snapshot"))?;
+            tracing::info!(%generation, "objstore: restored metadata from S3 base and wal segments");
+            return Ok(());
+        }
+        drop(st);
         let dst = self.work_dir().join("restore.db");
-        let (found, _, _) = self.download(&dst).await?;
+        let (found, _, _) = self.download(&dst, head.as_ref()).await?;
         if !found {
             tracing::info!(
                 "objstore: no metadata snapshot in bucket; starting with local database"
@@ -470,7 +636,11 @@ impl MetaSync {
 
     /// Executes the sync loop until `cancel` fires.
     pub async fn run(self: Arc<Self>, cancel: CancellationToken) {
-        let mut ticker = tokio::time::interval(self.interval);
+        let period = match self.mode {
+            SyncMode::Wal => self.interval.min(walship::SHIP_TICK),
+            SyncMode::Snapshot => self.interval,
+        };
+        let mut ticker = tokio::time::interval(period);
         ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         ticker.tick().await;
         loop {
@@ -493,27 +663,53 @@ impl MetaSync {
         let mut st = self.sync_mu.lock().await;
 
         if self.is_leader.load(Ordering::SeqCst) {
-            let uploaded = match self.upload(&mut st).await {
+            if self.mode == SyncMode::Wal {
+                self.ship(&mut st, false).await?;
+                self.mark_synced();
+                return Ok(());
+            }
+            let outcome = match self.upload(&mut st, true).await {
                 Ok(v) => v,
                 Err(e) => {
                     self.uploads.with_label_values(&["error"]).inc();
                     return Err(e.context("upload snapshot"));
                 }
             };
-            if uploaded {
-                self.uploads.with_label_values(&["ok"]).inc();
-            } else {
-                self.uploads.with_label_values(&["unchanged"]).inc();
+            self.uploads.with_label_values(&[outcome.label()]).inc();
+            if outcome == Upload::Uploaded {
+                self.delete_generations_except(None).await;
             }
             self.mark_synced();
             return Ok(());
         }
 
+        if self.mode == SyncMode::Wal
+            && let Some(at) = st.last_standby
+            && at.elapsed() < self.interval
+        {
+            return Ok(());
+        }
+        st.last_standby = Some(tokio::time::Instant::now());
+        self.checkpoint_standby().await;
+
         // The object is re-downloaded only when it changed: a standby otherwise
         // pulls the full snapshot every interval whether or not the leader
         // uploaded a new one, which for a large database is most of its network
         // traffic.
-        match self.api.head_object(&self.bucket, &self.key).await {
+        let head = self.api.head_object(&self.bucket, &self.key).await;
+        if let Ok(head) = &head
+            && let Some(generation) = walship::generation_of(head)
+        {
+            st.snapshot_path = None;
+            st.snapshot_etag = None;
+            self.follow_generation(&mut st, head, &generation, false)
+                .await
+                .map_err(|e| e.context("follow wal generation"))?;
+            self.mark_synced();
+            return Ok(());
+        }
+        st.replica = None;
+        match head {
             Err(e) if e.is_not_found() => return Ok(()),
             Err(e) => {
                 // The optimisation is not worth a failed cycle: fall through to
@@ -534,7 +730,7 @@ impl MetaSync {
             }
         }
         let dst = self.work_dir().join("forklift.db");
-        let (found, size, etag) = match self.download(&dst).await {
+        let (found, size, etag) = match self.download(&dst, None).await {
             Ok(v) => v,
             Err(e) => {
                 self.downloads.with_label_values(&["error"]).inc();
@@ -557,37 +753,86 @@ impl MetaSync {
     /// the last successful upload. The database version is read before the
     /// snapshot is taken, so a commit that lands while the VACUUM runs (and is
     /// therefore not in this snapshot) is seen as a change on the next cycle.
-    async fn upload(&self, st: &mut SyncState) -> Result<bool> {
+    ///
+    /// With `paced`, an upload too soon after the previous one for that one's
+    /// size is deferred; the change stays pending for a later cycle.
+    async fn upload(&self, st: &mut SyncState, paced: bool) -> Result<Upload> {
         let (version, changed) = self.changed_since_upload(st).await;
         if !changed {
-            return Ok(false);
+            return Ok(Upload::Unchanged);
+        }
+        if paced
+            && let Some((at, size)) = st.last_upload
+            && at.elapsed() < upload_gap(size)
+        {
+            return Ok(Upload::Deferred);
         }
         let work_dir = self.work_dir();
         tokio::fs::create_dir_all(&work_dir)
             .await
             .map_err(|e| Error::io("create objstore dir", e))?;
         let snap = work_dir.join("upload.db");
-        let res = self.upload_snapshot(&snap, version, st).await;
+        let packed = work_dir.join("upload.db.zst");
+        let res = self.upload_snapshot(&snap, &packed, version, st).await;
         let _ = tokio::fs::remove_file(&snap).await;
-        res
+        let _ = tokio::fs::remove_file(&packed).await;
+        res.map(|()| Upload::Uploaded)
     }
 
-    async fn upload_snapshot(&self, snap: &Path, version: i64, st: &mut SyncState) -> Result<bool> {
+    async fn upload_snapshot(
+        &self,
+        snap: &Path,
+        packed: &Path,
+        version: i64,
+        st: &mut SyncState,
+    ) -> Result<()> {
         self.store.snapshot(snap).await?;
-        let size = tokio::fs::metadata(snap)
+        let raw_size = tokio::fs::metadata(snap)
             .await
             .map_err(|e| Error::io("open snapshot", e))?
             .len() as i64;
+        let (body, size) = match self.compression {
+            Compression::None => (snap.to_path_buf(), raw_size),
+            Compression::Zstd => {
+                let (src, dst) = (snap.to_path_buf(), packed.to_path_buf());
+                let size = tokio::task::spawn_blocking(move || snapcodec::compress(&src, &dst))
+                    .await
+                    .map_err(|e| Error::io("compress snapshot", std::io::Error::other(e)))?
+                    .map_err(|e| Error::io("compress snapshot", e))?;
+                // The plain copy is no longer needed; drop it before the upload
+                // so the two never sit on the volume for the whole transfer.
+                let _ = tokio::fs::remove_file(snap).await;
+                (packed.to_path_buf(), size as i64)
+            }
+        };
 
+        self.put_fenced(body, size, HashMap::new()).await?;
+        self.snapshot_bytes.set(size as f64);
+        self.database_bytes.set(raw_size as f64);
+        st.uploaded_version = version;
+        st.have_uploaded = true;
+        st.last_upload = Some((tokio::time::Instant::now(), size as u64));
+        Ok(())
+    }
+
+    /// Puts `body` at the snapshot key, tagged with this term's fence and
+    /// `metadata`, unless a newer term already wrote it.
+    async fn put_fenced(
+        &self,
+        body: PathBuf,
+        size: i64,
+        mut metadata: HashMap<String, String>,
+    ) -> Result<()> {
+        metadata.insert(
+            FENCE_META_KEY.to_owned(),
+            self.fence.load(Ordering::SeqCst).to_string(),
+        );
         let mut put = PutObjectInput {
             bucket: self.bucket.clone(),
             key: self.key.clone(),
-            body: PutBody::File(snap.to_path_buf()),
+            body: PutBody::File(body),
             content_length: size,
-            metadata: HashMap::from([(
-                FENCE_META_KEY.to_owned(),
-                self.fence.load(Ordering::SeqCst).to_string(),
-            )]),
+            metadata,
             if_match: None,
             if_none_match: None,
         };
@@ -620,10 +865,7 @@ impl MetaSync {
             }
             return Err(e);
         }
-        self.snapshot_bytes.set(size as f64);
-        st.uploaded_version = version;
-        st.have_uploaded = true;
-        Ok(true)
+        Ok(())
     }
 
     /// Reports the current database version and whether it differs from the one
@@ -655,13 +897,29 @@ impl MetaSync {
     /// Fetches the snapshot to `dst` via a temp file and atomic rename. It
     /// returns `found = false` (no error) when the object does not exist yet,
     /// and the object's ETag so a caller can later tell whether the local copy
-    /// is still the current one.
-    async fn download(&self, dst: &Path) -> Result<(bool, i64, Option<String>)> {
+    /// is still the current one. With `expect`, the object must still be the
+    /// one that HEAD described, and match the SHA-256 it records, if any.
+    async fn download(
+        &self,
+        dst: &Path,
+        expect: Option<&HeadObjectOutput>,
+    ) -> Result<(bool, i64, Option<String>)> {
         let out = match self.api.get_object(&self.bucket, &self.key).await {
             Ok(out) => out,
             Err(e) if e.is_not_found() => return Ok((false, 0, None)),
             Err(e) => return Err(e),
         };
+        if let Some(head) = expect
+            && head.e_tag.is_some()
+            && out.e_tag.is_some()
+            && head.e_tag != out.e_tag
+        {
+            return Err(Error::Unavailable(
+                "snapshot replaced between HEAD and GET; retrying next cycle".into(),
+            ));
+        }
+        let want_sha =
+            expect.and_then(|h| walship::meta_value(&h.metadata, walship::SHA256_META_KEY));
 
         if let Some(parent) = dst.parent() {
             tokio::fs::create_dir_all(parent)
@@ -677,9 +935,20 @@ impl MetaSync {
             .await
             .map_err(|e| Error::io("create temp snapshot", e))?;
         let mut body = out.body;
-        let copied = tokio::io::copy(&mut body, &mut f).await;
+        let copied = copy_hashing(&mut body, &mut f).await;
         let n = match copied {
-            Ok(n) => n as i64,
+            Ok((n, sha)) => {
+                if let Some(want) = &want_sha
+                    && !want.eq_ignore_ascii_case(&sha)
+                {
+                    drop(f);
+                    let _ = tokio::fs::remove_file(&tmp).await;
+                    return Err(Error::ObjectStore(format!(
+                        "snapshot sha256 {sha} does not match the recorded {want}"
+                    )));
+                }
+                n as i64
+            }
             Err(e) => {
                 drop(f);
                 let _ = tokio::fs::remove_file(&tmp).await;
@@ -696,9 +965,19 @@ impl MetaSync {
             return Err(Error::io("close snapshot", e));
         }
         drop(f);
-        if let Err(e) = tokio::fs::rename(&tmp, dst).await {
-            let _ = tokio::fs::remove_file(&tmp).await;
-            return Err(Error::io("commit snapshot", e));
+        let (raw, plain) = (tmp.clone(), dst.to_path_buf());
+        let committed = tokio::task::spawn_blocking(move || {
+            snapcodec::materialize(&raw, &plain)?;
+            std::fs::metadata(&plain).map(|m| m.len())
+        })
+        .await
+        .map_err(|e| Error::io("commit snapshot", std::io::Error::other(e)))?;
+        match committed {
+            Ok(len) => self.database_bytes.set(len as f64),
+            Err(e) => {
+                let _ = tokio::fs::remove_file(&tmp).await;
+                return Err(Error::io("commit snapshot", e));
+            }
         }
         Ok((true, n, out.e_tag))
     }
@@ -746,6 +1025,31 @@ impl MetaSync {
             Ok(head) => head,
         };
 
+        if let Some(generation) = walship::generation_of(&head) {
+            let path = match self
+                .follow_generation(&mut st, &head, &generation, true)
+                .await
+            {
+                Ok(p) => p,
+                Err(e) => {
+                    st.replica = None;
+                    self.promotions.with_label_values(&["error"]).inc();
+                    return Err(e.context("catch up wal generation on promote"));
+                }
+            };
+            st.replica = None;
+            if let Err(e) = self.store.swap_from_snapshot(&path).await {
+                self.promotions.with_label_values(&["error"]).inc();
+                return Err(Error::Meta(e).context("apply wal generation on promote"));
+            }
+            st.ship = walship::Shipper::default();
+            self.is_leader.store(true, Ordering::SeqCst);
+            self.promotions.with_label_values(&["wal"]).inc();
+            tracing::info!(%generation, "objstore: promoted with S3 base and wal segments");
+            return Ok(());
+        }
+        st.replica = None;
+
         let mut result = "downloaded";
         let path = match path {
             Some(p) if etag.is_some() && etag == head.e_tag => {
@@ -754,7 +1058,7 @@ impl MetaSync {
             }
             _ => {
                 let dst = self.work_dir().join("promote.db");
-                let (found, size, _) = match self.download(&dst).await {
+                let (found, size, _) = match self.download(&dst, Some(&head)).await {
                     Ok(v) => v,
                     Err(e) => {
                         self.promotions.with_label_values(&["error"]).inc();
@@ -776,6 +1080,7 @@ impl MetaSync {
             self.promotions.with_label_values(&["error"]).inc();
             return Err(Error::Meta(e).context("apply snapshot on promote"));
         }
+        st.ship = walship::Shipper::default();
         self.is_leader.store(true, Ordering::SeqCst);
         self.promotions.with_label_values(&[result]).inc();
         tracing::info!(source = result, "objstore: promoted with S3 snapshot");
@@ -791,6 +1096,7 @@ impl MetaSync {
         self.is_leader.store(false, Ordering::SeqCst);
         let mut st = self.sync_mu.lock().await;
         drop_watch(&mut st);
+        st.ship.discard(&self.wal_pending_bytes);
     }
 
     /// Uploads a last snapshot if this process is the leader. It is called on
@@ -803,7 +1109,19 @@ impl MetaSync {
             return;
         }
         let mut st = self.sync_mu.lock().await;
-        let uploaded = match self.upload(&mut st).await {
+        if self.mode == SyncMode::Wal {
+            match self.ship(&mut st, true).await {
+                Ok(()) => {
+                    self.mark_synced();
+                    tracing::info!("objstore: final wal segments shipped");
+                }
+                Err(e) => {
+                    tracing::error!(err = %e, "objstore: final wal shipping failed");
+                }
+            }
+            return;
+        }
+        let outcome = match self.upload(&mut st, false).await {
             Ok(v) => v,
             Err(e) => {
                 self.uploads.with_label_values(&["error"]).inc();
@@ -812,7 +1130,7 @@ impl MetaSync {
             }
         };
         self.mark_synced();
-        if !uploaded {
+        if outcome != Upload::Uploaded {
             self.uploads.with_label_values(&["unchanged"]).inc();
             tracing::info!(
                 "objstore: final metadata snapshot skipped; nothing committed since last upload"
@@ -835,6 +1153,28 @@ impl MetaSync {
     }
 }
 
+/// Copies `src` into `dst`, returning the byte count and the hex SHA-256 of
+/// what was copied.
+async fn copy_hashing<R, W>(src: &mut R, dst: &mut W) -> std::io::Result<(u64, String)>
+where
+    R: AsyncRead + Unpin + ?Sized,
+    W: tokio::io::AsyncWrite + Unpin,
+{
+    use tokio::io::AsyncReadExt;
+    let mut hasher = Sha256::new();
+    let mut buf = vec![0u8; 256 * 1024];
+    let mut n = 0u64;
+    loop {
+        let read = src.read(&mut buf).await?;
+        if read == 0 {
+            return Ok((n, hex::encode(hasher.finalize())));
+        }
+        hasher.update(&buf[..read]);
+        dst.write_all(&buf[..read]).await?;
+        n += read as u64;
+    }
+}
+
 /// Releases the pinned connection and forgets the upload baseline, so the next
 /// upload is unconditional. Callers hold `sync_mu`.
 fn drop_watch(st: &mut SyncState) {
@@ -842,6 +1182,7 @@ fn drop_watch(st: &mut SyncState) {
         w.close();
     }
     st.have_uploaded = false;
+    st.last_upload = None;
 }
 
 /// Reads the fencing token from S3 object user-metadata. Keys are
@@ -867,7 +1208,7 @@ pub(crate) mod tests {
     use async_trait::async_trait;
 
     use crate::meta;
-    use crate::objstore::metasync::FENCE_META_KEY;
+    use crate::objstore::metasync::{FENCE_META_KEY, MAX_UPLOAD_GAP, upload_gap};
     use crate::objstore::*;
 
     /// A stored object with the user-metadata and ETag the fencing logic inspects.
@@ -963,6 +1304,19 @@ pub(crate) mod tests {
             self.state.lock().objects.remove(key);
             Ok(())
         }
+
+        async fn list_keys(&self, _bucket: &str, prefix: &str) -> Result<Vec<String>> {
+            let mut keys: Vec<String> = self
+                .state
+                .lock()
+                .objects
+                .keys()
+                .filter(|k| k.starts_with(prefix))
+                .cloned()
+                .collect();
+            keys.sort();
+            Ok(keys)
+        }
     }
 
     /// Fails `head_object` so promotion cannot establish which state is current.
@@ -985,6 +1339,9 @@ pub(crate) mod tests {
         async fn delete_object(&self, bucket: &str, key: &str) -> Result<()> {
             self.inner.delete_object(bucket, key).await
         }
+        async fn list_keys(&self, bucket: &str, prefix: &str) -> Result<Vec<String>> {
+            self.inner.list_keys(bucket, prefix).await
+        }
     }
 
     const KEY: &str = "forklift/meta/forklift.db";
@@ -1002,6 +1359,15 @@ pub(crate) mod tests {
         fake: Arc<dyn ObjectApi>,
         dir: &Path,
     ) -> Arc<MetaSync> {
+        new_meta_sync_with(store, fake, dir, Compression::None)
+    }
+
+    fn new_meta_sync_with(
+        store: Arc<meta::Store>,
+        fake: Arc<dyn ObjectApi>,
+        dir: &Path,
+        compression: Compression,
+    ) -> Arc<MetaSync> {
         MetaSync::new(MetaOptions {
             store,
             api: fake,
@@ -1009,6 +1375,8 @@ pub(crate) mod tests {
             key: KEY.into(),
             data_dir: dir.to_path_buf(),
             interval: Duration::from_secs(60),
+            compression,
+            mode: SyncMode::Snapshot,
             registry: None,
         })
     }
@@ -1065,6 +1433,92 @@ pub(crate) mod tests {
             v, 42,
             "user_version = {v}, want 42 (restore did not apply snapshot)"
         );
+    }
+
+    /// A zstd leader publishes a compressed object that a plain reader restores,
+    /// and a zstd leader in turn promotes onto a plain object, so switching the
+    /// setting in either direction never strands the snapshot in the bucket.
+    #[tokio::test]
+    async fn meta_sync_compressed_snapshot_round_trips_both_ways() {
+        let fake = FakeMetaS3::new();
+
+        let dir1 = tempfile::tempdir().expect("tempdir");
+        let s1 = open_store(dir1.path()).await;
+        set_user_version(&s1, 7).await;
+        let m1 = new_meta_sync_with(
+            Arc::clone(&s1),
+            fake.clone(),
+            dir1.path(),
+            Compression::Zstd,
+        );
+        m1.promote(1).await.expect("promote");
+        m1.sync().await.expect("compressed upload");
+        let obj = fake.object(KEY).expect("snapshot uploaded");
+        assert_eq!(
+            &obj.data[..4],
+            &[0x28, 0xB5, 0x2F, 0xFD],
+            "not a zstd frame"
+        );
+        assert!(!dir1.path().join("objstore/upload.db").exists());
+        assert!(!dir1.path().join("objstore/upload.db.zst").exists());
+        s1.close();
+
+        let dir2 = tempfile::tempdir().expect("tempdir");
+        let s2 = open_store(dir2.path()).await;
+        let m2 = new_meta_sync(Arc::clone(&s2), fake.clone(), dir2.path());
+        m2.restore_on_boot()
+            .await
+            .expect("restore compressed snapshot");
+        assert_eq!(user_version(&s2).await, 7);
+        set_user_version(&s2, 8).await;
+        m2.promote(2).await.expect("promote plain writer");
+        set_user_version(&s2, 9).await;
+        m2.sync().await.expect("plain upload");
+        assert_eq!(&fake.object(KEY).expect("snapshot").data[..6], b"SQLite");
+        s2.close();
+
+        let dir3 = tempfile::tempdir().expect("tempdir");
+        let s3 = open_store(dir3.path()).await;
+        let m3 = new_meta_sync_with(
+            Arc::clone(&s3),
+            fake.clone(),
+            dir3.path(),
+            Compression::Zstd,
+        );
+        m3.sync().await.expect("standby download");
+        m3.promote(3).await.expect("promote onto plain snapshot");
+        assert_eq!(user_version(&s3).await, 9);
+    }
+
+    #[test]
+    fn upload_gap_scales_with_size_up_to_the_cap() {
+        assert_eq!(upload_gap(0), Duration::ZERO);
+        assert_eq!(upload_gap(100 << 20), Duration::from_secs(87));
+        assert_eq!(upload_gap(1 << 30), Duration::from_mins(15));
+        assert_eq!(upload_gap(5 << 30), MAX_UPLOAD_GAP);
+        assert_eq!(upload_gap(u64::MAX), MAX_UPLOAD_GAP);
+    }
+
+    /// A change soon after a large upload waits for a later cycle, while the
+    /// final flush on demotion or shutdown ignores the pacing.
+    #[tokio::test]
+    async fn meta_sync_paces_uploads_by_size() {
+        let fake = FakeMetaS3::new();
+        let dir = tempfile::tempdir().expect("tempdir");
+        let s = open_store(dir.path()).await;
+        let m = new_meta_sync(Arc::clone(&s), fake.clone(), dir.path());
+        m.promote(1).await.expect("promote");
+        m.sync().await.expect("first upload");
+        let puts = fake.puts();
+
+        m.sync_mu.lock().await.last_upload = Some((tokio::time::Instant::now(), 4 << 30));
+        set_user_version(&s, 5).await;
+        m.sync().await.expect("deferred cycle");
+        assert_eq!(fake.puts(), puts, "uploaded inside the pacing gap");
+        assert_eq!(m.uploads.with_label_values(&["deferred"]).get(), 1);
+
+        m.final_sync().await;
+        assert_eq!(fake.puts(), puts + 1, "final sync must not be paced");
     }
 
     /// Verifies a fresh bucket is a clean no-op.
@@ -1277,6 +1731,8 @@ pub(crate) mod tests {
             key: KEY.into(),
             data_dir: dir.path().to_path_buf(),
             interval: Duration::from_secs(60),
+            compression: Compression::None,
+            mode: SyncMode::Snapshot,
             registry: None,
         });
         m.promote(9)

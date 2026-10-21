@@ -1,6 +1,6 @@
 # forklift
 
-![Version: 0.17.0](https://img.shields.io/badge/Version-0.17.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.17.0](https://img.shields.io/badge/AppVersion-0.17.0-informational?style=flat-square)
+![Version: 0.18.0](https://img.shields.io/badge/Version-0.18.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.18.0](https://img.shields.io/badge/AppVersion-0.18.0-informational?style=flat-square)
 
 Lightweight Kubernetes-native artifact repository (Maven, npm, Cargo, Go, PyPI) with proxy caching and supply-chain controls (age policy, package approval, vulnerability scanning)
 
@@ -45,7 +45,7 @@ helm install forklift oci://ghcr.io/younsl/charts/forklift -f values.yaml
 Install a specific version:
 
 ```console
-helm install forklift oci://ghcr.io/younsl/charts/forklift --version 0.17.0
+helm install forklift oci://ghcr.io/younsl/charts/forklift --version 0.18.0
 ```
 
 ### Install from local chart
@@ -53,7 +53,7 @@ helm install forklift oci://ghcr.io/younsl/charts/forklift --version 0.17.0
 Download forklift chart and install from local directory:
 
 ```console
-helm pull oci://ghcr.io/younsl/charts/forklift --untar --version 0.17.0
+helm pull oci://ghcr.io/younsl/charts/forklift --untar --version 0.18.0
 helm install forklift ./forklift
 ```
 
@@ -109,7 +109,9 @@ The following table lists the configurable parameters and their default values.
 | storage.s3.region | string | `""` | AWS region. Empty uses the AWS default chain. |
 | storage.s3.endpoint | string | `""` | S3-compatible endpoint. Defaults to the bundled SeaweedFS. |
 | storage.s3.forcePathStyle | bool | `false` | Path-style addressing. Forced on with bundled SeaweedFS. |
-| storage.s3.metaSyncInterval | string | `"30s"` | Metadata snapshot sync cadence; the bounded data-loss window on failover. |
+| storage.s3.metaSyncInterval | string | `"30s"` | Standby poll cadence, and in snapshot mode the upload cadence and failover data-loss window (plus up to 15m of pacing for a large snapshot). In wal mode the leader ships every 5s. |
+| storage.s3.metaSyncMode | string | `"wal"` | How the leader publishes metadata: wal (append-only WAL segments on a base copy) or snapshot (a whole snapshot per change). Readers follow either, so it can change between terms. |
+| storage.s3.metaCompression | string | `"zstd"` | Metadata snapshot upload encoding: zstd or none. Readers accept both. Set none and let one upload finish before rolling back to a forklift without this setting. |
 | storage.s3.existingSecret | string | `""` | Secret with access-key-id, secret-access-key, optional admin-token. Empty uses IRSA/Pod Identity. |
 | storage.s3.provider | string | `""` | Store for admin metrics: aws, minio, rustfs, seaweedfs, garage or generic. Empty auto-detects. |
 | storage.s3.adminEndpoint | string | `""` | Admin API URL when not the S3 endpoint (SeaweedFS master, Garage admin). |
@@ -170,6 +172,7 @@ The following table lists the configurable parameters and their default values.
 | auth.rbac.accounts | list | `[]` | Declarative local accounts. Passwords are set here or generated into the chart Secret (key: local-user-<name>-password). |
 | audit.enabled | bool | `true` | Enable the audit log. |
 | audit.retention | string | `"2160h"` | Retention period; the leader prunes older entries. "0" keeps them forever. |
+| audit.downloadRetention | string | `"168h"` | Shorter retention for artifact download entries, except refused (401, 403) ones. Artifact download counts come from daily totals and are unaffected. "0", or a value not below `retention`, applies `retention`. |
 | uiUpload.enabled | bool | `true` | Enable component-aware artifact upload through the management API and web UI. |
 | uiUpload.maxDuration | string | `"30m"` | Maximum wall-clock duration of one upload request. |
 | uiUpload.maxConcurrent | int | `4` | Maximum process-wide concurrent upload requests. |

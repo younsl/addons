@@ -4,6 +4,15 @@ Notable changes per release. Container image versions come from the
 `org.opencontainers.image.version` label in the `Dockerfile`; chart versions from
 `charts/forklift/Chart.yaml`.
 
+## 0.18.0 (2026-10-21)
+
+### Changed
+
+- The s3-mode metadata snapshot is compressed with zstd before upload (`FORKLIFT_STORAGE_META_COMPRESSION`, chart `storage.s3.metaCompression`, default `zstd`). Readers detect the encoding from the leading bytes, so boot restore, standby download, promotion and the storage migration accept a plain or compressed object. New gauge `forklift_objstore_meta_database_bytes` reports the uncompressed size next to `forklift_objstore_meta_snapshot_bytes`.
+- In `snapshot` sync mode the leader paces uploads to about 4 GiB an hour: after an upload of N bytes the next waits N / 4 GiB hours, at most 15 minutes, and skipped cycles count as `forklift_objstore_meta_uploads_total{result="deferred"}`. Small databases are unaffected, and the final upload on demotion or shutdown is never deferred.
+- Artifact download entries leave the audit log after 7 days (`FORKLIFT_AUDIT_DOWNLOAD_RETENTION`, chart `audit.downloadRetention`, default `168h`), while refused downloads (401, 403) and every other entry keep `FORKLIFT_AUDIT_RETENTION`. Artifact download counts now come from a per-day table (`artifact_download_daily`, whole UTC days) that the leader backfills from existing entries in the background on upgrade before pruning, then drops the `idx_audit_artifact_downloads` index. Audit pruning deletes in batches of 5,000 rows.
+- The s3 backend ships metadata changes as WAL segments instead of re-uploading the database (`FORKLIFT_STORAGE_META_SYNC_MODE`, chart `storage.s3.metaSyncMode`, default `wal`). Every 5 seconds the leader reads committed WAL frames, validated like SQLite recovery, and appends them under `meta/wal/<generation>/` as new keys, so nothing is overwritten between rotations. A generation's base (a copy of the database file taken right after a checkpoint only the leader runs) replaces the snapshot key only when its segments outgrow it. On SeaweedFS the snapshot overwrites had left gigabytes of garbage between vacuums and swung the data volume by about 20 GiB in business hours. Standbys replay segments onto the base and check `quick_check` before boot and promotion, which fail closed. Every term starts its own generation and fencing covers both the base and the segments. The failover data-loss window drops from the sync interval to about 5 seconds. `snapshot` mode keeps the previous behavior, readers follow either layout, and the storage migration rebuilds base and segments into one file. Before rolling back below 0.18.0, set `metaSyncMode: snapshot` and `metaCompression: none` and let one upload finish. New metrics `forklift_objstore_meta_wal_segments_total`, `forklift_objstore_meta_wal_rotations_total` and `forklift_objstore_meta_wal_pending_bytes`. See `docs/designs/wal-shipping.md`.
+
 ## 0.17.0 (2026-10-21)
 
 ### Added

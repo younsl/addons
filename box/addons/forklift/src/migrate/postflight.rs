@@ -363,8 +363,10 @@ async fn hash_blob(dst: &Endpoint, digest: &str) -> crate::storage::Result<(Stri
 
 async fn source_unchanged(src: &Endpoint, snap: &StagedSnapshot) -> Check {
     let started = Instant::now();
-    let check = match src.objects.head_object(&src.bucket, &src.meta_key).await {
-        Ok(head) if head.e_tag == snap.etag => Check::pass(
+    let current =
+        crate::objstore::metadata_version(src.objects.as_ref(), &src.bucket, &src.meta_key).await;
+    let check = match current {
+        Ok(Some(v)) if v == snap.version => Check::pass(
             "source-unchanged",
             "source snapshot ETag unchanged since preflight",
         ),

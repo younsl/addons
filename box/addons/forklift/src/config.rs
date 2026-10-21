@@ -165,8 +165,24 @@ pub struct StorageConfig {
     /// standbys download it. Writes within one interval can be lost on
     /// failover (asynchronous, like PV replication).
     pub meta_sync_interval: Duration,
+    /// How the leader encodes the metadata snapshot it uploads: "none" or
+    /// "zstd". Readers accept either, whatever this is set to.
+    pub meta_compression: String,
+    /// How the leader publishes metadata changes: "wal" (append-only WAL
+    /// segments on a base copy) or "snapshot" (a whole snapshot per change).
+    /// Readers follow either.
+    pub meta_sync_mode: String,
     /// S3 connection settings, used only when `backend` is "s3".
     pub s3: S3Config,
+}
+
+impl StorageConfig {
+    /// Whether the metadata store hands every checkpoint to WAL shipping.
+    pub fn manual_checkpoint(&self) -> bool {
+        self.backend == "s3"
+            && crate::objstore::SyncMode::parse(&self.meta_sync_mode)
+                == Some(crate::objstore::SyncMode::Wal)
+    }
 }
 
 /// Configures the S3 backend. Empty region/credentials fall back to the AWS
@@ -330,6 +346,11 @@ pub struct AuditConfig {
     /// How long audit entries are kept before the leader prunes them. Zero
     /// disables pruning (keep forever).
     pub retention: Duration,
+    /// A shorter retention for artifact download entries, the bulk of the
+    /// log. Refused requests (401, 403) keep `retention`, since the security
+    /// insights read them. Zero, or a value not below a non-zero `retention`,
+    /// leaves downloads to `retention`.
+    pub download_retention: Duration,
 }
 
 /// Configures the periodic security insight analysis.
@@ -393,6 +414,8 @@ impl Config {
                     "FORKLIFT_STORAGE_META_SYNC_INTERVAL",
                     30 * SECOND,
                 ),
+                meta_compression: env("FORKLIFT_STORAGE_META_COMPRESSION", "zstd"),
+                meta_sync_mode: env("FORKLIFT_STORAGE_META_SYNC_MODE", "wal"),
                 s3: S3Config {
                     bucket: env("FORKLIFT_STORAGE_S3_BUCKET", ""),
                     prefix: env("FORKLIFT_STORAGE_S3_PREFIX", ""),
@@ -462,6 +485,10 @@ impl Config {
             audit: AuditConfig {
                 enabled: env_bool("FORKLIFT_AUDIT_ENABLED", true),
                 retention: env_duration("FORKLIFT_AUDIT_RETENTION", 90 * 24 * HOUR),
+                download_retention: env_duration(
+                    "FORKLIFT_AUDIT_DOWNLOAD_RETENTION",
+                    7 * 24 * HOUR,
+                ),
             },
             insights: InsightsConfig {
                 enabled: env_bool("FORKLIFT_INSIGHTS_ENABLED", true),
@@ -543,6 +570,18 @@ impl Config {
                 }
                 if self.storage.meta_sync_interval.is_zero() {
                     return invalid("storage meta sync interval must be positive".into());
+                }
+                if crate::objstore::SyncMode::parse(&self.storage.meta_sync_mode).is_none() {
+                    return invalid(format!(
+                        "invalid storage meta sync mode {:?} (want wal or snapshot)",
+                        self.storage.meta_sync_mode
+                    ));
+                }
+                if crate::objstore::Compression::parse(&self.storage.meta_compression).is_none() {
+                    return invalid(format!(
+                        "invalid storage meta compression {:?} (want none or zstd)",
+                        self.storage.meta_compression
+                    ));
                 }
                 // The metadata database is only asynchronously durable here, so it
                 // can move backwards by up to one sync interval on failover.
@@ -1163,6 +1202,58 @@ pub(crate) mod tests {
         assert_eq!(c.storage.s3.effective_provider(), "garage");
         assert_eq!(c.storage.s3.admin_endpoint, "http://store:3903");
         assert_eq!(c.storage.s3.admin_token, "t");
+    }
+
+    #[test]
+    #[serial]
+    fn storage_meta_compression_loads_and_validates() {
+        let mut g = EnvGuard::new();
+        g.set("FORKLIFT_STORAGE_BACKEND", "s3");
+        g.set("FORKLIFT_STORAGE_S3_BUCKET", "b");
+        assert_eq!(Config::load().unwrap().storage.meta_compression, "zstd");
+        g.set("FORKLIFT_STORAGE_META_COMPRESSION", "none");
+        assert_eq!(Config::load().unwrap().storage.meta_compression, "none");
+        g.set("FORKLIFT_STORAGE_META_COMPRESSION", "gzip");
+        let err = Config::load().unwrap_err();
+        assert!(err.to_string().contains("gzip"), "err = {err}");
+    }
+
+    #[test]
+    #[serial]
+    fn storage_meta_sync_mode_loads_and_validates() {
+        let mut g = EnvGuard::new();
+        g.set("FORKLIFT_STORAGE_BACKEND", "s3");
+        g.set("FORKLIFT_STORAGE_S3_BUCKET", "b");
+        let c = Config::load().unwrap();
+        assert_eq!(c.storage.meta_sync_mode, "wal");
+        assert!(c.storage.manual_checkpoint());
+        g.set("FORKLIFT_STORAGE_META_SYNC_MODE", "snapshot");
+        assert!(!Config::load().unwrap().storage.manual_checkpoint());
+        g.set("FORKLIFT_STORAGE_META_SYNC_MODE", "rsync");
+        let err = Config::load().unwrap_err();
+        assert!(err.to_string().contains("rsync"), "err = {err}");
+        g.set("FORKLIFT_STORAGE_META_SYNC_MODE", "wal");
+        g.set("FORKLIFT_STORAGE_BACKEND", "fs");
+        assert!(
+            !Config::load().unwrap().storage.manual_checkpoint(),
+            "fs never ships"
+        );
+    }
+
+    #[test]
+    #[serial]
+    fn audit_download_retention_loads() {
+        let mut g = EnvGuard::new();
+        let c = Config::load().unwrap();
+        assert_eq!(c.audit.download_retention, Duration::from_hours(7 * 24));
+        g.set("FORKLIFT_AUDIT_DOWNLOAD_RETENTION", "0");
+        assert!(Config::load().unwrap().audit.download_retention.is_zero());
+        g.set("FORKLIFT_AUDIT_DOWNLOAD_RETENTION", "720h");
+        g.set("FORKLIFT_AUDIT_RETENTION", "24h");
+        assert!(
+            Config::load().is_ok(),
+            "a longer download retention is not an error"
+        );
     }
 
     #[test]
