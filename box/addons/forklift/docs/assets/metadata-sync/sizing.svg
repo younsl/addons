@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 300" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">
+  <rect width="880" height="300" fill="#0a0a0a"/>
+  <text x="24" y="34" fill="#ededed" font-size="13">sizing per pod</text>
+  <text x="24" y="54" fill="#6e6e6e" font-size="11">D = SQLite database size</text>
+
+  <!-- emptyDir bar -->
+  <text x="24" y="92" fill="#ededed" font-size="12">emptyDir</text>
+  <text x="856" y="92" fill="#ededed" font-size="12" text-anchor="end">about 2.2 D at peak</text>
+  <g>
+    <rect x="24" y="104" width="360" height="30" rx="4" fill="#ededed"/>
+    <text x="36" y="124" fill="#0a0a0a" font-size="11">live db  D</text>
+    <rect x="388" y="104" width="360" height="30" rx="4" fill="#161616" stroke="#8b8b8b" stroke-dasharray="4 3"/>
+    <text x="400" y="124" fill="#8b8b8b" font-size="11">base or replica copy  D</text>
+    <rect x="752" y="104" width="104" height="30" rx="4" fill="#161616" stroke="#3a3a3a"/>
+    <text x="764" y="124" fill="#8b8b8b" font-size="11">zstd ~0.15 D</text>
+  </g>
+  <text x="24" y="156" fill="#6e6e6e" font-size="10">the copy exists while a generation starts (leader) or a base downloads (standby, boot)</text>
+
+  <!-- memory -->
+  <text x="24" y="196" fill="#ededed" font-size="12">memory</text>
+  <text x="856" y="196" fill="#ededed" font-size="12" text-anchor="end">about 64 MiB for shipping</text>
+  <g>
+    <rect x="24" y="208" width="140" height="30" rx="4" fill="#ededed"/>
+    <text x="36" y="228" fill="#0a0a0a" font-size="11">capture 16 MiB</text>
+    <rect x="168" y="208" width="140" height="30" rx="4" fill="#161616" stroke="#8b8b8b"/>
+    <text x="180" y="228" fill="#8b8b8b" font-size="11">encode 16 MiB</text>
+    <rect x="312" y="208" width="280" height="30" rx="4" fill="#161616" stroke="#3a3a3a"/>
+    <text x="324" y="228" fill="#8b8b8b" font-size="11">unshipped segments up to 32 MiB</text>
+  </g>
+  <text x="24" y="260" fill="#6e6e6e" font-size="10">past 32 MiB unshipped (bucket down) the generation is replaced by a new base instead of growing</text>
+  <text x="24" y="280" fill="#6e6e6e" font-size="10">boot time grows with D: keep failureThreshold x periodSeconds above it with margin</text>
+</svg>

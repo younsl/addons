@@ -40,7 +40,7 @@ All settings are environment variables (the Helm chart maps values to them).
 
 `forklift migrate-storage` additionally reads the target from `FORKLIFT_MIGRATE_TO_S3_BUCKET`, `_PREFIX`, `_REGION`, `_ENDPOINT`, `_FORCE_PATH_STYLE`, `_ACCESS_KEY_ID`, `_SECRET_ACCESS_KEY`, `_CREATE_BUCKET`, `_PROVIDER`, `_ADMIN_ENDPOINT` and `_ADMIN_TOKEN`. See [Storage migration](storage-migration.md).
 | `FORKLIFT_STORAGE_META_SYNC_INTERVAL` | `30s` | s3-mode standby poll cadence; must stay shorter than the fixed 24h blob GC grace period. In `snapshot` mode it is also the upload cadence (failover data-loss window), and uploads are paced to about 4 GiB an hour, so after a large upload the next one can wait up to 15m. In `wal` mode the leader ships every 5s |
-| `FORKLIFT_STORAGE_META_SYNC_MODE` | `wal` | s3-mode metadata publishing: `wal` ships committed WAL frames as append-only segments on a base copy (see `docs/designs/wal-shipping.md`), `snapshot` uploads a whole snapshot per change. Readers follow either, so it can change between terms |
+| `FORKLIFT_STORAGE_META_SYNC_MODE` | `wal` | s3-mode metadata publishing: `wal` ships committed WAL frames as append-only segments on a base copy (see [Metadata sync](metadata-sync.md)), `snapshot` uploads a whole snapshot per change. Readers follow either, so it can change between terms |
 | `FORKLIFT_STORAGE_META_COMPRESSION` | `zstd` | s3-mode snapshot and base upload encoding, `zstd` or `none`. Readers detect the encoding. Before rolling back below 0.18.0, set `none` and `FORKLIFT_STORAGE_META_SYNC_MODE=snapshot` and let one upload complete, or the older version cannot restore the metadata |
 | `FORKLIFT_HTTP_ADDR` | `:8080` | API, UI and package endpoints |
 | `FORKLIFT_METRICS_ADDR` | `:8081` | Prometheus metrics |

@@ -44,6 +44,7 @@ Everything below lives in [docs/](docs/), ordered from getting forklift running 
 - [Installation](docs/installation.md): chart install for the three storage layouts, S3/IRSA setup, chart versions
 - [Configuration](docs/configuration.md): every `FORKLIFT_*` environment variable and its default
 - [Architecture](docs/architecture.md): process layout, HA modes, failover and data-loss windows
+- [Metadata sync](docs/metadata-sync.md): s3 backend metadata modes, sizing, alerts and troubleshooting
 - [Usage](docs/usage.md): creating repositories, client wiring, group repositories, artifact upload
 - [Access control](docs/access-control.md): roles, actions, OIDC group mapping, declarative RBAC, token scopes
 - [Security policies](docs/security-policies.md): approval, version denies, vulnerability (OSV) and license (deps.dev) gates

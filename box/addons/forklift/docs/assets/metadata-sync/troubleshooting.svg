@@ -1,0 +1,79 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 420" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#6e6e6e"/>
+    </marker>
+  </defs>
+  <rect width="880" height="420" fill="#0a0a0a"/>
+  <g fill="#6e6e6e" font-size="11">
+    <text x="24" y="34">symptom</text>
+    <text x="318" y="34">check</text>
+    <text x="612" y="34">action</text>
+  </g>
+
+  <g font-size="11">
+    <!-- row 1 -->
+    <rect x="24" y="48" width="260" height="76" rx="6" fill="#111111" stroke="#ededed"/>
+    <text x="38" y="72" fill="#ededed">new generation every</text>
+    <text x="38" y="88" fill="#ededed">few minutes, base</text>
+    <text x="38" y="104" fill="#ededed">re-uploaded</text>
+    <rect x="318" y="48" width="260" height="76" rx="6" fill="#111111" stroke="#2a2a2a"/>
+    <text x="332" y="72" fill="#8b8b8b">log "generation abandoned"</text>
+    <text x="332" y="88" fill="#8b8b8b">field why, and "started wal</text>
+    <text x="332" y="104" fill="#8b8b8b">generation" field reason</text>
+    <rect x="612" y="48" width="244" height="76" rx="6" fill="#111111" stroke="#2a2a2a"/>
+    <text x="626" y="72" fill="#8b8b8b">act on the reason. To stop</text>
+    <text x="626" y="88" fill="#8b8b8b">it now, metaSyncMode:</text>
+    <text x="626" y="104" fill="#8b8b8b">snapshot</text>
+
+    <!-- row 2 -->
+    <rect x="24" y="140" width="260" height="76" rx="6" fill="#111111" stroke="#ededed"/>
+    <text x="38" y="164" fill="#ededed">new pod never Ready,</text>
+    <text x="38" y="180" fill="#ededed">startup probe refused</text>
+    <rect x="318" y="140" width="260" height="76" rx="6" fill="#111111" stroke="#2a2a2a"/>
+    <text x="332" y="164" fill="#8b8b8b">last log line is the memory</text>
+    <text x="332" y="180" fill="#8b8b8b">budget, disk writes rising:</text>
+    <text x="332" y="196" fill="#8b8b8b">still restoring</text>
+    <rect x="612" y="140" width="244" height="76" rx="6" fill="#111111" stroke="#2a2a2a"/>
+    <text x="626" y="164" fill="#8b8b8b">raise startupProbe</text>
+    <text x="626" y="180" fill="#8b8b8b">failureThreshold above</text>
+    <text x="626" y="196" fill="#8b8b8b">the boot time</text>
+
+    <!-- row 3 -->
+    <rect x="24" y="232" width="260" height="76" rx="6" fill="#111111" stroke="#ededed"/>
+    <text x="38" y="256" fill="#ededed">wal_pending_bytes keeps</text>
+    <text x="38" y="272" fill="#ededed">rising</text>
+    <rect x="318" y="232" width="260" height="76" rx="6" fill="#111111" stroke="#2a2a2a"/>
+    <text x="332" y="256" fill="#8b8b8b">bucket reachability,</text>
+    <text x="332" y="272" fill="#8b8b8b">wal_segments_total</text>
+    <text x="332" y="288" fill="#8b8b8b">result="error"</text>
+    <rect x="612" y="232" width="244" height="76" rx="6" fill="#111111" stroke="#2a2a2a"/>
+    <text x="626" y="256" fill="#8b8b8b">restore the bucket. Past</text>
+    <text x="626" y="272" fill="#8b8b8b">32 MiB a new base takes</text>
+    <text x="626" y="288" fill="#8b8b8b">over on its own</text>
+
+    <!-- row 4 -->
+    <rect x="24" y="324" width="260" height="76" rx="6" fill="#111111" stroke="#ededed"/>
+    <text x="38" y="348" fill="#ededed">promotion fails with</text>
+    <text x="38" y="364" fill="#ededed">"missing a segment"</text>
+    <rect x="318" y="324" width="260" height="76" rx="6" fill="#111111" stroke="#2a2a2a"/>
+    <text x="332" y="348" fill="#8b8b8b">segment keys under</text>
+    <text x="332" y="364" fill="#8b8b8b">meta/wal/&lt;generation&gt;/</text>
+    <text x="332" y="380" fill="#8b8b8b">are not contiguous</text>
+    <rect x="612" y="324" width="244" height="76" rx="6" fill="#111111" stroke="#2a2a2a"/>
+    <text x="626" y="348" fill="#8b8b8b">during a rotation: wait.</text>
+    <text x="626" y="364" fill="#8b8b8b">deleted by hand: remove the</text>
+    <text x="626" y="380" fill="#8b8b8b">rest, base restores alone</text>
+  </g>
+
+  <g stroke="#6e6e6e" stroke-width="1.2" fill="none" marker-end="url(#arrow)">
+    <path d="M 284 86 H 316"/>
+    <path d="M 578 86 H 610"/>
+    <path d="M 284 178 H 316"/>
+    <path d="M 578 178 H 610"/>
+    <path d="M 284 270 H 316"/>
+    <path d="M 578 270 H 610"/>
+    <path d="M 284 362 H 316"/>
+    <path d="M 578 362 H 610"/>
+  </g>
+</svg>

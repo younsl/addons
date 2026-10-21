@@ -4,6 +4,8 @@
 | --- | --- |
 | implemented in 0.18.0 | storage |
 
+Operating guide: [Metadata sync](../metadata-sync.md).
+
 The s3 backend publishes metadata changes as append-only WAL segments on top of a base copy of the SQLite file, instead of re-uploading the whole database on every change.
 
 ## Why

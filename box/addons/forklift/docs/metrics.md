@@ -625,8 +625,8 @@ minutes) before the next, and counts the cycles it skips as
 deferred.
 
 In `wal` mode the snapshot key holds a generation's base, replaced only when
-the generation rotates, and changes ship as WAL segments
-(`docs/designs/wal-shipping.md`).
+the generation rotates, and changes ship as WAL segments. Alerts and
+troubleshooting: [Metadata sync](metadata-sync.md).
 
 | Metric | Type | Labels | Meaning |
 | --- | --- | --- | --- |
