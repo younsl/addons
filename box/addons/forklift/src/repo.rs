@@ -275,7 +275,11 @@ impl Engine {
                 "Age policy violations.",
                 &["repo", "action"],
             ),
-            upstream_err: counter_vec("upstream_errors_total", "Upstream fetch errors.", &["repo"]),
+            upstream_err: counter_vec(
+                "upstream_errors_total",
+                "Upstream fetch errors, by reason (timeout, connect, transport, blocked, status, rate_limited).",
+                &["repo", "reason"],
+            ),
             upstream_dur: histogram_vec(
                 "upstream_request_duration_seconds",
                 "Upstream fetch latency to first response byte, per proxy repository.",
@@ -351,12 +355,19 @@ impl Engine {
             Box::new(e.gate_queued.clone()),
             Box::new(e.gate_capacity.clone()),
             Box::new(e.render_cache_ops.clone()),
+            Box::new(e.flight.collector()),
         ] {
             if let Err(err) = registry.register(c) {
                 tracing::error!(err = %err, "engine metric registration failed");
             }
         }
         Arc::new(e)
+    }
+
+    pub(crate) fn upstream_failed(&self, repo: &str, reason: UpstreamFailure) {
+        self.upstream_err
+            .with_label_values(&[repo, reason.as_str()])
+            .inc();
     }
 
     /// The engine clock. Tests swap it with [`Engine::set_now`].
@@ -541,9 +552,7 @@ impl Engine {
         let resp = match self.upstream_get(&spec).await {
             Ok(resp) => resp,
             Err(err) => {
-                self.upstream_err
-                    .with_label_values(&[&spec.repo.name])
-                    .inc();
+                self.upstream_failed(&spec.repo.name, err.failure());
                 tracing::error!(
                     repo = %spec.repo.name, url = %spec.upstream_url, err = %err,
                     "upstream fetch failed"
@@ -563,9 +572,7 @@ impl Engine {
         if status == StatusCode::TOO_MANY_REQUESTS || status == StatusCode::SERVICE_UNAVAILABLE {
             let d = parse_retry_after(header_str(resp.headers(), "Retry-After"), self.now());
             self.cool.set(key, d);
-            self.upstream_err
-                .with_label_values(&[&spec.repo.name])
-                .inc();
+            self.upstream_failed(&spec.repo.name, UpstreamFailure::RateLimited);
             tracing::warn!(
                 repo = %spec.repo.name, url = %spec.upstream_url, status = status.as_u16(),
                 cooldown = %humantime::format_duration(d),
@@ -578,9 +585,7 @@ impl Engine {
             };
         }
         if !status.is_success() {
-            self.upstream_err
-                .with_label_values(&[&spec.repo.name])
-                .inc();
+            self.upstream_failed(&spec.repo.name, UpstreamFailure::Status);
             tracing::error!(
                 repo = %spec.repo.name, url = %spec.upstream_url, status = status.as_u16(),
                 "upstream non-2xx"
@@ -630,9 +635,7 @@ impl Engine {
         let resp = match self.upstream_get(&spec).await {
             Ok(resp) => resp,
             Err(err) => {
-                self.upstream_err
-                    .with_label_values(&[&spec.repo.name])
-                    .inc();
+                self.upstream_failed(&spec.repo.name, err.failure());
                 tracing::error!(
                     repo = %spec.repo.name, url = %spec.upstream_url, err = %err,
                     "upstream fetch failed"
@@ -648,9 +651,7 @@ impl Engine {
         if status == StatusCode::TOO_MANY_REQUESTS || status == StatusCode::SERVICE_UNAVAILABLE {
             let d = parse_retry_after(header_str(resp.headers(), "Retry-After"), self.now());
             self.cool.set(key, d);
-            self.upstream_err
-                .with_label_values(&[&spec.repo.name])
-                .inc();
+            self.upstream_failed(&spec.repo.name, UpstreamFailure::RateLimited);
             tracing::warn!(
                 repo = %spec.repo.name, url = %spec.upstream_url, status = status.as_u16(),
                 cooldown = %humantime::format_duration(d),
@@ -659,9 +660,7 @@ impl Engine {
             return self.write_retry(status, &retry_after_seconds(d));
         }
         if !status.is_success() {
-            self.upstream_err
-                .with_label_values(&[&spec.repo.name])
-                .inc();
+            self.upstream_failed(&spec.repo.name, UpstreamFailure::Status);
             tracing::error!(
                 repo = %spec.repo.name, url = %spec.upstream_url, status = status.as_u16(),
                 "upstream non-2xx"
@@ -1300,6 +1299,57 @@ pub(crate) enum UpstreamError {
     Url(String),
 }
 
+impl UpstreamError {
+    pub(crate) fn failure(&self) -> UpstreamFailure {
+        match self {
+            Self::Http(e) => UpstreamFailure::of(e),
+            Self::Blocked(_) => UpstreamFailure::Blocked,
+            Self::Url(_) => UpstreamFailure::Transport,
+        }
+    }
+}
+
+/// The `reason` label of `forklift_upstream_errors_total`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum UpstreamFailure {
+    /// The upstream client timeout elapsed before the response headers arrived.
+    Timeout,
+    /// DNS resolution, TCP connect, or the TLS handshake failed.
+    Connect,
+    /// Any other failure before a response: a reset connection, a protocol
+    /// error, or an unusable URL.
+    Transport,
+    /// A client-supplied URL resolved to a non-public destination.
+    Blocked,
+    /// The upstream answered with a non-2xx status other than 404, 429 or 503.
+    Status,
+    /// The upstream answered 429 or 503 and the repository is cooling down.
+    RateLimited,
+}
+
+impl UpstreamFailure {
+    pub(crate) fn of(e: &reqwest::Error) -> Self {
+        if e.is_timeout() {
+            Self::Timeout
+        } else if e.is_connect() {
+            Self::Connect
+        } else {
+            Self::Transport
+        }
+    }
+
+    pub(crate) const fn as_str(self) -> &'static str {
+        match self {
+            Self::Timeout => "timeout",
+            Self::Connect => "connect",
+            Self::Transport => "transport",
+            Self::Blocked => "blocked",
+            Self::Status => "status",
+            Self::RateLimited => "rate_limited",
+        }
+    }
+}
+
 /// Failures from writing an artifact into the blob store and metadata database.
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum StoreError {
@@ -1592,6 +1642,83 @@ pub(crate) mod tests {
             let resp = call(&app, Method::HEAD, path, "").await;
             assert_eq!(resp.status, StatusCode::OK, "head");
             assert!(resp.body.is_empty(), "head body = {:?}", resp.text());
+        }
+
+        #[tokio::test]
+        async fn upstream_errors_carry_reason() {
+            let upstream = spawn_upstream(
+                Router::new().fallback(|| async { (StatusCode::INTERNAL_SERVER_ERROR, "boom") }),
+            )
+            .await;
+            let tm = new_test_manager().await;
+            mk_repo(
+                &tm.store,
+                "bad",
+                meta::TYPE_PROXY,
+                &upstream,
+                repoconfig::default(),
+            )
+            .await;
+            mk_repo(
+                &tm.store,
+                "down",
+                meta::TYPE_PROXY,
+                "http://127.0.0.1:1",
+                repoconfig::default(),
+            )
+            .await;
+            let app = mux(&tm.manager);
+
+            let resp = call(&app, Method::GET, "/maven/bad/g/a/1/a-1.jar", "").await;
+            assert_eq!(resp.status, StatusCode::BAD_GATEWAY, "non-2xx upstream");
+            let resp = call(&app, Method::GET, "/maven/down/g/a/1/a-1.jar", "").await;
+            assert_eq!(resp.status, StatusCode::BAD_GATEWAY, "unreachable upstream");
+
+            let errors = |repo: &str, reason: &str| {
+                tm.engine
+                    .upstream_err
+                    .with_label_values(&[repo, reason])
+                    .get()
+            };
+            assert_eq!(errors("bad", "status"), 1.0, "bad/status");
+            assert_eq!(errors("down", "connect"), 1.0, "down/connect");
+        }
+
+        #[tokio::test]
+        async fn repository_requests_count_known_repositories_only() {
+            let upstream = spawn_upstream(Router::new().fallback(|| async { "BODY" })).await;
+            let tm = new_test_manager().await;
+            mk_repo(
+                &tm.store,
+                "p",
+                meta::TYPE_PROXY,
+                &upstream,
+                repoconfig::default(),
+            )
+            .await;
+            let app = mux(&tm.manager);
+
+            call(&app, Method::GET, "/maven/p/g/a/1/a-1.jar", "").await;
+            let resp = call(&app, Method::GET, "/maven/p/g/a/1/a-1.jar", "").await;
+            assert_eq!(resp.status, StatusCode::OK, "known repo");
+            let resp = call(&app, Method::GET, "/maven/nope/g/a/1/a-1.jar", "").await;
+            assert_eq!(resp.status, StatusCode::NOT_FOUND, "unknown repo");
+            let resp = call(&app, Method::GET, "/npm/p/left-pad", "").await;
+            assert_eq!(resp.status, StatusCode::NOT_FOUND, "format mismatch");
+
+            assert_eq!(
+                tm.manager
+                    .repo_requests
+                    .with_label_values(&["p", "200"])
+                    .get(),
+                2.0,
+                "p/200"
+            );
+            let series: usize = prometheus::core::Collector::collect(&tm.manager.repo_requests)
+                .iter()
+                .map(|mf| mf.get_metric().len())
+                .sum();
+            assert_eq!(series, 1, "unknown names must not create series");
         }
 
         /// Hosted repositories are authoritative: a stored artifact must be served

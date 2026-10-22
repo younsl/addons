@@ -152,16 +152,19 @@ impl Manager {
             accept: PYPI_JSON_TYPE.to_string(),
             ..FetchSpec::blank()
         };
-        let Ok(resp) = e.upstream_get(&spec).await else {
-            e.upstream_err.with_label_values(&[&res.repo.name]).inc();
-            return http_error(StatusCode::BAD_GATEWAY, "upstream unreachable");
+        let resp = match e.upstream_get(&spec).await {
+            Ok(resp) => resp,
+            Err(err) => {
+                e.upstream_failed(&res.repo.name, err.failure());
+                return http_error(StatusCode::BAD_GATEWAY, "upstream unreachable");
+            }
         };
         if resp.status() == StatusCode::NOT_FOUND {
             e.neg.set(&neg_key, res.cfg.cache.negative_ttl.d());
             return not_found();
         }
         if !resp.status().is_success() {
-            e.upstream_err.with_label_values(&[&res.repo.name]).inc();
+            e.upstream_failed(&res.repo.name, super::UpstreamFailure::Status);
             return http_error(StatusCode::BAD_GATEWAY, "upstream error");
         }
 

@@ -6,11 +6,22 @@ Notable changes per release. Container image versions come from the
 
 ## 0.18.1 (2026-10-22)
 
+### Added
+
+- `forklift_repository_requests_total{repo,code}` counts package protocol responses per repository and numeric status code. `forklift_http_requests_total` only carries the route pattern and a reason phrase, so a 5xx alert could not say which repository was failing. Requests naming no existing repository are not counted, so clients cannot grow the label set.
+- `forklift_upstream_fetches_inflight` and `forklift_upstream_fetch_oldest_seconds` report the coalesced upstream fetches in flight and the age of the oldest one. A fetch ends within the 60 second upstream timeout, so an oldest age above about 90 seconds means a stuck fetch.
+
+### Changed
+
+- `forklift_upstream_errors_total` gains a `reason` label (`timeout`, `connect`, `transport`, `blocked`, `status`, `rate_limited`), so a network fault can be told from an upstream that answers errors. Queries that aggregate with `sum by (repo)` keep working.
+
 ### Fixed
 
 - Artifact label add and remove no longer wait behind audit pruning. After the 0.18.0 upgrade the leader prunes every download entry older than 7 days, and on a 5 GB database with a cold page cache each 5,000-row batch held the single write connection for about 11 seconds, back to back, so a label change averaged 11.7 seconds and some hit the ingress timeout. Prune batches now size themselves to hold the write connection for about 200 ms (100 to 5,000 rows), pause 100 ms between batches, and wait (at most 5 seconds) while other writes are queued. The download backfill waits the same way.
 - Download pruning walks audit ids forward from the previous batch instead of restarting at the oldest entry, so the refused downloads and other events it keeps are read once per run rather than once per batch. An entry recorded out of id order is pruned on a later run.
 - A management API mutation (any method other than GET, HEAD, OPTIONS or TRACE under `/api/v1`) waits at most 5 seconds for the write connection and is answered `503` with `Retry-After: 5` instead of queueing until the client gives up. The console shows the message. Reads and the package protocols are unchanged.
+- A proxy artifact whose first fetch was abandoned by its client no longer answers `502` until the pod restarts. Concurrent fetches of the same artifact are coalesced, and the coalescing entry was removed by the request that started the fetch. When that client disconnected first (a `go mod download` burst during an upstream timeout), the entry stayed behind and every later request for the artifact got an immediate `502` with no log line and no upstream attempt. The fetch task now removes its own entry and publishes its result, so waiters receive the outcome and the next request fetches again.
+- The `docs/metrics.md` 5xx ratio example matched `status=~"5.."`, which selects nothing because `status` holds reason phrases. It now matches the phrases and excludes the probe routes.
 
 ## 0.18.0 (2026-10-21)
 

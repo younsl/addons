@@ -110,6 +110,7 @@ pub struct Manager {
     pub(crate) license_resolves: CounterVec,
     pub(crate) ip_blocked: CounterVec,
     pub(crate) oci_prune_deleted: CounterVec,
+    pub(crate) repo_requests: CounterVec,
 
     /// OCI push/pull state: the upload-session byte directory (shared across
     /// replicas, see `oci_push.rs`), size caps, and the upstream bearer-token
@@ -236,6 +237,11 @@ impl Manager {
                 "OCI artifact rows deleted by the reachability prune (untagged manifests, unreferenced blobs).",
                 &["repo"],
             ),
+            repo_requests: counter_vec(
+                "repository_requests_total",
+                "Package protocol responses per repository and numeric status code; requests naming no existing repository are not counted.",
+                &["repo", "code"],
+            ),
             oci_upload_dir: parking_lot::RwLock::new(String::new()),
             oci_max_manifest_bytes: AtomicI64::new(0),
             oci_max_blob_bytes: AtomicI64::new(0),
@@ -261,6 +267,7 @@ impl Manager {
                 Box::new(m.license_resolves.clone()),
                 Box::new(m.ip_blocked.clone()),
                 Box::new(m.oci_prune_deleted.clone()),
+                Box::new(m.repo_requests.clone()),
                 Box::new(m.scan_ratio_served.clone()),
                 Box::new(m.scan_ratio_cost.clone()),
             ] {
@@ -439,7 +446,15 @@ impl Manager {
     /// audit logging outermost (so a group request is audited once, under the
     /// group's own name with the final status).
     pub(crate) async fn wrap(m: Arc<Self>, req: Request, h: HandlerFn) -> Response {
-        Self::audited(m, req, h).await
+        let (repo, _) = route_params(req.uri().path());
+        let resp = Self::audited(Arc::clone(&m), req, h).await;
+        // Unknown names stay out of the label set so clients cannot grow it.
+        if resp.extensions().get::<UnknownRepository>().is_none() {
+            m.repo_requests
+                .with_label_values(&[&repo, resp.status().as_str()])
+                .inc();
+        }
+        resp
     }
 
     /// Wraps a format handler so every repository request — including denied and
@@ -568,7 +583,10 @@ impl Manager {
         let repo = match self.store.get_repository_by_name(&name).await {
             Ok(repo) => repo,
             Err(e) if e.is_not_found() => {
-                return Err(http_error(StatusCode::NOT_FOUND, "repository not found"));
+                return Err(unknown_repository(http_error(
+                    StatusCode::NOT_FOUND,
+                    "repository not found",
+                )));
             }
             Err(_) => {
                 return Err(http_error(
@@ -578,10 +596,10 @@ impl Manager {
             }
         };
         if repo.format != format {
-            return Err(http_error(
+            return Err(unknown_repository(http_error(
                 StatusCode::NOT_FOUND,
                 "repository format mismatch",
-            ));
+            )));
         }
         if repo.disabled {
             return Err(http_error(
@@ -644,6 +662,15 @@ pub(crate) fn join_upstream(base: &str, path: &str) -> String {
 ///
 /// Every route here has the same `/{prefix}/{repo}/{rest…}` shape, so the split is done on the
 /// raw URI path, preserving that behaviour exactly.
+/// Marks a response that names no repository of the requested format.
+#[derive(Clone, Copy)]
+struct UnknownRepository;
+
+fn unknown_repository(mut resp: Response) -> Response {
+    resp.extensions_mut().insert(UnknownRepository);
+    resp
+}
+
 pub(crate) fn route_params(path: &str) -> (String, String) {
     let after_prefix = match path.trim_start_matches('/').split_once('/') {
         Some((_, rest)) => rest,

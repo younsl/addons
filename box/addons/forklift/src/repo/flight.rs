@@ -2,11 +2,19 @@
 
 use std::collections::HashMap;
 use std::future::Future;
+use std::sync::Arc;
+use std::time::Instant;
 
 use parking_lot::Mutex;
+use prometheus::core::{Collector, Desc};
+use prometheus::proto::MetricFamily;
 use tokio::sync::watch;
 
 use super::FetchOutcome;
+use crate::metrics::{desc, gauge_family};
+
+/// In-flight calls by key, with the instant each one started.
+type Calls = Arc<Mutex<HashMap<String, (watch::Receiver<Option<FetchOutcome>>, Instant)>>>;
 
 /// Which side of a coalesced call this caller is on.
 enum Role {
@@ -17,13 +25,33 @@ enum Role {
 /// Coalesces concurrent work for the same key so that only one task performs it while the rest
 /// wait and observe the same outcome.
 pub(crate) struct Flight {
-    calls: Mutex<HashMap<String, watch::Receiver<Option<FetchOutcome>>>>,
+    calls: Calls,
+}
+
+/// Owned by the spawned fetch task. Dropping it, on completion or during a
+/// panic unwind, deregisters the key and publishes the outcome (an explicit
+/// error when none was recorded), so the key never outlives its fetch.
+struct Publish {
+    calls: Calls,
+    key: String,
+    tx: watch::Sender<Option<FetchOutcome>>,
+    out: Option<FetchOutcome>,
+}
+
+impl Drop for Publish {
+    fn drop(&mut self) {
+        self.calls.lock().remove(&self.key);
+        // Waiters must not observe the zero value: its kind is `Stored`, which
+        // would make them serve a nonexistent cached artifact.
+        let out = self.out.take().unwrap_or_else(FetchOutcome::error);
+        let _ = self.tx.send(Some(out));
+    }
 }
 
 impl Flight {
     pub(crate) fn new() -> Self {
         Self {
-            calls: Mutex::new(HashMap::new()),
+            calls: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -31,6 +59,9 @@ impl Flight {
     /// which case it waits for that call and returns its result. The shared
     /// result is then applied independently by each caller to its own response.
     ///
+    /// `f` runs on a detached task that deregisters the key itself, so
+    /// dropping the leader's future (its client disconnected) neither aborts
+    /// the fetch the waiters depend on nor leaves the key registered.
     pub(crate) async fn do_call<F, Fut>(&self, key: &str, f: F) -> FetchOutcome
     where
         F: FnOnce() -> Fut,
@@ -38,11 +69,11 @@ impl Flight {
     {
         let role = {
             let mut calls = self.calls.lock();
-            if let Some(rx) = calls.get(key) {
+            if let Some((rx, _)) = calls.get(key) {
                 Role::Waiter(rx.clone())
             } else {
                 let (tx, rx) = watch::channel(None);
-                calls.insert(key.to_string(), rx);
+                calls.insert(key.to_string(), (rx, Instant::now()));
                 Role::Leader(tx)
             }
         };
@@ -54,29 +85,32 @@ impl Flight {
                     return out;
                 }
                 if rx.changed().await.is_err() {
-                    // The leader vanished without publishing anything, which can
-                    // only happen if its task was dropped: report the same
-                    // explicit error a panicking leader publishes.
+                    // The fetch task was dropped without publishing anything
+                    // (runtime shutdown): report the same explicit error a
+                    // panicking fetch publishes.
                     return FetchOutcome::error();
                 }
             },
             Role::Leader(tx) => {
-                let result = tokio::spawn(f()).await;
-                // Deregister and release waiters before re-raising a panic, so a
-                // panic in `f` cannot leave the key wedged in the map with
-                // waiters blocked forever. Waiters must not observe the zero
-                // value either (its kind is `Stored`, which would make them try
-                // to serve a nonexistent cached artifact), so publish an
-                // explicit error and then resume the unwind on this task so the
-                // caller's own catch (HTTP middleware) still handles it.
-                self.calls.lock().remove(key);
+                let fut = f();
+                let mut publish = Publish {
+                    calls: Arc::clone(&self.calls),
+                    key: key.to_string(),
+                    tx,
+                    out: None,
+                };
+                let result = tokio::spawn(async move {
+                    let out = fut.await;
+                    publish.out = Some(out.clone());
+                    drop(publish);
+                    out
+                })
+                .await;
                 match result {
-                    Ok(out) => {
-                        let _ = tx.send(Some(out.clone()));
-                        out
-                    }
+                    Ok(out) => out,
                     Err(e) => {
-                        let _ = tx.send(Some(FetchOutcome::error()));
+                        // Resume a panic on this task so the caller's own catch
+                        // (HTTP middleware) still handles it.
                         if e.is_panic() {
                             std::panic::resume_unwind(e.into_panic());
                         }
@@ -85,6 +119,52 @@ impl Flight {
                 }
             }
         }
+    }
+
+    /// A scrape-time collector over this flight's in-flight calls.
+    pub(crate) fn collector(&self) -> FlightCollector {
+        FlightCollector {
+            calls: Arc::clone(&self.calls),
+            inflight: desc(
+                "forklift_upstream_fetches_inflight",
+                "Coalesced upstream fetches currently in flight.",
+                &[],
+            ),
+            oldest: desc(
+                "forklift_upstream_fetch_oldest_seconds",
+                "Age of the oldest in-flight upstream fetch, 0 when none; beyond the 60s upstream timeout a fetch is stuck.",
+                &[],
+            ),
+        }
+    }
+}
+
+/// Exports in-flight upstream fetch backlog and age, so a stuck or piling-up
+/// fetch is visible before clients report failures.
+pub(crate) struct FlightCollector {
+    calls: Calls,
+    inflight: Desc,
+    oldest: Desc,
+}
+
+impl Collector for FlightCollector {
+    fn desc(&self) -> Vec<&Desc> {
+        vec![&self.inflight, &self.oldest]
+    }
+
+    fn collect(&self) -> Vec<MetricFamily> {
+        let (n, oldest) = {
+            let calls = self.calls.lock();
+            let oldest = calls
+                .values()
+                .map(|(_, started)| started.elapsed().as_secs_f64())
+                .fold(0.0, f64::max);
+            (calls.len(), oldest)
+        };
+        vec![
+            gauge_family(&self.inflight, vec![(vec![], n as f64)]),
+            gauge_family(&self.oldest, vec![(vec![], oldest)]),
+        ]
     }
 }
 
@@ -211,6 +291,125 @@ pub(crate) mod tests {
         .await
         .expect("do_call wedged after a prior panic on the same key");
         assert_eq!(done.kind, FetchKind::Stored);
+    }
+
+    /// Verifies that dropping the leader's `do_call` future (the client that
+    /// started the fetch disconnected) neither fails the coalesced waiters nor
+    /// leaves the key registered: the fetch runs to completion, waiters observe
+    /// its outcome, and a later call for the same key runs its own fn.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn flight_cancelled_leader_does_not_wedge_key() {
+        let f = Arc::new(Flight::new());
+        let (in_flight_tx, in_flight_rx) = tokio::sync::oneshot::channel::<()>();
+        let (release_tx, release_rx) = tokio::sync::watch::channel(false);
+
+        let leader = {
+            let f = Arc::clone(&f);
+            let mut rx = release_rx.clone();
+            tokio::spawn(async move {
+                f.do_call("gone", move || async move {
+                    let _ = in_flight_tx.send(());
+                    while !*rx.borrow_and_update() {
+                        if rx.changed().await.is_err() {
+                            break;
+                        }
+                    }
+                    FetchOutcome::stored()
+                })
+                .await
+            })
+        };
+
+        in_flight_rx.await.expect("leader entered fn");
+        let waiter = {
+            let f = Arc::clone(&f);
+            tokio::spawn(async move {
+                f.do_call("gone", || async {
+                    panic!(
+                        "coalesced waiter ran its own fn; it should have joined the in-flight call"
+                    )
+                })
+                .await
+            })
+        };
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        leader.abort();
+        assert!(
+            leader.await.is_err_and(|e| e.is_cancelled()),
+            "leader task was not cancelled"
+        );
+        release_tx.send(true).expect("release");
+
+        let out = tokio::time::timeout(Duration::from_secs(2), waiter)
+            .await
+            .expect("coalesced waiter wedged after the leader was cancelled")
+            .expect("waiter task finished");
+        assert_eq!(
+            out.kind,
+            FetchKind::Stored,
+            "coalesced waiter did not observe the detached fetch outcome"
+        );
+
+        let ran = Arc::new(AtomicI64::new(0));
+        let done = {
+            let ran = Arc::clone(&ran);
+            tokio::time::timeout(
+                Duration::from_secs(2),
+                f.do_call("gone", move || async move {
+                    ran.fetch_add(1, Ordering::SeqCst);
+                    FetchOutcome::stored()
+                }),
+            )
+            .await
+            .expect("do_call wedged after the leader was cancelled")
+        };
+        assert_eq!(done.kind, FetchKind::Stored);
+        assert_eq!(
+            ran.load(Ordering::SeqCst),
+            1,
+            "key stayed registered after the leader was cancelled"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn flight_collector_reports_inflight_backlog() {
+        let f = Arc::new(Flight::new());
+        let collector = f.collector();
+        let sample = || {
+            prometheus::core::Collector::collect(&collector)
+                .iter()
+                .map(|mf| mf.get_metric()[0].get_gauge().get_value())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(sample(), vec![0.0, 0.0], "idle");
+
+        let (in_flight_tx, in_flight_rx) = tokio::sync::oneshot::channel::<()>();
+        let (release_tx, release_rx) = tokio::sync::watch::channel(false);
+        let call = {
+            let f = Arc::clone(&f);
+            let mut rx = release_rx.clone();
+            tokio::spawn(async move {
+                f.do_call("slow", move || async move {
+                    let _ = in_flight_tx.send(());
+                    while !*rx.borrow_and_update() {
+                        if rx.changed().await.is_err() {
+                            break;
+                        }
+                    }
+                    FetchOutcome::stored()
+                })
+                .await
+            })
+        };
+        in_flight_rx.await.expect("call entered fn");
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        let busy = sample();
+        assert_eq!(busy[0], 1.0, "inflight");
+        assert!(busy[1] >= 0.05, "oldest age = {}", busy[1]);
+
+        release_tx.send(true).expect("release");
+        call.await.expect("call finished");
+        assert_eq!(sample(), vec![0.0, 0.0], "drained");
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]

@@ -336,7 +336,7 @@ impl Manager {
         let resp = match e.upstream_get(&spec).await {
             Ok(resp) => resp,
             Err(err) => {
-                e.upstream_err.with_label_values(&[&res.repo.name]).inc();
+                e.upstream_failed(&res.repo.name, err.failure());
                 tracing::error!(
                     repo = %res.repo.name, url = %upstream_url, err = %err,
                     "upstream fetch failed"
@@ -353,7 +353,7 @@ impl Manager {
             let d =
                 super::parse_retry_after(super::header_str(resp.headers(), "Retry-After"), e.now());
             e.cool.set(key, d);
-            e.upstream_err.with_label_values(&[&res.repo.name]).inc();
+            e.upstream_failed(&res.repo.name, super::UpstreamFailure::RateLimited);
             tracing::warn!(
                 repo = %res.repo.name, path = %res.path, status = status.as_u16(),
                 cooldown = %humantime::format_duration(d),
@@ -362,7 +362,7 @@ impl Manager {
             return e.write_retry(status, &retry_after_seconds(d));
         }
         if !status.is_success() {
-            e.upstream_err.with_label_values(&[&res.repo.name]).inc();
+            e.upstream_failed(&res.repo.name, super::UpstreamFailure::Status);
             return http_error(StatusCode::BAD_GATEWAY, "upstream error");
         }
 

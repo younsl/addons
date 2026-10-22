@@ -92,8 +92,15 @@ sums to `1`.
 - Labels: `method`, `route`, `status`
 
 Total HTTP requests served by the application listener, split by HTTP method,
-matched route pattern, and response status code. Use it for request rate and
+matched route pattern, and response status. Use it for request rate and
 error-ratio dashboards.
+
+The `status` label is the reason phrase (`OK`, `Not Found`, `Bad Gateway`), not
+the numeric code, so a `status=~"5.."` matcher selects nothing. Match the
+phrases instead, or use `forklift_repository_requests_total`, which carries the
+numeric code. Readiness and liveness probes land here too: exclude
+`route=~"/readyz|/healthz"` from error ratios, or a pod that is briefly not
+ready dominates them.
 
 ### forklift_http_request_duration_seconds
 
@@ -103,6 +110,22 @@ error-ratio dashboards.
 Request latency in seconds, bucketed with the Prometheus default buckets. Use
 the `_bucket` series with `histogram_quantile()` for latency percentiles, and
 the `_count` series as an alternative request counter.
+
+### forklift_repository_requests_total
+
+- Type: Counter
+- Labels: `repo`, `code`
+
+Package protocol responses (Maven, npm, Go, Cargo, PyPI, raw, OCI) per
+repository and numeric HTTP status code. `forklift_http_requests_total` only
+knows the route pattern, so it can say that `/go/{repo}/*` is failing but not
+for which repository. This counter answers that, and is the one to build
+per-repository error ratios and alerts on. A request through a group repository
+is counted once, under the group's name.
+
+Requests that name no repository of the requested format answer `404` and are
+not counted, so clients cannot grow the label set by inventing names. They still
+appear in `forklift_http_requests_total`.
 
 ### forklift_db_connections_open / forklift_db_connections_in_use / forklift_db_connections_idle / forklift_db_connections_max
 
@@ -322,11 +345,24 @@ hit ratio per repo measures cache effectiveness.
 ### forklift_upstream_errors_total
 
 - Type: Counter
-- Labels: `repo`
+- Labels: `repo`, `reason`
 
 Failures while fetching from an upstream, per proxy repository. A rising rate
 points to a broken or unreachable upstream, not a forklift problem. Pair it with
 `forklift_cache_misses_total` to see how many misses turned into errors.
+
+| `reason` | Meaning | Where to look |
+|----------|---------|---------------|
+| `timeout` | No response headers within the 60 second upstream client timeout | Upstream latency, egress path saturation |
+| `connect` | DNS resolution, TCP connect, or TLS handshake failed | DNS, NAT gateway, firewall, proxy egress rules |
+| `transport` | Any other failure before a response (reset connection, protocol error, unusable URL) | Upstream or middlebox dropping connections |
+| `blocked` | A client-supplied URL resolved to a non-public address and was refused | Client or index pointing at internal hosts |
+| `status` | The upstream answered a non-2xx status other than 404, 429 or 503 | The upstream itself |
+| `rate_limited` | The upstream answered 429 or 503, and the repository cools down for its `Retry-After` | Upstream quotas, credentials for higher limits |
+
+The counter moves once per upstream round-trip. Concurrent requests for the
+same artifact share one fetch, so one error here can mean several failed client
+responses. Count those with `forklift_repository_requests_total`.
 
 ### forklift_upstream_request_duration_seconds
 
@@ -354,6 +390,23 @@ console's upstream health check. Unlike `forklift_upstream_errors_total`, which
 only moves when clients request packages, this gauge detects a dead upstream
 even on an idle repository. Repositories deleted from the configuration drop
 out of the gauge on the next probe cycle.
+
+### forklift_upstream_fetches_inflight / forklift_upstream_fetch_oldest_seconds
+
+- Type: Gauge
+- Labels: none
+
+Upstream fetches currently in flight, and the age in seconds of the oldest one
+(`0` when none). Concurrent requests for the same artifact are coalesced into
+one fetch, so the first gauge counts distinct artifacts being fetched, not
+waiting clients. Both are read from process memory at scrape time and are per
+pod.
+
+A fetch either completes or fails within the 60 second upstream client timeout,
+so `forklift_upstream_fetch_oldest_seconds` staying above about 90 means a fetch
+is stuck and every request for that artifact is waiting on it. A rising
+`forklift_upstream_fetches_inflight` with a normal oldest age means a cold cache
+under a burst (a fresh CI runner resolving its dependency tree), not a fault.
 
 ### forklift_metadata_rewrite_wait_seconds
 
@@ -663,11 +716,32 @@ Confirm exactly one leader across all pods:
 sum(forklift_leader)
 ```
 
-HTTP error ratio over the last 5 minutes:
+HTTP 5xx ratio over the last 5 minutes, excluding probe routes (`status` holds
+reason phrases):
 
 ```promql
-sum(rate(forklift_http_requests_total{status=~"5.."}[5m]))
-  / sum(rate(forklift_http_requests_total[5m]))
+sum(rate(forklift_http_requests_total{status=~"Internal Server Error|Bad Gateway|Service Unavailable|Gateway Timeout", route!~"/readyz|/healthz"}[5m]))
+  / sum(rate(forklift_http_requests_total{route!~"/readyz|/healthz"}[5m]))
+```
+
+5xx ratio per repository, to see which repository a 5xx alert is about:
+
+```promql
+sum by (repo) (rate(forklift_repository_requests_total{code=~"5.."}[5m]))
+  / sum by (repo) (rate(forklift_repository_requests_total[5m]))
+```
+
+Upstream errors by repository and reason, to tell a network fault (`connect`,
+`timeout`) from an upstream that answers errors (`status`, `rate_limited`):
+
+```promql
+sum by (repo, reason) (increase(forklift_upstream_errors_total[5m]))
+```
+
+An upstream fetch stuck past the 60 second client timeout:
+
+```promql
+max(forklift_upstream_fetch_oldest_seconds) > 90
 ```
 
 Request latency p99 by route:
@@ -797,14 +871,16 @@ The metrics answer a few core questions about a forklift deployment:
 
 - Which build is running, and who is leader? `build_info`, `leader`,
   `leader_transitions_total`
-- Is traffic healthy? `http_requests_total`, `http_request_duration_seconds`,
+- Is traffic healthy, and for which repository? `http_requests_total`,
+  `http_request_duration_seconds`, `repository_requests_total`,
   `bytes_transferred_total`
 - How big is the repository, and how well does dedup work? `repositories`,
   `artifacts`, `blobs`, `storage_bytes`
 - Is the blob store backend healthy? `blobstore_operation_duration_seconds`,
   `storage_up`, `storage_check_duration_seconds`
 - Are proxies caching and reaching upstreams? `cache_*`,
-  `upstream_errors_total`, `upstream_request_duration_seconds`, `upstream_up`
+  `upstream_errors_total`, `upstream_request_duration_seconds`, `upstream_up`,
+  `upstream_fetches_inflight`, `upstream_fetch_oldest_seconds`
 - Are the supply-chain gates doing their job? `age_policy_violations_total`,
   `approval_blocked_total`, `approval_pending`, `version_deny_blocked_total`,
   `vuln_blocked_total`, `vuln_scans_total`, `npm_audit_requests_total`, `license_blocked_total`,
@@ -815,5 +891,6 @@ The metrics answer a few core questions about a forklift deployment:
 A good starting point is one dashboard row per group above, plus alerts on
 `sum(forklift_leader) != 1`, leadership flapping via
 `leader_transitions_total`, any `forklift_upstream_up == 0` or `forklift_storage_up == 0`, a rising HTTP 5xx
-ratio, a rising blob store error ratio, any `audit_events_dropped_total`
+ratio (per repository via `repository_requests_total`), an upstream fetch older
+than 90 seconds, a rising blob store error ratio, any `audit_events_dropped_total`
 growth, and a stalled `replication_last_sync_timestamp_seconds`.

@@ -27,14 +27,14 @@ use super::oci::{
 };
 use super::router::Resolved;
 use super::{
-    FetchKind, FetchOutcome, FetchSpec, MAX_METADATA_BYTES, Manager, header_str, header_str_opt,
-    itoa, parse_retry_after, retry_after_seconds, strip_auth_on_cross_host_redirect,
-    username_from_context,
+    FetchKind, FetchOutcome, FetchSpec, MAX_METADATA_BYTES, Manager, UpstreamFailure, header_str,
+    header_str_opt, itoa, parse_retry_after, retry_after_seconds,
+    strip_auth_on_cross_host_redirect, username_from_context,
 };
 
 /// The upstream request could not be completed (transport error, or a token exchange that never
 /// produced a usable token).
-pub(crate) struct UpstreamFailed;
+pub(crate) struct UpstreamFailed(pub(crate) UpstreamFailure);
 
 /// One cached upstream bearer token.
 #[derive(Clone)]
@@ -184,7 +184,8 @@ impl Manager {
         mut headers: HeaderMap,
         custom: Option<&http::HeaderName>,
     ) -> Result<reqwest::Response, UpstreamFailed> {
-        let mut next = Url::parse(raw_url).map_err(|_| UpstreamFailed)?;
+        let mut next =
+            Url::parse(raw_url).map_err(|_| UpstreamFailed(UpstreamFailure::Transport))?;
         let mut via: Vec<Url> = Vec::new();
         loop {
             let resp = self
@@ -194,17 +195,19 @@ impl Manager {
                 .headers(headers.clone())
                 .send()
                 .await
-                .map_err(|_| UpstreamFailed)?;
+                .map_err(|e| UpstreamFailed(UpstreamFailure::of(&e)))?;
             if !resp.status().is_redirection() {
                 return Ok(resp);
             }
             let Some(location) = header_str_opt(resp.headers(), "Location") else {
                 return Ok(resp);
             };
-            let target = next.join(location).map_err(|_| UpstreamFailed)?;
+            let target = next
+                .join(location)
+                .map_err(|_| UpstreamFailed(UpstreamFailure::Transport))?;
             via.push(next);
             strip_auth_on_cross_host_redirect(&target, &via, &mut headers, custom)
-                .map_err(|_| UpstreamFailed)?;
+                .map_err(|_| UpstreamFailed(UpstreamFailure::Transport))?;
             next = target;
         }
     }
@@ -228,7 +231,7 @@ impl Manager {
             expires_in: i64,
         }
 
-        let mut url = Url::parse(realm).map_err(|_| UpstreamFailed)?;
+        let mut url = Url::parse(realm).map_err(|_| UpstreamFailed(UpstreamFailure::Transport))?;
         for (key, value) in params {
             url.query_pairs_mut().append_pair(key, value);
         }
@@ -242,7 +245,10 @@ impl Manager {
                 Some(&cfg.upstream_auth.password),
             );
         }
-        let resp = request.send().await.map_err(|_| UpstreamFailed)?;
+        let resp = request
+            .send()
+            .await
+            .map_err(|e| UpstreamFailed(UpstreamFailure::of(&e)))?;
         let tr: TokenResponse = resp.json().await.unwrap_or_default();
         let token = if tr.token.is_empty() {
             tr.access_token
@@ -289,19 +295,19 @@ impl Manager {
             .with_label_values(&[&res.repo.name])
             .inc();
         let url = oci_upstream_url(res, &req.name, &format!("manifests/{}", req.reference));
-        let Ok(resp) = self
+        let resp = match self
             .oci_upstream_do(res, Method::GET, &url, OCI_MANIFEST_ACCEPT)
             .await
-        else {
-            self.engine
-                .upstream_err
-                .with_label_values(&[&res.repo.name])
-                .inc();
-            return write_oci_error(
-                StatusCode::BAD_GATEWAY,
-                "UNSUPPORTED",
-                "upstream unreachable",
-            );
+        {
+            Ok(resp) => resp,
+            Err(UpstreamFailed(reason)) => {
+                self.engine.upstream_failed(&res.repo.name, reason);
+                return write_oci_error(
+                    StatusCode::BAD_GATEWAY,
+                    "UNSUPPORTED",
+                    "upstream unreachable",
+                );
+            }
         };
         let media_type = header_str(resp.headers(), "Content-Type").to_string();
         let published = last_modified(&resp);
@@ -500,12 +506,12 @@ impl Manager {
             return FetchOutcome::stored();
         }
         let url = oci_upstream_url(res, &req.name, &format!("blobs/{}", req.reference));
-        let Ok(resp) = self.oci_upstream_do(res, Method::GET, &url, "").await else {
-            self.engine
-                .upstream_err
-                .with_label_values(&[&res.repo.name])
-                .inc();
-            return FetchOutcome::error();
+        let resp = match self.oci_upstream_do(res, Method::GET, &url, "").await {
+            Ok(resp) => resp,
+            Err(UpstreamFailed(reason)) => {
+                self.engine.upstream_failed(&res.repo.name, reason);
+                return FetchOutcome::error();
+            }
         };
         let status = resp.status();
         if status == StatusCode::NOT_FOUND
@@ -524,9 +530,7 @@ impl Manager {
             let d = parse_retry_after(header_str(resp.headers(), "Retry-After"), self.engine.now());
             self.engine.cool.set(key, d);
             self.engine
-                .upstream_err
-                .with_label_values(&[&res.repo.name])
-                .inc();
+                .upstream_failed(&res.repo.name, UpstreamFailure::RateLimited);
             return FetchOutcome {
                 kind: FetchKind::Retry,
                 status: i64::from(status.as_u16()),
@@ -535,9 +539,7 @@ impl Manager {
         }
         if !status.is_success() {
             self.engine
-                .upstream_err
-                .with_label_values(&[&res.repo.name])
-                .inc();
+                .upstream_failed(&res.repo.name, UpstreamFailure::Status);
             return FetchOutcome::error();
         }
 
@@ -609,16 +611,16 @@ impl Manager {
             suffix.push_str(query);
         }
         let url = oci_upstream_url(res, &req.name, &suffix);
-        let Ok(resp) = self.oci_upstream_do(res, Method::GET, &url, "").await else {
-            self.engine
-                .upstream_err
-                .with_label_values(&[&res.repo.name])
-                .inc();
-            return write_oci_error(
-                StatusCode::BAD_GATEWAY,
-                "UNSUPPORTED",
-                "upstream unreachable",
-            );
+        let resp = match self.oci_upstream_do(res, Method::GET, &url, "").await {
+            Ok(resp) => resp,
+            Err(UpstreamFailed(reason)) => {
+                self.engine.upstream_failed(&res.repo.name, reason);
+                return write_oci_error(
+                    StatusCode::BAD_GATEWAY,
+                    "UNSUPPORTED",
+                    "upstream unreachable",
+                );
+            }
         };
         let key = format!("{}/{}/tags/list", res.repo.name, req.name);
         if let Err(response) = self
@@ -684,16 +686,12 @@ impl Manager {
             let d = parse_retry_after(header_str(resp.headers(), "Retry-After"), self.engine.now());
             self.engine.cool.set(key, d);
             self.engine
-                .upstream_err
-                .with_label_values(&[&res.repo.name])
-                .inc();
+                .upstream_failed(&res.repo.name, UpstreamFailure::RateLimited);
             return Err(self.engine.write_retry(status, &retry_after_seconds(d)));
         }
         if !status.is_success() {
             self.engine
-                .upstream_err
-                .with_label_values(&[&res.repo.name])
-                .inc();
+                .upstream_failed(&res.repo.name, UpstreamFailure::Status);
             return Err(write_oci_error(
                 StatusCode::BAD_GATEWAY,
                 "UNSUPPORTED",
