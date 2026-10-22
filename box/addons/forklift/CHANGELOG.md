@@ -8,7 +8,7 @@ Notable changes per release. Container image versions come from the
 
 ### Added
 
-- `forklift_repository_requests_total{repo,code}` counts package protocol responses per repository and numeric status code. `forklift_http_requests_total` only carries the route pattern and a reason phrase, so a 5xx alert could not say which repository was failing. Requests naming no existing repository are not counted, so clients cannot grow the label set.
+- `forklift_repository_requests_total{repo,code}` counts package protocol responses per repository and numeric status code. `forklift_http_requests_total` only carries the route pattern and a reason phrase, so a 5xx alert could not say which repository was failing. The label is recorded only after the repository is loaded, so requests naming no existing repository are not counted and clients cannot grow the label set.
 - `forklift_upstream_fetches_inflight` and `forklift_upstream_fetch_oldest_seconds` report the coalesced upstream fetches in flight and the age of the oldest one. A fetch ends within the 60 second upstream timeout, so an oldest age above about 90 seconds means a stuck fetch.
 
 ### Changed

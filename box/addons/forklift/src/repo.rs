@@ -1706,6 +1706,20 @@ pub(crate) mod tests {
             let resp = call(&app, Method::GET, "/npm/p/left-pad", "").await;
             assert_eq!(resp.status, StatusCode::NOT_FOUND, "format mismatch");
 
+            let mut group = repoconfig::default();
+            group.group.members = vec!["p".to_string()];
+            mk_repo(&tm.store, "grp", meta::TYPE_GROUP, "", group).await;
+            let resp = call(&app, Method::GET, "/maven/grp/g/a/1/a-1.jar", "").await;
+            assert_eq!(resp.status, StatusCode::OK, "group");
+            assert_eq!(
+                tm.manager
+                    .repo_requests
+                    .with_label_values(&["grp", "200"])
+                    .get(),
+                1.0,
+                "group request counted under the group, not its member"
+            );
+
             assert_eq!(
                 tm.manager
                     .repo_requests
@@ -1718,7 +1732,7 @@ pub(crate) mod tests {
                 .iter()
                 .map(|mf| mf.get_metric().len())
                 .sum();
-            assert_eq!(series, 1, "unknown names must not create series");
+            assert_eq!(series, 2, "unknown names must not create series");
         }
 
         /// Hosted repositories are authoritative: a stored artifact must be served

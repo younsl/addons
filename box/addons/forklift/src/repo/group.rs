@@ -56,6 +56,7 @@ pub(crate) async fn grouped(m: Arc<Manager>, req: Request, h: HandlerFn) -> Resp
         // Unknown repos fall through so the format handler emits its usual 404.
         _ => return h(m, req).await,
     };
+    super::router::ResolvedName::record(req.extensions(), &repo.name);
 
     if req.method() != Method::GET && req.method() != Method::HEAD {
         return http_error(

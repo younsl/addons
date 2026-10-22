@@ -123,9 +123,11 @@ for which repository. This counter answers that, and is the one to build
 per-repository error ratios and alerts on. A request through a group repository
 is counted once, under the group's name.
 
-Requests that name no repository of the requested format answer `404` and are
-not counted, so clients cannot grow the label set by inventing names. They still
-appear in `forklift_http_requests_total`.
+The `repo` label is the stored repository name, recorded only after the
+repository was loaded. Requests that name no repository of the requested format,
+or fail before the lookup completes, are not counted, so clients cannot grow the
+label set by inventing names. They still appear in
+`forklift_http_requests_total`.
 
 ### forklift_db_connections_open / forklift_db_connections_in_use / forklift_db_connections_idle / forklift_db_connections_max
 

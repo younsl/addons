@@ -446,12 +446,13 @@ impl Manager {
     /// audit logging outermost (so a group request is audited once, under the
     /// group's own name with the final status).
     pub(crate) async fn wrap(m: Arc<Self>, req: Request, h: HandlerFn) -> Response {
-        let (repo, _) = route_params(req.uri().path());
+        let name = ResolvedName::default();
+        let mut req = req;
+        req.extensions_mut().insert(name.clone());
         let resp = Self::audited(Arc::clone(&m), req, h).await;
-        // Unknown names stay out of the label set so clients cannot grow it.
-        if resp.extensions().get::<UnknownRepository>().is_none() {
+        if let Some(repo) = name.get() {
             m.repo_requests
-                .with_label_values(&[&repo, resp.status().as_str()])
+                .with_label_values(&[repo, resp.status().as_str()])
                 .inc();
         }
         resp
@@ -583,10 +584,7 @@ impl Manager {
         let repo = match self.store.get_repository_by_name(&name).await {
             Ok(repo) => repo,
             Err(e) if e.is_not_found() => {
-                return Err(unknown_repository(http_error(
-                    StatusCode::NOT_FOUND,
-                    "repository not found",
-                )));
+                return Err(http_error(StatusCode::NOT_FOUND, "repository not found"));
             }
             Err(_) => {
                 return Err(http_error(
@@ -596,11 +594,12 @@ impl Manager {
             }
         };
         if repo.format != format {
-            return Err(unknown_repository(http_error(
+            return Err(http_error(
                 StatusCode::NOT_FOUND,
                 "repository format mismatch",
-            )));
+            ));
         }
+        ResolvedName::record(&parts.extensions, &repo.name);
         if repo.disabled {
             return Err(http_error(
                 StatusCode::SERVICE_UNAVAILABLE,
@@ -662,13 +661,23 @@ pub(crate) fn join_upstream(base: &str, path: &str) -> String {
 ///
 /// Every route here has the same `/{prefix}/{repo}/{rest…}` shape, so the split is done on the
 /// raw URI path, preserving that behaviour exactly.
-/// Marks a response that names no repository of the requested format.
-#[derive(Clone, Copy)]
-struct UnknownRepository;
+/// The canonical name of the repository a request resolved to, recorded only
+/// after the repository was loaded, so client-chosen names never become metric
+/// labels. Group fan-out clones it into member requests, and the first record
+/// (the group) wins.
+#[derive(Clone, Default)]
+pub(crate) struct ResolvedName(Arc<std::sync::OnceLock<String>>);
 
-fn unknown_repository(mut resp: Response) -> Response {
-    resp.extensions_mut().insert(UnknownRepository);
-    resp
+impl ResolvedName {
+    pub(crate) fn record(extensions: &http::Extensions, name: &str) {
+        if let Some(slot) = extensions.get::<Self>() {
+            let _ = slot.0.set(name.to_string());
+        }
+    }
+
+    fn get(&self) -> Option<&String> {
+        self.0.get()
+    }
 }
 
 pub(crate) fn route_params(path: &str) -> (String, String) {
