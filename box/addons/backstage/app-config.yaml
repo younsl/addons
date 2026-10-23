@@ -1,8 +1,6 @@
 app:
   title: Backstage
   baseUrl: http://localhost:3000
-  plugins:
-    opencost: true
   platforms:
     - name: Grafana
       category: Observability
@@ -154,25 +152,6 @@ permission:
     # - user:development/guest
     - user:default/admin1
     - user:default/admin2
-
-opencost:
-  timezone: Asia/Seoul
-  clusters:
-    - name: shared
-      alias: Shared
-      url: ${OPENCOST_SHARED_URL}
-    - name: dev
-      alias: Dev
-      url: ${OPENCOST_DEV_URL}
-    - name: stg
-      alias: Stage
-      url: ${OPENCOST_STG_URL}
-    - name: sb
-      alias: Sandbox
-      url: ${OPENCOST_SB_URL}
-    - name: prd
-      alias: Production
-      url: ${OPENCOST_PRD_URL}
 
 search:
   collators:

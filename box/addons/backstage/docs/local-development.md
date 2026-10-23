@@ -19,7 +19,7 @@ The versions below reflect the environment this guide was written against; newer
 | Yarn | 4.12.0 (Berry) | Pinned via `packageManager`; enable with `corepack enable` |
 | Docker or Podman | any recent | Only needed for the container test step |
 
-Backstage version is pinned in `backstage.json` (currently 1.55.3). Yarn is managed by Corepack, so do not install it globally; running any `yarn` command in this directory picks up the pinned 4.12.0.
+Backstage version is pinned in `backstage.json` (currently 1.56.2). Yarn is managed by Corepack, so do not install it globally; running any `yarn` command in this directory picks up the pinned 4.12.0.
 
 ## Local configuration
 
@@ -44,11 +44,9 @@ Missing keys disable the matching integration rather than crash the app, so a pa
 
 ### app-config.local.yaml
 
-`app-config.yaml` is written for the deployed instance, so a laptop run needs two things overridden. Neither belongs in the committed config, which is why this file exists and is git-ignored.
+`app-config.yaml` is written for the deployed instance, so a laptop run needs the Keycloak provider config overridden. That override does not belong in the committed config, which is why this file exists and is git-ignored.
 
-The catalog Keycloak module treats its provider config as required and **fails backend startup** when `KEYCLOAK_BASE_URL` and friends are absent, so a run without Keycloak credentials needs placeholder values. The plugins that talk to the cluster cannot reach anything from here and otherwise fill the log with connection and permission errors, so turn off the ones you are not working on. Every in-house plugin reads an `app.plugins.<name>` flag that defaults to on.
-
-A file that leaves only one plugin running:
+The catalog Keycloak module treats its provider config as required and **fails backend startup** when `KEYCLOAK_BASE_URL` and friends are absent, so a run without Keycloak credentials needs placeholder values.
 
 ```yaml
 # Keycloak env vars are absent locally, and the catalog keycloak module fails
@@ -63,14 +61,7 @@ catalog:
         realm: local
         clientId: local
         clientSecret: local
-
-# Plugins that need cluster access this machine does not have.
-app:
-  plugins:
-    opencost: false
 ```
-
-The flag names are the ones in the plugin's `plugin.ts`.
 
 Other overrides worth keeping here rather than in `.env`: an on-disk SQLite database (`backend.database.connection.directory`, remembering the directory is not git-ignored), a longer schedule for a noisy task, or a plugin's own config.
 

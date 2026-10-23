@@ -22,7 +22,7 @@ backstage:
 
 ## Secrets
 
-Backstage reads every credential from environment variables at runtime, so secrets never live in values.yaml. The full set is large because each plugin adds its own keys (such as OpenCost). To keep this guide manageable, only the keys required to boot and log in are listed here. Plugin-specific keys are documented in their own pages and are added the same way once you enable the feature.
+Backstage reads every credential from environment variables at runtime, so secrets never live in values.yaml. Only the keys required to boot and log in are listed here.
 
 ### Boot minimum
 
@@ -39,8 +39,6 @@ kubectl create secret generic backstage-secrets \
   --from-literal=keycloak-client-secret=xxxxxxxxxxxx \
   --from-literal=auth-session-secret=$(openssl rand -base64 32)
 ```
-
-Plugin keys (OpenCost) are covered in [Plugins](plugins.md) and the per-feature docs. Add them as extra entries in the same Secret only when you turn the plugin on.
 
 ### Managing secrets on AWS
 

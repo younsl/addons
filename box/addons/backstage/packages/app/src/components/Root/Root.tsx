@@ -4,11 +4,9 @@ import ExtensionIcon from '@material-ui/icons/Extension';
 import LibraryBooks from '@material-ui/icons/LibraryBooks';
 import SearchIcon from '@material-ui/icons/Search';
 import GroupIcon from '@material-ui/icons/Group';
-import BuildIcon from '@material-ui/icons/Build';
 import ExpandMoreIcon from '@material-ui/icons/ExpandMore';
 import ExpandLessIcon from '@material-ui/icons/ExpandLess';
 import StorageIcon from '@material-ui/icons/Storage';
-import AttachMoneyIcon from '@material-ui/icons/AttachMoney';
 import { Text } from '@backstage/ui';
 import { SvgIcon } from '@material-ui/core';
 import { siKubernetes, type SimpleIcon } from 'simple-icons';
@@ -173,9 +171,6 @@ const PlatformsSidebarItem = () => {
 };
 
 export const Root = ({ children }: PropsWithChildren<{}>) => {
-  const config = useApi(configApiRef);
-  const opencostEnabled = config.getOptionalBoolean('app.plugins.opencost') ?? true;
-
   return (
   <SidebarPage>
     <Sidebar>
@@ -190,12 +185,6 @@ export const Root = ({ children }: PropsWithChildren<{}>) => {
         <SidebarItem icon={CategoryIcon} to="catalog" text="Catalog" />
         <SidebarItem icon={ExtensionIcon} to="api-docs" text="APIs" />
         <SidebarItem icon={LibraryBooks} to="docs" text="Docs" />
-      </FoldableSection>
-
-      <FoldableSection title="Operations" icon={<BuildIcon />} defaultOpen={false}>
-        {opencostEnabled && (
-          <SidebarItem icon={AttachMoneyIcon} to="cost-report" text="Cost Report" />
-        )}
       </FoldableSection>
 
       <SidebarDivider />

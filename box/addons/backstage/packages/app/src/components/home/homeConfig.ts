@@ -3,7 +3,6 @@ import {
   KubernetesIcon,
   CategoryIcon,
   ExtensionIcon,
-  CostIcon,
 } from './icons';
 
 export interface QuickLinkItem {
@@ -19,8 +18,6 @@ export const quickLinks: QuickLinkItem[] = [
   { url: '/platforms', label: 'Platforms', Icon: KubernetesIcon, description: 'Internal platform services' },
   { url: '/catalog', label: 'Catalog', Icon: CategoryIcon, description: 'Browse all registered entities' },
   { url: '/api-docs', label: 'APIs', Icon: ExtensionIcon, description: 'Explore API documentation' },
-  // Operations
-  { url: '/cost-report', label: 'Cost Report', Icon: CostIcon, description: 'View cluster cost breakdown' },
 ];
 
 export const searchTypeLabels: Record<string, string> = {

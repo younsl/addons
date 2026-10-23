@@ -48,5 +48,4 @@ Most custom plugins ship as `<name>` (frontend) plus `<name>-backend` (backend).
 | Feature | Plugin | Description |
 |---------|--------|-------------|
 | Platforms | `platforms-backend` | Internal platform services link cards with search and tag filtering, plus popularity ranking and daily visitor counts |
-| OpenCost | `opencost` | Multi-cluster Kubernetes cost visualization |
 | Build Info | - | Settings page showing build metadata, installed plugins, BUI migration progress |

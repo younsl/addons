@@ -10,6 +10,15 @@ Headings are image tags, not Backstage versions. A rebuild at the same Backstage
 
 Tags released before this file existed (`1.51.0-1` through `1.53.0-3`) are not recorded here.
 
+## 1.56.2-1
+
+Released 2026-10-23. Built on Backstage [v1.56.2](https://github.com/backstage/backstage/releases/tag/v1.56.2) as the base version, up from `1.55.3`.
+
+- Base version bumped through `backstage-cli versions:bump`. Notable moves are `@backstage/ui` `0.18.0` to `0.19.0`, `@backstage/plugin-org` `0.7.9` to `0.8.0` and `@backstage/backend-plugin-api` `1.10.1` to `1.11.0`. None of the BUI 0.19 migrations (`MenuSection` `disabledKeys`, a `theme` cascade layer) apply to this app.
+- The `@yarnpkg/core` pin is dropped from the root `resolutions`. Backstage 1.56.2 makes the `@yarnpkg/*` dependencies of `@backstage/cli-module-package-manager-yarn` optional peers, so the broken `4.9.2` is no longer installed.
+- 1.56 stops the per-plugin database keepalive queries and lowers the default PostgreSQL pool minimum to zero. Set `backend.database.keepalive: true` to keep the previous behavior.
+- Removed the `opencost` plugin (frontend and backend). The Cost Report sidebar entry and its now empty Operations section, the Cost Report home quick link, the `/cost-report` and `/cost-report/custom-export` routes, the `app.plugins.opencost` flag and the `opencost` config block are gone. Deployments can drop that block and the `OPENCOST_*_URL` environment variables. The tables the plugin created in its database stay until dropped by hand.
+
 ## 1.55.3-2
 
 Released 2026-10-06. Built on Backstage [v1.55.3](https://github.com/backstage/backstage/releases/tag/v1.55.3) as the base version, unchanged from `1.55.3-1`.

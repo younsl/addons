@@ -25,7 +25,7 @@ each task                → data collection/validation/aggregation only
 **Rules**:
 - Never mix initialization logic into `registerTasks()` or scheduled task handlers
 - Scheduled tasks must not depend on execution order of other tasks
-- Reference: `OpenCostCostStore.create()`, `OpenCostCollector.create()`
+- Reference: `VisitStore.create()` in `platforms-backend`
 
 ## Traps
 

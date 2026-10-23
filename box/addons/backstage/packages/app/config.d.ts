@@ -1,17 +1,6 @@
 export interface Config {
   app: {
     /**
-     * Feature flags for custom plugins
-     * @visibility frontend
-     */
-    plugins?: {
-      /**
-       * Enable or disable OpenCost plugin
-       * @visibility frontend
-       */
-      opencost?: boolean;
-    };
-    /**
      * Internal platform services for developers
      * @visibility frontend
      */
