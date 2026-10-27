@@ -18,7 +18,7 @@
     {
       "id": 3,
       "name": "review",
-      "prompt": "ec2-metadata-exporter 차트 변경 검증해줘",
+      "prompt": "kagent-gateway 차트 변경 검증해줘",
       "expected_output": "Reviews the uncommitted diff plus commits ahead of the default branch. Severity-ranked one-line findings with file:line: podDisruptionBudget missing from values.schema.json, new PDB knob instead of deriving from replicaCount, inline and multi-line helm-docs annotations, `#` comment in the PDB template, inline ternary in imagePullPolicy, schema re-declaring topologySpreadConstraints; then helm lint and helm template plus kubeconform results, with checks masked by the schema blocker run on a labeled probe copy.",
       "files": []
     }
