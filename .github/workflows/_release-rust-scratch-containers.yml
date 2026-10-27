@@ -8,7 +8,6 @@ on:
       - 'box/addons/aurora-database-insights-exporter/Dockerfile'
       - 'box/addons/aws-health-event-notifier/Dockerfile'
       - 'box/addons/aws-vpn-maintenance-handler/Dockerfile'
-      - 'box/addons/ec2-metadata-exporter/Dockerfile'
       - 'box/addons/gss/Dockerfile'
       - 'box/addons/trivy-collector/Dockerfile'
       - 'box/addons/kubernetes-upgrade-operator/Dockerfile'
@@ -30,7 +29,6 @@ on:
           - aurora-database-insights-exporter
           - aws-health-event-notifier
           - aws-vpn-maintenance-handler
-          - ec2-metadata-exporter
           - gss
           - trivy-collector
           - kuo
