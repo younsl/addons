@@ -190,6 +190,7 @@ cask "stats"
 # Connect to Windows
 cask "windows-app"
 go "sigs.k8s.io/controller-tools/cmd/controller-gen"
+go "golang.org/x/vuln/cmd/govulncheck"
 go "helm.sh/helm/v3/cmd/helm"
 go "github.com/jsonnet-bundler/jsonnet-bundler/cmd/jb"
 cargo "cargo-audit"
@@ -203,7 +204,7 @@ krew "tree"
 npm "corepack"
 #-------------------------------
 # PACKAGE INSTALLATION SUMMARY
-# Date: 2026-10-15
+# Date: 2026-10-27
 #-------------------------------
 # Installed tap count: 7
 # Installed brew count: 83
