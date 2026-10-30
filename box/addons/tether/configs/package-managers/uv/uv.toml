@@ -1,3 +1,0 @@
-index-url = "https://pypi.org/simple"
-exclude-newer = "7 days"
-no-build = true

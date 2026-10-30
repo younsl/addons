@@ -17,7 +17,6 @@ on:
       - 'box/addons/external-ebs-autoresizer/Dockerfile'
       - 'box/addons/forklift/Dockerfile'
       - 'box/addons/forklift/Dockerfile.mcp'
-      - 'box/addons/tether/Dockerfile'
   workflow_dispatch:
     inputs:
       project:
@@ -37,7 +36,6 @@ on:
           - external-ebs-autoresizer
           - forklift
           - forklift-mcp
-          - tether
       force:
         description: "Rebuild even if the version already exists on GHCR (overwrites the tag)"
         required: false
