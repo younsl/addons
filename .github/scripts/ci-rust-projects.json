@@ -1,7 +1,6 @@
 {
   "box/addons/aurora-database-insights-exporter/Dockerfile": { "binary": "adie" },
   "box/addons/aws-health-event-notifier/Dockerfile":         {},
-  "box/addons/gss/Dockerfile":                               { "binary": "ghes-schedule-scanner" },
   "box/addons/trivy-collector/Dockerfile":                   { "frontend_manager": "npm", "frontend_dir": "frontend", "embed_dir": "static" },
   "box/addons/kubernetes-upgrade-operator/Dockerfile":       { "project": "kuo" },
   "box/addons/kagent-gateway/Dockerfile":                    {},

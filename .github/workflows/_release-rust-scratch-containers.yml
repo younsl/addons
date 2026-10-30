@@ -7,7 +7,6 @@ on:
     paths:
       - 'box/addons/aurora-database-insights-exporter/Dockerfile'
       - 'box/addons/aws-health-event-notifier/Dockerfile'
-      - 'box/addons/gss/Dockerfile'
       - 'box/addons/trivy-collector/Dockerfile'
       - 'box/addons/kubernetes-upgrade-operator/Dockerfile'
       - 'box/addons/kagent-gateway/Dockerfile'
@@ -25,7 +24,6 @@ on:
         options:
           - aurora-database-insights-exporter
           - aws-health-event-notifier
-          - gss
           - trivy-collector
           - kuo
           - kagent-gateway
