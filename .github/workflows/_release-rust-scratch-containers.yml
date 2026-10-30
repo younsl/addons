@@ -11,7 +11,6 @@ on:
       - 'box/addons/trivy-collector/Dockerfile'
       - 'box/addons/kubernetes-upgrade-operator/Dockerfile'
       - 'box/addons/kagent-gateway/Dockerfile'
-      - 'box/addons/argocd-promotion-gate/Dockerfile'
       - 'box/addons/argocd-canary-gate/Dockerfile'
       - 'box/addons/filesystem-cleaner/Dockerfile'
       - 'box/addons/external-ebs-autoresizer/Dockerfile'
@@ -30,7 +29,6 @@ on:
           - trivy-collector
           - kuo
           - kagent-gateway
-          - argocd-promotion-gate
           - argocd-canary-gate
           - filesystem-cleaner
           - external-ebs-autoresizer

@@ -5,7 +5,6 @@
   "box/addons/trivy-collector/Dockerfile":                   { "frontend_manager": "npm", "frontend_dir": "frontend", "embed_dir": "static" },
   "box/addons/kubernetes-upgrade-operator/Dockerfile":       { "project": "kuo" },
   "box/addons/kagent-gateway/Dockerfile":                    {},
-  "box/addons/argocd-promotion-gate/Dockerfile":             {},
   "box/addons/argocd-canary-gate/Dockerfile":                {},
   "box/addons/filesystem-cleaner/Dockerfile":                {},
   "box/addons/external-ebs-autoresizer/Dockerfile":          {},
