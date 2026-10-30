@@ -29,7 +29,6 @@ async fn main() -> Result<()> {
 
     let config = Config::try_from(Args::parse())?;
     info!(
-        process = %config.process,
         service = %config.service,
         cpu_threshold = config.policy.cpu_threshold,
         sustain_checks = config.policy.sustain_checks,
@@ -40,7 +39,7 @@ async fn main() -> Result<()> {
         "starting"
     );
 
-    let mut sampler = Sampler::new(&config.process)?;
+    let mut sampler = Sampler::new()?;
     let mut tracker = Tracker::new(config.policy);
     let mut sigterm = signal(SignalKind::terminate())?;
     let mut ticker = interval(config.interval);
@@ -60,38 +59,52 @@ async fn main() -> Result<()> {
 }
 
 async fn check(config: &Config, sampler: &mut Sampler, tracker: &mut Tracker) {
-    let Some(sample) = sampler.sample() else {
+    let pid = match launchd::service_pid(&config.service).await {
+        Ok(Some(pid)) => pid,
+        Ok(None) => {
+            tracker.reset();
+            debug!(service = %config.service, "service not running");
+            return;
+        }
+        Err(err) => {
+            tracker.reset();
+            warn!(error = %err, "failed to look up service pid");
+            return;
+        }
+    };
+    let Some(cpu) = sampler.cpu_usage(pid) else {
         tracker.reset();
-        debug!(process = %config.process, "process not running");
+        debug!(pid, "process exited before sampling");
         return;
     };
+    let cpu_text = format!("{cpu:.1}");
 
-    match tracker.observe(sample.cpu, Instant::now()) {
+    match tracker.observe(cpu, Instant::now()) {
         Decision::Normal => {
-            debug!(pid = %sample.pid, cpu = %format!("{:.1}", sample.cpu), "normal");
+            debug!(pid, cpu = %cpu_text, "normal");
         }
         Decision::High { count } => warn!(
-            pid = %sample.pid,
-            cpu = %format!("{:.1}", sample.cpu),
+            pid,
+            cpu = %cpu_text,
             check = count,
             of = config.policy.sustain_checks,
             "high cpu"
         ),
         Decision::Cooldown { remaining } => warn!(
-            pid = %sample.pid,
-            cpu = %format!("{:.1}", sample.cpu),
+            pid,
+            cpu = %cpu_text,
             remaining_secs = remaining.as_millis().div_ceil(1000),
             "skip restart: cooldown"
         ),
         Decision::Restart => {
             tracker.record_restart(Instant::now());
             if config.dry_run {
-                info!(pid = %sample.pid, cpu = %format!("{:.1}", sample.cpu), service = %config.service, "dry-run: would restart");
+                info!(pid, cpu = %cpu_text, service = %config.service, "dry-run: would restart");
                 return;
             }
             match launchd::kickstart(&config.service).await {
                 Ok(()) => {
-                    info!(pid = %sample.pid, cpu = %format!("{:.1}", sample.cpu), service = %config.service, "restarted");
+                    info!(pid, cpu = %cpu_text, service = %config.service, "restarted");
                 }
                 Err(err) => error!(error = %err, "restart failed"),
             }

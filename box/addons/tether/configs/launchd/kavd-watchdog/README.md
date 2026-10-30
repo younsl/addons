@@ -6,7 +6,7 @@ A Rust LaunchDaemon that restarts the Kaspersky Anti-Virus for Mac daemon (kavd)
 
 It stays resident and reads kavd CPU every 60 seconds, averaged over that window. After 5 consecutive checks at or above 150%, it runs `launchctl kickstart -k system/com.kaspersky.kav.kavd`, at most once per hour. This only relieves the symptom. The lasting fix is a scan exclusion for the paths kavd is busy with.
 
-The binary itself is generic: `--process` and `--service` name the target, and the plist sets them to kavd.
+The binary itself is generic: `--service` names the target, and the plist sets it to kavd. Each check asks launchd for the service PID with `launchctl print`, so a look-alike process named kavd cannot trigger a restart.
 
 ## Install
 
@@ -14,7 +14,7 @@ The binary itself is generic: `--process` and `--service` name the target, and t
 make install
 ```
 
-This builds a release binary as you, then asks for an admin password and runs install.sh as root. install.sh copies the binary and plist as root:wheel instead of linking them, because a root job that runs a binary from a user-writable repository would let any user process run code as root. For the same reason this directory has no config.toml entry.
+This builds a release binary as you, then asks for an admin password and runs install.sh as root. install.sh copies the binary and plist as root:wheel instead of linking them, because a root job that runs a binary from a user-writable repository would let any user process run code as root. For the same reason this directory has no config.toml entry, and install.sh aborts if any directory above the binary or plist is not root-owned or is group or world writable.
 
 Rerun `make install` after changing anything here. `make uninstall` removes the daemon and its binary.
 
@@ -32,7 +32,6 @@ Each flag falls back to an environment variable, so either ProgramArguments or E
 
 | Flag | Variable | Default |
 | --- | --- | --- |
-| --process | KAVD_WATCHDOG_PROCESS | required |
 | --service | KAVD_WATCHDOG_SERVICE | required |
 | --cpu-threshold | KAVD_WATCHDOG_CPU_THRESHOLD | 150 |
 | --sustain-checks | KAVD_WATCHDOG_SUSTAIN_CHECKS | 5 |
@@ -42,13 +41,11 @@ Each flag falls back to an environment variable, so either ProgramArguments or E
 
 `RUST_LOG=debug` also logs every normal check.
 
-Try the decision loop on a busy process of your own:
+Watch live readings as root without restarting anything:
 
 ```bash
-yes > /dev/null &
-./target/release/kavd-watchdog --process yes --service system/example \
-  --interval-seconds 2 --sustain-checks 2 --cpu-threshold 50 --cooldown-seconds 4 --dry-run
-kill %1
+sudo RUST_LOG=debug /usr/local/libexec/kavd-watchdog \
+  --service system/com.kaspersky.kav.kavd --interval-seconds 2 --dry-run
 ```
 
 ## Check

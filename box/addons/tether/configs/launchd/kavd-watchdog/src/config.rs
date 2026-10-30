@@ -12,11 +12,7 @@ use crate::policy::Policy;
     about
 )]
 pub struct Args {
-    /// Exact process name to watch
-    #[arg(long, env = "KAVD_WATCHDOG_PROCESS")]
-    process: String,
-
-    /// launchd service target to kickstart, e.g. system/com.example.daemon
+    /// launchd service target to watch and kickstart, e.g. system/com.example.daemon
     #[arg(long, env = "KAVD_WATCHDOG_SERVICE")]
     service: String,
 
@@ -43,7 +39,6 @@ pub struct Args {
 
 #[derive(Debug)]
 pub struct Config {
-    pub process: String,
     pub service: String,
     pub interval: Duration,
     pub policy: Policy,
@@ -65,7 +60,6 @@ impl TryFrom<Args> for Config {
         }
 
         Ok(Self {
-            process: args.process,
             service: args.service,
             interval: Duration::from_secs(args.interval_seconds),
             policy: Policy {
@@ -83,7 +77,7 @@ mod tests {
     use super::*;
 
     fn parse(extra: &[&str]) -> Result<Config, ConfigError> {
-        let base = ["kavd-watchdog", "--process", "p", "--service", "system/s"];
+        let base = ["kavd-watchdog", "--service", "system/s"];
         Config::try_from(Args::parse_from(base.iter().chain(extra)))
     }
 

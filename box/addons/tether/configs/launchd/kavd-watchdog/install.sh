@@ -22,6 +22,19 @@ log() {
   printf '%s\n' "$*" >&2
 }
 
+assert_root_only_path() {
+  local dir=$1 owner mode
+  while :; do
+    read -r owner mode < <(stat -f '%u %Lp' "$dir")
+    if [[ "$owner" -ne 0 ]] || (( 8#$mode & 8#022 )); then
+      log "error: ${dir} must be owned by root and not group or world writable (owner uid ${owner}, mode ${mode})"
+      exit 1
+    fi
+    [[ "$dir" == / ]] && break
+    dir=$(dirname "$dir")
+  done
+}
+
 remove_legacy() {
   rm -rf "${LEGACY_PATHS[@]}"
 }
@@ -40,6 +53,8 @@ install_daemon() {
   fi
 
   install -d -o root -g wheel -m 755 "$(dirname "$BIN_DEST")"
+  assert_root_only_path "$(dirname "$BIN_DEST")"
+  assert_root_only_path "$(dirname "$PLIST_DEST")"
   install -o root -g wheel -m 755 "$BIN_SRC" "$BIN_DEST"
   install -o root -g wheel -m 644 "${SRC_DIR}/${LABEL}.plist" "$PLIST_DEST"
   plutil -lint "$PLIST_DEST" >&2
