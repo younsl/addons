@@ -114,5 +114,6 @@
       "routine under younsl/addons prefix: git push to origin (github.com/younsl/addons) for this repo only"
     ]
   },
-  "voiceEnabled": true
+  "voiceEnabled": true,
+  "switchModelsOnFlag": false
 }
