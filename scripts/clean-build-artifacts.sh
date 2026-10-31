@@ -77,7 +77,7 @@ done < <(find "$ROOT" -type d -name .zig-cache -not -path '*/node_modules/*' -pr
 if [ "$WITH_NODE" -eq 1 ]; then
   echo
   echo "== Node: node_modules and dist =="
-  echo "  (reinstall with 'yarn install' before the next Backstage build)"
+  echo "  (reinstall frontend packages with npm or pnpm before the next build)"
   while IFS= read -r nm; do
     report "$nm" "${nm#"$ROOT"/}"
   done < <(find "$ROOT" -type d \( -name node_modules -o -name dist \) -prune 2>/dev/null | sort)

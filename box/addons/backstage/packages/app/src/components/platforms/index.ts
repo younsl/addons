@@ -1,1 +1,0 @@
-export { PlatformsPage } from './PlatformsPage';

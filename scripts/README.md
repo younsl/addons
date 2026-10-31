@@ -33,7 +33,7 @@ Everything removed is regenerable, but not for free.
 - The next build of each Rust crate is a cold rebuild with no incremental cache.
 - Cargo re-downloads crate sources and git checkouts from the network.
 - Go re-downloads modules on the next `go build`.
-- After `--node`, Backstage needs `yarn install` before it builds again.
+- After `--node`, the trivy-collector (npm) and forklift (pnpm) frontends need their packages reinstalled before they build again.
 
 ### Notes
 
