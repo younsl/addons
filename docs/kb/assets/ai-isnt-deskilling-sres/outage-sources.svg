@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="880" height="350" viewBox="0 0 880 350" role="img" aria-labelledby="t d">
+  <title id="t">Humans in the routine path are the main failure source</title>
+  <desc id="d">Roughly 70 percent of outages come from changes to a live system, per Google SRE. Human error plays some role in 66 to 80 percent of outages, per Uptime Institute. Among human-error outages in 2023, 47 percent of respondents cited staff not following procedures and 40 percent cited faulty procedures.</desc>
+  <style>
+    .sans { font-family: Geist, -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Helvetica, Arial, sans-serif; }
+    .mono { font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    .title { font-size: 20px; font-weight: 600; fill: #ededed; letter-spacing: -0.02em; }
+    .sub { font-size: 13px; fill: #a1a1a1; }
+    .hero { font-size: 40px; font-weight: 600; fill: #ededed; letter-spacing: -0.03em; }
+    .body { font-size: 13px; fill: #ededed; }
+    .meta { font-size: 10.5px; fill: #8f8f8f; letter-spacing: 0.04em; }
+    .small { font-size: 12px; fill: #ededed; }
+    .val { font-size: 12px; fill: #ededed; }
+    .foot { font-size: 12px; fill: #a1a1a1; }
+  </style>
+  <rect width="880" height="350" rx="12" fill="#000"/>
+  <rect x="0.5" y="0.5" width="879" height="349" rx="11.5" fill="none" stroke="#2e2e2e"/>
+
+  <text x="40" y="50" class="sans title">Humans in the routine path are the main failure source</text>
+  <text x="40" y="74" class="sans sub">Why moving Tier 1 to automation is a reliability win, not only a productivity one</text>
+
+  <!-- tile 1 -->
+  <rect x="40.5" y="100.5" width="254" height="180" rx="8" fill="none" stroke="#2e2e2e"/>
+  <text x="60" y="160" class="sans hero">~70%</text>
+  <text x="60" y="190" class="sans body">of outages come from changes</text>
+  <text x="60" y="208" class="sans body">to a live system</text>
+  <text x="60" y="262" class="mono meta">GOOGLE SRE BOOK</text>
+
+  <!-- tile 2 -->
+  <rect x="312.5" y="100.5" width="254" height="180" rx="8" fill="none" stroke="#2e2e2e"/>
+  <text x="332" y="160" class="sans hero">66 to 80%</text>
+  <text x="332" y="190" class="sans body">of outages involve human error</text>
+  <text x="332" y="208" class="sans body">as a contributing factor</text>
+  <text x="332" y="262" class="mono meta">UPTIME INSTITUTE, 25 YEARS</text>
+
+  <!-- tile 3: bars, x = 604 + 2.2 * v -->
+  <rect x="584.5" y="100.5" width="255" height="180" rx="8" fill="none" stroke="#ededed"/>
+  <text x="604" y="128" class="sans body">Within human-error outages</text>
+  <text x="604" y="156" class="sans small">Staff did not follow procedure</text>
+  <path d="M604,164 H703.4 Q707.4,164 707.4,168 V174 Q707.4,178 703.4,178 H604 Z" fill="#ededed"/>
+  <text x="716" y="175" class="mono val">47%</text>
+  <text x="604" y="206" class="sans small">Procedure itself was faulty</text>
+  <path d="M604,214 H688 Q692,214 692,218 V224 Q692,228 688,228 H604 Z" fill="#8f8f8f"/>
+  <text x="700" y="225" class="mono val">40%</text>
+  <text x="604" y="262" class="mono meta">UPTIME INSTITUTE, 2023</text>
+
+  <text x="40" y="314" class="sans foot">Codified runbooks remove the first failure mode and make the second reviewable in a pull request.</text>
+</svg>

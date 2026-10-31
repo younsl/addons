@@ -1,0 +1,71 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="880" height="470" viewBox="0 0 880 470" role="img" aria-labelledby="t d">
+  <title id="t">일이 위로 옮겨갔고, 숙련도 함께 옮겨갔다</title>
+  <desc id="d">세 시대의 운영. 호스트와 VM에서는 사람이 재시작, 스케일링, 로그 확인을 손으로 했다. Kubernetes에서는 kubelet과 HPA가 재시작과 스케일링을 자동화했고 사람은 프로브, PDB, 스케일링 정책 설계로 올라갔다. AI 에이전트 시대에는 알려진 수정 런북, 알림 분류, 로그 이상 탐지가 자동화되고 사람은 가설 판단, AI 변경 리뷰, 가드레일을 맡는다. 경계는 매 시대 올라가지만 사람의 영역은 사라지지 않는다.</desc>
+  <style>
+    .sans { font-family: Geist, Pretendard, -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", "Segoe UI", sans-serif; }
+    .mono { font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    .title { font-size: 20px; font-weight: 600; fill: #ededed; letter-spacing: -0.02em; }
+    .sub { font-size: 13px; fill: #a1a1a1; }
+    .era { font-size: 11px; fill: #8f8f8f; letter-spacing: 0.08em; }
+    .head { font-size: 14px; font-weight: 600; fill: #ededed; }
+    .human { font-size: 12.5px; fill: #ededed; }
+    .auto { font-size: 12.5px; fill: #8f8f8f; }
+    .axis { font-size: 10px; fill: #8f8f8f; letter-spacing: 0.1em; }
+    .foot { font-size: 12px; fill: #a1a1a1; }
+    .src { font-size: 10.5px; fill: #8f8f8f; }
+  </style>
+  <rect width="880" height="470" rx="12" fill="#000"/>
+  <rect x="0.5" y="0.5" width="879" height="469" rx="11.5" fill="none" stroke="#2e2e2e"/>
+
+  <text x="40" y="50" class="sans title">일이 위로 옮겨갔고, 숙련도 함께 옮겨갔다</text>
+  <text x="40" y="74" class="sans sub">자동화가 한 층 쌓일 때마다 반복 작업을 가져간다. 사람의 일은 그 위층으로 옮겨간다.</text>
+
+  <g class="sans">
+    <!-- column 1 -->
+    <text x="60" y="118" class="mono era">2010s</text>
+    <text x="60" y="138" class="head">호스트와 VM</text>
+    <rect x="60" y="152" width="240" height="246" rx="8" fill="none" stroke="#2e2e2e"/>
+    <path d="M60,350 H300 V390 Q300,398 292,398 H68 Q60,398 60,390 Z" fill="#141414"/>
+    <text x="76" y="180" class="human">프로세스 수동 재시작</text>
+    <text x="76" y="202" class="human">수동 스케일링</text>
+    <text x="76" y="224" class="human">호스트마다 로그 확인</text>
+    <text x="76" y="246" class="human">처음 보는 장애 디버깅</text>
+    <text x="76" y="378" class="auto">init 스크립트, cron</text>
+
+    <!-- column 2 -->
+    <text x="320" y="118" class="mono era">2015+</text>
+    <text x="320" y="138" class="head">Kubernetes</text>
+    <rect x="320" y="152" width="240" height="246" rx="8" fill="none" stroke="#2e2e2e"/>
+    <path d="M320,290 H560 V390 Q560,398 552,398 H328 Q320,398 320,390 Z" fill="#141414"/>
+    <text x="336" y="180" class="human">프로브와 PDB 설계</text>
+    <text x="336" y="202" class="human">오토스케일링 정책 조정</text>
+    <text x="336" y="224" class="human">처음 보는 장애 디버깅</text>
+    <text x="336" y="318" class="auto">컨테이너 재시작 (kubelet)</text>
+    <text x="336" y="340" class="auto">메트릭 기반 스케일링 (HPA)</text>
+
+    <!-- column 3 -->
+    <text x="580" y="118" class="mono era">2026</text>
+    <text x="580" y="138" class="head">AI 에이전트</text>
+    <rect x="580" y="152" width="240" height="246" rx="8" fill="none" stroke="#ededed"/>
+    <path d="M580.5,240 H819.5 V390 Q819.5,397.5 812,397.5 H588 Q580.5,397.5 580.5,390 Z" fill="#141414"/>
+    <text x="596" y="180" class="human">가설 판단</text>
+    <text x="596" y="202" class="human">AI 변경 리뷰</text>
+    <text x="596" y="224" class="human">가드레일 소유</text>
+    <text x="596" y="268" class="auto">알려진 수정 런북</text>
+    <text x="596" y="290" class="auto">알림 노이즈 감소</text>
+    <text x="596" y="312" class="auto">로그 이상 탐지</text>
+    <text x="596" y="334" class="auto">2015+ 자동화 전부</text>
+
+    <!-- rising boundary -->
+    <path d="M60,350 H300 L320,290 H560 L580,240 H820" fill="none" stroke="#ededed" stroke-width="2" stroke-linejoin="round"/>
+    <circle cx="300" cy="350" r="4" fill="#ededed" stroke="#000" stroke-width="2"/>
+    <circle cx="560" cy="290" r="4" fill="#ededed" stroke="#000" stroke-width="2"/>
+
+    <!-- axis labels -->
+    <text x="840" y="200" class="axis" transform="rotate(90 840 200)" text-anchor="middle">사람</text>
+    <text x="840" y="330" class="axis" transform="rotate(90 840 330)" text-anchor="middle">자동화</text>
+  </g>
+
+  <text x="40" y="430" class="sans foot">경계는 매 시대 올라간다. 그 위의 사람 영역은 비지 않는다.</text>
+  <text x="40" y="450" class="sans src">출처: Kubernetes 문서 (restart policy, HPA), SigNoz 원문의 AI 자동화 작업 목록</text>
+</svg>

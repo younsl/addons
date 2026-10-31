@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="880" height="420" viewBox="0 0 880 420" role="img" aria-labelledby="t d">
+  <title id="t">Pay for skill where it is cheap</title>
+  <desc id="d">Comparison of practicing on a live incident versus a game day. A live incident has customer impact, costs over 300,000 dollars per hour of downtime for more than 90 percent of mid-size and large enterprises, has no known answer, cannot be repeated, and trains whoever is on call. A game day has no customer impact, costs only engineer time, has a known answer to debrief against, can replay any scenario at any time, and lets a junior engineer act as incident commander.</desc>
+  <style>
+    .sans { font-family: Geist, -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Helvetica, Arial, sans-serif; }
+    .mono { font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    .title { font-size: 20px; font-weight: 600; fill: #ededed; letter-spacing: -0.02em; }
+    .sub { font-size: 13px; fill: #a1a1a1; }
+    .colhead { font-size: 14px; font-weight: 600; }
+    .row { font-size: 11px; fill: #8f8f8f; letter-spacing: 0.06em; }
+    .bad { font-size: 13px; fill: #a1a1a1; }
+    .good { font-size: 13px; fill: #ededed; }
+    .src { font-size: 10.5px; fill: #8f8f8f; }
+  </style>
+  <rect width="880" height="420" rx="12" fill="#000"/>
+  <rect x="0.5" y="0.5" width="879" height="419" rx="11.5" fill="none" stroke="#2e2e2e"/>
+
+  <text x="40" y="50" class="sans title">Pay for skill where it is cheap</text>
+  <text x="40" y="74" class="sans sub">Deliberate inefficiency on a live incident vs the same practice on a game day</text>
+
+  <!-- column frames -->
+  <rect x="250.5" y="100.5" width="284" height="270" rx="8" fill="none" stroke="#2e2e2e"/>
+  <rect x="550.5" y="100.5" width="290" height="270" rx="8" fill="#0a0a0a" stroke="#ededed"/>
+
+  <g class="sans">
+    <text x="270" y="130" class="colhead" fill="#a1a1a1">Live incident</text>
+    <text x="570" y="130" class="colhead" fill="#ededed">Game day</text>
+
+    <g stroke="#1f1f1f">
+      <line x1="40" y1="148" x2="840" y2="148"/>
+      <line x1="40" y1="192" x2="840" y2="192"/>
+      <line x1="40" y1="236" x2="840" y2="236"/>
+      <line x1="40" y1="280" x2="840" y2="280"/>
+      <line x1="40" y1="324" x2="840" y2="324"/>
+    </g>
+
+    <text x="40" y="175" class="mono row">CUSTOMER IMPACT</text>
+    <text x="270" y="175" class="bad">Yes, while you practice</text>
+    <text x="570" y="175" class="good">None</text>
+
+    <text x="40" y="219" class="mono row">COST OF GOING SLOW</text>
+    <text x="270" y="219" class="bad">$300K+ per hour of downtime</text>
+    <text x="570" y="219" class="good">Engineer time only</text>
+
+    <text x="40" y="263" class="mono row">KNOWN ANSWER</text>
+    <text x="270" y="263" class="bad">No, so no debrief baseline</text>
+    <text x="570" y="263" class="good">Yes, debrief against it</text>
+
+    <text x="40" y="307" class="mono row">REPEATABLE</text>
+    <text x="270" y="307" class="bad">No, rare and random</text>
+    <text x="570" y="307" class="good">Any scenario, any time</text>
+
+    <text x="40" y="351" class="mono row">WHO PRACTICES</text>
+    <text x="270" y="351" class="bad">Whoever is on call</text>
+    <text x="570" y="351" class="good">Junior as incident commander</text>
+  </g>
+
+  <text x="40" y="398" class="sans src">Sources: ITIC 2024 Hourly Cost of Downtime (over 90% of mid-size and large firms), Google SRE book ch. 28 (Wheel of Misfortune), Bainbridge 1983.</text>
+</svg>

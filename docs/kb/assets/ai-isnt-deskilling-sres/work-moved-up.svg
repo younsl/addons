@@ -1,0 +1,71 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="880" height="470" viewBox="0 0 880 470" role="img" aria-labelledby="t d">
+  <title id="t">The work moved up, the skill moved with it</title>
+  <desc id="d">Three eras of operations. On hosts and VMs, humans restarted, scaled, and read logs by hand. With Kubernetes, the kubelet and HPA automated restarts and scaling, and humans moved up to designing probes, PDBs, and scaling policy. With AI agents, known-fix runbooks, alert triage, and log anomaly flagging are automated, and humans judge hypotheses, review AI changes, and own guardrails. The boundary between human and automated work rises each era, but the human area never disappears.</desc>
+  <style>
+    .sans { font-family: Geist, -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Helvetica, Arial, sans-serif; }
+    .mono { font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    .title { font-size: 20px; font-weight: 600; fill: #ededed; letter-spacing: -0.02em; }
+    .sub { font-size: 13px; fill: #a1a1a1; }
+    .era { font-size: 11px; fill: #8f8f8f; letter-spacing: 0.08em; }
+    .head { font-size: 14px; font-weight: 600; fill: #ededed; }
+    .human { font-size: 12.5px; fill: #ededed; }
+    .auto { font-size: 12.5px; fill: #8f8f8f; }
+    .axis { font-size: 10px; fill: #8f8f8f; letter-spacing: 0.1em; }
+    .foot { font-size: 12px; fill: #a1a1a1; }
+    .src { font-size: 10.5px; fill: #8f8f8f; }
+  </style>
+  <rect width="880" height="470" rx="12" fill="#000"/>
+  <rect x="0.5" y="0.5" width="879" height="469" rx="11.5" fill="none" stroke="#2e2e2e"/>
+
+  <text x="40" y="50" class="sans title">The work moved up, the skill moved with it</text>
+  <text x="40" y="74" class="sans sub">Each layer of automation takes the repeatable work. Human work moves to the layer above it.</text>
+
+  <g class="sans">
+    <!-- column 1 -->
+    <text x="60" y="118" class="mono era">2010s</text>
+    <text x="60" y="138" class="head">Hosts and VMs</text>
+    <rect x="60" y="152" width="240" height="246" rx="8" fill="none" stroke="#2e2e2e"/>
+    <path d="M60,350 H300 V390 Q300,398 292,398 H68 Q60,398 60,390 Z" fill="#141414"/>
+    <text x="76" y="180" class="human">Restart processes by hand</text>
+    <text x="76" y="202" class="human">Scale by hand</text>
+    <text x="76" y="224" class="human">Read logs on each host</text>
+    <text x="76" y="246" class="human">Debug novel failures</text>
+    <text x="76" y="378" class="auto">init scripts, cron</text>
+
+    <!-- column 2 -->
+    <text x="320" y="118" class="mono era">2015+</text>
+    <text x="320" y="138" class="head">Kubernetes</text>
+    <rect x="320" y="152" width="240" height="246" rx="8" fill="none" stroke="#2e2e2e"/>
+    <path d="M320,290 H560 V390 Q560,398 552,398 H328 Q320,398 320,390 Z" fill="#141414"/>
+    <text x="336" y="180" class="human">Design probes and PDBs</text>
+    <text x="336" y="202" class="human">Tune autoscaling policy</text>
+    <text x="336" y="224" class="human">Debug novel failures</text>
+    <text x="336" y="318" class="auto">Restart containers (kubelet)</text>
+    <text x="336" y="340" class="auto">Scale on metrics (HPA)</text>
+
+    <!-- column 3 -->
+    <text x="580" y="118" class="mono era">2026</text>
+    <text x="580" y="138" class="head">AI agents</text>
+    <rect x="580" y="152" width="240" height="246" rx="8" fill="none" stroke="#ededed"/>
+    <path d="M580.5,240 H819.5 V390 Q819.5,397.5 812,397.5 H588 Q580.5,397.5 580.5,390 Z" fill="#141414"/>
+    <text x="596" y="180" class="human">Judge hypotheses</text>
+    <text x="596" y="202" class="human">Review AI changes</text>
+    <text x="596" y="224" class="human">Own guardrails</text>
+    <text x="596" y="268" class="auto">Known-fix runbooks</text>
+    <text x="596" y="290" class="auto">Alert noise reduction</text>
+    <text x="596" y="312" class="auto">Log anomaly flagging</text>
+    <text x="596" y="334" class="auto">Everything from 2015+</text>
+
+    <!-- rising boundary -->
+    <path d="M60,350 H300 L320,290 H560 L580,240 H820" fill="none" stroke="#ededed" stroke-width="2" stroke-linejoin="round"/>
+    <circle cx="300" cy="350" r="4" fill="#ededed" stroke="#000" stroke-width="2"/>
+    <circle cx="560" cy="290" r="4" fill="#ededed" stroke="#000" stroke-width="2"/>
+
+    <!-- axis labels -->
+    <text x="840" y="200" class="axis" transform="rotate(90 840 200)" text-anchor="middle">HUMAN</text>
+    <text x="840" y="330" class="axis" transform="rotate(90 840 330)" text-anchor="middle">AUTOMATED</text>
+  </g>
+
+  <text x="40" y="430" class="sans foot">The boundary rises every era. The human area above it never becomes empty.</text>
+  <text x="40" y="450" class="sans src">Sources: Kubernetes docs (restart policy, HPA), SigNoz article list of AI-automated tasks.</text>
+</svg>
