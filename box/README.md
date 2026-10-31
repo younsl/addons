@@ -2,6 +2,8 @@
 
 Everything this repository ships. Each component is one directory, grouped by what it ships as.
 
+## Directory structure
+
 ```
 box/
 ├── addons/   container images, most with a Helm chart in charts/
@@ -9,36 +11,17 @@ box/
 └── cli/      command-line tools for a workstation
 ```
 
-- [addons](./addons/): [scratch](https://hub.docker.com/_/scratch) image with a static Rust binary, plus a chart under `charts/`. Published to `ghcr.io/younsl/{name}` and `ghcr.io/younsl/charts/{name}`.
-- [charts](./charts/): Helm chart as an [OCI artifact](https://helm.sh/docs/topics/registries/). Published to `ghcr.io/younsl/charts/{chart}`.
-- [cli](./cli/): native binary. Built into `cli/ij/dist/` for `ij`, installed with `make install` for `vlt`.
+### addons
 
-## addons
+Long-running [Kubernetes operators](https://kubernetes.io/docs/concepts/extend-kubernetes/operator/), exporters, and services that run in a cluster. Each one is a static Rust binary on a [scratch](https://hub.docker.com/_/scratch) image, usually with its own chart under `charts/`. Images go to `ghcr.io/younsl/{name}` and charts to `ghcr.io/younsl/charts/{name}`.
 
-- [argocd-canary-gate](./addons/argocd-canary-gate/): blocks an [Argo CD](https://argo-cd.readthedocs.io/en/stable/) sync while an [Argo Rollouts](https://argoproj.github.io/rollouts/) canary is in progress.
-- [aurora-database-insights-exporter](./addons/aurora-database-insights-exporter/): [Prometheus exporter](https://prometheus.io/docs/instrumenting/exporters/) for Aurora [Database Insights](https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/USER_DatabaseInsights.html) metrics.
-- [aws-health-event-notifier](./addons/aws-health-event-notifier/): posts [AWS Health](https://docs.aws.amazon.com/health/latest/ug/health-api.html) events to Slack and records them as Kubernetes Events.
-- [external-ebs-autoresizer](./addons/external-ebs-autoresizer/): [grows the root filesystem](https://docs.aws.amazon.com/ebs/latest/userguide/recognize-expanded-volume-linux.html) of standalone EC2 instances when disk usage crosses a threshold.
-- [filesystem-cleaner](./addons/filesystem-cleaner/): [sidecar](https://kubernetes.io/docs/concepts/workloads/pods/sidecar-containers/) or [init container](https://kubernetes.io/docs/concepts/workloads/pods/init-containers/) image that removes files when disk usage crosses a threshold.
-- [forklift](./addons/forklift/): artifact repository and proxy for Maven, npm, Cargo, Go, PyPI, and [OCI](https://opencontainers.org/) images and charts.
-- [harbor](./addons/harbor/): rebuilds upstream [Harbor](https://goharbor.io/) images for [AWS Graviton](https://aws.amazon.com/ec2/graviton/) (arm64).
-- [kagent-gateway](./addons/kagent-gateway/): sends [Alertmanager](https://prometheus.io/docs/alerting/latest/alertmanager/) alerts to Slack and a [kagent](https://kagent.dev) agent that investigates them.
-- [kubernetes-upgrade-operator](./addons/kubernetes-upgrade-operator/): [operator](https://kubernetes.io/docs/concepts/extend-kubernetes/operator/) that upgrades [EKS](https://docs.aws.amazon.com/eks/latest/userguide/what-is-eks.html) clusters from `EKSUpgrade` resources.
-- [trivy-collector](./addons/trivy-collector/): collects [Trivy Operator](https://aquasecurity.github.io/trivy-operator/latest/) reports across clusters and serves a web viewer.
+### charts
 
-## charts
+[Helm](https://helm.sh/) charts that only package Kubernetes resources, such as policies, node pools, and mesh config, with no image of their own. Published as [OCI artifacts](https://helm.sh/docs/topics/registries/) to `ghcr.io/younsl/charts/{chart}`.
 
-- [argo-workflows-templates](./charts/argo-workflows-templates/): [Argo Workflows templates](https://argo-workflows.readthedocs.io/en/latest/workflow-templates/).
-- [deepsecurity](./charts/deepsecurity/): [Trend Micro Deep Security](https://www.trendmicro.com/en_us/business/products/hybrid-cloud/deep-security.html) Agent on every Linux node.
-- [istio-envoyfilters](./charts/istio-envoyfilters/): Istio [EnvoyFilter](https://istio.io/latest/docs/reference/config/networking/envoy-filter/) resources.
-- [istio-waypoints](./charts/istio-waypoints/): Istio ambient [waypoint proxies](https://istio.io/latest/docs/ambient/usage/waypoint/).
-- [karpenter-nodepool](./charts/karpenter-nodepool/): [Karpenter](https://karpenter.sh/docs/concepts/nodepools/) NodePool and EC2NodeClass.
-- [kubernetes-admission-policies](./charts/kubernetes-admission-policies/): [ValidatingAdmissionPolicy](https://kubernetes.io/docs/reference/access-authn-authz/validating-admission-policy/) and [MutatingAdmissionPolicy](https://kubernetes.io/docs/reference/access-authn-authz/mutating-admission-policy/) with bindings.
+### cli
 
-## cli
-
-- [ij](./cli/ij/): EC2 [Session Manager](https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager.html) connect and [AMI](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/AMIs.html) cleanup across regions.
-- [vlt](./cli/vlt/): local password manager [TUI](https://ratatui.rs/) with an encrypted vault.
+Command-line and [TUI](https://ratatui.rs/) tools that run on a workstation, not in a cluster. Each ships as a native binary.
 
 ## Conventions
 
