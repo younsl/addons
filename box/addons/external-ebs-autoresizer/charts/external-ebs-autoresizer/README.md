@@ -76,6 +76,7 @@ The following table lists the configurable parameters and their default values.
 | image.registry | string | `"ghcr.io"` | Container image registry host |
 | image.repository | string | `"younsl/external-ebs-autoresizer"` | Container image repository path without registry prefix |
 | image.tag | string | `""` | Image tag; defaults to the chart appVersion when empty |
+| image.digest | string | `""` | Image digest (`sha256:...`). When set, appended to the tag as `tag@digest` and takes precedence |
 | image.pullPolicy | string | `"IfNotPresent"` | Image pull policy |
 | imagePullSecrets | list | `[]` | Image pull secrets for private registries |
 | nameOverride | string | `""` | Override the chart name |

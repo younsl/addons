@@ -33,7 +33,7 @@ spec:
       {{- end }}
       containers:
         - name: kuo
-          image: "{{ with .Values.image.registry }}{{ . }}/{{ end }}{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          image: "{{ with .Values.image.registry }}{{ . }}/{{ end }}{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}{{ with .Values.image.digest }}@{{ . }}{{ end }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           env:
             - name: LOG_LEVEL

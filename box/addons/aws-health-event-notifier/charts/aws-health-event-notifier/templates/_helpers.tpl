@@ -66,6 +66,9 @@ Compose the container image reference from optional registry + repository + tag.
 {{- else -}}
 {{- printf "%s:%s" $repo $tag -}}
 {{- end -}}
+{{- with .Values.image.digest -}}
+@{{ . }}
+{{- end -}}
 {{- end -}}
 
 {{/*

@@ -17,6 +17,8 @@ image:
   pullPolicy: IfNotPresent
   # -- (string) Image tag. Empty uses the chart appVersion.
   tag: ""
+  # -- (string) Image digest (`sha256:...`). When set, appended to the tag as `tag@digest` and takes precedence.
+  digest: ""
 
 # -- (list) Image pull secrets for private registries.
 imagePullSecrets: []
@@ -549,6 +551,8 @@ mcp:
     pullPolicy: IfNotPresent
     # -- (string) MCP image tag. Released independently of forklift, so no appVersion fallback.
     tag: "0.3.2"
+    # -- (string) MCP image digest (`sha256:...`). When set, appended to the tag as `tag@digest` and takes precedence.
+    digest: ""
   # -- (int) Number of MCP replicas. Keep 1: MCP sessions live in pod memory.
   replicaCount: 1
   # -- (string) forklift API base URL to proxy to. Empty targets this release's Service.

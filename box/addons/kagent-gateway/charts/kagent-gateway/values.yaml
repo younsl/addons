@@ -5,6 +5,8 @@ image:
   repository: younsl/kagent-gateway
   # -- (string) Image tag; defaults to the chart appVersion when empty
   tag: ""
+  # -- (string) Image digest (`sha256:...`). When set, appended to the tag as `tag@digest` and takes precedence
+  digest: ""
   # -- (string) Image pull policy
   pullPolicy: IfNotPresent
 

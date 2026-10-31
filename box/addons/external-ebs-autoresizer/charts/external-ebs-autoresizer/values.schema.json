@@ -204,6 +204,10 @@
         "tag": {
           "type": ["string", "null"]
         },
+        "digest": {
+          "type": ["string", "null"],
+          "pattern": "^(sha256:[a-f0-9]{64})?$"
+        },
         "pullPolicy": {
           "type": "string",
           "enum": ["Always", "IfNotPresent", "Never"]

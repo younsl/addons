@@ -6,6 +6,8 @@ image:
   repository: public.ecr.aws/amazonlinux/amazonlinux
   # -- (string) Image tag.
   tag: "2023"
+  # -- (string) Image digest (`sha256:...`). When set, appended to the tag as `tag@digest` and takes precedence.
+  digest: ""
   # -- (string) Image pull policy.
   pullPolicy: IfNotPresent
 

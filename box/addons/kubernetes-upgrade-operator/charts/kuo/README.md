@@ -83,6 +83,7 @@ The following table lists the configurable parameters and their default values.
 | image.repository | string | `"younsl/kuo"` | Container image repository path without registry prefix. |
 | image.pullPolicy | string | `"IfNotPresent"` | Image pull policy. |
 | image.tag | string | `""` | Image tag. Defaults to `.Chart.AppVersion` if empty. |
+| image.digest | string | `""` | Image digest (`sha256:...`). When set, appended to the tag as `tag@digest` and takes precedence. |
 | imagePullSecrets | list | `[]` | Image pull secrets for private registries. |
 | serviceAccount.create | bool | `true` | Whether to create a ServiceAccount. |
 | serviceAccount.annotations | object | `{}` | Annotations to add to the ServiceAccount. |

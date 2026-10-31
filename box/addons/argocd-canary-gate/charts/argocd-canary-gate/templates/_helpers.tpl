@@ -49,6 +49,9 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- else -}}
 {{- printf "%s:%s" .Values.image.repository $tag -}}
 {{- end -}}
+{{- with .Values.image.digest -}}
+@{{ . }}
+{{- end -}}
 {{- end -}}
 
 {{/*

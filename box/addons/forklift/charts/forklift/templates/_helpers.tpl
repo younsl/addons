@@ -29,6 +29,9 @@ itself carry a host). Tag defaults to the chart appVersion.
 {{- else -}}
 {{- printf "%s:%s" .Values.image.repository $tag -}}
 {{- end -}}
+{{- with .Values.image.digest -}}
+@{{ . }}
+{{- end -}}
 {{- end }}
 
 {{- define "forklift.chart" -}}
@@ -533,6 +536,9 @@ release line, so the tag never falls back to the chart appVersion.
 {{- printf "%s/%s:%s" .Values.mcp.image.registry .Values.mcp.image.repository .Values.mcp.image.tag -}}
 {{- else -}}
 {{- printf "%s:%s" .Values.mcp.image.repository .Values.mcp.image.tag -}}
+{{- end -}}
+{{- with .Values.mcp.image.digest -}}
+@{{ . }}
 {{- end -}}
 {{- end }}
 

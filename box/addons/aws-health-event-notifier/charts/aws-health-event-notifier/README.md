@@ -79,6 +79,7 @@ The following table lists the configurable parameters and their default values.
 | image.repository | string | `"younsl/aws-health-event-notifier"` | Image repository path (without the registry prefix). |
 | image.pullPolicy | string | `"IfNotPresent"` | Image pull policy. |
 | image.tag | string | `""` | Image tag. Defaults to `.Chart.AppVersion` if empty. |
+| image.digest | string | `""` | Image digest (`sha256:...`). When set, appended to the tag as `tag@digest` and takes precedence. |
 | imagePullSecrets | list | `[]` | Image pull secrets for private registries. |
 | nameOverride | string | `""` | Override the resource name (truncated to 63 chars). |
 | fullnameOverride | string | `""` | Override the fullname template result (truncated to 63 chars). |

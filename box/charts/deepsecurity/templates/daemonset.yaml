@@ -32,7 +32,7 @@ spec:
       {{- end }}
       containers:
       - name: ds-agent
-        image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+        image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}{{ with .Values.image.digest }}@{{ . }}{{ end }}"
         imagePullPolicy: {{ .Values.image.pullPolicy }}
         securityContext:
           privileged: true

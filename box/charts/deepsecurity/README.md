@@ -80,6 +80,7 @@ The following table lists the configurable parameters and their default values.
 | enabled | bool | `true` | Deploy the Deep Security Agent. Set to false to remove all resources. |
 | image.repository | string | `"public.ecr.aws/amazonlinux/amazonlinux"` | Base image that runs the install script. Override to pull through a proxy registry. |
 | image.tag | string | `"2023"` | Image tag. |
+| image.digest | string | `""` | Image digest (`sha256:...`). When set, appended to the tag as `tag@digest` and takes precedence. |
 | image.pullPolicy | string | `"IfNotPresent"` | Image pull policy. |
 | dsm.managerUrl | string | `"https://dsm.example.com:4119"` | Deep Security Manager URL. Placeholder, always override. |
 | dsm.activationUrl | string | `"dsm://dsm.example.com:4120/"` | Agent activation URL for `dsa_control -a`. Placeholder, always override. |

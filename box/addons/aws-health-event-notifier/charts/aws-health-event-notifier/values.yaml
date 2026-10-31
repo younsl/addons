@@ -14,6 +14,8 @@ image:
   pullPolicy: IfNotPresent
   # -- (string) Image tag. Defaults to `.Chart.AppVersion` if empty.
   tag: ""
+  # -- (string) Image digest (`sha256:...`). When set, appended to the tag as `tag@digest` and takes precedence.
+  digest: ""
 
 # -- (list) Image pull secrets for private registries.
 imagePullSecrets: []

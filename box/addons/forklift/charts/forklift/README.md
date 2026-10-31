@@ -86,6 +86,7 @@ The following table lists the configurable parameters and their default values.
 | image.repository | string | `"younsl/forklift"` | Image repository. |
 | image.pullPolicy | string | `"IfNotPresent"` | Image pull policy. |
 | image.tag | string | `""` | Image tag. Empty uses the chart appVersion. |
+| image.digest | string | `""` | Image digest (`sha256:...`). When set, appended to the tag as `tag@digest` and takes precedence. |
 | imagePullSecrets | list | `[]` | Image pull secrets for private registries. |
 | nameOverride | string | `""` | Override the chart name portion of resource names. |
 | fullnameOverride | string | `""` | Override the fully qualified resource name. |
@@ -239,6 +240,7 @@ The following table lists the configurable parameters and their default values.
 | mcp.image.repository | string | `"younsl/forklift-mcp"` | MCP image repository (path under the registry). |
 | mcp.image.pullPolicy | string | `"IfNotPresent"` | MCP image pull policy. |
 | mcp.image.tag | string | `"0.3.2"` | MCP image tag. Released independently of forklift, so no appVersion fallback. |
+| mcp.image.digest | string | `""` | MCP image digest (`sha256:...`). When set, appended to the tag as `tag@digest` and takes precedence. |
 | mcp.replicaCount | int | `1` | Number of MCP replicas. Keep 1: MCP sessions live in pod memory. |
 | mcp.upstreamURL | string | `""` | forklift API base URL to proxy to. Empty targets this release's Service. |
 | mcp.token | object | `{"existingSecret":"","key":"token"}` | Optional fallback token Secret for clients that cannot send an Authorization header. |

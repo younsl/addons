@@ -79,6 +79,7 @@ The following table lists the configurable parameters and their default values.
 | image.registry | string | `"ghcr.io"` | Container image registry host |
 | image.repository | string | `"younsl/aurora-database-insights-exporter"` | Container image repository path without registry prefix |
 | image.tag | string | `""` | Image tag (defaults to chart appVersion) |
+| image.digest | string | `""` | Image digest (`sha256:...`). When set, appended to the tag as `tag@digest` and takes precedence |
 | image.pullPolicy | string | `"IfNotPresent"` | Image pull policy |
 | imagePullSecrets | list | `[]` | Image pull secrets for private registries |
 | serviceAccount.create | bool | `true` | Create a ServiceAccount |
