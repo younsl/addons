@@ -77,18 +77,6 @@ enum Command {
     Run,
     /// Load and validate the config file, then exit
     Validate,
-    #[command(
-        about = "Print the InstanceVolumeAutoscalers and their effective settings (reads the Kubernetes API)"
-    )]
-    Autoscalers {
-        /// Discover instances via AWS and add a MATCHED column with the count
-        /// each autoscaler targets
-        #[arg(long, env = "AUTOSCALERS_COUNT")]
-        count: bool,
-    },
-    /// List discovered instances with the autoscaler that targets each (calls
-    /// AWS and the Kubernetes API)
-    Instances,
     #[command(about = "Print a CustomResourceDefinition as JSON")]
     Crd {
         /// The custom resource to print
@@ -159,17 +147,6 @@ fn main() -> ExitCode {
             cli::run_validate(Path::new(&path), &env, &mut std::io::stdout())
         }
         Some(Command::Crd { kind }) => cli::run_crd(kind, &mut std::io::stdout()),
-        Some(Command::Autoscalers { count }) => runtime.block_on(cli::run_autoscalers(
-            Path::new(&path),
-            &env,
-            count,
-            &mut std::io::stdout(),
-        )),
-        Some(Command::Instances) => runtime.block_on(cli::run_instances(
-            Path::new(&path),
-            &env,
-            &mut std::io::stdout(),
-        )),
         Some(Command::Unused { all }) => runtime.block_on(cli::run_unused(
             Path::new(&path),
             &env,
@@ -220,11 +197,6 @@ mod tests {
         let cli = Cli::try_parse_from(["x", "--config", "/tmp/c.yaml", "validate"]).unwrap();
         assert_eq!(cli.config.as_deref(), Some("/tmp/c.yaml"));
         assert!(matches!(cli.command, Some(Command::Validate)));
-        let cli = Cli::try_parse_from(["x", "autoscalers", "--count"]).unwrap();
-        assert!(matches!(
-            cli.command,
-            Some(Command::Autoscalers { count: true })
-        ));
         let cli = Cli::try_parse_from(["x", "crd"]).unwrap();
         assert!(matches!(
             cli.command,
@@ -243,13 +215,14 @@ mod tests {
         let cli = Cli::try_parse_from(["x", "unused", "--all", "--config", "c.yaml"]).unwrap();
         assert!(matches!(cli.command, Some(Command::Unused { all: true })));
         assert_eq!(cli.config.as_deref(), Some("c.yaml"));
-        let cli = Cli::try_parse_from(["x", "instances"]).unwrap();
-        assert!(matches!(cli.command, Some(Command::Instances)));
         let cli = Cli::try_parse_from(["x", "-v", "run"]).unwrap();
         assert!(cli.verbose);
         assert!(matches!(cli.command, Some(Command::Run)));
         let cli = Cli::try_parse_from(["x"]).unwrap();
         assert!(cli.command.is_none());
+        for removed in ["autoscalers", "instances"] {
+            assert!(Cli::try_parse_from(["x", removed]).is_err(), "{removed}");
+        }
         assert_eq!(cli.controllers.len(), 3, "every controller by default");
         let cli = Cli::try_parse_from(["x", "--controllers", "persistent-volume-claim-autoscaler"])
             .unwrap();

@@ -1,7 +1,5 @@
-//! The operational subcommands: validate, autoscalers, instances, unused,
-//! crd. They need no running controller and print to stdout.
+//! The operational subcommands: validate, unused, crd. They need no running controller and print to stdout.
 
-use std::collections::HashMap;
 use std::io::Write;
 use std::path::Path;
 use std::sync::Arc;
@@ -10,11 +8,8 @@ use std::time::Duration;
 use anyhow::{Context as _, Result};
 use kube::CustomResourceExt as _;
 
-use crate::autoscaler::instance_volume::api::{AutoscalerApi, KubeAutoscalers};
 use crate::autoscaler::instance_volume::crd::InstanceVolumeAutoscaler;
-use crate::autoscaler::instance_volume::policy::{Effective, Resolver, Step};
 use crate::autoscaler::persistent_volume_claim::crd::PersistentVolumeClaimAutoscaler;
-use crate::awsx::{Clients, Instance};
 use crate::config::{self, Config, Env};
 use crate::humanize::{go_duration, human_bytes, round_duration};
 use crate::pvscan::{self, DiscardRecorder, Finding, KIND_PVC, Scanner};
@@ -57,174 +52,6 @@ pub fn run_crd(kind: CrdKind, out: &mut impl Write) -> Result<()> {
     };
     serde_json::to_writer_pretty(&mut *out, &crd)?;
     writeln!(out)?;
-    Ok(())
-}
-
-/// Lists the autoscalers in the cluster through the kubeconfig or in-cluster
-/// credentials.
-async fn list_autoscalers() -> Result<Vec<InstanceVolumeAutoscaler>> {
-    let client = tokio::time::timeout(CLI_TIMEOUT, crate::k8s::client())
-        .await
-        .context("connect to Kubernetes: timed out")??;
-    let api = KubeAutoscalers::new(client);
-    tokio::time::timeout(CLI_TIMEOUT, api.list())
-        .await
-        .context("list InstanceVolumeAutoscalers: timed out")?
-        .map_err(|e| anyhow::anyhow!("list InstanceVolumeAutoscalers: {e}"))
-}
-
-/// Prints every autoscaler and its effective settings in name order, then
-/// the rejected ones. With `with_count` it discovers instances via AWS and
-/// adds a MATCHED column.
-pub async fn run_autoscalers(
-    path: &Path,
-    env: &Env,
-    with_count: bool,
-    out: &mut impl Write,
-) -> Result<()> {
-    let cfg = load_config(path, env)?;
-    let resolver = Resolver::new(&list_autoscalers().await?);
-    let counts = if with_count {
-        Some(autoscaler_counts(
-            &discover_instances(&cfg).await?,
-            &resolver,
-        ))
-    } else {
-        None
-    };
-    render_autoscalers(&resolver, counts.as_ref(), out)
-}
-
-fn render_autoscalers(
-    resolver: &Resolver,
-    counts: Option<&HashMap<String, usize>>,
-    out: &mut impl Write,
-) -> Result<()> {
-    let mut table = Table::new();
-    let mut header = vec![
-        "NAME",
-        "TARGET",
-        "UTILIZATION%",
-        "SCALE_UP",
-        "MAX_GIB",
-        "COOLDOWN",
-        "ALERT",
-    ];
-    if counts.is_some() {
-        header.push("MATCHED");
-    }
-    table.row(header.iter().map(ToString::to_string).collect());
-    for c in &resolver.autoscalers {
-        let eff = &c.effective;
-        let mut cells = vec![
-            eff.policy.clone(),
-            c.target.to_string(),
-            eff.usage_threshold_percent.to_string(),
-            scale_up_summary(eff),
-            eff.max_volume_size_gib.to_string(),
-            crate::autoscaler::format_cooldown(eff.cooldown),
-            eff.alert_enabled.to_string(),
-        ];
-        if let Some(counts) = counts {
-            cells.push(counts.get(&eff.policy).copied().unwrap_or(0).to_string());
-        }
-        table.row(cells);
-    }
-    for (name, err) in &resolver.invalid {
-        table.row(vec![name.clone(), format!("(invalid: {err})")]);
-    }
-    if resolver.autoscalers.is_empty() && resolver.invalid.is_empty() {
-        table.row(vec!["(none)".into()]);
-    }
-    table.render(out)?;
-    Ok(())
-}
-
-/// Initializes AWS clients and discovers the candidate instances for `cfg`.
-/// It is the shared discovery step behind every CLI subcommand that contacts
-/// AWS.
-async fn discover_instances(cfg: &Config) -> Result<Vec<Instance>> {
-    let clients = tokio::time::timeout(CLI_TIMEOUT, Clients::new(&cfg.region))
-        .await
-        .context("initialize AWS clients: timed out")?;
-    tokio::time::timeout(CLI_TIMEOUT, clients.describe_target_instances())
-        .await
-        .context("discover instances: timed out")?
-        .context("discover instances")
-}
-
-/// How many instances each autoscaler would reconcile, every autoscaler
-/// seeded at 0. Instances held back by an ambiguous autoscaler do not count.
-fn autoscaler_counts(instances: &[Instance], resolver: &Resolver) -> HashMap<String, usize> {
-    let mut counts: HashMap<String, usize> = resolver.names().into_iter().map(|n| (n, 0)).collect();
-    for (_, eff) in resolver.plan(instances).managed {
-        *counts.entry(eff.policy).or_default() += 1;
-    }
-    counts
-}
-
-/// Discovers candidate instances via AWS and lists each with the autoscaler
-/// that targets it.
-pub async fn run_instances(path: &Path, env: &Env, out: &mut impl Write) -> Result<()> {
-    let cfg = load_config(path, env)?;
-    let resolver = Resolver::new(&list_autoscalers().await?);
-    let instances = discover_instances(&cfg).await?;
-    render_instances(&cfg, &resolver, &instances, out)
-}
-
-fn render_instances(
-    cfg: &Config,
-    resolver: &Resolver,
-    instances: &[Instance],
-    out: &mut impl Write,
-) -> Result<()> {
-    let plan = resolver.plan(instances);
-    let mut owner: Vec<String> = vec!["(none)".into(); instances.len()];
-    for (i, eff) in &plan.managed {
-        owner[*i].clone_from(&eff.policy);
-    }
-    for (i, names) in &plan.refused {
-        owner[*i] = format!("(ambiguous: {})", names.join(","));
-    }
-    let mut rows: Vec<(&String, &Instance)> = owner.iter().zip(instances).collect();
-    rows.sort_by(|a, b| {
-        let none = |s: &str| s.starts_with('(');
-        none(a.0)
-            .cmp(&none(b.0))
-            .then_with(|| a.0.cmp(b.0))
-            .then_with(|| a.1.id.cmp(&b.1.id))
-    });
-    let mut table = Table::new();
-    table.row(
-        [
-            "AUTOSCALER",
-            "INSTANCE_ID",
-            "NAME",
-            "ROOT_VOLUME",
-            "SIZE_GIB",
-        ]
-        .iter()
-        .map(ToString::to_string)
-        .collect(),
-    );
-    for (name, inst) in rows {
-        table.row(vec![
-            name.clone(),
-            inst.id.clone(),
-            or_dash(&inst.name),
-            or_dash(&inst.root_volume_id),
-            inst.root_volume_size_gib.to_string(),
-        ]);
-    }
-    table.render(out)?;
-    writeln!(
-        out,
-        "\n{} {} discovered in {}, {} targeted",
-        instances.len(),
-        pluralize(instances.len(), "instance", "instances"),
-        cfg.region,
-        plan.managed.len()
-    )?;
     Ok(())
 }
 
@@ -360,26 +187,6 @@ const fn pluralize<'a>(n: usize, singular: &'a str, plural: &'a str) -> &'a str 
     if n == 1 { singular } else { plural }
 }
 
-/// Renders the scale-up rules compactly, e.g. `max(10%,1GiB)`.
-fn scale_up_summary(eff: &Effective) -> String {
-    if eff.paused {
-        return "disabled".into();
-    }
-    let steps: Vec<String> = eff
-        .steps
-        .iter()
-        .map(|s| match s {
-            Step::Percent(p) => format!("{p}%"),
-            Step::GiB(g) => format!("{g}GiB"),
-        })
-        .collect();
-    format!(
-        "{}({})",
-        if eff.select_min { "min" } else { "max" },
-        steps.join(",")
-    )
-}
-
 /// Renders an empty column as a dash, so a blank cell always means "no
 /// value" rather than a rendering slip.
 fn or_dash(s: &str) -> String {
@@ -388,13 +195,7 @@ fn or_dash(s: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeMap;
-
     use super::*;
-    use crate::autoscaler::instance_volume::policy::tests::{
-        by_id, by_tags, iva, with_scale_up, with_utilization,
-    };
-    use crate::autoscaler::{ScalingPolicyType, SelectPolicy};
     use crate::pvscan::{KIND_PV, REASON_NO_CONSUMER_POD, REASON_RELEASED};
 
     fn write_example() -> (tempfile::TempDir, std::path::PathBuf) {
@@ -449,122 +250,6 @@ mod tests {
             assert_eq!(v["kind"], "CustomResourceDefinition");
             assert_eq!(v["spec"]["names"]["kind"], name);
         }
-    }
-
-    fn resolver() -> Resolver {
-        let mut muted = with_scale_up(
-            with_utilization(iva("db", by_tags(&[("Role", "db")])), 70),
-            Some(SelectPolicy::Min),
-            &[
-                (ScalingPolicyType::GiB, 50),
-                (ScalingPolicyType::Percent, 20),
-            ],
-        );
-        muted.spec.alert_enabled = false;
-        Resolver::new(&[
-            iva("bastion", by_id("i-0000000a")),
-            muted,
-            with_scale_up(
-                iva("off", by_id("i-0000000e")),
-                Some(SelectPolicy::Disabled),
-                &[],
-            ),
-            iva("broken", by_id("web-1")),
-        ])
-    }
-
-    fn inst(id: &str, name: &str, role: &str, size: i32) -> Instance {
-        let mut tags = BTreeMap::from([("Name".to_string(), name.to_string())]);
-        if !role.is_empty() {
-            tags.insert("Role".into(), role.into());
-        }
-        Instance {
-            id: id.into(),
-            name: name.into(),
-            tags,
-            root_device_name: "/dev/xvda".into(),
-            root_volume_id: format!("vol-{id}"),
-            root_volume_size_gib: size,
-        }
-    }
-
-    #[test]
-    fn autoscalers_table() {
-        let r = resolver();
-        let mut out = Vec::new();
-        render_autoscalers(&r, None, &mut out).unwrap();
-        let text = String::from_utf8(out).unwrap();
-        let lines: Vec<&str> = text.lines().collect();
-        assert_eq!(
-            lines,
-            vec![
-                "NAME     TARGET               UTILIZATION%  SCALE_UP        MAX_GIB  COOLDOWN  ALERT",
-                "bastion  Instance/i-0000000a  80            max(10%,1GiB)   1000     6h        true",
-                "db       TagSelector/Role=db  70            min(50GiB,20%)  1000     6h        false",
-                "off      Instance/i-0000000e  80            disabled        1000     6h        true",
-                "broken   (invalid: scaleTargetRef.name \"web-1\" is not an EC2 instance ID)",
-            ]
-        );
-        let counts = HashMap::from([("db".to_string(), 2usize)]);
-        let mut out = Vec::new();
-        render_autoscalers(&r, Some(&counts), &mut out).unwrap();
-        let text = String::from_utf8(out).unwrap();
-        assert!(
-            text.lines().next().unwrap().ends_with("ALERT  MATCHED"),
-            "{text}"
-        );
-        assert!(text.contains("false  2"), "{text}");
-
-        let mut out = Vec::new();
-        render_autoscalers(&Resolver::default(), None, &mut out).unwrap();
-        assert!(String::from_utf8(out).unwrap().ends_with("(none)\n"));
-    }
-
-    #[test]
-    fn instances_table_and_counts() {
-        let (_dir, path) = write_example();
-        let cfg = load_config(&path, &Env::default()).unwrap();
-        let r = resolver();
-        let instances = vec![
-            inst("i-0000000a", "bastion-01", "", 30),
-            inst("i-0000000c", "db-2", "db", 500),
-            inst("i-0000000b", "db-1", "db", 120),
-            inst("i-0000000d", "", "", 8),
-        ];
-        assert_eq!(
-            autoscaler_counts(&instances, &r),
-            HashMap::from([
-                ("bastion".to_string(), 1usize),
-                ("db".to_string(), 2),
-                ("off".to_string(), 0)
-            ])
-        );
-        let mut out = Vec::new();
-        render_instances(&cfg, &r, &instances, &mut out).unwrap();
-        let text = String::from_utf8(out).unwrap();
-        let lines: Vec<&str> = text.lines().collect();
-        assert_eq!(
-            lines,
-            vec![
-                "AUTOSCALER  INSTANCE_ID  NAME        ROOT_VOLUME     SIZE_GIB",
-                "bastion     i-0000000a   bastion-01  vol-i-0000000a  30",
-                "db          i-0000000b   db-1        vol-i-0000000b  120",
-                "db          i-0000000c   db-2        vol-i-0000000c  500",
-                "(none)      i-0000000d   -           vol-i-0000000d  8",
-                "",
-                "4 instances discovered in ap-northeast-2, 3 targeted",
-            ]
-        );
-
-        let overlap = Resolver::new(&[
-            iva("a", by_id("i-0000000a")),
-            iva("b", by_tags(&[("Name", "bastion-01")])),
-        ]);
-        let mut out = Vec::new();
-        render_instances(&cfg, &overlap, &instances[..1], &mut out).unwrap();
-        let text = String::from_utf8(out).unwrap();
-        assert!(text.contains("(ambiguous: a,b)  i-0000000a"), "{text}");
-        assert!(text.ends_with("1 instance discovered in ap-northeast-2, 0 targeted\n"));
     }
 
     #[test]

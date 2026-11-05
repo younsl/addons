@@ -24,7 +24,7 @@ Built with Rust 1.99.1 and shipped as a statically linked musl binary (cargo-zig
 - Optional gp3 throughput recommendations for in-cluster Nodes, piggybacked onto a size expansion. See [Node throughput recommendations](throughput-recommendation.md)
 - Always-on identification of unused PersistentVolumeClaims and PersistentVolumes. It never deletes one. See [Unused volume identification](unused-volumes.md)
 - Observability through [Prometheus metrics](metrics.md), Kubernetes Events, [Alertmanager alerts](alerting.md), and [Grafana annotations](grafana-annotations.md)
-- A [built-in CLI](cli.md) to validate config and inspect which instances each autoscaler reaches without a running controller
+- A [built-in CLI](cli.md) to validate config and list unused volumes without a running controller
 
 ## Conclusion
 

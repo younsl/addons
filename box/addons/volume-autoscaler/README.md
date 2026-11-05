@@ -25,7 +25,7 @@ volume-autoscaler is the successor of external-ebs-autoresizer, renamed when Per
 - **Throughput recommendations**: Optional gp3 throughput recommendations for Nodes. See [Node throughput recommendations](docs/throughput-recommendation.md).
 - **Unused volume identification**: Reports claims and volumes no workload uses, never deletes them. See [Unused volume identification](docs/unused-volumes.md).
 - **Observability**: [Prometheus metrics](docs/metrics.md), Kubernetes Events, [Alertmanager alerts](docs/alerting.md), and [Grafana annotations](docs/grafana-annotations.md).
-- **Built-in CLI**: Validates config and previews which instances each autoscaler targets. See [Built-in CLI](docs/cli.md).
+- **Built-in CLI**: Validates config and lists unused volumes. See [Built-in CLI](docs/cli.md).
 
 ## Quick Start
 

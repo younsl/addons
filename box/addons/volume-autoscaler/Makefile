@@ -5,7 +5,7 @@ IMAGE      := $(REGISTRY)/$(BINARY)
 COVER_MIN  ?= 70
 CONFIG     ?= config.example.yaml
 
-.PHONY: all build release run dev validate autoscalers instances crd test coverage fmt lint check clean \
+.PHONY: all build release run dev validate crd test coverage fmt lint check clean \
         zigbuild-amd64 zigbuild-arm64 zigbuild docker-build docker-push help
 
 .DEFAULT_GOAL := help
@@ -32,14 +32,6 @@ dev:
 ## validate: validate the config file via the built-in CLI (no AWS)
 validate:
 	cargo run -- validate --config $(CONFIG)
-
-## autoscalers: print InstanceVolumeAutoscalers and their effective settings (needs a kubeconfig)
-autoscalers:
-	cargo run -- autoscalers --config $(CONFIG)
-
-## instances: list discovered instances with their autoscaler (needs AWS credentials and a kubeconfig)
-instances:
-	cargo run -- instances --config $(CONFIG)
 
 CRD_DIR := charts/$(BINARY)/templates/crds
 
