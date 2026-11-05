@@ -1,0 +1,66 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="880" height="380" viewBox="0 0 880 380" role="img" aria-labelledby="t d">
+  <title id="t">AI를 쓰느냐보다 어떻게 쓰느냐가 중요하다</title>
+  <desc id="d">Anthropic 2026 연구에서 코딩 과제 직후의 퀴즈 점수. AI 없이 직접 코딩한 집단 평균 67%, AI 사용 집단 평균 50%, AI에 개념 질문을 한 참가자 65~86%, 코드 생성과 디버깅을 맡긴 참가자 24~39%.</desc>
+  <style>
+    .sans { font-family: Geist, Pretendard, -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", "Segoe UI", sans-serif; }
+    .mono { font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    .title { font-size: 20px; font-weight: 600; fill: #ededed; letter-spacing: -0.02em; }
+    .sub { font-size: 13px; fill: #a1a1a1; }
+    .label { font-size: 13px; fill: #ededed; }
+    .note { font-size: 11px; fill: #8f8f8f; }
+    .val { font-size: 13px; fill: #ededed; }
+    .tick { font-size: 10.5px; fill: #8f8f8f; }
+    .src { font-size: 10.5px; fill: #8f8f8f; }
+  </style>
+  <rect width="880" height="380" rx="12" fill="#000"/>
+  <rect x="0.5" y="0.5" width="879" height="379" rx="11.5" fill="none" stroke="#2e2e2e"/>
+
+  <text x="40" y="50" class="sans title">AI를 쓰느냐보다 어떻게 쓰느냐가 중요하다</text>
+  <text x="40" y="74" class="sans sub">몇 분 전 사용한 개념에 대한 퀴즈 점수, 집단과 AI 사용 패턴별</text>
+
+  <!-- grid: x = 330 + 4.9 * v -->
+  <g stroke="#1f1f1f" stroke-width="1">
+    <line x1="330" y1="104" x2="330" y2="300" stroke="#3a3a3a"/>
+    <line x1="452.5" y1="104" x2="452.5" y2="300"/>
+    <line x1="575" y1="104" x2="575" y2="300"/>
+    <line x1="697.5" y1="104" x2="697.5" y2="300"/>
+    <line x1="820" y1="104" x2="820" y2="300"/>
+  </g>
+  <g class="mono tick" text-anchor="middle">
+    <text x="330" y="318">0%</text>
+    <text x="452.5" y="318">25%</text>
+    <text x="575" y="318">50%</text>
+    <text x="697.5" y="318">75%</text>
+    <text x="820" y="318">100%</text>
+  </g>
+
+  <g class="sans">
+    <!-- hand coding: 67 -->
+    <text x="40" y="128" class="label">AI 없이 직접 코딩</text>
+    <text x="40" y="144" class="note">집단 평균</text>
+    <path d="M330,120 H654.3 Q658.3,120 658.3,124 V132 Q658.3,136 654.3,136 H330 Z" fill="#8f8f8f"/>
+    <text x="668" y="133" class="mono val">67%</text>
+
+    <!-- AI average: 50 -->
+    <text x="40" y="176" class="label">AI 사용</text>
+    <text x="40" y="192" class="note">집단 평균</text>
+    <path d="M330,168 H571 Q575,168 575,172 V180 Q575,184 571,184 H330 Z" fill="#8f8f8f"/>
+    <text x="585" y="181" class="mono val">50%</text>
+
+    <line x1="40" y1="212" x2="820" y2="212" stroke="#1f1f1f" stroke-dasharray="2 4"/>
+
+    <!-- conceptual: 65 to 86 -->
+    <text x="40" y="236" class="label">AI에 개념 질문</text>
+    <text x="40" y="252" class="note">고득점 패턴</text>
+    <rect x="648.5" y="228" width="102.9" height="16" rx="4" fill="#ededed"/>
+    <text x="761" y="241" class="mono val">65~86%</text>
+
+    <!-- delegation: 24 to 39 -->
+    <text x="40" y="280" class="label">AI가 코드 작성과 디버깅</text>
+    <text x="40" y="296" class="note">저득점 패턴</text>
+    <rect x="447.6" y="272" width="73.5" height="16" rx="4" fill="none" stroke="#ededed" stroke-width="1.5"/>
+    <text x="531" y="285" class="mono val">24~39%</text>
+  </g>
+
+  <text x="40" y="346" class="sans src">출처: Anthropic, How AI assistance impacts the formation of coding skills, 2026-01-29. 과제 직후 퀴즈, 지연 추적 없음.</text>
+</svg>

@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "argocd-canary-gate.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "argocd-canary-gate.labels" . | nindent 4 }}
+data:
+  config.yaml: |
+    {{- include "argocd-canary-gate.config" . | nindent 4 }}

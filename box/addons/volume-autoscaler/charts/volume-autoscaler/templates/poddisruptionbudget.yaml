@@ -1,0 +1,17 @@
+{{- if .Values.pdb.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "volume-autoscaler.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "volume-autoscaler.labels" . | nindent 4 }}
+spec:
+  maxUnavailable: {{ .Values.pdb.maxUnavailable }}
+  {{- with .Values.pdb.unhealthyPodEvictionPolicy }}
+  unhealthyPodEvictionPolicy: {{ . }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "volume-autoscaler.selectorLabels" . | nindent 6 }}
+{{- end }}

@@ -1,0 +1,50 @@
+# See https://pre-commit.com for more information
+# See https://pre-commit.com/hooks.html for more hooks
+default_install_hook_types: [pre-commit, pre-push]
+
+repos:
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.1
+    hooks:
+      - id: gitleaks
+        name: Scan for hardcoded secrets
+
+  # Helm
+  - repo: local
+    hooks:
+      - id: helm-docs
+        name: helm-docs
+        entry: make -C box/addons/charts docs
+        language: system
+        files: 'box/.*\.(yaml|tpl|gotmpl)$'
+        pass_filenames: false
+
+  # Docs
+  - repo: local
+    hooks:
+      - id: resume-pdf
+        name: resume-pdf
+        entry: make -C docs/resume pdf
+        language: system
+        files: '^docs/resume/resume\.html$'
+        pass_filenames: false
+
+  # Rust
+  - repo: local
+    hooks:
+      - id: cargo-fmt
+        name: cargo fmt
+        entry: scripts/cargo-changed.sh fmt
+        language: script
+        files: '\.rs$|Cargo\.(toml|lock)$'
+      - id: cargo-clippy
+        name: cargo clippy
+        entry: scripts/cargo-changed.sh clippy
+        language: script
+        files: '\.rs$|Cargo\.(toml|lock)$'
+      - id: cargo-test
+        name: cargo test
+        entry: scripts/cargo-changed.sh test
+        language: script
+        files: '\.rs$|Cargo\.(toml|lock)$'
+        stages: [pre-push]

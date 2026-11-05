@@ -1,0 +1,10 @@
+apiVersion: autoscaling.volume-autoscaler.sh/v1alpha1
+kind: PersistentVolumeClaimAutoscaler
+metadata:
+  name: shared-data
+  namespace: batch
+spec:
+  scaleTargetRef:
+    kind: PersistentVolumeClaim
+    name: shared-data
+  maxCapacity: 1Ti

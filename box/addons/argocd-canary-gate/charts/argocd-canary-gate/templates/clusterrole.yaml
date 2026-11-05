@@ -1,0 +1,22 @@
+{{- if .Values.rbac.create }}
+{{/*
+Cluster-scoped because Rollouts live in the Applications' destination
+namespaces, which the chart cannot enumerate, and an Application without a
+destination namespace is searched cluster-wide.
+*/}}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "argocd-canary-gate.fullname" . }}
+  labels:
+    {{- include "argocd-canary-gate.labels" . | nindent 4 }}
+rules:
+  - apiGroups:
+      - argoproj.io
+    resources:
+      - rollouts
+    verbs:
+      - get
+      - list
+      - watch
+{{- end }}

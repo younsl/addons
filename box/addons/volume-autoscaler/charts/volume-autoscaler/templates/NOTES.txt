@@ -1,0 +1,42 @@
+{{ include "volume-autoscaler.fullname" . }} is deployed.
+
+Controllers: {{ join ", " .Values.controllers }}
+Dry run: {{ .Values.config.dryRun }}
+{{- if has "instance-volume-autoscaler" .Values.controllers }}
+
+InstanceVolumeAutoscaler: discovering instances in region {{ .Values.config.region | default "(unset!)" }} every {{ .Values.config.reconcileInterval }}.
+Only instances an InstanceVolumeAutoscaler targets are resized{{ if .Values.instanceVolumeAutoscalers }} ({{ len .Values.instanceVolumeAutoscalers }} rendered by this release){{ end }}.
+  kubectl get iva
+{{- end }}
+{{- if has "persistent-volume-claim-autoscaler" .Values.controllers }}
+
+PersistentVolumeClaimAutoscaler: reading kubelet_volume_stats from {{ .Values.config.metrics.url | default "(metrics.url unset!)" }} every {{ .Values.config.claimReconcileInterval }}.
+Only claims a PersistentVolumeClaimAutoscaler targets are resized{{ if .Values.persistentVolumeClaimAutoscalers }} ({{ len .Values.persistentVolumeClaimAutoscalers }} rendered by this release){{ end }}.
+  kubectl get pvca -A
+{{- end }}
+
+Logs:
+  kubectl -n {{ .Release.Namespace }} logs deploy/{{ include "volume-autoscaler.fullname" . }} -f
+
+{{- if and .Values.config.throughputRecommendation.enabled (has "instance-volume-autoscaler" .Values.controllers) }}
+
+Node EBS throughput recommendations are enabled, reading
+{{ .Values.config.metrics.url | default "(metrics.url unset!)" }}
+every {{ .Values.config.throughputRecommendation.interval }} over a {{ .Values.config.throughputRecommendation.lookbackWindow }} window.
+Recommendations are published as Node annotations and never applied to a volume.
+
+Confirm the metrics backend is readable:
+  kubectl -n {{ .Release.Namespace }} logs deploy/{{ include "volume-autoscaler.fullname" . }} | grep "metrics check"
+
+List the current recommendations:
+  kubectl get nodes -o custom-columns='NODE:.metadata.name,ACTION:.metadata.annotations.volume-autoscaler/throughput-recommendation,CURRENT:.metadata.annotations.volume-autoscaler/throughput-current-mibps,UTIL%:.metadata.annotations.volume-autoscaler/throughput-utilization-percent,TARGET:.metadata.annotations.volume-autoscaler/throughput-recommended-mibps'
+{{- end }}
+
+{{- if and (has "instance-volume-autoscaler" .Values.controllers) (not .Values.serviceAccount.annotations) }}
+
+WARNING: serviceAccount.annotations has no eks.amazonaws.com/role-arn set.
+The addon needs an IRSA role with ec2:DescribeInstances, ec2:DescribeVolumes,
+ec2:DescribeVolumesModifications, ec2:ModifyVolume, ssm:SendCommand,
+ssm:GetCommandInvocation, ssm:DescribeInstanceInformation{{ if .Values.config.throughputRecommendation.enabled }},
+ec2:DescribeInstanceTypes{{ end }}.
+{{- end }}

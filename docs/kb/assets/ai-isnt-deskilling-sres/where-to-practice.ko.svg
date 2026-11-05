@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="880" height="420" viewBox="0 0 880 420" role="img" aria-labelledby="t d">
+  <title id="t">숙련은 싼 곳에서 기른다</title>
+  <desc id="d">실제 장애와 게임데이에서의 연습 비교. 실제 장애는 고객 영향이 있고, 중대형 기업 90% 이상에서 다운타임 1시간당 30만 달러 이상이 들며, 정답이 없고, 반복할 수 없고, 그때 온콜인 사람만 연습한다. 게임데이는 고객 영향이 없고, 엔지니어 시간만 들며, 정답과 대조해 회고할 수 있고, 어떤 시나리오든 언제든 재연할 수 있으며, 주니어가 인시던트 커맨더를 맡을 수 있다.</desc>
+  <style>
+    .sans { font-family: Geist, Pretendard, -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", "Segoe UI", sans-serif; }
+    .mono { font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    .title { font-size: 20px; font-weight: 600; fill: #ededed; letter-spacing: -0.02em; }
+    .sub { font-size: 13px; fill: #a1a1a1; }
+    .colhead { font-size: 14px; font-weight: 600; }
+    .row { font-size: 11px; fill: #8f8f8f; letter-spacing: 0.06em; }
+    .bad { font-size: 13px; fill: #a1a1a1; }
+    .good { font-size: 13px; fill: #ededed; }
+    .src { font-size: 10.5px; fill: #8f8f8f; }
+  </style>
+  <rect width="880" height="420" rx="12" fill="#000"/>
+  <rect x="0.5" y="0.5" width="879" height="419" rx="11.5" fill="none" stroke="#2e2e2e"/>
+
+  <text x="40" y="50" class="sans title">숙련은 싼 곳에서 기른다</text>
+  <text x="40" y="74" class="sans sub">실제 장애에서의 의도적 비효율 vs 게임데이에서의 같은 연습</text>
+
+  <!-- column frames -->
+  <rect x="250.5" y="100.5" width="284" height="270" rx="8" fill="none" stroke="#2e2e2e"/>
+  <rect x="550.5" y="100.5" width="290" height="270" rx="8" fill="#0a0a0a" stroke="#ededed"/>
+
+  <g class="sans">
+    <text x="270" y="130" class="colhead" fill="#a1a1a1">실제 장애</text>
+    <text x="570" y="130" class="colhead" fill="#ededed">게임데이</text>
+
+    <g stroke="#1f1f1f">
+      <line x1="40" y1="148" x2="840" y2="148"/>
+      <line x1="40" y1="192" x2="840" y2="192"/>
+      <line x1="40" y1="236" x2="840" y2="236"/>
+      <line x1="40" y1="280" x2="840" y2="280"/>
+      <line x1="40" y1="324" x2="840" y2="324"/>
+    </g>
+
+    <text x="40" y="175" class="mono row">고객 영향</text>
+    <text x="270" y="175" class="bad">있음, 연습하는 내내</text>
+    <text x="570" y="175" class="good">없음</text>
+
+    <text x="40" y="219" class="mono row">느려지는 비용</text>
+    <text x="270" y="219" class="bad">다운타임 1시간당 $300K 이상</text>
+    <text x="570" y="219" class="good">엔지니어 시간뿐</text>
+
+    <text x="40" y="263" class="mono row">정답 존재</text>
+    <text x="270" y="263" class="bad">없음, 회고 기준도 없음</text>
+    <text x="570" y="263" class="good">있음, 정답과 대조해 회고</text>
+
+    <text x="40" y="307" class="mono row">반복 가능</text>
+    <text x="270" y="307" class="bad">불가, 드물고 무작위</text>
+    <text x="570" y="307" class="good">어떤 시나리오든 언제든</text>
+
+    <text x="40" y="351" class="mono row">연습하는 사람</text>
+    <text x="270" y="351" class="bad">그때 온콜인 사람</text>
+    <text x="570" y="351" class="good">주니어가 인시던트 커맨더</text>
+  </g>
+
+  <text x="40" y="398" class="sans src">출처: ITIC 2024 Hourly Cost of Downtime (중대형 기업 90% 이상), Google SRE 책 28장 (Wheel of Misfortune), Bainbridge 1983.</text>
+</svg>

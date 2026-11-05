@@ -1,0 +1,12 @@
+apiVersion: autoscaling.volume-autoscaler.sh/v1alpha1
+kind: InstanceVolumeAutoscaler
+metadata:
+  name: bastion
+spec:
+  scaleTargetRef:
+    kind: Instance
+    name: i-0123456789abcdef0
+  maxCapacity: 100Gi
+  behavior:
+    scaleUp:
+      cooldownDuration: 6h

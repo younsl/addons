@@ -1,0 +1,43 @@
+{{- include "argocd-canary-gate.certs" . -}}
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  name: {{ include "argocd-canary-gate.fullname" . }}
+  {{- if .Values.webhook.certManager.enabled }}
+  annotations:
+    cert-manager.io/inject-ca-from: {{ printf "%s/%s" .Release.Namespace (include "argocd-canary-gate.fullname" .) }}
+  {{- end }}
+  labels:
+    {{- include "argocd-canary-gate.labels" . | nindent 4 }}
+webhooks:
+  - name: {{ printf "%s.younsl.github.io" (include "argocd-canary-gate.name" .) }}
+    admissionReviewVersions:
+      - v1
+    sideEffects: NoneOnDryRun
+    failurePolicy: {{ .Values.webhook.failurePolicy }}
+    timeoutSeconds: {{ .Values.webhook.timeoutSeconds }}
+    clientConfig:
+      service:
+        name: {{ include "argocd-canary-gate.fullname" . }}
+        namespace: {{ .Release.Namespace }}
+        path: /validate
+        port: {{ .Values.service.webhookPort }}
+      {{- if not .Values.webhook.certManager.enabled }}
+      caBundle: {{ .Values.generatedCerts.ca }}
+      {{- end }}
+    rules:
+      - apiGroups:
+          - argoproj.io
+        apiVersions:
+          - v1alpha1
+        operations:
+          - CREATE
+          - UPDATE
+        resources:
+          - applications
+        scope: Namespaced
+    namespaceSelector:
+      matchLabels:
+        kubernetes.io/metadata.name: {{ .Values.canaryGate.argocd.namespace }}
+    matchConditions:
+      {{- include "argocd-canary-gate.matchConditions" . | nindent 6 }}

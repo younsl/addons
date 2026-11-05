@@ -1,0 +1,31 @@
+argocd-canary-gate {{ .Chart.AppVersion }} is installed.
+
+Mode:             {{ .Values.canaryGate.mode }}
+On lookup error:  {{ .Values.canaryGate.onError }}
+Tracking label:   {{ .Values.canaryGate.rollouts.trackingLabel }}
+Watched:          {{ join ", " .Values.canaryGate.rollouts.strategies }}
+
+The webhook is live now. A sync of an Application whose Rollout has an update
+in flight is {{ if eq .Values.canaryGate.mode "enforce" }}denied{{ else }}allowed with a warning{{ end }}. An Application that manages no watched
+Rollout syncs freely.
+
+Every blocked or warned verdict is also recorded as a Kubernetes Event on the
+Application:
+
+  kubectl -n {{ .Values.canaryGate.argocd.namespace }} describe application <app>
+
+To bypass the gate for one Application:
+
+  kubectl -n {{ .Values.canaryGate.argocd.namespace }} annotate application <app> \
+    {{ .Values.canaryGate.exempt.annotation }}=true
+
+The UI tile is optional and the gate enforces without it. To render the verdict
+in the Argo CD status panel, register the proxy extension in argocd-cm under
+the name {{ .Values.uiExtension.name }} and deliver the script with an
+argocd-extension-installer init container pointed at
+/api/v1/extension.tar on this service. See the chart README.
+
+Check a verdict without syncing anything:
+
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "argocd-canary-gate.fullname" . }} {{ .Values.service.adminPort }}
+  curl -s 'localhost:{{ .Values.service.adminPort }}/api/v1/gate?app=<your-app>' | jq

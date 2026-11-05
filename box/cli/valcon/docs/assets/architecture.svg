@@ -1,0 +1,99 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1248 628">
+  <style>
+    .t{font-family:Geist,Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif}
+    .m{font-family:"Geist Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+    .h{fill:#ededed;font-size:20px;font-weight:600;letter-spacing:-0.4px}
+    .s{fill:#a1a1a1;font-size:13px}
+    .n{fill:#ededed;font-size:13px;font-weight:500}
+    .d{fill:#8f8f8f;font-size:11px}
+    .l{fill:#666;font-size:11px}
+    .card{fill:#0a0a0a;stroke:#2e2e2e}
+    .hi{fill:#0a0a0a;stroke:#ededed}
+    .chip{fill:#111;stroke:#262626}
+    .ns{fill:#050505;stroke:#262626}
+    .edge{stroke:#525252;stroke-width:1.25;fill:none}
+    .bound{fill:none;stroke:#2e2e2e;stroke-dasharray:4 4}
+  </style>
+  <defs>
+    <pattern id="grid" width="24" height="24" patternUnits="userSpaceOnUse">
+      <circle cx="1" cy="1" r="0.9" fill="#161616"/>
+    </pattern>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0 0 L10 5 L0 10 z" fill="#8f8f8f"/>
+    </marker>
+  </defs>
+
+  <rect width="1248" height="628" fill="#000"/>
+  <rect width="1248" height="628" fill="url(#grid)"/>
+
+  <text x="40" y="52" class="t h">valcon</text>
+  <text x="40" y="76" class="t s">Reads ElastiCache state from AWS APIs and pod sockets. Keys are read through an ephemeral probe in a pod that already reaches the group, never from the workstation to :6379</text>
+
+  <rect x="40" y="108" width="280" height="136" rx="10" class="bound"/>
+  <text x="56" y="130" class="t l">Workstation</text>
+  <rect x="56" y="144" width="248" height="80" rx="6" class="hi"/>
+  <text x="72" y="172" class="m n">valcon</text>
+  <text x="72" y="192" class="t d">terminal UI, read only</text>
+  <text x="72" y="210" class="m l">AWS_PROFILE, kubeconfig</text>
+
+  <rect x="40" y="284" width="280" height="256" rx="10" class="bound"/>
+  <text x="56" y="306" class="t l">AWS APIs</text>
+  <rect x="56" y="320" width="248" height="60" rx="6" class="card"/>
+  <text x="72" y="344" class="t n">Amazon ElastiCache</text>
+  <text x="72" y="364" class="m l">DescribeReplicationGroups</text>
+  <rect x="56" y="392" width="248" height="60" rx="6" class="card"/>
+  <text x="72" y="416" class="t n">Amazon EC2</text>
+  <text x="72" y="436" class="m l">DescribeNetworkInterfaces</text>
+  <rect x="56" y="464" width="248" height="60" rx="6" class="card"/>
+  <text x="72" y="488" class="t n">Amazon CloudWatch</text>
+  <text x="72" y="508" class="m l">GetMetricData</text>
+
+  <rect x="440" y="108" width="768" height="480" rx="10" class="bound"/>
+  <text x="456" y="130" class="t l">VPC</text>
+
+  <rect x="464" y="144" width="448" height="420" rx="10" class="bound"/>
+  <text x="480" y="166" class="t l">EKS cluster</text>
+  <rect x="488" y="180" width="400" height="64" rx="6" class="card"/>
+  <text x="504" y="206" class="t n">Kubernetes API server</text>
+  <text x="504" y="226" class="m l">pods/exec, pods/ephemeralcontainers</text>
+
+  <rect x="488" y="280" width="400" height="260" rx="8" class="ns"/>
+  <text x="504" y="302" class="t l">Scanned namespace</text>
+  <rect x="504" y="316" width="352" height="208" rx="6" class="card"/>
+  <text x="520" y="338" class="t l">Pod already connected to the group</text>
+  <rect x="520" y="352" width="320" height="64" rx="6" class="chip"/>
+  <text x="536" y="378" class="t n">App container</text>
+  <text x="536" y="398" class="m l">cat /proc/net/tcp /proc/net/tcp6</text>
+  <rect x="520" y="432" width="320" height="76" rx="6" class="hi"/>
+  <text x="536" y="456" class="m n">valcon-probe</text>
+  <text x="536" y="476" class="t d">ephemeral container, non-root, reused</text>
+  <text x="536" y="494" class="m l">nc: INFO, SCAN, TYPE, ..., QUIT</text>
+
+  <rect x="976" y="280" width="208" height="260" rx="10" class="bound"/>
+  <text x="992" y="302" class="t l">ElastiCache replication group</text>
+  <rect x="992" y="316" width="176" height="56" rx="6" class="card"/>
+  <text x="1008" y="338" class="t n">Primary node</text>
+  <text x="1008" y="356" class="m l">ENI IP:6379</text>
+  <rect x="992" y="392" width="176" height="56" rx="6" class="card"/>
+  <text x="1008" y="414" class="t n">Replica node</text>
+  <text x="1008" y="432" class="m l">ENI IP:6379</text>
+  <rect x="992" y="468" width="176" height="56" rx="6" class="card"/>
+  <text x="1008" y="490" class="t n">Replica node</text>
+  <text x="1008" y="508" class="m l">ENI IP:6379</text>
+
+  <g class="edge" marker-end="url(#arrow)">
+    <path d="M180 224 V278"/>
+    <path d="M304 196 H482"/>
+    <path d="M760 244 V346"/>
+    <path d="M872 244 V450 H846"/>
+    <path d="M840 490 H970"/>
+  </g>
+  <g class="t l">
+    <text x="188" y="264">describe, metrics</text>
+    <text x="372" y="188" text-anchor="middle">exec, attach probe</text>
+    <text x="752" y="268" text-anchor="end">exec cat</text>
+    <text x="864" y="268" text-anchor="end">attach, exec nc</text>
+    <text x="944" y="482" text-anchor="middle" class="m">:6379</text>
+    <text x="944" y="506" text-anchor="middle">read only</text>
+  </g>
+</svg>

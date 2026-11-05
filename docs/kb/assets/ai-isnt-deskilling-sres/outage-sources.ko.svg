@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="880" height="350" viewBox="0 0 880 350" role="img" aria-labelledby="t d">
+  <title id="t">반복 경로의 사람이 장애의 주된 원인이다</title>
+  <desc id="d">Google SRE에 따르면 장애의 약 70%는 운영 중인 시스템의 변경에서 나온다. Uptime Institute에 따르면 사람의 실수는 장애의 66~80%에 관여한다. 2023년 사람 실수 장애 중 47%는 절차 미준수, 40%는 절차 결함을 원인으로 꼽았다.</desc>
+  <style>
+    .sans { font-family: Geist, Pretendard, -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", "Segoe UI", sans-serif; }
+    .mono { font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    .title { font-size: 20px; font-weight: 600; fill: #ededed; letter-spacing: -0.02em; }
+    .sub { font-size: 13px; fill: #a1a1a1; }
+    .hero { font-size: 40px; font-weight: 600; fill: #ededed; letter-spacing: -0.03em; }
+    .body { font-size: 13px; fill: #ededed; }
+    .meta { font-size: 10.5px; fill: #8f8f8f; letter-spacing: 0.04em; }
+    .small { font-size: 12px; fill: #ededed; }
+    .val { font-size: 12px; fill: #ededed; }
+    .foot { font-size: 12px; fill: #a1a1a1; }
+  </style>
+  <rect width="880" height="350" rx="12" fill="#000"/>
+  <rect x="0.5" y="0.5" width="879" height="349" rx="11.5" fill="none" stroke="#2e2e2e"/>
+
+  <text x="40" y="50" class="sans title">반복 경로의 사람이 장애의 주된 원인이다</text>
+  <text x="40" y="74" class="sans sub">Tier 1 자동화가 생산성만이 아니라 신뢰성의 이득인 이유</text>
+
+  <!-- tile 1 -->
+  <rect x="40.5" y="100.5" width="254" height="180" rx="8" fill="none" stroke="#2e2e2e"/>
+  <text x="60" y="160" class="sans hero">~70%</text>
+  <text x="60" y="190" class="sans body">장애가 운영 중인 시스템의</text>
+  <text x="60" y="208" class="sans body">변경에서 발생</text>
+  <text x="60" y="262" class="mono meta">GOOGLE SRE BOOK</text>
+
+  <!-- tile 2 -->
+  <rect x="312.5" y="100.5" width="254" height="180" rx="8" fill="none" stroke="#2e2e2e"/>
+  <text x="332" y="160" class="sans hero">66~80%</text>
+  <text x="332" y="190" class="sans body">장애에 사람의 실수가</text>
+  <text x="332" y="208" class="sans body">기여 요인으로 관여</text>
+  <text x="332" y="262" class="mono meta">UPTIME INSTITUTE, 25년</text>
+
+  <!-- tile 3: bars, x = 604 + 2.2 * v -->
+  <rect x="584.5" y="100.5" width="255" height="180" rx="8" fill="none" stroke="#ededed"/>
+  <text x="604" y="128" class="sans body">사람 실수 장애 중</text>
+  <text x="604" y="156" class="sans small">직원이 절차를 따르지 않음</text>
+  <path d="M604,164 H703.4 Q707.4,164 707.4,168 V174 Q707.4,178 703.4,178 H604 Z" fill="#ededed"/>
+  <text x="716" y="175" class="mono val">47%</text>
+  <text x="604" y="206" class="sans small">절차 자체가 잘못됨</text>
+  <path d="M604,214 H688 Q692,214 692,218 V224 Q692,228 688,228 H604 Z" fill="#8f8f8f"/>
+  <text x="700" y="225" class="mono val">40%</text>
+  <text x="604" y="262" class="mono meta">UPTIME INSTITUTE, 2023</text>
+
+  <text x="40" y="314" class="sans foot">런북을 코드로 만들면 첫 번째 실패는 사라지고, 두 번째는 PR에서 리뷰할 수 있다.</text>
+</svg>

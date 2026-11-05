@@ -1,0 +1,143 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1320 640">
+  <style>
+    .t{font-family:Geist,Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif}
+    .m{font-family:"Geist Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+    .h{fill:#ededed;font-size:20px;font-weight:600;letter-spacing:-0.4px}
+    .s{fill:#a1a1a1;font-size:13px}
+    .n{fill:#ededed;font-size:13px;font-weight:500}
+    .d{fill:#8f8f8f;font-size:11px}
+    .l{fill:#666;font-size:11px}
+    .k{fill:#8f8f8f;font-size:10.5px}
+    .v{fill:#ededed;font-size:10.5px}
+    .card{fill:#0a0a0a;stroke:#2e2e2e}
+    .hi{fill:#0a0a0a;stroke:#ededed}
+    .chip{fill:#111;stroke:#262626}
+    .ns{fill:#050505;stroke:#262626}
+    .edge{stroke:#525252;stroke-width:1.25;fill:none}
+    .dash{stroke:#525252;stroke-width:1.25;fill:none;stroke-dasharray:4 3}
+    .bound{fill:none;stroke:#2e2e2e;stroke-dasharray:4 4}
+  </style>
+  <defs>
+    <pattern id="grid" width="24" height="24" patternUnits="userSpaceOnUse">
+      <circle cx="1" cy="1" r="0.9" fill="#161616"/>
+    </pattern>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0 0 L10 5 L0 10 z" fill="#8f8f8f"/>
+    </marker>
+  </defs>
+
+  <rect width="1320" height="640" fill="#000"/>
+  <rect width="1320" height="640" fill="url(#grid)"/>
+
+  <text x="40" y="52" class="t h">How it works</text>
+  <text x="40" y="76" class="t s">InstanceVolumeAutoscaler resources declare the targets, the leader Pod reconciles them against EC2 and reports HPA-style status</text>
+
+  <rect x="40" y="128" width="256" height="356" rx="6" class="card"/>
+  <text x="56" y="156" class="t n">Operator</text>
+  <text x="56" y="176" class="t d">kubectl apply or Argo CD</text>
+  <rect x="56" y="196" width="224" height="272" rx="6" class="chip"/>
+  <g class="m k" xml:space="preserve">
+    <text x="68" y="218">kind: <tspan class="v">InstanceVolumeAutoscaler</tspan></text>
+    <text x="68" y="235">metadata:</text>
+    <text x="68" y="252">  name: <tspan class="v">database</tspan></text>
+    <text x="68" y="269">spec:</text>
+    <text x="68" y="286">  scaleTargetRef:</text>
+    <text x="68" y="303">    kind: <tspan class="v">TagSelector</tspan></text>
+    <text x="68" y="320">    tags:</text>
+    <text x="68" y="337">      Role: <tspan class="v">database</tspan></text>
+    <text x="68" y="354">  maxCapacity: <tspan class="v">2Ti</tspan></text>
+    <text x="68" y="371">  behavior:</text>
+    <text x="68" y="388">    scaleUp:</text>
+    <text x="68" y="405">      cooldownDuration: <tspan class="v">6h</tspan></text>
+    <text x="68" y="422">      policies:</text>
+    <text x="68" y="439">      - type: <tspan class="v">GiB</tspan></text>
+    <text x="68" y="456">        value: <tspan class="v">50</tspan></text>
+  </g>
+
+  <rect x="320" y="108" width="560" height="500" rx="10" class="bound"/>
+  <text x="336" y="130" class="t l">Kubernetes cluster</text>
+
+  <rect x="344" y="140" width="220" height="88" rx="6" class="card"/>
+  <text x="360" y="166" class="t n">kube-apiserver</text>
+  <text x="360" y="186" class="t d">CRD schema and CEL rules</text>
+  <text x="360" y="204" class="t d">reject invalid specs on apply</text>
+
+  <rect x="612" y="140" width="244" height="168" rx="6" class="hi"/>
+  <text x="628" y="166" class="t n">InstanceVolumeAutoscaler</text>
+  <text x="628" y="186" class="t d">cluster-scoped, spec and status</text>
+  <rect x="628" y="200" width="212" height="92" rx="6" class="chip"/>
+  <g class="m k" xml:space="preserve">
+    <text x="640" y="222">TARGET       <tspan class="v">Role=database</tspan></text>
+    <text x="640" y="240">UTILIZATION  <tspan class="v">92%/70%</tspan></text>
+    <text x="640" y="258">VOLUMES      <tspan class="v">3</tspan></text>
+    <text x="640" y="276">STATUS       <tspan class="v">Ready</tspan></text>
+  </g>
+
+  <rect x="344" y="336" width="512" height="248" rx="8" class="ns"/>
+  <text x="360" y="356" class="t l">Deployment, replicas: N</text>
+
+  <rect x="368" y="372" width="140" height="52" rx="6" class="card"/>
+  <text x="384" y="396" class="t n">Lease</text>
+  <text x="384" y="413" class="t d">leader election</text>
+
+  <rect x="368" y="452" width="140" height="64" rx="6" class="card" stroke-dasharray="4 3"/>
+  <text x="384" y="482" class="t n">Pod (standby)</text>
+  <text x="384" y="500" class="t d">waits on the lease</text>
+
+  <rect x="548" y="372" width="284" height="184" rx="6" class="hi"/>
+  <text x="564" y="398" class="t n">Pod (leader)</text>
+  <rect x="564" y="412" width="252" height="58" rx="6" class="chip"/>
+  <text x="578" y="436" class="t n">Spec validator</text>
+  <text x="578" y="455" class="t d">watches specs, sets InvalidSpec on apply</text>
+  <rect x="564" y="482" width="252" height="58" rx="6" class="chip"/>
+  <text x="578" y="506" class="t n">Resize pass</text>
+  <text x="578" y="525" class="t d">every reconcileInterval: measure, grow</text>
+
+  <rect x="1000" y="108" width="280" height="500" rx="10" class="bound"/>
+  <text x="1016" y="130" class="t l">AWS account</text>
+
+  <rect x="1020" y="140" width="240" height="64" rx="6" class="card"/>
+  <text x="1036" y="168" class="t n">IAM role</text>
+  <text x="1036" y="186" class="t d">EKS Pod Identity or IRSA</text>
+
+  <rect x="1020" y="228" width="240" height="80" rx="6" class="card"/>
+  <text x="1036" y="254" class="t n">EC2 API</text>
+  <text x="1036" y="274" class="m l">DescribeInstances</text>
+  <text x="1036" y="292" class="m l">ModifyVolume</text>
+
+  <rect x="1020" y="332" width="240" height="252" rx="8" class="ns"/>
+  <text x="1036" y="352" class="t l">Target EC2 instance</text>
+  <rect x="1036" y="364" width="196" height="64" rx="6" class="card"/>
+  <text x="1052" y="392" class="t n">SSM Agent</text>
+  <text x="1052" y="410" class="m l">df, growpart, resize2fs</text>
+  <rect x="1036" y="452" width="196" height="64" rx="6" class="card"/>
+  <text x="1052" y="480" class="t n">Root EBS volume</text>
+  <text x="1052" y="498" class="t d">grown in place</text>
+  <text x="1036" y="548" class="t d">matched by instance ID or tags,</text>
+  <text x="1036" y="566" class="t d">one autoscaler per instance</text>
+
+  <g class="edge" marker-end="url(#arrow)">
+    <path d="M296 184 H338"/>
+    <path d="M564 184 H606"/>
+    <path d="M700 308 V366"/>
+    <path d="M780 372 V314" class="dash"/>
+    <path d="M438 452 V430" class="dash"/>
+    <path d="M548 398 H514"/>
+    <path d="M832 398 H960 V172 H1014"/>
+    <path d="M832 500 H972 V268 H1014"/>
+    <path d="M832 540 H984 V396 H1030"/>
+    <path d="M1248 308 V484 H1238"/>
+    <path d="M1134 428 V446"/>
+  </g>
+  <g class="t l">
+    <text x="317" y="176" text-anchor="middle">apply</text>
+    <text x="585" y="176" text-anchor="middle">store</text>
+    <text x="692" y="344" text-anchor="end">watch, list</text>
+    <text x="788" y="344">status, Events</text>
+    <text x="531" y="390" text-anchor="middle">renew</text>
+    <text x="896" y="390" text-anchor="middle">credentials</text>
+    <text x="902" y="492" text-anchor="middle">discover, grow</text>
+    <text x="902" y="532" text-anchor="middle" class="m">SendCommand</text>
+    <text x="1142" y="442">extend</text>
+  </g>
+</svg>

@@ -1,0 +1,35 @@
+{{- range $key, $waypoint := .Values.waypoints }}
+{{- $cfg := include "istio-waypoints.resolve" (dict "key" $key "waypoint" $waypoint "root" $) | fromYaml }}
+{{- if and $cfg.enabled $cfg.telemetry.enabled }}
+---
+apiVersion: telemetry.istio.io/v1
+kind: Telemetry
+metadata:
+  name: {{ $cfg.name }}
+  namespace: {{ $cfg.namespace }}
+  labels:
+    {{- include "istio-waypoints.waypointLabels" (dict "root" $ "cfg" $cfg) | nindent 4 }}
+  {{- $annotations := include "istio-waypoints.waypointAnnotations" (dict "root" $ "cfg" $cfg) | trim }}
+  {{- if $annotations }}
+  annotations:
+    {{- $annotations | nindent 4 }}
+  {{- end }}
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: {{ $cfg.name }}
+  {{- with $cfg.telemetry.accessLogging }}
+  accessLogging:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- with $cfg.telemetry.metrics }}
+  metrics:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- with $cfg.telemetry.tracing }}
+  tracing:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+{{- end }}
+{{- end }}

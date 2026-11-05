@@ -1,0 +1,303 @@
+# -- (string) Override the chart name
+nameOverride: ""
+# -- (string) Override the fully qualified release name
+fullnameOverride: ""
+
+image:
+  # -- (string) Container image registry host
+  registry: ghcr.io
+  # -- (string) Container image repository path without registry prefix
+  repository: younsl/volume-autoscaler
+  # -- (string) Image tag, defaults to appVersion
+  tag: ""
+  # -- (string) Image digest (`sha256:...`), takes precedence over tag
+  digest: ""
+  # -- (string) Image pull policy
+  pullPolicy: IfNotPresent
+
+# -- (list) Image pull secrets for private registries
+imagePullSecrets: []
+
+# -- (int) Replicas. Above 1 enables leader election
+replicaCount: 1
+
+# -- (int) Number of old ReplicaSets to retain for rollback
+revisionHistoryLimit: 3
+
+# -- (object) Deployment update strategy
+strategy:
+  type: RollingUpdate
+  rollingUpdate:
+    # -- (string|int) Max surge during an update
+    maxSurge: 25%
+    # -- (string|int) Max unavailable during an update
+    maxUnavailable: 25%
+
+pdb:
+  # -- (bool) Create a PodDisruptionBudget
+  enabled: true
+  # -- (int|string) Max unavailable Pods
+  maxUnavailable: 1
+  # -- (string) `IfHealthyBudget` or `AlwaysAllow`
+  unhealthyPodEvictionPolicy: IfHealthyBudget
+
+# -- (list) Controllers to run (`--controllers`). RBAC follows the enabled ones
+controllers:
+  - instance-volume-autoscaler
+  - persistent-volume-claim-autoscaler
+  - unused-volume-scan
+
+crds:
+  # -- (bool) Install and upgrade both CRDs
+  install: true
+  # -- (bool) Keep the CRDs on `helm uninstall`
+  keep: true
+  # -- (object) Extra CRD annotations
+  annotations: {}
+  # -- (object) Extra CRD labels
+  additionalLabels: {}
+
+# -- (list) InstanceVolumeAutoscalers to render (`name`, `labels`, `annotations`, `spec`). See examples/
+instanceVolumeAutoscalers: []
+  # - name: bastion
+  #   spec:
+  #     scaleTargetRef:
+  #       kind: Instance
+  #       name: i-0123456789abcdef0
+  #     maxCapacity: 100Gi
+  # - name: database
+  #   spec:
+  #     scaleTargetRef:
+  #       kind: TagSelector
+  #       tags:
+  #         Role: database
+  #     maxCapacity: 2Ti
+  #     metrics:
+  #       - type: Resource
+  #         resource:
+  #           name: storage
+  #           target:
+  #             type: Utilization
+  #             averageUtilization: 70
+  #     behavior:
+  #       scaleUp:
+  #         selectPolicy: Max
+  #         policies:
+  #           - type: Percent
+  #             value: 20
+  #           - type: GiB
+  #             value: 50
+
+# -- (list) PersistentVolumeClaimAutoscalers to render, like the above plus `namespace`
+persistentVolumeClaimAutoscalers: []
+  # - name: web
+  #   namespace: web
+  #   spec:
+  #     scaleTargetRef:
+  #       kind: StatefulSet
+  #       name: web
+  #     maxCapacity: 200Gi
+  #     metrics:
+  #       - type: Resource
+  #         resource:
+  #           name: storage
+  #           target:
+  #             type: Utilization
+  #             averageUtilization: 80
+  #       - type: Resource
+  #         resource:
+  #           name: inodes
+  #           target:
+  #             type: Utilization
+  #             averageUtilization: 90
+  #     behavior:
+  #       scaleUp:
+  #         cooldownDuration: 30m
+
+# Rendered into the config.yaml ConfigMap, except Grafana Secret fields.
+config:
+  # -- (string) AWS region (required)
+  region: ""
+  # -- (string) InstanceVolumeAutoscaler reconcile interval
+  reconcileInterval: "5m"
+  # -- (string) PersistentVolumeClaimAutoscaler reconcile interval, at least 10s
+  claimReconcileInterval: "1m"
+  # -- (int) Max instances reconciled in parallel
+  reconcileConcurrency: 10
+  # -- (string) SSM command timeout
+  ssmCommandTimeout: "5m"
+  # -- (string) SSM and volume modification poll interval
+  ssmPollInterval: "1s"
+  # -- (string) ModifyVolume optimizing-wait timeout
+  volumeModifyTimeout: "10m"
+  # -- (bool) Measure and decide only, never modify
+  dryRun: false
+  # -- (string) `debug`, `info`, `warn`, or `error`
+  logLevel: "info"
+  # -- (string) `json` or `text`
+  logFormat: "json"
+  alertmanager:
+    # -- (bool) Alert resize outcomes to Alertmanager, requires url
+    enabled: false
+    # -- (string) Alertmanager v2 base URL
+    url: ""
+    # -- (string) Alertmanager POST timeout
+    timeout: "5s"
+    # -- (object) Labels added to every alert
+    labels: {}
+    # -- (string) Outcomes to alert: `all`, `success`, or `failure`
+    notifyOn: "success"
+    # -- (string) Dashboard link template with {instance_id} and similar, empty disables
+    dashboardUrl: ""
+  grafanaAnnotation:
+    # -- (bool) Annotate resize outcomes in Grafana, requires url and a token
+    enabled: false
+    # -- (string) Grafana base URL
+    url: "http://grafana.monitoring:3000"
+    # -- (string) Grafana POST timeout
+    timeout: "5s"
+    # -- (list) Tags added to every annotation
+    tags:
+      - event:ebs-resize
+    # -- (string) Outcomes to annotate: `all`, `success`, or `failure`
+    annotateOn: "all"
+    # -- (string) Grafana token, stored in a generated Secret. Prefer existingSecret
+    apiToken: ""
+    # -- (string) Existing Secret holding the Grafana token
+    existingSecret: ""
+    # -- (string) Token key in the Secret
+    existingSecretKey: "token"
+
+  metrics:
+    # -- (string) Prometheus or Mimir base URL. Token auth via `PROMETHEUS_BEARER_TOKEN` in extraEnv
+    url: ""
+    # -- (string) Mimir tenant (`X-Scope-OrgID`), empty for Prometheus
+    tenantId: ""
+    # -- (object) Label matchers added to every query
+    labelSelector: {}
+      # cluster: prd
+  # -- (object) Node gp3 throughput recommendations as Node annotations
+  throughputRecommendation:
+    # -- (bool) Enable recommendations, requires metrics.url
+    enabled: false
+    # -- (string) Metric label holding the Node name (`node`, or `instance` for a plain node exporter)
+    metricNodeNameLabel: "node"
+    # -- (string) Observation window as a Prometheus duration (7d, 12h)
+    lookbackWindow: "7d"
+    # -- (string) Recommendation interval
+    interval: "30m"
+
+# -- (list) Extra container env (EnvVar entries)
+extraEnv: []
+  # - name: HTTP_PROXY
+  #   value: http://proxy.example.com:3128
+  # - name: MY_SECRET
+  #   valueFrom:
+  #     secretKeyRef:
+  #       name: my-secret
+  #       key: token
+
+# -- (list) Extra container envFrom sources
+extraEnvFrom: []
+  # - secretRef:
+  #     name: extra-secret
+
+ports:
+  # -- (int) Health port (/healthz, /readyz)
+  health: 8080
+  # -- (int) Metrics port (/metrics)
+  metrics: 8081
+
+rbac:
+  # -- (bool) Create RBAC resources
+  create: true
+
+serviceAccount:
+  # -- (bool) Create a ServiceAccount
+  create: true
+  # -- (string) ServiceAccount name, defaults to the fullname
+  name: ""
+  # -- (object) ServiceAccount annotations, e.g. an IRSA role ARN
+  annotations: {}
+    # eks.amazonaws.com/role-arn: arn:aws:iam::123456789012:role/volume-autoscaler
+  # -- (bool) Automount the ServiceAccount token
+  automountServiceAccountToken: true
+  # -- (list) Image pull secrets on the ServiceAccount
+  imagePullSecrets: []
+
+service:
+  # -- (bool) Create a Service for health and metrics
+  enabled: true
+  # -- (string) Service type
+  type: ClusterIP
+  # -- (string) Traffic distribution, e.g. PreferClose, empty omits
+  trafficDistribution: ""
+
+serviceMonitor:
+  # -- (bool) Create a ServiceMonitor
+  enabled: false
+  # -- (string) Scrape interval
+  interval: 30s
+  # -- (string) Scrape timeout
+  scrapeTimeout: 10s
+  # -- (object) Extra ServiceMonitor labels
+  labels: {}
+
+# -- (object) Pod resources
+resources:
+  requests:
+    cpu: 25m
+    memory: 64Mi
+  limits:
+    memory: 128Mi
+
+# -- (list) Container resize policy, empty omits
+resizePolicy:
+  - resourceName: cpu
+    restartPolicy: NotRequired
+  - resourceName: memory
+    restartPolicy: NotRequired
+
+# -- (object) Extra Pod annotations
+podAnnotations: {}
+# -- (object) Extra Pod labels
+podLabels: {}
+
+# -- (object) Pod-level security context
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  runAsGroup: 65532
+  fsGroup: 65532
+  seccompProfile:
+    type: RuntimeDefault
+
+# -- (object) Container-level security context
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+
+# -- (string) PriorityClass name, empty omits
+priorityClassName: ""
+# -- (object) Node selector
+nodeSelector: {}
+# -- (list) Tolerations
+tolerations: []
+# -- (object) Affinity
+affinity: {}
+# -- (list) Topology spread constraints, labelSelector defaults to the Pod selector labels
+topologySpreadConstraints: []
+  # - maxSkew: 1
+  #   topologyKey: topology.kubernetes.io/zone
+  #   whenUnsatisfiable: ScheduleAnyway
+
+# -- (string) Pod DNS policy, empty omits
+dnsPolicy: ""
+# -- (object) Pod DNS config, empty omits
+dnsConfig: {}
+
+# -- (list) Extra manifests rendered verbatim
+extraObjects: []

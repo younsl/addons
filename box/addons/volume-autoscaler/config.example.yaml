@@ -1,0 +1,21 @@
+# Example config for local CLI verification (make validate/autoscalers/instances).
+# Mirrors the ConfigMap the Helm chart renders to
+# /etc/volume-autoscaler/config.yaml. Resize settings live in
+# InstanceVolumeAutoscaler and PersistentVolumeClaimAutoscaler resources,
+# see examples/.
+region: ap-northeast-2
+reconcileInterval: 5m
+claimReconcileInterval: 1m
+dryRun: true
+
+metrics:
+  url: http://mimir-gateway.monitoring   # cluster-local Prometheus or central Mimir
+  tenantId: ""                           # Mimir X-Scope-OrgID
+  labelSelector: {}                      # matchers added to every query on a central Mimir
+    # cluster: prd
+
+throughputRecommendation:
+  enabled: false
+  metricNodeNameLabel: node                                  # "instance" for a plain node exporter scrape
+  lookbackWindow: 7d
+  interval: 30m

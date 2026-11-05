@@ -1,0 +1,32 @@
+apiVersion: autoscaling.volume-autoscaler.sh/v1alpha1
+kind: PersistentVolumeClaimAutoscaler
+metadata:
+  name: web
+  namespace: web
+spec:
+  scaleTargetRef:
+    kind: StatefulSet
+    name: web
+  maxCapacity: 200Gi
+  metrics:
+    - type: Resource
+      resource:
+        name: storage
+        target:
+          type: Utilization
+          averageUtilization: 80
+    - type: Resource
+      resource:
+        name: inodes
+        target:
+          type: Utilization
+          averageUtilization: 90
+  behavior:
+    scaleUp:
+      selectPolicy: Max
+      policies:
+        - type: Percent
+          value: 20
+        - type: GiB
+          value: 5
+      cooldownDuration: 30m

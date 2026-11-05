@@ -1,0 +1,40 @@
+{{- range $key, $waypoint := .Values.waypoints }}
+{{- $cfg := include "istio-waypoints.resolve" (dict "key" $key "waypoint" $waypoint "root" $) | fromYaml }}
+{{- if $cfg.enabled }}
+{{- range $suffix, $policy := $cfg.authorizationPolicies }}
+{{- if and $policy (or (not (hasKey $policy "enabled")) $policy.enabled) }}
+---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: {{ printf "%s-%s" $cfg.name $suffix | trunc 63 | trimSuffix "-" }}
+  namespace: {{ $cfg.namespace }}
+  labels:
+    {{- include "istio-waypoints.waypointLabels" (dict "root" $ "cfg" $cfg) | nindent 4 }}
+  {{- $annotations := include "istio-waypoints.waypointAnnotations" (dict "root" $ "cfg" $cfg) | trim }}
+  {{- if $annotations }}
+  annotations:
+    {{- $annotations | nindent 4 }}
+  {{- end }}
+spec:
+  targetRefs:
+    {{- if $policy.targetRefs }}
+    {{- toYaml $policy.targetRefs | nindent 4 }}
+    {{- else }}
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: {{ $cfg.name }}
+    {{- end }}
+  action: {{ $policy.action | default "ALLOW" }}
+  {{- with $policy.provider }}
+  provider:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- with $policy.rules }}
+  rules:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- end }}

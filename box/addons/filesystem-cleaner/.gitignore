@@ -1,0 +1,16 @@
+# Rust / build artifacts
+/target/
+**/*.rs.bk
+filesystem-cleaner-linux-*
+lcov.info
+
+# IDEs
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db

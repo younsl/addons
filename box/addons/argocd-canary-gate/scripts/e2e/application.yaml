@@ -1,0 +1,33 @@
+# The Application whose syncs the gate judges.
+#
+# Its source is the in-cluster Gitea repo that up.sh seeds with rollout.yaml,
+# so the Rollout renders in the Argo CD resource tree and a canary is started
+# the production way: bump.sh commits a new image tag, the app goes OutOfSync,
+# and a sync applies it.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: canary-demo
+  namespace: argocd
+  annotations:
+    # Read by a person, not by Argo CD.
+    canary-gate.younsl.github.io/purpose: >-
+      Canary gate test target. Safe to delete.
+  finalizers:
+    # Deleting the Application also removes what it deployed, so teardown is
+    # one command and leaves nothing behind.
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: http://gitea.git.svc:3000/demo/canary-demo.git
+    path: .
+    targetRevision: HEAD
+    directory:
+      recurse: false
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: canary-gate-test
+  # Manual on purpose. Automated operations are exempt from the gate by
+  # default, so an auto-sync policy would test the exemption, not the gate.
+  syncPolicy: {}

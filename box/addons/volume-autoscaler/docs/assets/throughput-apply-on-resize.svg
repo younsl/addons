@@ -1,0 +1,92 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1248 450">
+  <style>
+    .t{font-family:Geist,Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif}
+    .m{font-family:"Geist Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+    .h{fill:#ededed;font-size:20px;font-weight:600;letter-spacing:-0.4px}
+    .s{fill:#a1a1a1;font-size:13px}
+    .n{fill:#ededed;font-size:13px;font-weight:500}
+    .d{fill:#8f8f8f;font-size:11px}
+    .l{fill:#666;font-size:11px}
+    .k{fill:#8f8f8f;font-size:10.5px}
+    .card{fill:#0a0a0a;stroke:#2e2e2e}
+    .hi{fill:#0a0a0a;stroke:#ededed}
+    .chip{fill:#111;stroke:#262626}
+    .ns{fill:#050505;stroke:#262626}
+    .edge{stroke:#525252;stroke-width:1.25;fill:none}
+    .dash{stroke:#525252;stroke-width:1.25;fill:none;stroke-dasharray:4 3}
+    .bound{fill:none;stroke:#2e2e2e;stroke-dasharray:4 4}
+  </style>
+  <defs>
+    <pattern id="grid" width="24" height="24" patternUnits="userSpaceOnUse">
+      <circle cx="1" cy="1" r="0.9" fill="#161616"/>
+    </pattern>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0 0 L10 5 L0 10 z" fill="#8f8f8f"/>
+    </marker>
+  </defs>
+
+  <rect width="1248" height="450" fill="#000"/>
+  <rect width="1248" height="450" fill="url(#grid)"/>
+
+  <text x="40" y="52" class="t h">Throughput apply on resize</text>
+  <text x="40" y="76" class="t s">A fresh increase recommendation rides along with a size expansion, never on its own</text>
+
+  <rect x="40" y="104" width="168" height="72" rx="6" class="card"/>
+  <text x="56" y="132" class="t n">Recommender loop</text>
+  <text x="56" y="152" class="t d">every 30m, leader only</text>
+
+  <rect x="240" y="104" width="240" height="72" rx="6" class="card"/>
+  <text x="256" y="132" class="m n">recstore</text>
+  <text x="256" y="152" class="t d">in memory, one entry per volume</text>
+
+  <rect x="40" y="254" width="168" height="72" rx="6" class="card"/>
+  <text x="56" y="280" class="t n">Resize decided</text>
+  <text x="56" y="298" class="t d">over threshold, under max,</text>
+  <text x="56" y="312" class="t d">cooldown passed</text>
+
+  <rect x="240" y="212" width="240" height="156" rx="6" class="card"/>
+  <text x="256" y="238" class="t n">Piggyback gates</text>
+  <text x="256" y="264" class="m k">applyOnResize enabled</text>
+  <text x="256" y="284" class="t k">fresh entry, at most 2 x interval old</text>
+  <text x="256" y="304" class="t k">action is increase</text>
+  <text x="256" y="324" class="t k">recommended above current</text>
+  <text x="256" y="352" class="t l">all four must hold</text>
+
+  <rect x="528" y="212" width="232" height="56" rx="6" class="hi"/>
+  <text x="544" y="236" class="m n">ModifyVolume</text>
+  <text x="544" y="254" class="t d">size, throughput, IOPS</text>
+
+  <rect x="528" y="312" width="232" height="56" rx="6" class="card"/>
+  <text x="544" y="336" class="m n">ModifyVolume</text>
+  <text x="544" y="354" class="t d">size only</text>
+
+  <rect x="824" y="254" width="176" height="72" rx="6" class="card"/>
+  <text x="840" y="280" class="t n">Wait and extend</text>
+  <text x="840" y="298" class="t d">SSM filesystem resize,</text>
+  <text x="840" y="312" class="t d">then verify</text>
+
+  <rect x="1032" y="254" width="176" height="72" rx="6" class="card"/>
+  <text x="1048" y="280" class="t n">Report</text>
+  <text x="1048" y="298" class="m d">VolumeModified</text>
+  <text x="1048" y="312" class="t d">names every change</text>
+
+  <g class="edge" marker-end="url(#arrow)">
+    <path d="M208 140 H234"/>
+    <path d="M208 290 H234"/>
+    <path d="M480 240 H522"/>
+    <path d="M480 340 H522"/>
+    <path d="M644 268 V306"/>
+    <path d="M792 290 H818"/>
+    <path d="M1000 290 H1026"/>
+  </g>
+  <path d="M360 176 V206" class="dash" marker-end="url(#arrow)"/>
+  <path d="M760 240 H792 V340 H760" class="edge"/>
+  <g class="t l">
+    <text x="368" y="196">lookup</text>
+    <text x="501" y="232" text-anchor="middle">pass</text>
+    <text x="501" y="332" text-anchor="middle">fail</text>
+    <text x="654" y="292">error, retry</text>
+  </g>
+
+  <text x="40" y="420" class="t l">The fallback is counted as throughput_apply_total with result fallback_size_only, so a rejected change never blocks the size expansion.</text>
+</svg>

@@ -1,0 +1,20 @@
+apiVersion: v2
+name: volume-autoscaler
+description: Grows EC2 root volumes and Kubernetes PersistentVolumeClaims when usage crosses a threshold
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords:
+  - aws
+  - ec2
+  - ebs
+  - autoscaling
+  - ssm
+  - persistentvolumeclaim
+home: https://github.com/younsl/addons
+sources:
+  - https://github.com/younsl/addons/tree/main/box/addons/volume-autoscaler
+maintainers:
+  - name: younsl
+    email: cysl@kakao.com
+    url: https://github.com/younsl

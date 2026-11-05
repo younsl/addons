@@ -1,0 +1,2 @@
+# Managed role fixture; deliberately not granted to any test account.
+p, e2e-managed-reader, repo, read, *, allow

@@ -1,0 +1,91 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1248 470">
+  <style>
+    .t{font-family:Geist,Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif}
+    .m{font-family:"Geist Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+    .h{fill:#ededed;font-size:20px;font-weight:600;letter-spacing:-0.4px}
+    .s{fill:#a1a1a1;font-size:13px}
+    .n{fill:#ededed;font-size:13px;font-weight:500}
+    .d{fill:#8f8f8f;font-size:11px}
+    .l{fill:#666;font-size:11px}
+    .card{fill:#0a0a0a;stroke:#2e2e2e}
+    .in{fill:#111;stroke:#262626}
+    .hi{fill:#111;stroke:#ededed}
+    .edge{stroke:#525252;stroke-width:1.25;fill:none}
+    .bound{fill:none;stroke:#2e2e2e;stroke-dasharray:4 4}
+  </style>
+  <defs>
+    <pattern id="grid" width="24" height="24" patternUnits="userSpaceOnUse">
+      <circle cx="1" cy="1" r="0.9" fill="#161616"/>
+    </pattern>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0 0 L10 5 L0 10 z" fill="#8f8f8f"/>
+    </marker>
+  </defs>
+
+  <rect width="1248" height="470" fill="#000"/>
+  <rect width="1248" height="470" fill="url(#grid)"/>
+
+  <text x="40" y="52" class="t h">trivy-collector MCP</text>
+  <text x="40" y="76" class="t s">kagent agents query Trivy reports through the /mcp endpoint, behind the same auth and RBAC as the API</text>
+
+  <rect x="40" y="108" width="876" height="320" rx="10" class="bound"/>
+  <text x="56" y="130" class="t l">Hub cluster</text>
+
+  <rect x="64" y="148" width="248" height="256" rx="8" class="card"/>
+  <text x="80" y="172" class="t n">kagent</text>
+  <text x="296" y="172" text-anchor="end" class="m l">ns: kagent</text>
+  <rect x="80" y="188" width="216" height="56" rx="5" class="in"/>
+  <text x="94" y="208" class="t l">Agent</text>
+  <text x="94" y="228" class="m d">security-analyst</text>
+  <rect x="80" y="256" width="216" height="56" rx="5" class="in"/>
+  <text x="94" y="276" class="t l">RemoteMCPServer</text>
+  <text x="94" y="296" class="m d">trivy-collector</text>
+  <rect x="80" y="324" width="216" height="56" rx="5" class="in"/>
+  <text x="94" y="344" class="t l">Secret</text>
+  <text x="94" y="364" class="m d">Authorization: Bearer</text>
+
+  <rect x="376" y="148" width="264" height="256" rx="8" class="card"/>
+  <text x="392" y="172" class="m n">server</text>
+  <text x="624" y="172" text-anchor="end" class="m l">ns: trivy-system</text>
+  <rect x="392" y="188" width="232" height="40" rx="5" class="in"/>
+  <text x="508" y="212" text-anchor="middle" class="t d">auth (bearer or cookie), then RBAC</text>
+  <rect x="392" y="240" width="112" height="72" rx="5" class="hi"/>
+  <text x="448" y="266" text-anchor="middle" class="m n">/mcp</text>
+  <text x="448" y="286" text-anchor="middle" class="t d">Streamable</text>
+  <text x="448" y="300" text-anchor="middle" class="t d">HTTP</text>
+  <rect x="512" y="240" width="112" height="72" rx="5" class="in"/>
+  <text x="568" y="266" text-anchor="middle" class="m n">/api/v1</text>
+  <text x="568" y="286" text-anchor="middle" class="t d">UI and REST</text>
+  <text x="392" y="340" class="t l">sessions by default,</text>
+  <text x="392" y="356" class="t l">stateless mode for more than one replica</text>
+
+  <rect x="684" y="148" width="208" height="256" rx="8" class="card"/>
+  <text x="700" y="172" class="m n">scraper</text>
+  <text x="700" y="198" class="t d">internal API on :8081</text>
+  <text x="700" y="214" class="t d">SQLite on emptyDir</text>
+  <text x="700" y="230" class="t d">per-cluster watchers</text>
+
+  <rect x="960" y="148" width="248" height="112" rx="8" class="card"/>
+  <text x="976" y="174" class="t n">Edge cluster A</text>
+  <text x="976" y="200" class="t d">Trivy Operator</text>
+  <text x="976" y="216" class="t d">read-only ServiceAccount</text>
+
+  <rect x="960" y="292" width="248" height="112" rx="8" class="card"/>
+  <text x="976" y="318" class="t n">Edge cluster B</text>
+  <text x="976" y="344" class="t d">Trivy Operator</text>
+  <text x="976" y="360" class="t d">read-only ServiceAccount</text>
+
+  <g class="edge" marker-end="url(#arrow)">
+    <path d="M312 276 H386"/>
+    <path d="M640 276 H678"/>
+    <path d="M938 204 H954"/>
+    <path d="M938 348 H954"/>
+  </g>
+  <path d="M892 276 H938 M938 204 V348" class="edge"/>
+  <g class="t l">
+    <text x="344" y="266" text-anchor="middle" class="m">POST /mcp</text>
+    <text x="344" y="292" text-anchor="middle">bearer</text>
+    <text x="659" y="266" text-anchor="middle" class="m">:8081</text>
+    <text x="915" y="266" text-anchor="middle">watch</text>
+  </g>
+</svg>

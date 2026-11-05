@@ -1,0 +1,103 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1248 680">
+  <style>
+    .t{font-family:Geist,Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif}
+    .m{font-family:"Geist Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+    .h{fill:#ededed;font-size:20px;font-weight:600;letter-spacing:-0.4px}
+    .s{fill:#a1a1a1;font-size:13px}
+    .n{fill:#ededed;font-size:13px;font-weight:500}
+    .d{fill:#8f8f8f;font-size:11px}
+    .l{fill:#666;font-size:11px}
+    .k{fill:#8f8f8f;font-size:10.5px}
+    .card{fill:#0a0a0a;stroke:#2e2e2e}
+    .hi{fill:#0a0a0a;stroke:#ededed}
+    .chip{fill:#111;stroke:#262626}
+    .ns{fill:#050505;stroke:#262626}
+    .edge{stroke:#525252;stroke-width:1.25;fill:none}
+    .dash{stroke:#525252;stroke-width:1.25;fill:none;stroke-dasharray:4 3}
+    .bound{fill:none;stroke:#2e2e2e;stroke-dasharray:4 4}
+  </style>
+  <defs>
+    <pattern id="grid" width="24" height="24" patternUnits="userSpaceOnUse">
+      <circle cx="1" cy="1" r="0.9" fill="#161616"/>
+    </pattern>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0 0 L10 5 L0 10 z" fill="#8f8f8f"/>
+    </marker>
+  </defs>
+
+  <rect width="1248" height="680" fill="#000"/>
+  <rect width="1248" height="680" fill="url(#grid)"/>
+
+  <text x="40" y="52" class="t h">volume-autoscaler</text>
+  <text x="40" y="76" class="t s">Grows EC2 root disks over SSM Run Command and PersistentVolumeClaims through their storage request, only where an autoscaler targets them</text>
+
+  <rect x="40" y="108" width="300" height="400" rx="10" class="bound"/>
+  <text x="56" y="130" class="t l">EKS cluster</text>
+  <rect x="56" y="144" width="268" height="80" rx="6" class="hi"/>
+  <text x="72" y="172" class="t n">InstanceVolumeAutoscaler</text>
+  <text x="72" y="192" class="t d">targets, utilization, max capacity</text>
+  <text x="72" y="210" class="m l">kubectl get iva</text>
+  <rect x="56" y="248" width="268" height="132" rx="8" class="ns"/>
+  <text x="72" y="270" class="t l">Namespace <tspan class="m d">kube-system</tspan></text>
+  <rect x="72" y="284" width="236" height="80" rx="6" class="hi"/>
+  <text x="88" y="314" class="m n">volume-autoscaler</text>
+  <text x="88" y="336" class="t d">leader Pod, scans on an interval</text>
+  <rect x="56" y="404" width="268" height="80" rx="6" class="hi"/>
+  <text x="72" y="432" class="t n">PersistentVolumeClaimAutoscaler</text>
+  <text x="72" y="452" class="t d">targets, utilization, max capacity</text>
+  <text x="72" y="470" class="m l">kubectl get pvca</text>
+
+  <rect x="420" y="184" width="300" height="72" rx="6" class="card"/>
+  <text x="436" y="212" class="t n">Amazon EC2 API</text>
+  <text x="436" y="232" class="t d">find instances, ModifyVolume</text>
+
+  <rect x="420" y="296" width="300" height="72" rx="6" class="card"/>
+  <text x="436" y="324" class="t n">AWS Systems Manager</text>
+  <text x="436" y="344" class="t d">Run Command</text>
+
+  <rect x="420" y="408" width="300" height="72" rx="6" class="card"/>
+  <text x="436" y="436" class="t n">Prometheus or Mimir</text>
+  <text x="436" y="456" class="m l">kubelet_volume_stats_*</text>
+
+  <rect x="800" y="160" width="408" height="240" rx="10" class="bound"/>
+  <text x="816" y="182" class="t l">Target EC2 instance</text>
+  <rect x="824" y="192" width="360" height="56" rx="6" class="card"/>
+  <text x="840" y="216" class="t n">Root EBS volume</text>
+  <text x="840" y="234" class="t d">grows with ModifyVolume</text>
+  <rect x="824" y="304" width="360" height="56" rx="6" class="card"/>
+  <text x="840" y="328" class="t n">Root filesystem</text>
+  <text x="840" y="346" class="m l">df, growpart, resize2fs or xfs_growfs</text>
+
+  <rect x="800" y="440" width="408" height="200" rx="10" class="bound"/>
+  <text x="816" y="462" class="t l">Target namespace</text>
+  <rect x="824" y="472" width="360" height="56" rx="6" class="card"/>
+  <text x="840" y="496" class="t n">PersistentVolumeClaim</text>
+  <text x="840" y="514" class="m l">spec.resources.requests.storage</text>
+  <rect x="824" y="568" width="360" height="56" rx="6" class="card"/>
+  <text x="840" y="592" class="t n">EBS CSI driver</text>
+  <text x="840" y="610" class="t d">expands the volume and filesystem online</text>
+
+  <g class="edge" marker-end="url(#arrow)">
+    <path d="M230 224 V278"/>
+    <path d="M290 284 V230" class="dash"/>
+    <path d="M230 404 V370"/>
+    <path d="M290 364 V398" class="dash"/>
+    <path d="M308 304 H368 V220 H414"/>
+    <path d="M308 324 H414"/>
+    <path d="M308 344 H400 V444 H414"/>
+    <path d="M308 356 H384 V500 H818"/>
+    <path d="M1004 528 V562"/>
+    <path d="M720 220 H818"/>
+    <path d="M720 332 H818"/>
+  </g>
+  <g class="t l">
+    <text x="222" y="242" text-anchor="end">watch</text>
+    <text x="298" y="242">status</text>
+    <text x="769" y="212" text-anchor="middle">grow volume</text>
+    <text x="769" y="324" text-anchor="middle">measure, extend</text>
+    <text x="222" y="398" text-anchor="end">watch</text>
+    <text x="298" y="398">status</text>
+    <text x="769" y="492" text-anchor="middle">raise request</text>
+    <text x="1012" y="550">resize</text>
+  </g>
+</svg>

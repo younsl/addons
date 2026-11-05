@@ -1,0 +1,20 @@
+{{- range .Values.persistentVolumeClaimAutoscalers }}
+---
+apiVersion: autoscaling.volume-autoscaler.sh/v1alpha1
+kind: PersistentVolumeClaimAutoscaler
+metadata:
+  name: {{ .name }}
+  namespace: {{ .namespace | default $.Release.Namespace }}
+  labels:
+    {{- include "volume-autoscaler.labels" $ | nindent 4 }}
+    {{- with .labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  annotations:
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+    {{- with .annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  {{- toYaml .spec | nindent 2 }}
+{{- end }}

@@ -1,0 +1,17 @@
+/* forklift stylesheet entry point.
+ *
+ * Only imports live here, so that the file you open to change a design token is
+ * the file that holds nothing else. Order matters: Tailwind first, then the
+ * tokens the theme bridge points at, then everything that reads from them.
+ */
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@import "./styles/fonts.css";
+@import "./styles/theme.css";
+@import "./styles/tokens.css";
+@import "./styles/aliases.css";
+@import "./styles/base.css";
+
+@custom-variant dark (&:is(.dark *));

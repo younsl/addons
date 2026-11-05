@@ -1,0 +1,99 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1248 588">
+  <style>
+    .t{font-family:Geist,Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif}
+    .m{font-family:"Geist Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+    .h{fill:#ededed;font-size:20px;font-weight:600;letter-spacing:-0.4px}
+    .s{fill:#a1a1a1;font-size:13px}
+    .n{fill:#ededed;font-size:13px;font-weight:500}
+    .d{fill:#8f8f8f;font-size:11px}
+    .l{fill:#666;font-size:11px}
+    .card{fill:#0a0a0a;stroke:#2e2e2e}
+    .hi{fill:#0a0a0a;stroke:#ededed}
+    .edge{stroke:#525252;stroke-width:1.25;fill:none}
+    .bound{fill:none;stroke:#2e2e2e;stroke-dasharray:4 4}
+  </style>
+  <defs>
+    <pattern id="grid" width="24" height="24" patternUnits="userSpaceOnUse">
+      <circle cx="1" cy="1" r="0.9" fill="#161616"/>
+    </pattern>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#8f8f8f"/>
+    </marker>
+  </defs>
+
+  <rect width="1248" height="588" fill="#000"/>
+  <rect width="1248" height="588" fill="url(#grid)"/>
+
+  <text x="40" y="52" class="t h">Controller modules</text>
+  <text x="40" y="76" class="t s">What one EKSUpgrade reconcile touches, from the custom resource to the external systems</text>
+
+  <rect x="40" y="108" width="756" height="440" rx="10" class="bound"/>
+  <text x="56" y="130" class="t l">Kubernetes cluster</text>
+
+  <rect x="64" y="226" width="176" height="72" rx="6" class="card"/>
+  <text x="152" y="256" text-anchor="middle" class="m n">EKSUpgrade</text>
+  <text x="152" y="276" text-anchor="middle" class="t d">kuo.io/v1alpha1</text>
+
+  <rect x="300" y="220" width="196" height="84" rx="6" class="card"/>
+  <text x="398" y="250" text-anchor="middle" class="m n">controller.rs</text>
+  <text x="398" y="270" text-anchor="middle" class="t d">reconcile loop</text>
+  <text x="398" y="286" text-anchor="middle" class="t d">phase transitions</text>
+
+  <rect x="556" y="140" width="216" height="76" rx="6" class="card"/>
+  <text x="664" y="166" text-anchor="middle" class="m n">phases.rs</text>
+  <text x="664" y="186" text-anchor="middle" class="t d">planning, preflight, control plane,</text>
+  <text x="664" y="202" text-anchor="middle" class="t d">add-ons, node groups, Karpenter</text>
+
+  <rect x="556" y="236" width="216" height="64" rx="6" class="card"/>
+  <text x="664" y="262" text-anchor="middle" class="m n">notify.rs</text>
+  <text x="664" y="282" text-anchor="middle" class="t d">Slack message via render.rs</text>
+
+  <rect x="556" y="320" width="216" height="64" rx="6" class="hi"/>
+  <text x="664" y="346" text-anchor="middle" class="m n">annotate.rs</text>
+  <text x="664" y="366" text-anchor="middle" class="t d">marker policy, client, render.rs</text>
+
+  <rect x="64" y="460" width="176" height="64" rx="6" class="card"/>
+  <text x="152" y="486" text-anchor="middle" class="t n">Prometheus</text>
+  <text x="152" y="506" text-anchor="middle" class="t d">ServiceMonitor</text>
+
+  <rect x="300" y="460" width="196" height="64" rx="6" class="card"/>
+  <text x="398" y="486" text-anchor="middle" class="m n">telemetry.rs</text>
+  <text x="398" y="506" text-anchor="middle" class="t d">/metrics /healthz /readyz</text>
+
+  <rect x="908" y="140" width="300" height="76" rx="6" class="card"/>
+  <text x="1058" y="172" text-anchor="middle" class="t n">AWS EKS API</text>
+  <text x="1058" y="192" text-anchor="middle" class="t d">cluster, add-on, node group, insights, STS</text>
+
+  <rect x="908" y="236" width="300" height="64" rx="6" class="card"/>
+  <text x="1058" y="262" text-anchor="middle" class="t n">Slack</text>
+  <text x="1058" y="282" text-anchor="middle" class="t d">incoming webhook</text>
+
+  <rect x="908" y="320" width="300" height="64" rx="6" class="hi"/>
+  <text x="1058" y="346" text-anchor="middle" class="t n">Grafana</text>
+  <text x="1058" y="366" text-anchor="middle" class="t d">annotations API, dashboards</text>
+
+  <g class="edge" marker-end="url(#arrow)">
+    <path d="M240 262 H294" marker-start="url(#arrow)"/>
+    <path d="M496 244 H524 V178 H550"/>
+    <path d="M496 268 H550"/>
+    <path d="M496 292 H524 V352 H550"/>
+    <path d="M772 178 H902"/>
+    <path d="M772 268 H902"/>
+    <path d="M772 352 H902"/>
+    <path d="M240 492 H294"/>
+  </g>
+
+  <g class="t l">
+    <text x="267" y="252" text-anchor="middle">watch</text>
+    <text x="267" y="284" text-anchor="middle">status</text>
+    <text x="837" y="170" text-anchor="middle">describe, update</text>
+    <text x="837" y="260" text-anchor="middle">webhook POST</text>
+    <text x="837" y="344" text-anchor="middle">POST /api/annotations</text>
+    <text x="267" y="484" text-anchor="middle">scrape</text>
+    <text x="510" y="214" text-anchor="end">dispatch</text>
+    <text x="516" y="332" text-anchor="end">on phase transition</text>
+  </g>
+
+  <rect x="908" y="510" width="24" height="14" rx="3" class="hi"/>
+  <text x="942" y="521" class="t l">Grafana annotation path</text>
+</svg>

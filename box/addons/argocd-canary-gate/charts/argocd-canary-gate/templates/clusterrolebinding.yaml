@@ -1,0 +1,16 @@
+{{- if .Values.rbac.create }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "argocd-canary-gate.fullname" . }}
+  labels:
+    {{- include "argocd-canary-gate.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "argocd-canary-gate.fullname" . }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "argocd-canary-gate.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+{{- end }}

@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1248 270">
+  <style>
+    .t{font-family:Geist,Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif}
+    .m{font-family:"Geist Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+    .h{fill:#ededed;font-size:20px;font-weight:600;letter-spacing:-0.4px}
+    .s{fill:#a1a1a1;font-size:13px}
+    .n{fill:#ededed;font-size:13px;font-weight:500}
+    .d{fill:#8f8f8f;font-size:11px}
+    .l{fill:#666;font-size:11px}
+    .card{fill:#0a0a0a;stroke:#2e2e2e}
+    .hi{fill:#0a0a0a;stroke:#ededed}
+    .edge{stroke:#525252;stroke-width:1.25;fill:none}
+  </style>
+  <defs>
+    <pattern id="grid" width="24" height="24" patternUnits="userSpaceOnUse">
+      <circle cx="1" cy="1" r="0.9" fill="#161616"/>
+    </pattern>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0 0 L10 5 L0 10 z" fill="#8f8f8f"/>
+    </marker>
+  </defs>
+
+  <rect width="1248" height="270" fill="#000"/>
+  <rect width="1248" height="270" fill="url(#grid)"/>
+
+  <text x="40" y="52" class="t h">Browser login flow</text>
+  <text x="40" y="76" class="t s">Keycloak OIDC authorization code flow, ending in an encrypted session cookie</text>
+
+  <rect x="44" y="120" width="168" height="96" rx="6" class="card"/>
+  <text x="60" y="144" class="m l">01</text>
+  <text x="60" y="166" class="t n">Browser</text>
+  <text x="60" y="192" class="m d">GET /auth/login</text>
+
+  <rect x="240" y="120" width="168" height="96" rx="6" class="card"/>
+  <text x="256" y="144" class="m l">02</text>
+  <text x="256" y="166" class="t n">Keycloak</text>
+  <text x="256" y="192" class="t d">login page</text>
+
+  <rect x="436" y="120" width="168" height="96" rx="6" class="card"/>
+  <text x="452" y="144" class="m l">03</text>
+  <text x="452" y="166" class="t n">Callback</text>
+  <text x="452" y="192" class="m d">/auth/callback</text>
+  <text x="452" y="206" class="t d">with authorization code</text>
+
+  <rect x="632" y="120" width="168" height="96" rx="6" class="card"/>
+  <text x="648" y="144" class="m l">04</text>
+  <text x="648" y="166" class="t n">Token exchange</text>
+  <text x="648" y="192" class="t d">code for tokens</text>
+
+  <rect x="828" y="120" width="168" height="96" rx="6" class="card"/>
+  <text x="844" y="144" class="m l">05</text>
+  <text x="844" y="166" class="t n">Session cookie</text>
+  <text x="844" y="192" class="m d">trivy_session</text>
+  <text x="844" y="206" class="t d">encrypted, HttpOnly</text>
+
+  <rect x="1024" y="120" width="168" height="96" rx="6" class="hi"/>
+  <text x="1040" y="144" class="m l">06</text>
+  <text x="1040" y="166" class="t n">Redirect</text>
+  <text x="1040" y="192" class="t d">back to the original page</text>
+
+  <g class="edge" marker-end="url(#arrow)">
+    <path d="M212 168 H234"/>
+    <path d="M408 168 H430"/>
+    <path d="M604 168 H626"/>
+    <path d="M800 168 H822"/>
+    <path d="M996 168 H1018"/>
+  </g>
+</svg>

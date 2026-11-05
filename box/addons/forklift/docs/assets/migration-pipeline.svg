@@ -1,0 +1,101 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 430" font-family="-apple-system, Segoe UI, Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L8,3 L0,6 Z" fill="#111111"/>
+    </marker>
+    <marker id="arrow-fail" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L8,3 L0,6 Z" fill="#888888"/>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="980" height="430" fill="#ffffff"/>
+  <text x="20" y="32" font-size="15" font-weight="700" fill="#111111">forklift migrate-storage</text>
+  <text x="20" y="50" font-size="11" fill="#555555">Nothing is written before preflight passes. Nothing is reported as done before postflight passes.</text>
+
+  <!-- main flow -->
+  <g font-size="12" text-anchor="middle">
+    <rect x="20" y="80" width="120" height="58" rx="6" fill="#ffffff" stroke="#111111" stroke-width="1.5"/>
+    <text x="80" y="105" font-weight="700" fill="#111111">Wait for stores</text>
+    <text x="80" y="122" font-size="10" fill="#555555">source, target up</text>
+
+    <rect x="168" y="80" width="130" height="58" rx="6" fill="#ffffff" stroke="#111111" stroke-width="1.5"/>
+    <text x="233" y="105" font-weight="700" fill="#111111">Writer guard</text>
+    <text x="233" y="122" font-size="10" fill="#555555">pods gone, Lease held</text>
+
+    <rect x="326" y="80" width="150" height="58" rx="6" fill="#111111" stroke="#111111"/>
+    <text x="401" y="105" font-weight="700" fill="#ffffff">Preflight</text>
+    <text x="401" y="122" font-size="10" fill="#cccccc">PF01-PF12, read only</text>
+
+    <rect x="504" y="80" width="120" height="58" rx="6" fill="#ffffff" stroke="#111111" stroke-width="1.5"/>
+    <text x="564" y="105" font-weight="700" fill="#111111">Copy blobs</text>
+    <text x="564" y="122" font-size="10" fill="#555555">re-hashed on arrival</text>
+
+    <rect x="652" y="80" width="130" height="58" rx="6" fill="#ffffff" stroke="#111111" stroke-width="1.5"/>
+    <text x="717" y="105" font-weight="700" fill="#111111">Upload snapshot</text>
+    <text x="717" y="122" font-size="10" fill="#555555">the validated bytes</text>
+
+    <rect x="810" y="80" width="150" height="58" rx="6" fill="#111111" stroke="#111111"/>
+    <text x="885" y="105" font-weight="700" fill="#ffffff">Postflight</text>
+    <text x="885" y="122" font-size="10" fill="#cccccc">PV01-PV04</text>
+  </g>
+
+  <g stroke="#111111" stroke-width="1.5" marker-end="url(#arrow)">
+    <line x1="140" y1="109" x2="166" y2="109"/>
+    <line x1="298" y1="109" x2="324" y2="109"/>
+    <line x1="476" y1="109" x2="502" y2="109"/>
+    <line x1="624" y1="109" x2="650" y2="109"/>
+    <line x1="782" y1="109" x2="808" y2="109"/>
+  </g>
+
+  <!-- preflight checks -->
+  <g font-size="10.5" fill="#333333">
+    <rect x="168" y="160" width="308" height="160" rx="6" fill="#f6f6f6" stroke="#dddddd"/>
+    <text x="182" y="180" font-weight="700" fill="#111111">Writers</text>
+    <text x="182" y="196">PF01 lease</text>
+    <text x="182" y="211">PF02 writers-stopped</text>
+    <text x="182" y="234" font-weight="700" fill="#111111">Source</text>
+    <text x="182" y="250">PF03 locations</text>
+    <text x="182" y="265">PF04 source-snapshot</text>
+    <text x="182" y="280">PF05 snapshot-integrity</text>
+    <text x="182" y="295">PF06 source-blobs</text>
+    <text x="330" y="180" font-weight="700" fill="#111111">Target</text>
+    <text x="330" y="196">PF07 target-blobs</text>
+    <text x="330" y="211">PF08 target-write</text>
+    <text x="330" y="226">PF09 target-conditional-writes</text>
+    <text x="330" y="241">PF10 target-metadata</text>
+    <text x="330" y="256">PF11 target-capacity</text>
+    <text x="330" y="271">PF12 staging-space</text>
+    <text x="182" y="312" font-size="9.5" fill="#888888">All 12 run and report together, with response times</text>
+  </g>
+
+  <!-- postflight checks -->
+  <g font-size="10.5" fill="#333333">
+    <rect x="740" y="160" width="220" height="110" rx="6" fill="#f6f6f6" stroke="#dddddd"/>
+    <text x="754" y="180" font-weight="700" fill="#111111">Target integrity</text>
+    <text x="754" y="196">PV01 target-metadata-hash</text>
+    <text x="754" y="211">PV02 target-blob-sizes</text>
+    <text x="754" y="226">PV03 target-blob-content</text>
+    <text x="754" y="245" font-weight="700" fill="#111111">Source</text>
+    <text x="754" y="261">PV04 source-unchanged</text>
+  </g>
+
+  <!-- outcomes -->
+  <g stroke="#888888" stroke-width="1.2" stroke-dasharray="4 3" fill="none" marker-end="url(#arrow-fail)">
+    <path d="M322,320 L322,356"/>
+    <path d="M910,270 L910,356"/>
+  </g>
+  <path d="M790,270 L680,356" stroke="#111111" stroke-width="1.5" fill="none" marker-end="url(#arrow)"/>
+  <g font-size="11" text-anchor="middle">
+    <rect x="197" y="358" width="250" height="50" rx="6" fill="#ffffff" stroke="#888888" stroke-dasharray="4 3"/>
+    <text x="322" y="378" font-weight="700" fill="#111111">Any FAIL: Job stops</text>
+    <text x="322" y="395" font-size="10" fill="#555555">nothing written, fix and rerun</text>
+
+    <rect x="560" y="358" width="190" height="50" rx="6" fill="#ffffff" stroke="#111111" stroke-width="1.5"/>
+    <text x="655" y="378" font-weight="700" fill="#111111">All pass: cut over</text>
+    <text x="655" y="395" font-size="10" fill="#555555">storage.migration.enabled=false</text>
+
+    <rect x="780" y="358" width="180" height="50" rx="6" fill="#ffffff" stroke="#888888" stroke-dasharray="4 3"/>
+    <text x="870" y="378" font-weight="700" fill="#111111">Any FAIL: Job fails</text>
+    <text x="870" y="395" font-size="10" fill="#555555">bad copies removed, rerun</text>
+  </g>
+</svg>

@@ -1,0 +1,28 @@
+apiVersion: autoscaling.volume-autoscaler.sh/v1alpha1
+kind: InstanceVolumeAutoscaler
+metadata:
+  name: database
+spec:
+  scaleTargetRef:
+    kind: TagSelector
+    tags:
+      Role: database
+      Env: prod
+  maxCapacity: 2Ti
+  metrics:
+    - type: Resource
+      resource:
+        name: storage
+        target:
+          type: Utilization
+          averageUtilization: 70
+  behavior:
+    scaleUp:
+      selectPolicy: Max
+      cooldownDuration: 6h30m
+      policies:
+        - type: Percent
+          value: 20
+        - type: GiB
+          value: 50
+  alertEnabled: true

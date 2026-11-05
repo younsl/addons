@@ -1,0 +1,11 @@
+# CI test values for istio-waypoints chart: disabled entry
+
+waypoints:
+  # Test: namespace-wide waypoint with chart defaults
+  frontend:
+    namespace: frontend
+    name: waypoint
+
+  # Test: disabled entry renders nothing
+  disabled:
+    enabled: false

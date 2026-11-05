@@ -1,0 +1,18 @@
+# CI test values for istio-waypoints chart: chart defaults with common metadata
+
+commonLabels:
+  environment: test
+
+commonAnnotations:
+  test-annotation: test-value
+
+defaults:
+  infrastructure:
+    labels:
+      app.example.com/component: waypoint
+
+waypoints:
+  # Test: namespace-wide waypoint with chart defaults
+  frontend:
+    namespace: frontend
+    name: waypoint

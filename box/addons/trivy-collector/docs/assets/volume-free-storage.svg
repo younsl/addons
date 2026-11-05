@@ -1,0 +1,100 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1248 548">
+  <style>
+    .t{font-family:Geist,Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif}
+    .m{font-family:"Geist Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+    .h{fill:#ededed;font-size:20px;font-weight:600;letter-spacing:-0.4px}
+    .s{fill:#a1a1a1;font-size:13px}
+    .n{fill:#ededed;font-size:13px;font-weight:500}
+    .d{fill:#8f8f8f;font-size:11px}
+    .l{fill:#666;font-size:11px}
+    .card{fill:#0a0a0a;stroke:#2e2e2e}
+    .hi{fill:#0a0a0a;stroke:#ededed}
+    .chip{fill:#111;stroke:#262626}
+    .edge{stroke:#525252;stroke-width:1.25;fill:none}
+    .bound{fill:none;stroke:#2e2e2e;stroke-dasharray:4 4}
+  </style>
+  <defs>
+    <pattern id="grid" width="24" height="24" patternUnits="userSpaceOnUse">
+      <circle cx="1" cy="1" r="0.9" fill="#161616"/>
+    </pattern>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0 0 L10 5 L0 10 z" fill="#8f8f8f"/>
+    </marker>
+  </defs>
+
+  <rect width="1248" height="548" fill="#000"/>
+  <rect width="1248" height="548" fill="url(#grid)"/>
+
+  <text x="40" y="52" class="t h">Volume-free storage</text>
+  <text x="40" y="76" class="t s">No PersistentVolumeClaim. The scraper owns SQLite on its own emptyDir, and authored state lives in API objects.</text>
+
+  <rect x="40" y="108" width="952" height="368" rx="10" class="bound"/>
+  <text x="56" y="130" class="t l">Hub cluster</text>
+
+  <rect x="52" y="190" width="152" height="72" rx="6" class="card"/>
+  <text x="66" y="214" class="t l">HTTPRoute</text>
+  <text x="66" y="234" class="m n">trivy-collector</text>
+
+  <rect x="228" y="150" width="220" height="172" rx="6" class="hi"/>
+  <text x="244" y="174" class="t l">Deployment</text>
+  <text x="244" y="194" class="m n">server</text>
+  <text x="244" y="218" class="t d">replicas: N, with a PDB</text>
+  <text x="244" y="234" class="t d">no volume, no database</text>
+  <text x="244" y="250" class="t d">UI, /api/v1, /mcp</text>
+  <text x="244" y="266" class="t d">OIDC and RBAC applied here</text>
+  <text x="244" y="298" class="m l">Service :3000</text>
+
+  <rect x="488" y="178" width="170" height="96" rx="6" class="card"/>
+  <text x="504" y="202" class="t l">NetworkPolicy</text>
+  <text x="504" y="222" class="m n">scraper-internal</text>
+  <text x="504" y="244" class="t d">ingress :8081 from</text>
+  <text x="504" y="260" class="t d">server pods only</text>
+
+  <rect x="698" y="150" width="270" height="172" rx="6" class="card"/>
+  <text x="714" y="174" class="t l">Deployment</text>
+  <text x="714" y="194" class="m n">scraper</text>
+  <text x="714" y="218" class="t d">replicas: 1, RollingUpdate</text>
+  <text x="714" y="234" class="t d">sole reader and writer</text>
+  <text x="714" y="250" class="t d">watchers, alert evaluator</text>
+  <text x="714" y="266" class="t d">/internal/v1 read API</text>
+  <rect x="714" y="280" width="238" height="28" rx="5" class="chip"/>
+  <text x="833" y="298" text-anchor="middle" class="m d">emptyDir /data, SQLite 2Gi</text>
+
+  <rect x="228" y="368" width="740" height="88" rx="8" class="card"/>
+  <text x="244" y="390" class="t l">Authored state, survives every restart</text>
+  <rect x="244" y="402" width="168" height="40" rx="5" class="chip"/>
+  <text x="256" y="426" class="t d">ConfigMap <tspan class="m">notes</tspan></text>
+  <rect x="424" y="402" width="168" height="40" rx="5" class="chip"/>
+  <text x="436" y="426" class="t d">Secret <tspan class="m">api-tokens</tspan></text>
+  <rect x="604" y="402" width="168" height="40" rx="5" class="chip"/>
+  <text x="616" y="426" class="t d">ConfigMap <tspan class="m">alerts</tspan></text>
+  <rect x="784" y="402" width="168" height="40" rx="5" class="chip"/>
+  <text x="796" y="426" class="t d">Secret <tspan class="m">internal</tspan> token</text>
+
+  <rect x="1032" y="150" width="176" height="80" rx="6" class="card"/>
+  <text x="1048" y="174" class="m n">edge-a</text>
+  <text x="1048" y="196" class="t d">kube-apiserver</text>
+  <text x="1048" y="214" class="m l">Vulnerability, Sbom</text>
+  <rect x="1032" y="242" width="176" height="80" rx="6" class="card"/>
+  <text x="1048" y="266" class="m n">edge-b</text>
+  <text x="1048" y="288" class="t d">kube-apiserver</text>
+  <text x="1048" y="306" class="m l">Vulnerability, Sbom</text>
+  <text x="1032" y="346" class="t l">source of truth for every report</text>
+
+  <g class="edge" marker-end="url(#arrow)">
+    <path d="M204 226 H222"/>
+    <path d="M448 226 H482"/>
+    <path d="M658 226 H692"/>
+    <path d="M338 368 V328"/>
+    <path d="M1010 190 H1026"/>
+    <path d="M1010 282 H1026"/>
+  </g>
+  <path d="M968 236 H1010 M1010 190 V282" class="edge"/>
+  <g class="t l">
+    <text x="346" y="352">watch into memory</text>
+    <text x="989" y="228" text-anchor="middle">watch</text>
+  </g>
+
+  <text x="40" y="504" class="t l">What changed: the PVC is gone, the server is stateless and scales, and neither pod is pinned to a node.</text>
+  <text x="40" y="522" class="t l">On every scraper restart the emptyDir starts empty and each watcher replays a full list, so reports are rebuilt and none is lost.</text>
+</svg>

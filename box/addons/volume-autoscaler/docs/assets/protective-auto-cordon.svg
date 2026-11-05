@@ -1,0 +1,98 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1248 556">
+  <style>
+    .t{font-family:Geist,Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif}
+    .m{font-family:"Geist Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+    .h{fill:#ededed;font-size:20px;font-weight:600;letter-spacing:-0.4px}
+    .s{fill:#a1a1a1;font-size:13px}
+    .n{fill:#ededed;font-size:13px;font-weight:500}
+    .d{fill:#8f8f8f;font-size:11px}
+    .l{fill:#666;font-size:11px}
+    .k{fill:#8f8f8f;font-size:10.5px}
+    .card{fill:#0a0a0a;stroke:#2e2e2e}
+    .hi{fill:#0a0a0a;stroke:#ededed}
+    .chip{fill:#111;stroke:#262626}
+    .ns{fill:#050505;stroke:#262626}
+    .edge{stroke:#525252;stroke-width:1.25;fill:none}
+    .dash{stroke:#525252;stroke-width:1.25;fill:none;stroke-dasharray:4 3}
+    .bound{fill:none;stroke:#2e2e2e;stroke-dasharray:4 4}
+  </style>
+  <defs>
+    <pattern id="grid" width="24" height="24" patternUnits="userSpaceOnUse">
+      <circle cx="1" cy="1" r="0.9" fill="#161616"/>
+    </pattern>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0 0 L10 5 L0 10 z" fill="#8f8f8f"/>
+    </marker>
+  </defs>
+
+  <rect width="1248" height="556" fill="#000"/>
+  <rect width="1248" height="556" fill="url(#grid)"/>
+
+  <text x="40" y="52" class="t h">Protective auto-cordon</text>
+  <text x="40" y="76" class="t s">Cordon a Node at the resize threshold, release it once usage is back under, and only ever lift our own mark</text>
+
+  <rect x="40" y="204" width="164" height="128" rx="6" class="card"/>
+  <text x="56" y="230" class="t n">Resize pass</text>
+  <text x="56" y="254" class="t d">every reconcileInterval</text>
+  <text x="56" y="270" class="t d">leader only</text>
+  <text x="56" y="286" class="t d">lists EC2-backed Nodes</text>
+  <text x="56" y="302" class="t d">measures usage with SSM</text>
+
+  <path d="M236 268 L308 220 L380 268 L308 316 Z" class="card"/>
+  <text x="308" y="265" text-anchor="middle" class="m d">usage &gt;=</text>
+  <text x="308" y="280" text-anchor="middle" class="m d">threshold?</text>
+
+  <rect x="412" y="104" width="300" height="164" rx="6" class="hi"/>
+  <text x="428" y="130" class="t n">Apply protective cordon</text>
+  <text x="428" y="156" class="t k">already carries our mark</text>
+  <text x="572" y="156" class="t k" fill="#ededed" style="fill:#ededed">no-op</text>
+  <text x="428" y="173" class="t k">cordoned, not by us</text>
+  <text x="572" y="173" class="t k" fill="#ededed" style="fill:#ededed">leave alone</text>
+  <text x="428" y="190" class="t k">no Node (standalone EC2)</text>
+  <text x="572" y="190" class="t k" fill="#ededed" style="fill:#ededed">nothing to cordon</text>
+  <text x="428" y="207" class="t k">dry run</text>
+  <text x="572" y="207" class="t k" fill="#ededed" style="fill:#ededed">log only</text>
+  <text x="428" y="224" class="t k">otherwise</text>
+  <text x="572" y="224" class="t k" fill="#ededed" style="fill:#ededed">cordon and mark</text>
+  <text x="428" y="254" class="t l">mark: annotation, ProtectiveCordon condition, Warning event</text>
+
+  <rect x="744" y="104" width="170" height="164" rx="6" class="card"/>
+  <text x="760" y="130" class="t n">Resize flow</text>
+  <text x="760" y="156" class="t d">unchanged</text>
+  <text x="760" y="172" class="t d">a skip or a failure</text>
+  <text x="760" y="188" class="t d">keeps the cordon on</text>
+
+  <rect x="946" y="104" width="262" height="164" rx="6" class="card"/>
+  <text x="962" y="130" class="t n">Verify after extend</text>
+  <text x="962" y="156" class="t k">still over threshold</text>
+  <text x="1080" y="156" class="t k" fill="#ededed" style="fill:#ededed">stays cordoned</text>
+  <text x="962" y="173" class="t k">verification failed</text>
+  <text x="1080" y="173" class="t k" fill="#ededed" style="fill:#ededed">next pass decides</text>
+
+  <rect x="946" y="356" width="262" height="140" rx="6" class="card"/>
+  <text x="962" y="382" class="t n">Release protective cordon</text>
+  <text x="962" y="408" class="t k">no mark</text>
+  <text x="1102" y="408" class="t k" fill="#ededed" style="fill:#ededed">nothing</text>
+  <text x="962" y="425" class="t k">dry run</text>
+  <text x="1102" y="425" class="t k" fill="#ededed" style="fill:#ededed">log only</text>
+  <text x="962" y="442" class="t k">mark, cordoned</text>
+  <text x="1102" y="442" class="t k" fill="#ededed" style="fill:#ededed">uncordon, unmark</text>
+  <text x="962" y="459" class="t k">mark, uncordoned by hand</text>
+  <text x="1102" y="459" class="t k" fill="#ededed" style="fill:#ededed">drop mark</text>
+
+  <g class="edge" marker-end="url(#arrow)">
+    <path d="M204 268 H230"/>
+    <path d="M380 268 H396 V174 H406"/>
+    <path d="M308 316 V426 H940"/>
+    <path d="M712 174 H738"/>
+    <path d="M914 174 H940"/>
+    <path d="M1077 268 V350"/>
+  </g>
+  <g class="t l">
+    <text x="390" y="226" text-anchor="end">yes</text>
+    <text x="318" y="372">no</text>
+    <text x="1087" y="314">back under</text>
+  </g>
+
+  <text x="40" y="530" class="t l">Failures are counted in protective_cordon_total and logged. The resize never waits on a Node. No eviction, no drain, no cap on cordoned Nodes.</text>
+</svg>

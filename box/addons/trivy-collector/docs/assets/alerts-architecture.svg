@@ -1,0 +1,87 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1248 400">
+  <style>
+    .t{font-family:Geist,Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif}
+    .m{font-family:"Geist Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+    .h{fill:#ededed;font-size:20px;font-weight:600;letter-spacing:-0.4px}
+    .s{fill:#a1a1a1;font-size:13px}
+    .n{fill:#ededed;font-size:13px;font-weight:500}
+    .d{fill:#8f8f8f;font-size:11px}
+    .l{fill:#666;font-size:11px}
+    .card{fill:#0a0a0a;stroke:#2e2e2e}
+    .hi{fill:#0a0a0a;stroke:#ededed}
+    .edge{stroke:#525252;stroke-width:1.25;fill:none}
+    .bound{fill:none;stroke:#2e2e2e;stroke-dasharray:4 4}
+  </style>
+  <defs>
+    <pattern id="grid" width="24" height="24" patternUnits="userSpaceOnUse">
+      <circle cx="1" cy="1" r="0.9" fill="#161616"/>
+    </pattern>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0 0 L10 5 L0 10 z" fill="#8f8f8f"/>
+    </marker>
+  </defs>
+
+  <rect width="1248" height="400" fill="#000"/>
+  <rect width="1248" height="400" fill="url(#grid)"/>
+
+  <text x="40" y="52" class="t h">trivy-collector alerts</text>
+  <text x="40" y="76" class="t s">Each rule is an AlertRule object. The UI and Git author the same objects, and the scraper turns matches into Slack messages.</text>
+
+  <rect x="40" y="128" width="180" height="72" rx="6" class="card"/>
+  <text x="56" y="152" class="t l">author</text>
+  <text x="56" y="172" class="t n">Alerts page</text>
+  <text x="56" y="188" class="t d">create, edit, test</text>
+
+  <rect x="40" y="252" width="180" height="72" rx="6" class="card"/>
+  <text x="56" y="276" class="t l">author</text>
+  <text x="56" y="296" class="t n">kubectl or GitOps</text>
+  <text x="56" y="312" class="t d">same objects, no UI</text>
+
+  <rect x="248" y="104" width="760" height="248" rx="10" class="bound"/>
+  <text x="264" y="126" class="t l">Hub cluster</text>
+
+  <rect x="268" y="128" width="190" height="72" rx="6" class="card"/>
+  <text x="284" y="152" class="t l">Deployment</text>
+  <text x="284" y="172" class="m n">server</text>
+  <text x="284" y="188" class="t d">RBAC-gated rule CRUD</text>
+
+  <rect x="506" y="128" width="220" height="196" rx="6" class="hi"/>
+  <text x="522" y="152" class="t l">validated by kube-apiserver</text>
+  <text x="522" y="172" class="m n">AlertRule</text>
+  <text x="522" y="194" class="m d">alertrules.trivy-collector</text>
+  <text x="522" y="208" class="m d">.security.io</text>
+  <text x="522" y="236" class="m l">spec.matchers.packageName</text>
+  <text x="522" y="252" class="m l">spec.matchers.versionExpr</text>
+  <text x="522" y="268" class="m l">spec.receivers[].slack</text>
+  <text x="522" y="300" class="t d">a malformed rule is never stored</text>
+
+  <rect x="774" y="128" width="210" height="196" rx="6" class="card"/>
+  <text x="790" y="152" class="t l">Deployment</text>
+  <text x="790" y="172" class="m n">scraper</text>
+  <text x="790" y="198" class="t d">evaluates on SbomReport ingest,</text>
+  <text x="790" y="214" class="t d">not on a timer</text>
+  <text x="790" y="240" class="t d">re-lists rules every pass,</text>
+  <text x="790" y="256" class="t d">so edits apply without restart</text>
+  <text x="790" y="282" class="t d">fires on net-new components</text>
+
+  <rect x="1032" y="196" width="176" height="72" rx="6" class="card"/>
+  <text x="1048" y="220" class="t l">receiver</text>
+  <text x="1048" y="240" class="t n">Slack</text>
+  <text x="1048" y="256" class="t d">one message per report</text>
+
+  <g class="edge" marker-end="url(#arrow)">
+    <path d="M220 164 H262"/>
+    <path d="M458 164 H500"/>
+    <path d="M220 288 H500"/>
+    <path d="M726 226 H768"/>
+    <path d="M984 232 H1026"/>
+  </g>
+  <g class="t l">
+    <text x="479" y="156" text-anchor="middle">apply</text>
+    <text x="360" y="280" text-anchor="middle">apply</text>
+    <text x="747" y="218" text-anchor="middle">list</text>
+    <text x="1005" y="224" text-anchor="middle">notify</text>
+  </g>
+
+  <text x="40" y="380" class="t l">Writes are server-side apply with the field manager trivy-collector. The legacy alerts ConfigMap is imported once on upgrade.</text>
+</svg>

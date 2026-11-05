@@ -1,0 +1,92 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1248 500">
+  <style>
+    .t{font-family:Geist,Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif}
+    .m{font-family:"Geist Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+    .h{fill:#ededed;font-size:20px;font-weight:600;letter-spacing:-0.4px}
+    .s{fill:#a1a1a1;font-size:13px}
+    .n{fill:#ededed;font-size:13px;font-weight:500}
+    .d{fill:#8f8f8f;font-size:11px}
+    .l{fill:#666;font-size:11px}
+    .k{fill:#8f8f8f;font-size:10.5px}
+    .card{fill:#0a0a0a;stroke:#2e2e2e}
+    .hi{fill:#0a0a0a;stroke:#ededed}
+    .chip{fill:#111;stroke:#262626}
+    .ns{fill:#050505;stroke:#262626}
+    .edge{stroke:#525252;stroke-width:1.25;fill:none}
+    .dash{stroke:#525252;stroke-width:1.25;fill:none;stroke-dasharray:4 3}
+    .bound{fill:none;stroke:#2e2e2e;stroke-dasharray:4 4}
+  </style>
+  <defs>
+    <pattern id="grid" width="24" height="24" patternUnits="userSpaceOnUse">
+      <circle cx="1" cy="1" r="0.9" fill="#161616"/>
+    </pattern>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0 0 L10 5 L0 10 z" fill="#8f8f8f"/>
+    </marker>
+  </defs>
+
+  <rect width="1248" height="500" fill="#000"/>
+  <rect width="1248" height="500" fill="url(#grid)"/>
+
+  <text x="40" y="52" class="t h">EBS throughput recommendation</text>
+  <text x="40" y="76" class="t s">Recommend only. No EBS mutation on this path, Node annotations are the output.</text>
+
+  <rect x="40" y="128" width="248" height="112" rx="6" class="card"/>
+  <text x="56" y="154" class="t n">Prometheus or Mimir</text>
+  <text x="56" y="176" class="m k">node_disk_{read,written}_bytes_total</text>
+  <text x="56" y="194" class="t d">scrapes node-exporter :9100</text>
+  <text x="56" y="210" class="t d">X-Scope-OrgID when multi-tenant</text>
+
+  <rect x="40" y="272" width="248" height="112" rx="6" class="card"/>
+  <text x="56" y="298" class="t n">AWS EC2 and EBS</text>
+  <text x="56" y="320" class="m k">DescribeVolumes</text>
+  <text x="56" y="338" class="m k">DescribeInstanceTypes</text>
+  <text x="56" y="356" class="t d">read only, no ModifyVolume</text>
+
+  <rect x="328" y="108" width="672" height="300" rx="10" class="bound"/>
+  <text x="344" y="130" class="t l">Kubernetes cluster</text>
+
+  <rect x="352" y="196" width="240" height="120" rx="6" class="hi"/>
+  <text x="368" y="222" class="t l">Deployment, kube-system</text>
+  <text x="368" y="242" class="m n">volume-autoscaler</text>
+  <text x="368" y="266" class="t d">recommender loop every 30m</text>
+  <text x="368" y="282" class="t d">p99 over 7d, times 1.3</text>
+  <text x="368" y="298" class="t d">leader replica only</text>
+
+  <rect x="640" y="160" width="336" height="192" rx="6" class="card"/>
+  <text x="656" y="186" class="t l">Node, cluster-scoped</text>
+  <text x="656" y="206" class="m n">ip-10-0-1-5</text>
+  <text x="960" y="206" text-anchor="end" class="t l">m5.4xlarge, gp3</text>
+  <text x="656" y="234" class="t l">annotations, prefix volume-autoscaler/</text>
+  <text x="656" y="256" class="m k">throughput-recommendation</text>
+  <text x="900" y="256" class="m k" style="fill:#ededed">increase</text>
+  <text x="656" y="274" class="m k">throughput-current-mibps</text>
+  <text x="900" y="274" class="m k" style="fill:#ededed">125</text>
+  <text x="656" y="292" class="m k">throughput-recommended-mibps</text>
+  <text x="900" y="292" class="m k" style="fill:#ededed">375</text>
+  <text x="656" y="310" class="m k">iops-recommended</text>
+  <text x="900" y="310" class="m k" style="fill:#ededed">3000</text>
+
+  <rect x="1040" y="196" width="168" height="120" rx="6" class="card"/>
+  <text x="1056" y="222" class="t n">Operator</text>
+  <text x="1056" y="244" class="t d">reads annotations</text>
+  <text x="1056" y="260" class="t d">or the Grafana panel</text>
+  <text x="1056" y="284" class="t d">decides whether</text>
+  <text x="1056" y="300" class="t d">to apply</text>
+
+  <g class="edge" marker-end="url(#arrow)">
+    <path d="M288 184 H320 V236 H346"/>
+    <path d="M288 328 H320 V276 H346"/>
+    <path d="M592 256 H634"/>
+    <path d="M976 256 H1034"/>
+  </g>
+  <g class="t l">
+    <text x="300" y="176">query</text>
+    <text x="300" y="346">describe</text>
+    <text x="613" y="248" text-anchor="middle">patch</text>
+    <text x="1005" y="248" text-anchor="middle">read</text>
+  </g>
+
+  <text x="40" y="444" class="m k">peak   = quantile_over_time(0.99, sum by (node) (rate(read_bytes) + rate(written_bytes))[7d:1m]) / 1 MiB</text>
+  <text x="40" y="464" class="m k">target = ceil(peak x 1.3) in 125 MiB/s steps, clamped by the gp3 maximum and the instance EBS bandwidth</text>
+</svg>

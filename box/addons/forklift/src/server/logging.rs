@@ -1,0 +1,534 @@
+//! Process logging in `log/slog`'s two output shapes.
+//!
+//! Dashboards, alerts and log queries were written against slog's output, so
+//! the format is part of the contract, not a detail: JSON lines carry `time`,
+//! `level`, `component`, `msg` and the event's fields flattened next to them,
+//! and the text handler writes `key=value` pairs with slog's quoting rules.
+//! `tracing` has no such formatter, so this module implements one.
+
+use std::fmt;
+
+use tracing::field::{Field, Visit};
+use tracing::{Event, Level, Subscriber};
+use tracing_subscriber::EnvFilter;
+use tracing_subscriber::fmt::format::Writer;
+use tracing_subscriber::fmt::{FmtContext, FormatEvent, FormatFields};
+use tracing_subscriber::registry::LookupSpan;
+
+/// Initialises the global subscriber for `level` (debug, info, warn, error) and `format` (json,
+/// text). A valid `RUST_LOG` overrides `level`.
+pub fn init_logging(level: &str, format: &str) {
+    let filter = EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| EnvFilter::default().add_directive(parse_level(level).into()));
+    let builder = tracing_subscriber::fmt()
+        .with_env_filter(filter)
+        .with_writer(std::io::stdout);
+    if format.eq_ignore_ascii_case("text") {
+        let _ = builder.event_format(SlogFormat::Text).try_init();
+    } else {
+        let _ = builder.event_format(SlogFormat::Json).try_init();
+    }
+}
+
+/// The level for a `--log-level` value. Anything unknown is info.
+fn parse_level(level: &str) -> Level {
+    match level.to_ascii_lowercase().as_str() {
+        "debug" => Level::DEBUG,
+        "warn" => Level::WARN,
+        "error" => Level::ERROR,
+        _ => Level::INFO,
+    }
+}
+
+/// The two slog handlers, as a `tracing` event formatter.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SlogFormat {
+    /// `slog.NewJSONHandler`: one JSON object per line.
+    Json,
+    /// `slog.NewTextHandler`: `key=value` pairs.
+    Text,
+}
+
+impl<S, N> FormatEvent<S, N> for SlogFormat
+where
+    S: Subscriber + for<'a> LookupSpan<'a>,
+    N: for<'a> FormatFields<'a> + 'static,
+{
+    fn format_event(
+        &self,
+        _ctx: &FmtContext<'_, S, N>,
+        mut writer: Writer<'_>,
+        event: &Event<'_>,
+    ) -> fmt::Result {
+        let mut visitor = FieldVisitor::default();
+        event.record(&mut visitor);
+        let time = crate::meta::time::now_rfc3339();
+        let level = level_text(*event.metadata().level());
+        let target = bridged_target(&mut visitor.fields)
+            .unwrap_or_else(|| event.metadata().target().to_string());
+        let head = Head {
+            time: &time,
+            level,
+            component: component(&target),
+        };
+        let line = match self {
+            Self::Json => format_json(&head, &visitor.message, &visitor.fields),
+            Self::Text => format_text(&head, &visitor.message, &visitor.fields),
+        };
+        writeln!(writer, "{line}")
+    }
+}
+
+/// The fields every line starts with.
+pub(crate) struct Head<'a> {
+    pub(crate) time: &'a str,
+    pub(crate) level: &'a str,
+    pub(crate) component: &'a str,
+}
+
+/// The module an event comes from: the first module under the crate for
+/// forklift's own code (`forklift::migrate::lease` is `migrate`), `main` for a
+/// binary's entry point and the crate name for a dependency.
+pub(crate) fn component(target: &str) -> &str {
+    let mut parts = target.split("::");
+    let krate = parts.next().unwrap_or(target);
+    match krate {
+        "forklift" | "forklift_mcp" => parts.next().unwrap_or("main"),
+        _ => krate,
+    }
+}
+
+/// Events forwarded from the `log` crate all carry the target `log`, with the
+/// real one in a `log.target` field. Returns that target and drops the
+/// `log.*` bookkeeping fields, which only repeat where the event came from.
+fn bridged_target(fields: &mut Vec<(String, FieldValue)>) -> Option<String> {
+    let target = fields
+        .iter()
+        .find(|(name, _)| name == "log.target")
+        .map(|(_, v)| v.text.clone())?;
+    fields.retain(|(name, _)| !name.starts_with("log."));
+    Some(target)
+}
+
+/// slog's level names.
+const fn level_text(level: Level) -> &'static str {
+    match level {
+        Level::ERROR => "ERROR",
+        Level::WARN => "WARN",
+        Level::INFO => "INFO",
+        Level::DEBUG | Level::TRACE => "DEBUG",
+    }
+}
+
+/// One recorded field: the JSON encoding of its value, plus whether the value
+/// is a bare literal (numbers, booleans) or a string.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct FieldValue {
+    /// JSON encoding, quoted for strings.
+    json: String,
+    /// Unquoted rendering, used by the text handler.
+    text: String,
+}
+
+/// Collects an event's message and fields in the order they were recorded.
+#[derive(Debug, Default)]
+pub(crate) struct FieldVisitor {
+    pub(crate) message: String,
+    pub(crate) fields: Vec<(String, FieldValue)>,
+}
+
+impl FieldVisitor {
+    fn push(&mut self, field: &Field, json: String, text: String) {
+        if field.name() == "message" {
+            self.message = text;
+            return;
+        }
+        self.fields
+            .push((field.name().to_string(), FieldValue { json, text }));
+    }
+}
+
+impl Visit for FieldVisitor {
+    fn record_i64(&mut self, field: &Field, value: i64) {
+        self.push(field, value.to_string(), value.to_string());
+    }
+
+    fn record_u64(&mut self, field: &Field, value: u64) {
+        self.push(field, value.to_string(), value.to_string());
+    }
+
+    fn record_i128(&mut self, field: &Field, value: i128) {
+        self.push(field, value.to_string(), value.to_string());
+    }
+
+    fn record_u128(&mut self, field: &Field, value: u128) {
+        self.push(field, value.to_string(), value.to_string());
+    }
+
+    fn record_bool(&mut self, field: &Field, value: bool) {
+        self.push(field, value.to_string(), value.to_string());
+    }
+
+    fn record_f64(&mut self, field: &Field, value: f64) {
+        let json = if value.is_finite() {
+            value.to_string()
+        } else {
+            quote_json(&value.to_string())
+        };
+        self.push(field, json, value.to_string());
+    }
+
+    fn record_str(&mut self, field: &Field, value: &str) {
+        self.push(field, quote_json(value), value.to_string());
+    }
+
+    fn record_error(&mut self, field: &Field, value: &(dyn std::error::Error + 'static)) {
+        let text = value.to_string();
+        self.push(field, quote_json(&text), text);
+    }
+
+    fn record_debug(&mut self, field: &Field, value: &dyn fmt::Debug) {
+        let text = format!("{value:?}");
+        self.push(field, quote_json(&text), text);
+    }
+}
+
+/// Renders one JSON line: `time`, `level`, `component`, `msg`, then the fields
+/// flattened at the top level in the order they were recorded.
+pub(crate) fn format_json(head: &Head<'_>, msg: &str, fields: &[(String, FieldValue)]) -> String {
+    let mut out = String::with_capacity(112 + msg.len());
+    out.push_str("{\"time\":");
+    out.push_str(&quote_json(head.time));
+    out.push_str(",\"level\":");
+    out.push_str(&quote_json(head.level));
+    out.push_str(",\"component\":");
+    out.push_str(&quote_json(head.component));
+    out.push_str(",\"msg\":");
+    out.push_str(&quote_json(msg));
+    for (name, value) in fields {
+        out.push(',');
+        out.push_str(&quote_json(name));
+        out.push(':');
+        out.push_str(&value.json);
+    }
+    out.push('}');
+    out
+}
+
+/// Renders one text line the way slog's `TextHandler` does.
+pub(crate) fn format_text(head: &Head<'_>, msg: &str, fields: &[(String, FieldValue)]) -> String {
+    let mut out = String::with_capacity(80 + msg.len());
+    out.push_str("time=");
+    out.push_str(&quote_text(head.time));
+    out.push_str(" level=");
+    out.push_str(&quote_text(head.level));
+    out.push_str(" component=");
+    out.push_str(&quote_text(head.component));
+    out.push_str(" msg=");
+    out.push_str(&quote_text(msg));
+    for (name, value) in fields {
+        out.push(' ');
+        out.push_str(&quote_text(name));
+        out.push('=');
+        out.push_str(&quote_text(&value.text));
+    }
+    out
+}
+
+/// JSON string encoding, the subset `serde_json` would produce for a string.
+fn quote_json(s: &str) -> String {
+    serde_json::Value::String(s.to_string()).to_string()
+}
+
+/// slog's text quoting: a value is quoted when it is empty or contains a
+/// space, an `=`, a quote or a control character; everything else is written
+/// bare, which is what makes the text handler readable.
+fn quote_text(s: &str) -> String {
+    if needs_quoting(s) {
+        quote_json(s)
+    } else {
+        s.to_string()
+    }
+}
+
+/// Mirrors slog's `needsQuoting`.
+fn needs_quoting(s: &str) -> bool {
+    if s.is_empty() {
+        return true;
+    }
+    s.bytes().any(|b| {
+        b < 0x80 && b != b'\\' && (b == b' ' || b == b'=' || b == b'"' || b < 0x20 || b == 0x7f)
+    })
+}
+
+#[cfg(test)]
+pub(crate) mod tests {
+    //! The log format is a contract: dashboards and alerts match on these field
+    //! names and on the shape of the line, so both handlers are pinned here.
+
+    use std::io;
+    use std::sync::{Arc, Mutex};
+
+    use tracing_subscriber::fmt::MakeWriter;
+
+    use crate::server::logging::*;
+
+    thread_local! {
+        static CAPTURE: std::cell::RefCell<Option<BufWriter>> = const { std::cell::RefCell::new(None) };
+    }
+
+    /// Writes an event into the capture buffer of the thread that emitted it,
+    /// and drops it when that thread captures nothing.
+    #[derive(Clone, Copy)]
+    struct ThreadWriter;
+
+    impl io::Write for ThreadWriter {
+        fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+            CAPTURE.with(|c| {
+                if let Some(out) = &*c.borrow() {
+                    out.0.lock().expect("buffer").extend_from_slice(buf);
+                }
+            });
+            Ok(buf.len())
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    impl<'a> MakeWriter<'a> for ThreadWriter {
+        type Writer = Self;
+
+        fn make_writer(&'a self) -> Self::Writer {
+            *self
+        }
+    }
+
+    /// The JSON lines logged on this thread while it is alive.
+    pub(crate) struct Capture(BufWriter);
+
+    impl Capture {
+        pub(crate) fn text(&self) -> String {
+            String::from_utf8(self.0.0.lock().expect("buffer").clone()).expect("utf-8")
+        }
+    }
+
+    impl Drop for Capture {
+        fn drop(&mut self) {
+            CAPTURE.with(|c| *c.borrow_mut() = None);
+        }
+    }
+
+    /// Captures what this thread logs at info and above. It goes through one
+    /// global subscriber rather than a thread-local one: a thread-local
+    /// subscriber shares tracing's global callsite and level caches with every
+    /// other test, and another test logging the same lines at the same moment
+    /// can leave them cached as disabled, dropping events from the capture.
+    pub(crate) fn capture_logs() -> Capture {
+        static INSTALL: std::sync::Once = std::sync::Once::new();
+        INSTALL.call_once(|| {
+            let subscriber = tracing_subscriber::fmt()
+                .with_writer(ThreadWriter)
+                .event_format(SlogFormat::Json)
+                .finish();
+            tracing::subscriber::set_global_default(subscriber)
+                .expect("no other global subscriber in the library tests");
+        });
+        let buf = BufWriter::default();
+        CAPTURE.with(|c| *c.borrow_mut() = Some(buf.clone()));
+        Capture(buf)
+    }
+
+    /// A `MakeWriter` that appends into a shared buffer, so a formatted event can
+    /// be read back in the test.
+    #[derive(Clone, Default)]
+    pub(crate) struct BufWriter(pub(crate) Arc<Mutex<Vec<u8>>>);
+
+    impl io::Write for BufWriter {
+        fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+            self.0.lock().expect("buffer").extend_from_slice(buf);
+            Ok(buf.len())
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    impl<'a> MakeWriter<'a> for BufWriter {
+        type Writer = Self;
+
+        fn make_writer(&'a self) -> Self::Writer {
+            self.clone()
+        }
+    }
+
+    /// Emits one event through a subscriber using `format` and returns the line.
+    fn capture(format: SlogFormat, f: impl FnOnce()) -> String {
+        let buf = BufWriter::default();
+        let subscriber = tracing_subscriber::fmt()
+            .with_max_level(tracing::Level::DEBUG)
+            .with_writer(buf.clone())
+            .event_format(format)
+            .finish();
+        tracing::subscriber::with_default(subscriber, f);
+        let out = buf.0.lock().expect("buffer").clone();
+        String::from_utf8(out).expect("utf-8")
+    }
+
+    const HEAD: Head<'static> = Head {
+        time: "T",
+        level: "INFO",
+        component: "server",
+    };
+
+    #[test]
+    fn component_is_the_module_under_the_crate() {
+        assert_eq!(component("forklift::migrate::lease"), "migrate");
+        assert_eq!(component("forklift::objstore"), "objstore");
+        assert_eq!(component("forklift"), "main");
+        assert_eq!(component("forklift_mcp"), "main");
+        assert_eq!(component("forklift_mcp::tools"), "tools");
+        assert_eq!(component("kube_runtime::controller"), "kube_runtime");
+        assert_eq!(component("aws_config"), "aws_config");
+    }
+
+    #[test]
+    fn log_crate_events_name_their_own_crate() {
+        let field = |name: &str, v: &str| {
+            (
+                name.to_string(),
+                FieldValue {
+                    json: quote_json(v),
+                    text: v.to_string(),
+                },
+            )
+        };
+        let mut fields = vec![
+            field("log.target", "rustls::client::hs"),
+            field("log.module_path", "rustls::client::hs"),
+            field("log.file", "hs.rs"),
+            field("peer", "auth.docker.io"),
+        ];
+        let target = bridged_target(&mut fields).expect("bridged event");
+        assert_eq!(component(&target), "rustls");
+        assert_eq!(fields.len(), 1, "log.* bookkeeping dropped");
+        assert_eq!(fields[0].0, "peer");
+
+        let mut plain = vec![field("peer", "x")];
+        assert_eq!(
+            bridged_target(&mut plain),
+            None,
+            "a native event keeps its target"
+        );
+        assert_eq!(plain.len(), 1);
+    }
+
+    #[test]
+    fn json_line_has_slog_shape() {
+        let line = capture(SlogFormat::Json, || {
+            tracing::info!(
+                addr = "127.0.0.1:8080",
+                count = 3,
+                ok = true,
+                "http listening"
+            );
+        });
+        let v: serde_json::Value = serde_json::from_str(line.trim()).expect("valid json");
+        assert_eq!(v["level"], "INFO");
+        assert_eq!(v["component"], "server");
+        assert_eq!(v["msg"], "http listening");
+        assert_eq!(v["addr"], "127.0.0.1:8080");
+        // Numbers and booleans keep their JSON type; only text is quoted.
+        assert_eq!(v["count"], serde_json::json!(3));
+        assert_eq!(v["ok"], serde_json::json!(true));
+        let time = v["time"].as_str().expect("time");
+        chrono::DateTime::parse_from_rfc3339(time).expect("RFC3339Nano time");
+    }
+
+    #[test]
+    fn json_levels_use_slog_names() {
+        for (emit, want) in [(0u8, "DEBUG"), (1, "INFO"), (2, "WARN"), (3, "ERROR")] {
+            let line = capture(SlogFormat::Json, || match emit {
+                0 => tracing::debug!("m"),
+                1 => tracing::info!("m"),
+                2 => tracing::warn!("m"),
+                _ => tracing::error!("m"),
+            });
+            let v: serde_json::Value = serde_json::from_str(line.trim()).unwrap();
+            assert_eq!(v["level"], want);
+        }
+    }
+
+    #[test]
+    fn text_line_quotes_like_slog() {
+        let line = capture(SlogFormat::Text, || {
+            tracing::warn!(
+                err = "boom now",
+                repo = "npm-proxy",
+                n = 2,
+                "readiness check failed"
+            );
+        });
+        let line = line.trim();
+        assert!(line.starts_with("time="), "{line}");
+        assert!(line.contains(" level=WARN component=server "), "{line}");
+        // Spaces force quoting; bare words stay bare; numbers stay numbers.
+        assert!(line.contains(r#"msg="readiness check failed""#), "{line}");
+        assert!(line.contains(r#"err="boom now""#), "{line}");
+        assert!(line.contains(" repo=npm-proxy"), "{line}");
+        assert!(line.contains(" n=2"), "{line}");
+    }
+
+    #[test]
+    fn text_quoting_rules() {
+        let fields = |v: &str| {
+            format_text(
+                &HEAD,
+                "m",
+                &[(
+                    "k".to_string(),
+                    FieldValue {
+                        json: quote_json(v),
+                        text: v.to_string(),
+                    },
+                )],
+            )
+        };
+        assert!(fields("plain").ends_with("k=plain"));
+        assert!(fields("with space").ends_with(r#"k="with space""#));
+        assert!(fields("a=b").ends_with(r#"k="a=b""#));
+        assert!(fields("").ends_with(r#"k="""#));
+        assert!(fields("tab\there").ends_with(r#"k="tab\there""#));
+    }
+
+    #[test]
+    fn json_escapes_field_names_and_values() {
+        let line = format_json(
+            &HEAD,
+            "quote \" here",
+            &[(
+                "a\"b".to_string(),
+                FieldValue {
+                    json: quote_json("v\"w"),
+                    text: "v\"w".to_string(),
+                },
+            )],
+        );
+        let v: serde_json::Value = serde_json::from_str(&line).expect("valid json");
+        assert_eq!(v["msg"], "quote \" here");
+        assert_eq!(v["a\"b"], "v\"w");
+    }
+
+    /// `init_logging` must accept every documented level/format pair without
+    /// panicking (a second call is a no-op: the global subscriber is already set).
+    #[test]
+    fn log_levels_parse_their_documented_values() {
+        assert_eq!(parse_level("debug"), Level::DEBUG);
+        assert_eq!(parse_level("WARN"), Level::WARN);
+        assert_eq!(parse_level("error"), Level::ERROR);
+        assert_eq!(parse_level("info"), Level::INFO);
+        assert_eq!(parse_level("nonsense"), Level::INFO);
+    }
+}

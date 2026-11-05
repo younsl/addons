@@ -1,0 +1,33 @@
+# CI test values for istio-waypoints chart: per-service AuthorizationPolicy through one waypoint
+
+waypoints:
+  # Test: Gateway-wide policy plus policies scoped to a single Service via targetRefs
+  backend:
+    namespace: backend
+    name: waypoint
+    authorizationPolicies:
+      allow-same-namespace:
+        action: ALLOW
+        rules:
+          - from:
+              - source:
+                  namespaces: ["backend"]
+      orders-internal-only:
+        targetRefs:
+          - group: ""
+            kind: Service
+            name: orders
+        action: ALLOW
+        rules:
+          - from:
+              - source:
+                  principals: ["cluster.local/ns/backend/sa/checkout"]
+      payments-deny-admin:
+        targetRefs:
+          - kind: Service
+            name: payments
+        action: DENY
+        rules:
+          - to:
+              - operation:
+                  paths: ["/admin/*"]

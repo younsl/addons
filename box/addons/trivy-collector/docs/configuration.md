@@ -1,0 +1,83 @@
+# Configuration
+
+## Command-line Options
+
+| Argument | Environment Variable | Default | Mode | Description |
+|----------|---------------------|---------|------|-------------|
+| `--mode` | `MODE` | `server` | Both | Deployment mode: `server` or `scraper` |
+| `--log-format` | `LOG_FORMAT` | `json` | Both | Log format: `json` or `pretty` |
+| `--log-level` | `LOG_LEVEL` | `info` | Both | Log level: trace, debug, info, warn, error |
+| `--health-port` | `HEALTH_PORT` | `8080` | Both | Health check server port |
+
+## Watch Options (scraper mode)
+
+| Argument | Environment Variable | Default | Description |
+|----------|---------------------|---------|-------------|
+| `--cluster-name` | `CLUSTER_NAME` | `local` | Name recorded on reports from the hub's own cluster |
+| `--namespaces` | `NAMESPACES` | `""` | Namespaces the local watcher scans (comma-separated, empty = all). Edge clusters carry their own list in their registration Secret |
+| `--collect-vulnerability-reports` | `COLLECT_VULN` | `true` | Watch VulnerabilityReports. Applies to the hub and every registered edge |
+| `--collect-sbom-reports` | `COLLECT_SBOM` | `true` | Watch SbomReports. Applies to the hub and every registered edge |
+| `--watch-local` | `WATCH_LOCAL` | `true` | Watch the hub cluster's own Trivy reports |
+
+Disabling a report kind stops the watch for it on every cluster and marks it as nothing-to-wait-for in hydration accounting, so `/readyz` still clears.
+
+## Server Mode Options
+
+| Argument | Environment Variable | Default | Description |
+|----------|---------------------|---------|-------------|
+| `--server-port` | `SERVER_PORT` | `3000` | API/UI server port |
+| `--scraper-url` | `SCRAPER_URL` | `http://localhost:8081` | Base URL of the scraper's internal API. The server holds no database, so this is required |
+| `--notes-configmap` | `NOTES_CONFIGMAP` | `trivy-collector-notes` | ConfigMap holding report notes |
+| `--api-tokens-secret` | `API_TOKENS_SECRET` | `trivy-collector-api-tokens` | Secret holding API tokens |
+| `--mcp-enabled` | `MCP_ENABLED` | `false` | Mount the embedded MCP server at `/mcp` (see [MCP](mcp.md)) |
+| `--mcp-allowed-hosts` | `MCP_ALLOWED_HOSTS` | `""` | Allowed `Host` values for `/mcp`, comma-separated. Empty disables the check |
+| `--mcp-stateless` | `MCP_STATELESS` | `false` | Serve `/mcp` without sessions. Required with more than one server replica |
+| `--mcp-max-concurrency` | `MCP_MAX_CONCURRENCY` | `8` | Concurrent MCP tool executions across all sessions. `0` = unlimited |
+
+## Scraper Mode Options
+
+| Argument | Environment Variable | Default | Description |
+|----------|---------------------|---------|-------------|
+| `--storage-path` | `STORAGE_PATH` | `/data` | Directory holding the SQLite database, on the scraper's `emptyDir`. Contents are rebuilt from the watched clusters on every start |
+| `--internal-port` | `INTERNAL_PORT` | `8081` | Port the internal read API listens on |
+
+## Shared Options
+
+| Argument | Environment Variable | Default | Description |
+|----------|---------------------|---------|-------------|
+| `--internal-token` | `INTERNAL_TOKEN` | `""` | Shared token guarding the internal API, mounted into both pods from the same Secret. Empty makes the scraper reject every request |
+| `--hub-secret-namespace` | `HUB_SECRET_NAMESPACE` | `""` | Namespace holding cluster-registration Secrets, injected by the chart through the Downward API. Empty disables the Edge cluster watcher |
+| `--external-url` | `EXTERNAL_URL` | `""` | Public base URL used for deep links in alert notifications. Empty omits the link |
+
+Authentication and RBAC options (`AUTH_MODE`, `OIDC_*`, `RBAC_*`) are listed in [Authentication](authentication.md) and [RBAC](rbac.md).
+
+## Subcommands
+
+| Command | Description |
+|---------|-------------|
+| `version` | Print version, commit, and build date |
+| `export-state --db-path <path> [--namespace <ns>] [--dry-run]` | One-shot migration off a PersistentVolume: read API tokens and report notes out of a legacy database and write them to the Secret and the ConfigMap. Reports need no export, since the next scraper start relists them |
+
+## API Documentation
+
+Server mode exposes auto-generated OpenAPI 3.1 spec via [utoipa](https://github.com/juhaku/utoipa) at `/api-docs/openapi.json`.
+
+```bash
+curl -s http://localhost:3000/api-docs/openapi.json | jq .
+```
+
+The reference UI is an embedded [Scalar](https://scalar.com/) build at `/api-docs`, served from the image rather than a CDN. Telemetry and Scalar’s request proxy are both disabled: the proxy would relay "Test Request" traffic, including the Bearer token, through a third party.
+
+## Health Check Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/healthz` | GET | Liveness probe |
+| `/readyz` | GET | Readiness probe |
+| `/metrics` | GET | Prometheus metrics, see [Metrics](metrics.md) |
+
+These are served on `--health-port`. The server API port also answers `/healthz`.
+
+## Conclusion
+
+Every flag has an environment variable fallback, and `--mode` decides whether the binary runs as the `server` or the `scraper`. Both pods must share the same `INTERNAL_TOKEN`, and the server needs a reachable `SCRAPER_URL` because it holds no database. Health, readiness, and metrics are served on `--health-port`, and the OpenAPI spec is available at `/api-docs/openapi.json`.

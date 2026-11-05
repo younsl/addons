@@ -1,0 +1,80 @@
+{{- if .Values.rbac.create -}}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "volume-autoscaler.fullname" . }}
+  labels:
+    {{- include "volume-autoscaler.labels" . | nindent 4 }}
+rules:
+  {{- if has "instance-volume-autoscaler" .Values.controllers }}
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs:
+      - get
+      - list
+      - patch
+  - apiGroups: [""]
+    resources: ["nodes/status"]
+    verbs:
+      - patch
+  - apiGroups: ["autoscaling.volume-autoscaler.sh"]
+    resources: ["instancevolumeautoscalers"]
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups: ["autoscaling.volume-autoscaler.sh"]
+    resources: ["instancevolumeautoscalers/status"]
+    verbs:
+      - patch
+  {{- end }}
+  {{- if has "unused-volume-scan" .Values.controllers }}
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs:
+      - list
+  - apiGroups: [""]
+    resources: ["persistentvolumes"]
+    verbs:
+      - get
+      - list
+      - patch
+  {{- end }}
+  {{- if or (has "unused-volume-scan" .Values.controllers) (has "persistent-volume-claim-autoscaler" .Values.controllers) }}
+  - apiGroups: ["apps"]
+    resources: ["statefulsets"]
+    verbs:
+      - list
+      - watch
+  - apiGroups: [""]
+    resources: ["persistentvolumeclaims"]
+    verbs:
+      - get
+      - list
+      - watch
+      - patch
+  {{- end }}
+  {{- if has "persistent-volume-claim-autoscaler" .Values.controllers }}
+  - apiGroups: ["storage.k8s.io"]
+    resources: ["storageclasses"]
+    verbs:
+      - list
+      - watch
+  - apiGroups: ["autoscaling.volume-autoscaler.sh"]
+    resources: ["persistentvolumeclaimautoscalers"]
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups: ["autoscaling.volume-autoscaler.sh"]
+    resources: ["persistentvolumeclaimautoscalers/status"]
+    verbs:
+      - patch
+  {{- end }}
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs:
+      - create
+      - patch
+      - update
+{{- end }}

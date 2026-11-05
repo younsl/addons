@@ -1,0 +1,75 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1248 500">
+  <style>
+    .t{font-family:Geist,Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif}
+    .m{font-family:"Geist Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+    .h{fill:#ededed;font-size:20px;font-weight:600;letter-spacing:-0.4px}
+    .s{fill:#a1a1a1;font-size:13px}
+    .n{fill:#ededed;font-size:14px;font-weight:500}
+    .k{fill:#666;font-size:11px;letter-spacing:0.4px}
+    .v{fill:#ededed;font-size:12px}
+    .l{fill:#666;font-size:11px}
+    .card{fill:#0a0a0a;stroke:#2e2e2e}
+    .hi{fill:#0a0a0a;stroke:#ededed}
+    .div{stroke:#1f1f1f}
+    .edge{stroke:#525252;stroke-width:1.25;fill:none}
+    .bound{fill:none;stroke:#2e2e2e;stroke-dasharray:4 4}
+  </style>
+  <defs>
+    <pattern id="grid" width="24" height="24" patternUnits="userSpaceOnUse">
+      <circle cx="1" cy="1" r="0.9" fill="#161616"/>
+    </pattern>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0 0 L10 5 L0 10 z" fill="#8f8f8f"/>
+    </marker>
+  </defs>
+
+  <rect width="1248" height="500" fill="#000"/>
+  <rect width="1248" height="500" fill="url(#grid)"/>
+
+  <text x="40" y="52" class="t h">IAM permission summary</text>
+  <text x="40" y="76" class="t s">The hub role gets credentials from the pod and assumes the spoke role in each target account</text>
+
+  <rect x="40" y="108" width="1168" height="352" rx="10" class="bound"/>
+  <line x1="624" y1="124" x2="624" y2="444" class="div" stroke-dasharray="4 4"/>
+  <text x="56" y="130" class="t l">Hub account (111111111111)</text>
+  <text x="640" y="130" class="t l">Spoke account (222222222222)</text>
+
+  <rect x="64" y="148" width="152" height="64" rx="6" class="card"/>
+  <text x="140" y="176" text-anchor="middle" class="m n">kuo</text>
+  <text x="140" y="196" text-anchor="middle" class="t l">operator pod</text>
+
+  <rect x="264" y="148" width="320" height="288" rx="8" class="hi"/>
+  <text x="284" y="176" class="m n">kuo-hub-role</text>
+  <text x="284" y="208" class="t k">HUB POLICY</text>
+  <text x="284" y="228" class="m v">eks:* (same account)</text>
+  <text x="284" y="246" class="m v">sts:GetCallerIdentity</text>
+  <text x="284" y="278" class="t k">SPOKE POLICY</text>
+  <text x="284" y="298" class="m v">sts:AssumeRole</text>
+  <text x="284" y="330" class="t k">CREDENTIAL SOURCE</text>
+  <text x="284" y="350" class="t v">IRSA or EKS Pod Identity</text>
+  <text x="284" y="382" class="t k">EKS POD IDENTITY</text>
+  <text x="284" y="402" class="t v">Yes</text>
+
+  <rect x="664" y="148" width="320" height="288" rx="8" class="card"/>
+  <text x="684" y="176" class="m n">kuo-spoke-role</text>
+  <text x="684" y="208" class="t k">PERMISSIONS</text>
+  <text x="684" y="228" class="m v">eks:* (cluster operations)</text>
+  <text x="684" y="246" class="m v">sts:GetCallerIdentity</text>
+  <text x="684" y="278" class="t k">TRUST POLICY</text>
+  <text x="684" y="298" class="t v">Hub role (AssumeRole)</text>
+  <text x="684" y="330" class="t k">EKS ACCESS ENTRY</text>
+  <text x="684" y="350" class="m v">AmazonEKSViewPolicy</text>
+  <text x="684" y="382" class="t k">EKS POD IDENTITY</text>
+  <text x="684" y="402" class="t v">No</text>
+
+  <rect x="1032" y="148" width="152" height="64" rx="6" class="card"/>
+  <text x="1108" y="176" text-anchor="middle" class="t n">EKS cluster</text>
+  <text x="1108" y="196" text-anchor="middle" class="t l">upgrade target</text>
+
+  <g class="edge" marker-end="url(#arrow)">
+    <path d="M216 180 H258"/>
+    <path d="M584 298 H658"/>
+    <path d="M984 180 H1026"/>
+  </g>
+  <text x="621" y="290" text-anchor="middle" class="m l">AssumeRole</text>
+</svg>

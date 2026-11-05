@@ -1,0 +1,108 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1248 580">
+  <style>
+    .t{font-family:Geist,Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif}
+    .m{font-family:"Geist Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+    .h{fill:#ededed;font-size:20px;font-weight:600;letter-spacing:-0.4px}
+    .s{fill:#a1a1a1;font-size:13px}
+    .n{fill:#ededed;font-size:13px;font-weight:500}
+    .d{fill:#8f8f8f;font-size:11px}
+    .l{fill:#666;font-size:11px}
+    .card{fill:#0a0a0a;stroke:#2e2e2e}
+    .hi{fill:#0a0a0a;stroke:#ededed}
+    .ns{fill:#050505;stroke:#262626}
+    .rule{stroke:#262626}
+    .edge{stroke:#525252;stroke-width:1.25;fill:none}
+    .dash{stroke:#525252;stroke-width:1.25;fill:none;stroke-dasharray:4 3}
+  </style>
+  <defs>
+    <pattern id="grid" width="24" height="24" patternUnits="userSpaceOnUse">
+      <circle cx="1" cy="1" r="0.9" fill="#161616"/>
+    </pattern>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0 0 L10 5 L0 10 z" fill="#8f8f8f"/>
+    </marker>
+  </defs>
+
+  <rect width="1248" height="580" fill="#000"/>
+  <rect width="1248" height="580" fill="url(#grid)"/>
+
+  <text x="40" y="52" class="t h">PersistentVolumeClaimAutoscaler</text>
+  <text x="40" y="76" class="t s">Raises the storage request of the claims it targets when space or inode utilization crosses the target, then the CSI driver grows the volume</text>
+
+  <rect x="40" y="108" width="320" height="432" rx="10" class="ns"/>
+  <text x="56" y="130" class="t l">Namespace <tspan class="m d">web</tspan></text>
+  <rect x="56" y="144" width="288" height="84" rx="6" class="hi"/>
+  <text x="72" y="172" class="t n">PersistentVolumeClaimAutoscaler</text>
+  <text x="72" y="192" class="t d">target, utilization, steps, max capacity</text>
+  <text x="72" y="210" class="m l">kubectl get pvca</text>
+  <rect x="56" y="292" width="288" height="64" rx="6" class="card"/>
+  <text x="72" y="318" class="t n">StatefulSet</text>
+  <text x="72" y="338" class="m l">volumeClaimTemplates</text>
+  <rect x="56" y="420" width="288" height="84" rx="6" class="card"/>
+  <text x="72" y="446" class="t n">PersistentVolumeClaim</text>
+  <text x="72" y="466" class="m l">data-web-0, data-web-1, data-web-2</text>
+  <text x="72" y="486" class="m l">spec.resources.requests.storage</text>
+
+  <rect x="440" y="108" width="360" height="432" rx="10" class="ns"/>
+  <text x="456" y="130" class="t l">Namespace <tspan class="m d">kube-system</tspan></text>
+  <rect x="456" y="144" width="328" height="200" rx="6" class="hi"/>
+  <text x="472" y="172" class="m n">volume-autoscaler</text>
+  <text x="472" y="192" class="t d">leader Pod, reconciles each autoscaler</text>
+  <line x1="472" y1="208" x2="768" y2="208" class="rule"/>
+  <g class="t d">
+    <text x="496" y="230">resolve the target claims</text>
+    <text x="496" y="250">check StorageClass expansion</text>
+    <text x="496" y="270">query space and inode utilization</text>
+    <text x="496" y="290">pick a step, honor cooldown and max</text>
+    <text x="496" y="310">raise the storage request</text>
+    <text x="496" y="330">write status and Events</text>
+  </g>
+  <g class="m l">
+    <text x="472" y="230">1</text>
+    <text x="472" y="250">2</text>
+    <text x="472" y="270">3</text>
+    <text x="472" y="290">4</text>
+    <text x="472" y="310">5</text>
+    <text x="472" y="330">6</text>
+  </g>
+  <rect x="456" y="420" width="328" height="84" rx="6" class="card"/>
+  <text x="472" y="446" class="t n">EBS CSI driver</text>
+  <text x="472" y="466" class="t d">external-resizer calls ModifyVolume</text>
+  <text x="472" y="486" class="t d">kubelet grows the filesystem online</text>
+
+  <rect x="880" y="144" width="328" height="72" rx="6" class="card"/>
+  <text x="896" y="172" class="t n">StorageClass</text>
+  <text x="896" y="192" class="m l">allowVolumeExpansion: true</text>
+
+  <rect x="880" y="256" width="328" height="72" rx="6" class="card"/>
+  <text x="896" y="284" class="t n">Prometheus or Mimir</text>
+  <text x="896" y="304" class="m l">kubelet_volume_stats_*</text>
+
+  <rect x="880" y="420" width="328" height="84" rx="6" class="card"/>
+  <text x="896" y="446" class="t n">EBS volume</text>
+  <text x="896" y="466" class="t d">grows in place</text>
+  <text x="896" y="486" class="t d">never shrinks</text>
+
+  <g class="edge" marker-end="url(#arrow)">
+    <path d="M344 176 H450"/>
+    <path d="M456 204 H350" class="dash"/>
+    <path d="M456 324 H350"/>
+    <path d="M456 336 H410 V448 H350"/>
+    <path d="M200 356 V414"/>
+    <path d="M344 480 H450"/>
+    <path d="M784 180 H874"/>
+    <path d="M784 292 H874"/>
+    <path d="M784 462 H874"/>
+  </g>
+  <g class="t l">
+    <text x="397" y="168" text-anchor="middle">watch</text>
+    <text x="397" y="220" text-anchor="middle">status</text>
+    <text x="380" y="316" text-anchor="middle">read</text>
+    <text x="380" y="440" text-anchor="middle">patch</text>
+    <text x="208" y="390">creates</text>
+    <text x="397" y="472" text-anchor="middle">resize</text>
+    <text x="829" y="172" text-anchor="middle">check</text>
+    <text x="829" y="284" text-anchor="middle">query</text>
+    <text x="829" y="454" text-anchor="middle">grow</text>
+  </g>
+</svg>

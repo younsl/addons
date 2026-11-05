@@ -1,0 +1,82 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1304 360">
+  <style>
+    .t{font-family:Geist,Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif}
+    .m{font-family:"Geist Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+    .h{fill:#ededed;font-size:20px;font-weight:600;letter-spacing:-0.4px}
+    .s{fill:#a1a1a1;font-size:13px}
+    .n{fill:#ededed;font-size:13px}
+    .p{fill:#666;font-size:10.5px}
+    .l{fill:#666;font-size:11px}
+    .card{fill:#0a0a0a;stroke:#2e2e2e}
+    .opt{fill:#0a0a0a;stroke:#3d3d3d;stroke-dasharray:4 3}
+    .done{fill:#0a0a0a;stroke:#ededed}
+    .edge{stroke:#525252;stroke-width:1.25;fill:none}
+  </style>
+  <defs>
+    <pattern id="grid" width="24" height="24" patternUnits="userSpaceOnUse">
+      <circle cx="1" cy="1" r="0.9" fill="#161616"/>
+    </pattern>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0 0 L10 5 L0 10 z" fill="#8f8f8f"/>
+    </marker>
+  </defs>
+
+  <rect width="1304" height="360" fill="#000"/>
+  <rect width="1304" height="360" fill="url(#grid)"/>
+
+  <text x="40" y="52" class="t h">EKSUpgrade phase flow</text>
+  <text x="40" y="76" class="t s">Upgrade and rollback share planning and preflight, then run component phases in opposite order</text>
+
+  <rect x="40" y="176" width="100" height="48" rx="6" class="card"/>
+  <text x="90" y="205" text-anchor="middle" class="m n">Pending</text>
+  <rect x="168" y="176" width="100" height="48" rx="6" class="card"/>
+  <text x="218" y="205" text-anchor="middle" class="m n">Planning</text>
+  <rect x="296" y="176" width="164" height="48" rx="6" class="card"/>
+  <text x="378" y="205" text-anchor="middle" class="m n">PreflightChecking</text>
+
+  <text x="516" y="98" class="t l">Forward</text>
+  <rect x="516" y="108" width="122" height="56" rx="6" class="card"/>
+  <text x="577" y="130" text-anchor="middle" class="m p">Upgrading</text>
+  <text x="577" y="148" text-anchor="middle" class="m n">ControlPlane</text>
+  <rect x="666" y="108" width="100" height="56" rx="6" class="card"/>
+  <text x="716" y="130" text-anchor="middle" class="m p">Upgrading</text>
+  <text x="716" y="148" text-anchor="middle" class="m n">Addons</text>
+  <rect x="794" y="108" width="106" height="56" rx="6" class="card"/>
+  <text x="847" y="130" text-anchor="middle" class="m p">Upgrading</text>
+  <text x="847" y="148" text-anchor="middle" class="m n">NodeGroups</text>
+  <rect x="928" y="108" width="168" height="56" rx="6" class="opt"/>
+  <text x="1012" y="130" text-anchor="middle" class="m p">Upgrading</text>
+  <text x="1012" y="148" text-anchor="middle" class="m n">KarpenterNodePools</text>
+  <text x="1012" y="182" text-anchor="middle" class="t l">optional</text>
+
+  <rect x="516" y="236" width="106" height="56" rx="6" class="card"/>
+  <text x="569" y="258" text-anchor="middle" class="m p">RollingBack</text>
+  <text x="569" y="276" text-anchor="middle" class="m n">NodeGroups</text>
+  <rect x="650" y="236" width="100" height="56" rx="6" class="card"/>
+  <text x="700" y="258" text-anchor="middle" class="m p">RollingBack</text>
+  <text x="700" y="276" text-anchor="middle" class="m n">Addons</text>
+  <rect x="778" y="236" width="122" height="56" rx="6" class="card"/>
+  <text x="839" y="258" text-anchor="middle" class="m p">RollingBack</text>
+  <text x="839" y="276" text-anchor="middle" class="m n">ControlPlane</text>
+  <text x="516" y="312" class="t l">Rollback</text>
+
+  <rect x="1152" y="176" width="112" height="48" rx="6" class="done"/>
+  <text x="1208" y="205" text-anchor="middle" class="m n">Completed</text>
+
+  <g class="edge" marker-end="url(#arrow)">
+    <path d="M140 200 H162"/>
+    <path d="M268 200 H290"/>
+    <path d="M488 136 H510"/>
+    <path d="M488 264 H510"/>
+    <path d="M638 136 H660"/>
+    <path d="M766 136 H788"/>
+    <path d="M900 136 H922"/>
+    <path d="M622 264 H644"/>
+    <path d="M750 264 H772"/>
+    <path d="M1124 200 H1146"/>
+  </g>
+  <path d="M460 200 H488 M488 136 V264" class="edge"/>
+  <path d="M1096 136 H1124 V264 H900" class="edge"/>
+
+  <text x="40" y="340" class="t l">Dry run ends after PreflightChecking without infrastructure changes. Any phase moves to Failed on error.</text>
+</svg>

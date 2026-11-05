@@ -1,0 +1,249 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "title": "argo-workflows-templates values",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "global": {
+      "type": "object"
+    },
+    "nameOverride": {
+      "type": ["string", "null"]
+    },
+    "fullnameOverride": {
+      "type": ["string", "null"]
+    },
+    "commonLabels": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "workflowTemplates": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled"],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "templates": {
+          "type": "object",
+          "propertyNames": {
+            "pattern": "^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$"
+          },
+          "additionalProperties": {
+            "$ref": "#/definitions/workflowTemplate"
+          }
+        }
+      }
+    },
+    "cronWorkflows": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled"],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "templates": {
+          "type": "object",
+          "propertyNames": {
+            "pattern": "^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$"
+          },
+          "additionalProperties": {
+            "$ref": "#/definitions/cronWorkflow"
+          }
+        }
+      }
+    },
+    "serviceAccounts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled"],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "accounts": {
+          "type": "object",
+          "propertyNames": {
+            "pattern": "^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$"
+          },
+          "additionalProperties": {
+            "$ref": "#/definitions/serviceAccount"
+          }
+        }
+      }
+    },
+    "extraObjects": {
+      "type": "array",
+      "items": {
+        "type": ["object", "string"]
+      }
+    }
+  },
+  "definitions": {
+    "stringMap": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "workflowTemplate": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "labels": {
+          "$ref": "#/definitions/stringMap"
+        },
+        "annotations": {
+          "$ref": "#/definitions/stringMap"
+        },
+        "arguments": {
+          "type": "object"
+        },
+        "entrypoint": {
+          "type": "string"
+        },
+        "imagePullSecrets": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "podGC": {
+          "type": "object"
+        },
+        "templates": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "ttlStrategy": {
+          "type": "object"
+        },
+        "workflowMetadata": {
+          "type": "object"
+        },
+        "serviceAccountName": {
+          "type": "string"
+        },
+        "volumes": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "securityContext": {
+          "type": "object"
+        },
+        "nodeSelector": {
+          "$ref": "#/definitions/stringMap"
+        },
+        "tolerations": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "affinity": {
+          "type": "object"
+        },
+        "synchronization": {
+          "type": "object"
+        }
+      }
+    },
+    "cronWorkflow": {
+      "type": "object",
+      "additionalProperties": false,
+      "not": {
+        "required": ["schedule", "schedules"]
+      },
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "labels": {
+          "$ref": "#/definitions/stringMap"
+        },
+        "annotations": {
+          "$ref": "#/definitions/stringMap"
+        },
+        "suspend": {
+          "type": "boolean"
+        },
+        "schedule": {
+          "type": "string"
+        },
+        "schedules": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string"
+          }
+        },
+        "timezone": {
+          "type": "string"
+        },
+        "startingDeadlineSeconds": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "concurrencyPolicy": {
+          "type": "string",
+          "enum": ["Allow", "Forbid", "Replace"]
+        },
+        "successfulJobsHistoryLimit": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "failedJobsHistoryLimit": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "workflowSpec": {
+          "type": "object"
+        },
+        "workflowMetadata": {
+          "type": "object"
+        }
+      }
+    },
+    "serviceAccount": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "labels": {
+          "$ref": "#/definitions/stringMap"
+        },
+        "annotations": {
+          "$ref": "#/definitions/stringMap"
+        },
+        "automountServiceAccountToken": {
+          "type": "boolean"
+        },
+        "imagePullSecrets": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "secrets": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        }
+      }
+    }
+  }
+}

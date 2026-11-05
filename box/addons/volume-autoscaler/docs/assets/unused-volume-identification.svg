@@ -1,0 +1,91 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1248 470">
+  <style>
+    .t{font-family:Geist,Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif}
+    .m{font-family:"Geist Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+    .h{fill:#ededed;font-size:20px;font-weight:600;letter-spacing:-0.4px}
+    .s{fill:#a1a1a1;font-size:13px}
+    .n{fill:#ededed;font-size:13px;font-weight:500}
+    .d{fill:#8f8f8f;font-size:11px}
+    .l{fill:#666;font-size:11px}
+    .k{fill:#8f8f8f;font-size:10.5px}
+    .card{fill:#0a0a0a;stroke:#2e2e2e}
+    .hi{fill:#0a0a0a;stroke:#ededed}
+    .chip{fill:#111;stroke:#262626}
+    .ns{fill:#050505;stroke:#262626}
+    .edge{stroke:#525252;stroke-width:1.25;fill:none}
+    .dash{stroke:#525252;stroke-width:1.25;fill:none;stroke-dasharray:4 3}
+    .bound{fill:none;stroke:#2e2e2e;stroke-dasharray:4 4}
+  </style>
+  <defs>
+    <pattern id="grid" width="24" height="24" patternUnits="userSpaceOnUse">
+      <circle cx="1" cy="1" r="0.9" fill="#161616"/>
+    </pattern>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0 0 L10 5 L0 10 z" fill="#8f8f8f"/>
+    </marker>
+  </defs>
+
+  <rect width="1248" height="470" fill="#000"/>
+  <rect width="1248" height="470" fill="url(#grid)"/>
+
+  <text x="40" y="52" class="t h">Unused volume identification</text>
+  <text x="40" y="76" class="t s">Four lists, one pure classifier, two outputs. Nothing is ever deleted.</text>
+
+  <rect x="40" y="112" width="216" height="56" rx="6" class="card"/>
+  <text x="56" y="136" class="m n">PersistentVolumeClaims</text>
+  <text x="56" y="154" class="t d">phase, capacity, class</text>
+  <rect x="40" y="180" width="216" height="56" rx="6" class="card"/>
+  <text x="56" y="204" class="m n">PersistentVolumes</text>
+  <text x="56" y="222" class="t d">phase, claimRef, EBS id</text>
+  <rect x="40" y="248" width="216" height="56" rx="6" class="card"/>
+  <text x="56" y="272" class="m n">Pods</text>
+  <text x="56" y="290" class="t d">claim refs, live pods only</text>
+  <rect x="40" y="316" width="216" height="56" rx="6" class="card"/>
+  <text x="56" y="340" class="m n">StatefulSets</text>
+  <text x="56" y="358" class="t d">replicas, ordinal range</text>
+
+  <rect x="316" y="200" width="200" height="84" rx="6" class="hi"/>
+  <text x="332" y="226" class="m n">classify()</text>
+  <text x="332" y="248" class="t d">claims first, then volumes</text>
+  <text x="332" y="264" class="t d">pure function over the snapshot</text>
+
+  <rect x="564" y="136" width="200" height="56" rx="6" class="card"/>
+  <text x="580" y="160" class="t n">In use</text>
+  <text x="580" y="178" class="t d">mounted, or a live STS slot</text>
+  <rect x="564" y="292" width="200" height="56" rx="6" class="card"/>
+  <text x="580" y="316" class="t n">Unused</text>
+  <text x="580" y="334" class="t d">one of eight reasons</text>
+
+  <rect x="812" y="136" width="200" height="56" rx="6" class="card"/>
+  <text x="828" y="160" class="t n">Clear our keys</text>
+  <text x="828" y="178" class="t d">else no-op</text>
+  <path d="M812 320 L912 284 L1012 320 L912 356 Z" class="card"/>
+  <text x="912" y="317" text-anchor="middle" class="m d">unused &gt;=</text>
+  <text x="912" y="331" text-anchor="middle" class="m d">minUnusedAge?</text>
+
+  <rect x="1040" y="236" width="168" height="56" rx="6" class="card"/>
+  <text x="1056" y="260" class="t n">Annotate only</text>
+  <text x="1056" y="278" class="t d">the clock starts here</text>
+  <rect x="1040" y="348" width="168" height="56" rx="6" class="hi"/>
+  <text x="1056" y="372" class="t n">Annotate and report</text>
+  <text x="1056" y="390" class="t d">metrics and a log line</text>
+
+  <g class="edge" marker-end="url(#arrow)">
+    <path d="M286 242 H310"/>
+    <path d="M540 164 H558"/>
+    <path d="M540 320 H558"/>
+    <path d="M764 164 H806"/>
+    <path d="M764 320 H806"/>
+    <path d="M1024 264 H1034"/>
+    <path d="M1024 376 H1034"/>
+  </g>
+  <path d="M256 140 H286 V344 H256 M256 208 H286 M256 276 H286" class="edge"/>
+  <path d="M516 242 H540 V164 M540 242 V320" class="edge"/>
+  <path d="M1012 320 H1024 V264 M1024 320 V376" class="edge"/>
+  <g class="t l">
+    <text x="1018" y="292" text-anchor="end">no</text>
+    <text x="1018" y="356" text-anchor="end">yes</text>
+  </g>
+
+  <text x="40" y="432" class="t l">The ClusterRole grants list and patch only, with no delete verb and no AWS call. The EBS volume id comes from the PersistentVolume's spec.csi.volumeHandle.</text>
+</svg>

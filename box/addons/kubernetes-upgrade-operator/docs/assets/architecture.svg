@@ -1,0 +1,127 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 1268 604">
+  <style>
+    .t{font-family:Geist,Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif}
+    .m{font-family:"Geist Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+    .h{fill:#ededed;font-size:20px;font-weight:600;letter-spacing:-0.4px}
+    .s{fill:#a1a1a1;font-size:13px}
+    .n{fill:#ededed;font-size:13px;font-weight:500}
+    .d{fill:#8f8f8f;font-size:11px}
+    .l{fill:#666;font-size:11px}
+    .card{fill:#0a0a0a;stroke:#2e2e2e}
+    .hi{fill:#0a0a0a;stroke:#ededed}
+    .chip{fill:#111;stroke:#262626}
+    .edge{stroke:#525252;stroke-width:1.25;fill:none}
+    .bound{fill:none;stroke:#2e2e2e;stroke-dasharray:4 4}
+  </style>
+  <defs>
+    <pattern id="grid" width="24" height="24" patternUnits="userSpaceOnUse">
+      <circle cx="1" cy="1" r="0.9" fill="#161616"/>
+    </pattern>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0 0 L10 5 L0 10 z" fill="#8f8f8f"/>
+    </marker>
+    <symbol id="karpenter" viewBox="0 0 500 500">
+      <g transform="translate(2.1186441,37.661017)">
+        <path fill="#a1a1a1" fill-rule="evenodd" d="m 237.70492,0 c 76.95771,0 139.34426,62.386551 139.34426,139.34426 v 0 l -1.8e-4,197.00774 65.57395,-1.5e-4 c 31.68847,0 57.37705,25.68858 57.37705,57.37705 v 0 V 443 h -7.54607 c -18.22527,0 -33.09496,-14.59276 -33.43754,-32.81482 v 0 -8.22465 l -0.003,-0.40664 c -0.21715,-13.39321 -11.14191,-24.18352 -24.58687,-24.18352 v 0 H 106.55738 C 47.707363,377.37037 0,329.66301 0,270.81299 v 0 -131.46873 C 0,62.386551 62.386551,0 139.34426,0 v 0 z m -8.19672,41.018518 h -81.96722 l -1.76212,0.01428 C 87.741593,41.97378 40.983607,89.314381 40.983607,147.5759 v 0 123.20218 l 0.0088,1.08438 c 0.579068,35.71525 29.711746,64.48939 65.564993,64.48939 v 0 h 163.9344 c 36.2154,0 65.57377,-29.35838 65.57377,-65.57377 v 0 -123.20218 l -0.0143,-1.76213 C 335.11031,87.776505 287.76971,41.018518 229.5082,41.018518 Z m -81.63935,65.629632 c 9.34426,0 16.72131,7.62944 16.72131,17.22778 v 0 49.96055 l 56.80328,-58.57444 c 7.37705,-6.89111 17.45902,-7.38334 24.59017,-0.73834 v 0 0.24611 c 6.88524,6.39889 6.39344,16.98167 -1.22951,23.87278 v 0 l -42.04918,43.31556 48.93442,69.89555 c 5.90164,8.61389 4.18033,19.44278 -3.68852,24.61111 -8.60656,4.92223 -18.44262,2.21501 -24.34426,-6.39888 v 0 l -44.0164,-64.48112 -15,15.75112 v 40.36222 c 0,9.84444 -7.37705,17.22778 -16.72131,17.22778 -9.34426,0 -16.72131,-7.38334 -16.72131,-17.22778 v 0 -137.82222 c 0,-9.59834 7.37705,-17.22778 16.72131,-17.22778 z"/>
+      </g>
+    </symbol>
+  </defs>
+
+  <rect width="1268" height="604" fill="#000"/>
+  <rect width="1268" height="604" fill="url(#grid)"/>
+
+  <text x="40" y="56" class="t h">kubernetes-upgrade-operator</text>
+  <text x="40" y="80" class="t s">One hub cluster upgrades EKS clusters across accounts through STS AssumeRole</text>
+
+  <rect x="40" y="150" width="436" height="270" rx="10" class="bound"/>
+  <text x="56" y="172" class="t l">Hub account</text>
+
+  <rect x="64" y="190" width="232" height="206" rx="8" class="card"/>
+  <text x="80" y="214" class="t d">EKS cluster (hub)</text>
+
+  <rect x="88" y="226" width="184" height="56" rx="6" class="card"/>
+  <text x="180" y="250" text-anchor="middle" class="m n">EKSUpgrade</text>
+  <text x="180" y="268" text-anchor="middle" class="t d">one per target cluster</text>
+
+  <rect x="88" y="308" width="184" height="64" rx="6" class="hi"/>
+  <text x="180" y="336" text-anchor="middle" class="m n">kuo</text>
+  <text x="180" y="354" text-anchor="middle" class="t d">operator pod</text>
+
+  <rect x="332" y="304" width="124" height="72" rx="6" class="card"/>
+  <text x="394" y="332" text-anchor="middle" class="t n">Hub role</text>
+  <text x="394" y="350" text-anchor="middle" class="t d">IRSA or</text>
+  <text x="394" y="364" text-anchor="middle" class="t d">Pod Identity</text>
+
+  <text x="40" y="450" class="t l">The hub role also upgrades the hub cluster itself.</text>
+
+  <g class="edge" marker-end="url(#arrow)">
+    <path d="M180 308 V286"/>
+    <path d="M272 340 H326"/>
+    <path d="M560 180 H590"/>
+    <path d="M560 340 H590"/>
+    <path d="M560 500 H590"/>
+    <path d="M744 180 H778"/>
+    <path d="M744 340 H778"/>
+    <path d="M744 500 H778"/>
+  </g>
+  <path d="M456 340 H560 M560 180 V500" class="edge"/>
+  <text x="188" y="300" class="t l">watch</text>
+  <text x="508" y="330" text-anchor="middle" class="m l">sts:AssumeRole</text>
+
+  <g>
+    <rect x="576" y="104" width="652" height="140" rx="10" class="bound"/>
+    <text x="592" y="124" class="t l">Spoke account (dev)</text>
+    <rect x="596" y="148" width="148" height="64" rx="6" class="card"/>
+    <text x="670" y="176" text-anchor="middle" class="t n">Spoke role</text>
+    <text x="670" y="194" text-anchor="middle" class="m d">kuo-spoke-role</text>
+    <rect x="784" y="128" width="424" height="104" rx="8" class="card"/>
+    <text x="800" y="156" class="t n">EKS cluster (dev)</text>
+    <rect x="800" y="176" width="92" height="32" rx="5" class="chip"/>
+    <rect x="900" y="176" width="92" height="32" rx="5" class="chip"/>
+    <rect x="1000" y="176" width="92" height="32" rx="5" class="chip"/>
+    <rect x="1100" y="176" width="92" height="32" rx="5" class="chip"/>
+    <text x="846" y="196" text-anchor="middle" class="t d">Control plane</text>
+    <text x="946" y="196" text-anchor="middle" class="t d">Add-ons</text>
+    <text x="1046" y="196" text-anchor="middle" class="t d">Node groups</text>
+    <use xlink:href="#karpenter" href="#karpenter" x="1110" y="185" width="14" height="14"/>
+    <text x="1130" y="196" class="t d">Karpenter</text>
+  </g>
+
+  <g>
+    <rect x="576" y="264" width="652" height="140" rx="10" class="bound"/>
+    <text x="592" y="284" class="t l">Spoke account (stage)</text>
+    <rect x="596" y="308" width="148" height="64" rx="6" class="card"/>
+    <text x="670" y="336" text-anchor="middle" class="t n">Spoke role</text>
+    <text x="670" y="354" text-anchor="middle" class="m d">kuo-spoke-role</text>
+    <rect x="784" y="288" width="424" height="104" rx="8" class="card"/>
+    <text x="800" y="316" class="t n">EKS cluster (stage)</text>
+    <rect x="800" y="336" width="92" height="32" rx="5" class="chip"/>
+    <rect x="900" y="336" width="92" height="32" rx="5" class="chip"/>
+    <rect x="1000" y="336" width="92" height="32" rx="5" class="chip"/>
+    <rect x="1100" y="336" width="92" height="32" rx="5" class="chip"/>
+    <text x="846" y="356" text-anchor="middle" class="t d">Control plane</text>
+    <text x="946" y="356" text-anchor="middle" class="t d">Add-ons</text>
+    <text x="1046" y="356" text-anchor="middle" class="t d">Node groups</text>
+    <use xlink:href="#karpenter" href="#karpenter" x="1110" y="345" width="14" height="14"/>
+    <text x="1130" y="356" class="t d">Karpenter</text>
+  </g>
+
+  <g>
+    <rect x="576" y="424" width="652" height="140" rx="10" class="bound"/>
+    <text x="592" y="444" class="t l">Spoke account (prd)</text>
+    <rect x="596" y="468" width="148" height="64" rx="6" class="card"/>
+    <text x="670" y="496" text-anchor="middle" class="t n">Spoke role</text>
+    <text x="670" y="514" text-anchor="middle" class="m d">kuo-spoke-role</text>
+    <rect x="784" y="448" width="424" height="104" rx="8" class="card"/>
+    <text x="800" y="476" class="t n">EKS cluster (prd)</text>
+    <rect x="800" y="496" width="92" height="32" rx="5" class="chip"/>
+    <rect x="900" y="496" width="92" height="32" rx="5" class="chip"/>
+    <rect x="1000" y="496" width="92" height="32" rx="5" class="chip"/>
+    <rect x="1100" y="496" width="92" height="32" rx="5" class="chip"/>
+    <text x="846" y="516" text-anchor="middle" class="t d">Control plane</text>
+    <text x="946" y="516" text-anchor="middle" class="t d">Add-ons</text>
+    <text x="1046" y="516" text-anchor="middle" class="t d">Node groups</text>
+    <use xlink:href="#karpenter" href="#karpenter" x="1110" y="505" width="14" height="14"/>
+    <text x="1130" y="516" class="t d">Karpenter</text>
+  </g>
+</svg>

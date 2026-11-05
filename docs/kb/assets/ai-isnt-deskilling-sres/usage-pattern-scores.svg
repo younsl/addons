@@ -1,0 +1,66 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="880" height="380" viewBox="0 0 880 380" role="img" aria-labelledby="t d">
+  <title id="t">How AI is used matters more than whether</title>
+  <desc id="d">Quiz scores right after a coding task in Anthropic's 2026 study. Hand coding without AI averaged 67 percent. AI users averaged 50 percent. AI users who asked conceptual questions scored 65 to 86 percent. AI users who delegated code generation and debugging scored 24 to 39 percent.</desc>
+  <style>
+    .sans { font-family: Geist, -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Helvetica, Arial, sans-serif; }
+    .mono { font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    .title { font-size: 20px; font-weight: 600; fill: #ededed; letter-spacing: -0.02em; }
+    .sub { font-size: 13px; fill: #a1a1a1; }
+    .label { font-size: 13px; fill: #ededed; }
+    .note { font-size: 11px; fill: #8f8f8f; }
+    .val { font-size: 13px; fill: #ededed; }
+    .tick { font-size: 10.5px; fill: #8f8f8f; }
+    .src { font-size: 10.5px; fill: #8f8f8f; }
+  </style>
+  <rect width="880" height="380" rx="12" fill="#000"/>
+  <rect x="0.5" y="0.5" width="879" height="379" rx="11.5" fill="none" stroke="#2e2e2e"/>
+
+  <text x="40" y="50" class="sans title">How AI is used matters more than whether</text>
+  <text x="40" y="74" class="sans sub">Quiz score on concepts used minutes earlier, by group and AI interaction pattern</text>
+
+  <!-- grid: x = 330 + 4.9 * v -->
+  <g stroke="#1f1f1f" stroke-width="1">
+    <line x1="330" y1="104" x2="330" y2="300" stroke="#3a3a3a"/>
+    <line x1="452.5" y1="104" x2="452.5" y2="300"/>
+    <line x1="575" y1="104" x2="575" y2="300"/>
+    <line x1="697.5" y1="104" x2="697.5" y2="300"/>
+    <line x1="820" y1="104" x2="820" y2="300"/>
+  </g>
+  <g class="mono tick" text-anchor="middle">
+    <text x="330" y="318">0%</text>
+    <text x="452.5" y="318">25%</text>
+    <text x="575" y="318">50%</text>
+    <text x="697.5" y="318">75%</text>
+    <text x="820" y="318">100%</text>
+  </g>
+
+  <g class="sans">
+    <!-- hand coding: 67 -->
+    <text x="40" y="128" class="label">No AI, hand coding</text>
+    <text x="40" y="144" class="note">group average</text>
+    <path d="M330,120 H654.3 Q658.3,120 658.3,124 V132 Q658.3,136 654.3,136 H330 Z" fill="#8f8f8f"/>
+    <text x="668" y="133" class="mono val">67%</text>
+
+    <!-- AI average: 50 -->
+    <text x="40" y="176" class="label">With AI</text>
+    <text x="40" y="192" class="note">group average</text>
+    <path d="M330,168 H571 Q575,168 575,172 V180 Q575,184 571,184 H330 Z" fill="#8f8f8f"/>
+    <text x="585" y="181" class="mono val">50%</text>
+
+    <line x1="40" y1="212" x2="820" y2="212" stroke="#1f1f1f" stroke-dasharray="2 4"/>
+
+    <!-- conceptual: 65 to 86 -->
+    <text x="40" y="236" class="label">AI for conceptual questions</text>
+    <text x="40" y="252" class="note">high-scoring patterns</text>
+    <rect x="648.5" y="228" width="102.9" height="16" rx="4" fill="#ededed"/>
+    <text x="761" y="241" class="mono val">65 to 86%</text>
+
+    <!-- delegation: 24 to 39 -->
+    <text x="40" y="280" class="label">AI writes and debugs the code</text>
+    <text x="40" y="296" class="note">low-scoring patterns</text>
+    <rect x="447.6" y="272" width="73.5" height="16" rx="4" fill="none" stroke="#ededed" stroke-width="1.5"/>
+    <text x="531" y="285" class="mono val">24 to 39%</text>
+  </g>
+
+  <text x="40" y="346" class="sans src">Source: Anthropic, How AI assistance impacts the formation of coding skills, 2026-01-29. Quiz taken right after the task, no delayed follow-up.</text>
+</svg>

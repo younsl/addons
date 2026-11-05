@@ -1,0 +1,15 @@
+# Rust / build artifacts
+/target/
+**/*.rs.bk
+argocd-canary-gate-linux-*
+lcov.info
+
+# Helm
+charts/**/charts/
+charts/**/*.tgz
+
+# e2e cluster credentials
+scripts/e2e/.kubeconfig-*
+
+# OS
+.DS_Store

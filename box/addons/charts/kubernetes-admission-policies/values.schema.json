@@ -1,0 +1,304 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "title": "kubernetes-admission-policies values",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "global": {
+      "type": "object"
+    },
+    "nameOverride": {
+      "type": "string"
+    },
+    "fullnameOverride": {
+      "type": "string"
+    },
+    "commonLabels": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "commonAnnotations": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "apiVersions": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "validatingAdmissionPolicy": {
+          "type": "string",
+          "enum": [
+            "admissionregistration.k8s.io/v1",
+            "admissionregistration.k8s.io/v1beta1",
+            "admissionregistration.k8s.io/v1alpha1"
+          ]
+        },
+        "mutatingAdmissionPolicy": {
+          "type": "string",
+          "enum": [
+            "admissionregistration.k8s.io/v1",
+            "admissionregistration.k8s.io/v1beta1",
+            "admissionregistration.k8s.io/v1alpha1"
+          ]
+        }
+      }
+    },
+    "validatingAdmissionPolicies": {
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$"
+      },
+      "additionalProperties": {
+        "$ref": "#/definitions/validatingPolicy"
+      }
+    },
+    "mutatingAdmissionPolicies": {
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$"
+      },
+      "additionalProperties": {
+        "$ref": "#/definitions/mutatingPolicy"
+      }
+    },
+    "extraObjects": {
+      "type": "array",
+      "items": {
+        "type": ["object", "string"]
+      }
+    }
+  },
+  "definitions": {
+    "resourceName": {
+      "type": "string",
+      "pattern": "^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$",
+      "maxLength": 63
+    },
+    "validatingPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled"],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "name": {
+          "$ref": "#/definitions/resourceName"
+        },
+        "description": {
+          "type": "string"
+        },
+        "failurePolicy": {
+          "type": "string",
+          "enum": ["Fail", "Ignore"]
+        },
+        "matchConstraints": {
+          "type": "object"
+        },
+        "validations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["expression"],
+            "properties": {
+              "expression": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "messageExpression": {
+                "type": "string"
+              },
+              "reason": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "matchConditions": {
+          "$ref": "#/definitions/matchConditions"
+        },
+        "auditAnnotations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["key", "valueExpression"],
+            "properties": {
+              "key": {
+                "type": "string"
+              },
+              "valueExpression": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "variables": {
+          "$ref": "#/definitions/variables"
+        },
+        "paramKind": {
+          "type": "object"
+        },
+        "bindings": {
+          "type": "object",
+          "propertyNames": {
+            "pattern": "^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$"
+          },
+          "additionalProperties": {
+            "$ref": "#/definitions/validatingBinding"
+          }
+        }
+      }
+    },
+    "validatingBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled"],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "name": {
+          "$ref": "#/definitions/resourceName"
+        },
+        "validationActions": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "enum": ["Deny", "Warn", "Audit"]
+          }
+        },
+        "matchResources": {
+          "type": "object"
+        },
+        "paramRef": {
+          "type": "object"
+        }
+      }
+    },
+    "mutatingPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled"],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "name": {
+          "$ref": "#/definitions/resourceName"
+        },
+        "description": {
+          "type": "string"
+        },
+        "failurePolicy": {
+          "type": "string",
+          "enum": ["Fail", "Ignore"]
+        },
+        "reinvocationPolicy": {
+          "type": "string",
+          "enum": ["Never", "IfNeeded"]
+        },
+        "matchConstraints": {
+          "type": "object"
+        },
+        "mutations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["patchType"],
+            "properties": {
+              "patchType": {
+                "type": "string",
+                "enum": ["JSONPatch", "ApplyConfiguration"]
+              },
+              "jsonPatch": {
+                "type": "object"
+              },
+              "applyConfiguration": {
+                "type": "object"
+              }
+            }
+          }
+        },
+        "matchConditions": {
+          "$ref": "#/definitions/matchConditions"
+        },
+        "variables": {
+          "$ref": "#/definitions/variables"
+        },
+        "paramKind": {
+          "type": "object"
+        },
+        "bindings": {
+          "type": "object",
+          "propertyNames": {
+            "pattern": "^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$"
+          },
+          "additionalProperties": {
+            "$ref": "#/definitions/mutatingBinding"
+          }
+        }
+      }
+    },
+    "mutatingBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled"],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "name": {
+          "$ref": "#/definitions/resourceName"
+        },
+        "matchResources": {
+          "type": "object"
+        },
+        "paramRef": {
+          "type": "object"
+        }
+      }
+    },
+    "matchConditions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "expression"],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "expression": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "variables": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "expression"],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "expression": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}
