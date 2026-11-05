@@ -105,8 +105,8 @@ CEL cannot read another object, so the check surfaces as status rather than a re
 
 ```console
 $ kubectl get pvca -n db
-NAME   TARGET           UTILIZATION     VOLUMES   STATUS                      LASTSCALE   AGE
-db     StatefulSet/db   <unknown>/80%   0         VolumeExpansionNotAllowed               2m
+NAME   TARGET           STATUS                      VOLUMES   UTILIZATION     MAXSIZE   LASTSCALE   AGE
+db     StatefulSet/db   VolumeExpansionNotAllowed   0         <unknown>/80%   100Gi                 2m
 
 $ kubectl get pvca db -n db -o jsonpath='{.status.conditions[?(@.type=="AbleToScale")].message}'
 StorageClass standard does not set allowVolumeExpansion (volumeClaimTemplate data)
@@ -140,8 +140,8 @@ When two autoscalers in a namespace target the same claim, both refuse to scale 
 
 ```console
 $ kubectl get pvca -n web
-NAME   TARGET            UTILIZATION   VOLUMES   STATUS   LASTSCALE   AGE
-web    StatefulSet/web   90%/80%       3         Ready    24s         5d
+NAME   TARGET            STATUS   VOLUMES   UTILIZATION   MAXSIZE   LASTSCALE   AGE
+web    StatefulSet/web   Ready    3         90%/80%       50Gi      24s         5d
 ```
 
 `status.claims` lists each target claim with its capacity, desired capacity, space and inode utilization, last scale time, cooldown end, and the reason of the latest decision.

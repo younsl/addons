@@ -34,9 +34,10 @@ pub const KIND: &str = "InstanceVolumeAutoscaler";
     derive = "PartialEq",
     doc = "Grows the root EBS volume of the EC2 instances selected by scaleTargetRef when root filesystem utilization crosses the target.",
     printcolumn = r#"{"name":"Target","type":"string","jsonPath":".status.target"}"#,
-    printcolumn = r#"{"name":"Utilization","type":"string","jsonPath":".status.utilization"}"#,
-    printcolumn = r#"{"name":"Volumes","type":"integer","jsonPath":".status.currentVolumes"}"#,
     printcolumn = r#"{"name":"Status","type":"string","jsonPath":".status.reason"}"#,
+    printcolumn = r#"{"name":"Volumes","type":"integer","jsonPath":".status.currentVolumes"}"#,
+    printcolumn = r#"{"name":"Utilization","type":"string","jsonPath":".status.utilization"}"#,
+    printcolumn = r#"{"name":"MaxSize","type":"string","jsonPath":".spec.maxCapacity"}"#,
     printcolumn = r#"{"name":"LastScale","type":"date","jsonPath":".status.lastScaleTime"}"#,
     printcolumn = r#"{"name":"Age","type":"date","jsonPath":".metadata.creationTimestamp"}"#
 )]
@@ -286,6 +287,24 @@ mod tests {
         );
         assert_eq!(crd["spec"]["scope"], "Cluster");
         assert_eq!(crd["spec"]["names"]["shortNames"][0], "iva");
+        let columns: Vec<&str> = crd["spec"]["versions"][0]["additionalPrinterColumns"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|c| c["name"].as_str().unwrap())
+            .collect();
+        assert_eq!(
+            columns,
+            [
+                "Target",
+                "Status",
+                "Volumes",
+                "Utilization",
+                "MaxSize",
+                "LastScale",
+                "Age"
+            ]
+        );
         let s = crd.to_string();
         assert!(s.contains("x-kubernetes-validations"), "{s}");
         assert!(s.contains(r"^i-[0-9a-f]{8,17}$"), "{s}");

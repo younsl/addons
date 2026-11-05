@@ -39,14 +39,17 @@ spec:
     - jsonPath: .status.target
       name: Target
       type: string
-    - jsonPath: .status.utilization
-      name: Utilization
+    - jsonPath: .status.reason
+      name: Status
       type: string
     - jsonPath: .status.currentVolumes
       name: Volumes
       type: integer
-    - jsonPath: .status.reason
-      name: Status
+    - jsonPath: .status.utilization
+      name: Utilization
+      type: string
+    - jsonPath: .spec.maxCapacity
+      name: MaxSize
       type: string
     - jsonPath: .status.lastScaleTime
       name: LastScale

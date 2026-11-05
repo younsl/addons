@@ -99,20 +99,21 @@ When two autoscalers target the same instance, both refuse to scale any of their
 
 ## Status
 
-`kubectl get iva` keeps to what an on-call engineer needs at a glance. The scale-up rules and `maxCapacity` stay in `kubectl describe iva`.
+`kubectl get iva` keeps to what an on-call engineer needs at a glance. The scale-up rules stay in `kubectl describe iva`.
 
 ```console
 $ kubectl get iva
-NAME       TARGET                  UTILIZATION  VOLUMES  STATUS              LASTSCALE  AGE
-bastion    i-0123456789abcdef0     64%/80%      1        Ready                          30d
-database   Env=prod,Role=database  92%/70%      3        Cooldown            2h         30d
-web        Role=web                95%/80%      2        MaxCapacityReached  5d         30d
+NAME       TARGET                  STATUS              VOLUMES  UTILIZATION  MAXSIZE  LASTSCALE  AGE
+bastion    i-0123456789abcdef0     Ready               1        64%/80%      50Gi                30d
+database   Env=prod,Role=database  Cooldown            3        92%/70%      2Ti      2h         30d
+web        Role=web                MaxCapacityReached  2        95%/80%      200Gi    5d         30d
 ```
 
 - `TARGET` is the scale target in one line: the instance ID, or the required tags.
-- `UTILIZATION` is the fullest target disk against the utilization target, like the HPA `TARGETS` column. It shows `<unknown>` until a target is measured.
-- `VOLUMES` is how many root EBS volumes the autoscaler targets, the unit it scales, as `REPLICAS` counts Pods on an HPA. It includes volumes held back as ambiguous or disabled, and leaves out an instance with no resolvable root volume.
 - `STATUS` is the condition reason to look at first: an inactive autoscaler (`ScalingActive`), then one unable to grow (`AbleToScale`), then one at its ceiling (`ScalingLimited`). `Ready` means all three are healthy.
+- `VOLUMES` is how many root EBS volumes the autoscaler targets, the unit it scales, as `REPLICAS` counts Pods on an HPA. It includes volumes held back as ambiguous or disabled, and leaves out an instance with no resolvable root volume.
+- `UTILIZATION` is the fullest target disk against the utilization target, like the HPA `TARGETS` column. It shows `<unknown>` until a target is measured.
+- `MAXSIZE` is `spec.maxCapacity`, the ceiling a step never passes. Each volume's current size is in `status.instances[].currentCapacity`.
 - `LASTSCALE` is when any target volume last grew.
 
 The spec validator fills `TARGET`, `UTILIZATION`, and `STATUS` as soon as an autoscaler is applied, so a new or rejected autoscaler never shows blank columns. The leader rewrites the whole status at the end of every resize pass.
