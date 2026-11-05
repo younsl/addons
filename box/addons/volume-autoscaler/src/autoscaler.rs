@@ -8,9 +8,10 @@ pub mod persistent_volume_claim;
 use std::fmt::Write as _;
 
 use chrono::{DateTime, Utc};
+use k8s_openapi::apiextensions_apiserver::pkg::apis::apiextensions::v1::CustomResourceDefinition;
 use k8s_openapi::apimachinery::pkg::api::resource::Quantity;
 use k8s_openapi::apimachinery::pkg::apis::meta::v1::{Condition, Time};
-use kube::KubeSchema;
+use kube::{CustomResourceExt as _, KubeSchema};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -20,6 +21,31 @@ pub const API_VERSION: &str = "autoscaling.volume-autoscaler.sh/v1alpha1";
 /// The Kubernetes quantity grammar, as `controller-gen` emits it for a
 /// `resource.Quantity` field. Quantity's own schema carries no pattern.
 pub const QUANTITY_PATTERN: &str = r"^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$";
+
+/// A custom resource of the group, as `crdgen` names it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, clap::ValueEnum)]
+pub enum CrdKind {
+    InstanceVolumeAutoscaler,
+    PersistentVolumeClaimAutoscaler,
+}
+
+impl CrdKind {
+    pub const ALL: [Self; 2] = [
+        Self::InstanceVolumeAutoscaler,
+        Self::PersistentVolumeClaimAutoscaler,
+    ];
+
+    /// The `CustomResourceDefinition` kube derives from the Rust types.
+    #[must_use]
+    pub fn crd(self) -> CustomResourceDefinition {
+        match self {
+            Self::InstanceVolumeAutoscaler => instance_volume::crd::InstanceVolumeAutoscaler::crd(),
+            Self::PersistentVolumeClaimAutoscaler => {
+                persistent_volume_claim::crd::PersistentVolumeClaimAutoscaler::crd()
+            }
+        }
+    }
+}
 
 /// Field manager for every status write.
 pub const FIELD_MANAGER: &str = "volume-autoscaler";

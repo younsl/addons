@@ -1,41 +1,12 @@
-//! volume-autoscaler grows the root EBS volume and filesystem of EC2
-//! instances (`InstanceVolumeAutoscaler`) and the `PersistentVolumeClaims`
-//! of workloads (`PersistentVolumeClaimAutoscaler`) when usage crosses a
-//! threshold.
-
-// Nursery lints that only add noise in a binary crate: every module is
-// private, so `pub(crate)` is never load-bearing, and the mutex guards in
-// question are held for a few instructions.
-#![allow(
-    clippy::redundant_pub_crate,
-    clippy::significant_drop_tightening,
-    clippy::significant_drop_in_scrutinee
-)]
-
-mod alertmanager;
-mod annotations;
-mod autoscaler;
-mod awsx;
-mod cli;
-mod config;
-mod controller;
-mod daemon;
-mod grafana;
-mod humanize;
-mod k8s;
-mod observability;
-mod promql;
-mod pvscan;
-mod recstore;
-mod scripts;
-mod sinks;
-mod throughput;
+//! The controller binary: parses the command line and runs the controllers
+//! or one operational subcommand.
 
 use std::path::Path;
 use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
 use tracing::error;
+use volume_autoscaler::{cli, config, daemon};
 
 #[derive(Parser)]
 #[command(
@@ -77,12 +48,6 @@ enum Command {
     Run,
     /// Load and validate the config file, then exit
     Validate,
-    #[command(about = "Print a CustomResourceDefinition as JSON")]
-    Crd {
-        /// The custom resource to print
-        #[arg(long, value_enum, default_value = "instance-volume-autoscaler")]
-        kind: cli::CrdKind,
-    },
     /// List unused `PersistentVolumeClaims` and `PersistentVolumes` (reads the
     /// Kubernetes API, writes nothing)
     Unused {
@@ -146,7 +111,6 @@ fn main() -> ExitCode {
         Some(Command::Validate) => {
             cli::run_validate(Path::new(&path), &env, &mut std::io::stdout())
         }
-        Some(Command::Crd { kind }) => cli::run_crd(kind, &mut std::io::stdout()),
         Some(Command::Unused { all }) => runtime.block_on(cli::run_unused(
             Path::new(&path),
             &env,
@@ -197,21 +161,6 @@ mod tests {
         let cli = Cli::try_parse_from(["x", "--config", "/tmp/c.yaml", "validate"]).unwrap();
         assert_eq!(cli.config.as_deref(), Some("/tmp/c.yaml"));
         assert!(matches!(cli.command, Some(Command::Validate)));
-        let cli = Cli::try_parse_from(["x", "crd"]).unwrap();
-        assert!(matches!(
-            cli.command,
-            Some(Command::Crd {
-                kind: cli::CrdKind::InstanceVolumeAutoscaler
-            })
-        ));
-        let cli = Cli::try_parse_from(["x", "crd", "--kind", "persistent-volume-claim-autoscaler"])
-            .unwrap();
-        assert!(matches!(
-            cli.command,
-            Some(Command::Crd {
-                kind: cli::CrdKind::PersistentVolumeClaimAutoscaler
-            })
-        ));
         let cli = Cli::try_parse_from(["x", "unused", "--all", "--config", "c.yaml"]).unwrap();
         assert!(matches!(cli.command, Some(Command::Unused { all: true })));
         assert_eq!(cli.config.as_deref(), Some("c.yaml"));
@@ -220,7 +169,7 @@ mod tests {
         assert!(matches!(cli.command, Some(Command::Run)));
         let cli = Cli::try_parse_from(["x"]).unwrap();
         assert!(cli.command.is_none());
-        for removed in ["autoscalers", "instances"] {
+        for removed in ["autoscalers", "instances", "crd"] {
             assert!(Cli::try_parse_from(["x", removed]).is_err(), "{removed}");
         }
         assert_eq!(cli.controllers.len(), 3, "every controller by default");

@@ -2,12 +2,12 @@
 """Render the generated CustomResourceDefinition into the Helm chart.
 
 The schema is authored once, in Rust: the `<Kind>Spec` type in each autoscaler's
-crd.rs. `volume-autoscaler crd --kind <kind>` prints the definition kube derives from it, and
+crd.rs. `crdgen <kind>` prints the definition kube derives from it, and
 this wraps it in the chart's conditional and label helpers. Nothing about the
 schema is hand-written, so the chart cannot drift from the code the controller
 reads.
 
-Usage: cargo run -q -- crd --kind <kind> | scripts/render-crd.py <output.yaml>
+Usage: cargo run -q --bin crdgen -- <kind> | scripts/render-crd.py <output.yaml>
 """
 
 import json

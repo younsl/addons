@@ -37,8 +37,8 @@ CRD_DIR := charts/$(BINARY)/templates/crds
 
 ## crd: regenerate both CRDs in the Helm chart from the Rust types
 crd:
-	cargo run --quiet -- crd --kind instance-volume-autoscaler | python3 scripts/render-crd.py $(CRD_DIR)/instancevolumeautoscalers.autoscaling.volume-autoscaler.sh.yaml
-	cargo run --quiet -- crd --kind persistent-volume-claim-autoscaler | python3 scripts/render-crd.py $(CRD_DIR)/persistentvolumeclaimautoscalers.autoscaling.volume-autoscaler.sh.yaml
+	cargo run --quiet --bin crdgen -- instance-volume-autoscaler | python3 scripts/render-crd.py $(CRD_DIR)/instancevolumeautoscalers.autoscaling.volume-autoscaler.sh.yaml
+	cargo run --quiet --bin crdgen -- persistent-volume-claim-autoscaler | python3 scripts/render-crd.py $(CRD_DIR)/persistentvolumeclaimautoscalers.autoscaling.volume-autoscaler.sh.yaml
 
 ## test: run tests
 test:

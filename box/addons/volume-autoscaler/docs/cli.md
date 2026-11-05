@@ -2,7 +2,7 @@
 
 ## Overview
 
-The `volume-autoscaler` binary ships operational subcommands alongside the controller, in the style of Grafana Alloy. They validate the config file, list unused volumes, and print the CustomResourceDefinitions, from a laptop before deploying or inside the [Pod][k8s-pod] with `kubectl exec` after. What each autoscaler targets and does is in its status: `kubectl get iva` and `kubectl get pvca`, with per-target detail in `kubectl describe`. See [InstanceVolumeAutoscaler](instance-volume-autoscaler.md#status) and [PersistentVolumeClaimAutoscaler](persistent-volume-claim-autoscaler.md#status).
+The `volume-autoscaler` binary ships operational subcommands alongside the controller, in the style of Grafana Alloy. They validate the config file and list unused volumes, from a laptop before deploying or inside the [Pod][k8s-pod] with `kubectl exec` after. What each autoscaler targets and does is in its status: `kubectl get iva` and `kubectl get pvca`, with per-target detail in `kubectl describe`. See [InstanceVolumeAutoscaler](instance-volume-autoscaler.md#status) and [PersistentVolumeClaimAutoscaler](persistent-volume-claim-autoscaler.md#status).
 
 Read this if you are:
 
@@ -15,7 +15,6 @@ Usage: volume-autoscaler [OPTIONS] [COMMAND]
 Commands:
   run       Run the controller (the default when no subcommand is given)
   validate  Load and validate the config file, then exit
-  crd       Print a CustomResourceDefinition as JSON
   unused    List unused PersistentVolumeClaims and PersistentVolumes (reads the Kubernetes API, writes nothing)
   help      Print this message or the help of the given subcommand(s)
 
@@ -67,10 +66,6 @@ config config.example.yaml is valid: region=ap-northeast-2
 ```
 
 Typical use: a CI check on config changes. A file that still carries the retired `defaultPolicy` or `policies` key fails here with a pointer to InstanceVolumeAutoscaler.
-
-### crd
-
-Prints the CustomResourceDefinition the controller derives from its Rust types. `--kind` picks `instance-volume-autoscaler` (the default) or `persistent-volume-claim-autoscaler`. `make crd` renders both into the chart, so the chart schema never drifts from the code.
 
 ### unused
 
@@ -132,8 +127,10 @@ The Makefile wraps each command against it; override the file with
 
 ```bash
 make validate     # validate     --config config.example.yaml
-make crd          # crd, rendered into the chart
+make crd          # crdgen, rendered into the chart
 ```
+
+`make crd` runs `crdgen`, a separate binary the image does not ship, and renders its output into the chart. `cargo test` fails when a chart CRD no longer matches the Rust types.
 
 `unused` has no local equivalent: it reads the Kubernetes API through the
 in-cluster config, which does not exist outside a Pod.

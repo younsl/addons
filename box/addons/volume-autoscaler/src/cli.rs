@@ -1,4 +1,5 @@
-//! The operational subcommands: validate, unused, crd. They need no running controller and print to stdout.
+//! The operational subcommands: validate and unused. They need no running
+//! controller and print to stdout.
 
 use std::io::Write;
 use std::path::Path;
@@ -6,10 +7,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{Context as _, Result};
-use kube::CustomResourceExt as _;
 
-use crate::autoscaler::instance_volume::crd::InstanceVolumeAutoscaler;
-use crate::autoscaler::persistent_volume_claim::crd::PersistentVolumeClaimAutoscaler;
 use crate::config::{self, Config, Env};
 use crate::humanize::{go_duration, human_bytes, round_duration};
 use crate::pvscan::{self, DiscardRecorder, Finding, KIND_PVC, Scanner};
@@ -33,25 +31,6 @@ pub fn run_validate(path: &Path, env: &Env, out: &mut impl Write) -> Result<()> 
         path.display(),
         cfg.region
     )?;
-    Ok(())
-}
-
-/// A custom resource the `crd` subcommand prints.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, clap::ValueEnum)]
-pub enum CrdKind {
-    InstanceVolumeAutoscaler,
-    PersistentVolumeClaimAutoscaler,
-}
-
-/// Prints the `CustomResourceDefinition` of `kind` as JSON, which `make crd`
-/// renders into the chart.
-pub fn run_crd(kind: CrdKind, out: &mut impl Write) -> Result<()> {
-    let crd = match kind {
-        CrdKind::InstanceVolumeAutoscaler => InstanceVolumeAutoscaler::crd(),
-        CrdKind::PersistentVolumeClaimAutoscaler => PersistentVolumeClaimAutoscaler::crd(),
-    };
-    serde_json::to_writer_pretty(&mut *out, &crd)?;
-    writeln!(out)?;
     Ok(())
 }
 
@@ -230,26 +209,6 @@ mod tests {
         );
         let err = load_config(&path.with_file_name("missing.yaml"), &Env::default()).unwrap_err();
         assert!(format!("{err:#}").contains("read config file"));
-    }
-
-    #[test]
-    fn crd_prints_the_definition() {
-        for (kind, name) in [
-            (
-                CrdKind::InstanceVolumeAutoscaler,
-                "InstanceVolumeAutoscaler",
-            ),
-            (
-                CrdKind::PersistentVolumeClaimAutoscaler,
-                "PersistentVolumeClaimAutoscaler",
-            ),
-        ] {
-            let mut out = Vec::new();
-            run_crd(kind, &mut out).unwrap();
-            let v: serde_json::Value = serde_json::from_slice(&out).unwrap();
-            assert_eq!(v["kind"], "CustomResourceDefinition");
-            assert_eq!(v["spec"]["names"]["kind"], name);
-        }
     }
 
     #[test]
