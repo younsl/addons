@@ -1,5 +1,6 @@
 //! `EKSUpgrade` CRD type definition.
 
+pub mod chart;
 pub mod spec;
 pub mod status;
 pub mod types;

@@ -1,4 +1,4 @@
-.PHONY: build release run dev test fmt lint clean install install-local help deps docker-build helm-lint helm-template
+.PHONY: build release run dev test fmt lint clean install install-local help deps docker-build helm-lint helm-template crd
 
 # Binary name
 BINARY_NAME := kuo
@@ -64,7 +64,7 @@ clean:
 ## Install to ~/.cargo/bin/
 install:
 	@echo "Installing $(BINARY_NAME)..."
-	@PATH="$(TOOLCHAIN_PATH):$$PATH" cargo install --path .
+	@PATH="$(TOOLCHAIN_PATH):$$PATH" cargo install --path . --bin $(BINARY_NAME)
 
 ## Build release and install to /usr/local/bin/
 install-local: release
@@ -76,6 +76,10 @@ install-local: release
 docker-build:
 	@echo "Building Docker image..."
 	@docker build -t $(IMAGE_NAME):latest .
+
+## Regenerate the EKSUpgrade CRD in the Helm chart from the Rust types
+crd:
+	@PATH="$(TOOLCHAIN_PATH):$$PATH" cargo run --quiet --bin crdgen
 
 ## Lint Helm chart
 helm-lint:

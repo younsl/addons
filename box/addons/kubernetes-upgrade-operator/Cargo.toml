@@ -8,6 +8,21 @@ license = "Apache-2.0"
 description = "Kubernetes Upgrade Operator for EKS clusters"
 repository = "https://github.com/younsl/addons"
 readme = "README.md"
+default-run = "kuo"
+
+[lib]
+name = "kuo"
+path = "src/lib.rs"
+
+[[bin]]
+name = "kuo"
+path = "src/main.rs"
+doc = false
+
+[[bin]]
+name = "crdgen"
+path = "src/bin/crdgen.rs"
+doc = false
 
 [dependencies]
 # AWS SDK

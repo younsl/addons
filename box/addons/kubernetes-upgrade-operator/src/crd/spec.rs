@@ -13,9 +13,11 @@ use super::status::EKSUpgradeStatus;
     version = "v1alpha1",
     kind = "EKSUpgrade",
     status = "EKSUpgradeStatus",
+    shortname = "eu",
     printcolumn = r#"{"name":"CLUSTER","type":"string","jsonPath":".spec.clusterName"}"#,
     printcolumn = r#"{"name":"TARGET","type":"string","jsonPath":".spec.targetVersion"}"#,
     printcolumn = r#"{"name":"PHASE","type":"string","jsonPath":".status.phase"}"#,
+    printcolumn = r#"{"name":"PROGRESS","type":"string","jsonPath":".status.progress"}"#,
     printcolumn = r#"{"name":"AUTH","type":"string","jsonPath":".status.conditions[?(@.type==\"AWSAuthenticated\")].reason"}"#,
     printcolumn = r#"{"name":"AGE","type":"date","jsonPath":".metadata.creationTimestamp"}"#
 )]

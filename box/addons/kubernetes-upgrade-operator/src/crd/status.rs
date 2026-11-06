@@ -88,8 +88,11 @@ pub struct ControlPlaneStatus {
 #[derive(Deserialize, Serialize, Clone, Debug, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct AddonStatus {
+    /// Name of the EKS add-on (e.g., `vpc-cni`, `coredns`, `kube-proxy`).
     pub name: String,
+    /// Current installed version of the add-on before upgrade.
     pub current_version: String,
+    /// Target version the add-on will be upgraded to.
     pub target_version: String,
     pub status: ComponentStatus,
     /// Timestamp when this add-on upgrade was initiated.
@@ -104,8 +107,11 @@ pub struct AddonStatus {
 #[derive(Deserialize, Serialize, Clone, Debug, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct NodegroupStatus {
+    /// Name of the managed node group.
     pub name: String,
+    /// Current Kubernetes version of the node group AMI before upgrade.
     pub current_version: String,
+    /// Target Kubernetes version the node group will be upgraded to.
     pub target_version: String,
     pub status: ComponentStatus,
     /// Active AWS update ID for this node group (for crash recovery).
@@ -287,11 +293,17 @@ pub struct LifecycleStatus {
 #[derive(Deserialize, Serialize, Clone, Debug, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct UpgradeCondition {
+    /// Type of the condition (e.g., `AWSAuthenticated`).
     pub r#type: String,
+    /// Status of the condition: `True`, `False`, or `Unknown`.
     pub status: String,
+    /// Machine-readable reason for the condition's last transition (e.g.,
+    /// `AssumeRoleSuccess`, `IdentityVerified`).
     pub reason: String,
+    /// Human-readable message with details about the condition.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub message: Option<String>,
+    /// Last time the condition transitioned from one status to another.
     pub last_transition_time: DateTime<Utc>,
 }
 
