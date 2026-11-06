@@ -179,11 +179,10 @@ crds:
 
 Set `install: false` when the CRD is applied by something else, such as an Argo CD Application ordered ahead of this one. Until the CRD exists the alerts endpoints answer `503` with a message naming the missing resource, and the rest of the application is unaffected.
 
-The definition is generated from the Rust type the collector reads, so it cannot drift from the code:
+The definition is generated from the Rust type the collector reads, so it cannot drift from the code. `make crd` runs the `crdgen` binary, which writes the chart template and is not shipped in the image. `cargo test` fails when the chart CRD no longer matches the Rust type.
 
 ```bash
-make crd                        # regenerate the chart template
-trivy-collector crd | kubectl apply -f -   # apply it directly
+make crd    # regenerate the chart template
 ```
 
 ## Migrating from the ConfigMap

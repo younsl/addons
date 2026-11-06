@@ -62,12 +62,10 @@ spec:
     name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: An alert rule matching SBOM components across collected clusters, and the receivers
-          a match is delivered to.
+        description: An alert rule matching SBOM components across collected clusters, and the receivers a match is delivered to.
         properties:
           spec:
-            description: 'An alert rule: which SBOM component to watch for, and where to send the notification
-              when one lands in a workload''s SBOM.'
+            description: 'An alert rule: which SBOM component to watch for, and where to send the notification when one lands in a workload''s SBOM.'
             properties:
               annotations:
                 additionalProperties:
@@ -76,8 +74,7 @@ spec:
                 description: Alertmanager-style annotations attached to the outbound notification.
                 type: object
               cooldownSeconds:
-                description: Minimum gap between two notifications for the same rule and target. Absent
-                  falls back to the evaluator's default.
+                description: Minimum gap between two notifications for the same rule and target. Absent falls back to the evaluator's default.
                 format: uint64
                 minimum: 0.0
                 nullable: true
@@ -94,8 +91,7 @@ spec:
                 additionalProperties:
                   type: string
                 default: {}
-                description: Alertmanager-style labels attached to the outbound notification. These are
-                  the rule author's labels, not the object's `metadata.labels`.
+                description: Alertmanager-style labels attached to the outbound notification. These are the rule author's labels, not the object's `metadata.labels`.
                 type: object
               matchers:
                 description: What has to be true of an SBOM component for the rule to fire.
@@ -110,8 +106,7 @@ spec:
                     nullable: true
                     type: string
                   packageName:
-                    description: Component name to match, case-insensitively. Absent matches every component,
-                      which is rarely what an author means.
+                    description: Component name to match, case-insensitively. Absent matches every component, which is rarely what an author means.
                     nullable: true
                     type: string
                   versionExpr:
@@ -135,8 +130,7 @@ spec:
                           nullable: true
                           type: string
                         webhookUrl:
-                          description: Incoming-webhook URL. Must be on `https://hooks.slack.com/`; see
-                            `types::validate_webhook_url` for why the host is pinned.
+                          description: Incoming-webhook URL. Must be on `https://hooks.slack.com/`; see `types::validate_webhook_url` for why the host is pinned.
                           type: string
                       required:
                       - webhookUrl
@@ -150,22 +144,13 @@ spec:
             - receivers
             type: object
           status:
-            description: 'What the collector has observed about a rule. The scraper writes the evaluation
-              fields, and only when something changed: a firing, or a `Ready` transition. Writing on every
-              ingested report would mean an API call per rule per report. The server writes the audit
-              fields, once per create or edit. Authorship lives here rather than in annotations. An annotation
-              is part of the spec object, so the server recording "bob edited this" reads as drift to
-              whatever GitOps controller owns the manifest and gets reverted on the next sync. A status
-              subresource is exempt from that by design. A rule applied straight from Git has no recorded
-              author, which is the truth: nobody authored it through the API.'
+            description: 'What the collector has observed about a rule. The scraper writes the evaluation fields, and only when something changed: a firing, or a `Ready` transition. Writing on every ingested report would mean an API call per rule per report. The server writes the audit fields, once per create or edit. Authorship lives here rather than in annotations. An annotation is part of the spec object, so the server recording "bob edited this" reads as drift to whatever GitOps controller owns the manifest and gets reverted on the next sync. A status subresource is exempt from that by design. A rule applied straight from Git has no recorded author, which is the truth: nobody authored it through the API.'
             nullable: true
             properties:
               conditions:
                 description: Standard Kubernetes conditions. See `CONDITION_READY` and `CONDITION_DELIVERED`.
                 items:
-                  description: A condition, shaped like `metav1.Condition`. `k8s-openapi`'s own `Condition`
-                    is not reused because deriving the CRD schema needs `JsonSchema`, which that crate
-                    only implements behind a feature this build does not enable.
+                  description: A condition, shaped like `metav1.Condition`. `k8s-openapi`'s own `Condition` is not reused because deriving the CRD schema needs `JsonSchema`, which that crate only implements behind a feature this build does not enable.
                   properties:
                     lastTransitionTime:
                       description: When `status` last changed, not when it was last confirmed.
@@ -194,13 +179,11 @@ spec:
                   type: object
                 type: array
               createdBy:
-                description: Who created the rule through the API. Absent for one applied from a Git repository,
-                  which reads back as `unknown`.
+                description: Who created the rule through the API. Absent for one applied from a Git repository, which reads back as `unknown`.
                 nullable: true
                 type: string
               firedCount:
-                description: Notifications dispatched over the rule's lifetime. Cooldown suppression is
-                  not counted, because nothing was sent.
+                description: Notifications dispatched over the rule's lifetime. Cooldown suppression is not counted, because nothing was sent.
                 format: uint64
                 minimum: 0.0
                 type: integer
@@ -219,16 +202,13 @@ spec:
                 nullable: true
                 type: string
               matchingWorkloads:
-                description: Distinct workloads matching this rule at the last firing, the fired one included.
-                  This is the fleet-wide blast radius, not a per-report count.
+                description: Distinct workloads matching this rule at the last firing, the fired one included. This is the fleet-wide blast radius, not a per-report count.
                 format: uint32
                 minimum: 0.0
                 nullable: true
                 type: integer
               observedGeneration:
-                description: '`metadata.generation` the evaluator last acted on. A value behind the current
-                  generation means the edit has not been evaluated yet, which is normal until the next
-                  SBOM report arrives.'
+                description: '`metadata.generation` the evaluator last acted on. A value behind the current generation means the edit has not been evaluated yet, which is normal until the next SBOM report arrives.'
                 format: int64
                 nullable: true
                 type: integer

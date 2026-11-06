@@ -309,17 +309,6 @@ const fn default_true() -> bool {
     true
 }
 
-/// The CustomResourceDefinition for this type, as pretty JSON.
-///
-/// The schema is derived from the Rust type the collector actually reads, so
-/// the definition cannot drift from the code the way a hand-written manifest
-/// does. `kubectl apply -f -` accepts JSON, and `make crd` renders this into
-/// the Helm chart.
-pub fn definition_json() -> Result<String, serde_json::Error> {
-    use kube::CustomResourceExt;
-    serde_json::to_string_pretty(&AlertRule::crd())
-}
-
 impl AlertRule {
     /// Render the custom resource in the HTTP API's rule shape.
     ///
@@ -462,8 +451,8 @@ mod tests {
     /// server would reject has to fail here rather than at install time.
     #[test]
     fn the_generated_definition_describes_this_type() {
-        let json: serde_json::Value =
-            serde_json::from_str(&definition_json().unwrap()).expect("valid JSON");
+        use kube::CustomResourceExt;
+        let json = serde_json::to_value(AlertRule::crd()).expect("a CRD serializes");
         assert_eq!(json["kind"], "CustomResourceDefinition");
         assert_eq!(
             json["metadata"]["name"],

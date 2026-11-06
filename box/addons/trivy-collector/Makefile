@@ -79,10 +79,8 @@ dev-all: ## Run server (UI :3000) + scraper (internal API :8081) in one process 
 export-state: build ## Migrate authored state out of a legacy database (DB_PATH=/path/to/trivy.db)
 	./target/debug/$(BINARY_NAME) export-state --db-path=$(or $(DB_PATH),/tmp/trivy-data/trivy.db) --dry-run
 
-CRD_TEMPLATE := charts/trivy-collector/templates/crds/alertrules.trivy-collector.security.io.yaml
-
 crd: ## Regenerate the AlertRule CRD in the Helm chart from src/alerts/crd.rs
-	cargo run --quiet -- crd | python3 scripts/render-crd.py $(CRD_TEMPLATE)
+	cargo run --quiet --bin crdgen
 
 test: ## Run tests
 	cargo test --verbose

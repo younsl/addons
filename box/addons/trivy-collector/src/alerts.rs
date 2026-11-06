@@ -2,6 +2,7 @@
 //! resources in the `trivy-collector.security.io` API group, with Slack
 //! webhook delivery.
 
+pub mod chart;
 pub mod crd;
 pub mod evaluator;
 pub mod expr;

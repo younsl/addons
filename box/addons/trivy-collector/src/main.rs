@@ -128,10 +128,6 @@ async fn run_command(command: Command, config: &Config) -> Result<()> {
             );
             Ok(())
         }
-        Command::Crd => {
-            println!("{}", trivy_collector::alerts::crd::definition_json()?);
-            Ok(())
-        }
         Command::ExportState {
             db_path,
             namespace,
