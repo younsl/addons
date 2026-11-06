@@ -2,6 +2,7 @@
 //! the API types and helpers they share: quantities, cooldowns, the HPA-style
 //! conditions, and the `behavior.scaleUp` rules.
 
+pub mod chart;
 pub mod instance_volume;
 pub mod persistent_volume_claim;
 
@@ -22,8 +23,8 @@ pub const API_VERSION: &str = "autoscaling.volume-autoscaler.sh/v1alpha1";
 /// `resource.Quantity` field. Quantity's own schema carries no pattern.
 pub const QUANTITY_PATTERN: &str = r"^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$";
 
-/// A custom resource of the group, as `crdgen` names it.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, clap::ValueEnum)]
+/// A custom resource of the group.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CrdKind {
     InstanceVolumeAutoscaler,
     PersistentVolumeClaimAutoscaler,

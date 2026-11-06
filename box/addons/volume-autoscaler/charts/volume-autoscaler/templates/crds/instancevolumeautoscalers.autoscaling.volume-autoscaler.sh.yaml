@@ -60,22 +60,18 @@ spec:
     name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: Grows the root EBS volume of the EC2 instances selected by scaleTargetRef when root
-          filesystem utilization crosses the target.
+        description: Grows the root EBS volume of the EC2 instances selected by scaleTargetRef when root filesystem utilization crosses the target.
         properties:
           spec:
-            description: Automatically grows the root EBS volume of the EC2 instances that `scaleTargetRef`
-              selects when root filesystem utilization crosses the metric target.
+            description: Automatically grows the root EBS volume of the EC2 instances that `scaleTargetRef` selects when root filesystem utilization crosses the metric target.
             properties:
               alertEnabled:
                 default: true
-                description: Sends Alertmanager alerts for this autoscaler's resizes. The controller-wide
-                  `alertmanager.enabled` switch remains the master gate.
+                description: Sends Alertmanager alerts for this autoscaler's resizes. The controller-wide `alertmanager.enabled` switch remains the master gate.
                 type: boolean
               behavior:
                 default: {}
-                description: How the volume grows once the target is crossed. The API server fills in
-                  the scale-up defaults when it is omitted.
+                description: How the volume grows once the target is crossed. The API server fills in the scale-up defaults when it is omitted.
                 nullable: true
                 properties:
                   scaleUp:
@@ -85,15 +81,12 @@ spec:
                     properties:
                       cooldownDuration:
                         default: 6h
-                        description: Minimum time between two modifications of the same volume, in hours,
-                          minutes, and seconds (`6h`, `6h30m`, `90m`). At least `6h`, the EBS limit of
-                          one modification per volume every six hours, which is also the default.
+                        description: Minimum time between two modifications of the same volume, in hours, minutes, and seconds (`6h`, `6h30m`, `90m`). At least `6h`, the EBS limit of one modification per volume every six hours, which is also the default.
                         nullable: true
                         pattern: ^([0-9]+(h|m|s))+$
                         type: string
                         x-kubernetes-validations:
-                        - message: cooldownDuration must be at least 6h, the EBS limit of one modification
-                            per volume every six hours
+                        - message: cooldownDuration must be at least 6h, the EBS limit of one modification per volume every six hours
                           rule: duration(self) >= duration('6h')
                       policies:
                         description: Step policies. Empty means 10 percent and 1 GiB with `Max`.
@@ -117,8 +110,7 @@ spec:
                         type: array
                       selectPolicy:
                         default: Max
-                        description: '`Max` (default) takes the largest policy step, `Min` the smallest,
-                          `Disabled` stops scaling for this autoscaler.'
+                        description: '`Max` (default) takes the largest policy step, `Min` the smallest, `Disabled` stops scaling for this autoscaler.'
                         enum:
                         - Max
                         - Min
@@ -127,17 +119,14 @@ spec:
                     type: object
                 type: object
               maxCapacity:
-                description: The upper bound of the root volume capacity. A step that would exceed it
-                  is not taken.
+                description: The upper bound of the root volume capacity. A step that would exceed it is not taken.
                 pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                 x-kubernetes-int-or-string: true
                 x-kubernetes-validations:
                 - message: maxCapacity must be at least 1Gi
-                  rule: isQuantity(string(self)) && quantity(string(self)).compareTo(quantity('1Gi'))
-                    >= 0
+                  rule: isQuantity(string(self)) && quantity(string(self)).compareTo(quantity('1Gi')) >= 0
               metrics:
-                description: The utilization target that triggers a scale up. Only the `storage` resource
-                  is supported. Empty means `storage` at 80 percent.
+                description: The utilization target that triggers a scale up. Only the `storage` resource is supported. Empty means `storage` at 80 percent.
                 items:
                   description: One metric the autoscaler scales on.
                   properties:
@@ -212,10 +201,8 @@ spec:
                 - kind
                 type: object
                 x-kubernetes-validations:
-                - message: kind Instance requires name and no tags, kind TagSelector requires at least
-                    one tag and no name
-                  rule: 'self.kind == ''Instance'' ? (has(self.name) && !has(self.tags)) : (!has(self.name)
-                    && has(self.tags) && size(self.tags) > 0)'
+                - message: kind Instance requires name and no tags, kind TagSelector requires at least one tag and no name
+                  rule: 'self.kind == ''Instance'' ? (has(self.name) && !has(self.tags)) : (!has(self.name) && has(self.tags) && size(self.tags) > 0)'
             required:
             - maxCapacity
             - scaleTargetRef
@@ -227,32 +214,21 @@ spec:
               conditions:
                 description: '`AbleToScale`, `ScalingActive`, and `ScalingLimited`, as on an HPA.'
                 items:
-                  description: Condition contains details for one aspect of the current state of this
-                    API Resource.
+                  description: Condition contains details for one aspect of the current state of this API Resource.
                   properties:
                     lastTransitionTime:
-                      description: lastTransitionTime is the last time the condition transitioned from
-                        one status to another. This should be when the underlying condition changed. If
-                        that is not known, then using the time when the API field changed is acceptable.
+                      description: lastTransitionTime is the last time the condition transitioned from one status to another. This should be when the underlying condition changed. If that is not known, then using the time when the API field changed is acceptable.
                       format: date-time
                       type: string
                     message:
-                      description: message is a human readable message indicating details about the transition.
-                        This may be an empty string.
+                      description: message is a human readable message indicating details about the transition. This may be an empty string.
                       type: string
                     observedGeneration:
-                      description: observedGeneration represents the .metadata.generation that the condition
-                        was set based upon. For instance, if .metadata.generation is currently 12, but
-                        the .status.conditions[x].observedGeneration is 9, the condition is out of date
-                        with respect to the current state of the instance.
+                      description: observedGeneration represents the .metadata.generation that the condition was set based upon. For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date with respect to the current state of the instance.
                       format: int64
                       type: integer
                     reason:
-                      description: reason contains a programmatic identifier indicating the reason for
-                        the condition's last transition. Producers of specific condition types may define
-                        expected values and meanings for this field, and whether the values are considered
-                        a guaranteed API. The value should be a CamelCase string. This field may not be
-                        empty.
+                      description: reason contains a programmatic identifier indicating the reason for the condition's last transition. Producers of specific condition types may define expected values and meanings for this field, and whether the values are considered a guaranteed API. The value should be a CamelCase string. This field may not be empty.
                       type: string
                     status:
                       description: status of the condition, one of True, False, Unknown.
@@ -269,13 +245,11 @@ spec:
                   type: object
                 type: array
               cooldownDuration:
-                description: The cooldown in effect between two modifications of one volume, the default
-                  included.
+                description: The cooldown in effect between two modifications of one volume, the default included.
                 type: string
               currentVolumes:
                 default: 0
-                description: How many root EBS volumes the autoscaler currently targets, one per targeted
-                  instance with a resolvable root volume.
+                description: How many root EBS volumes the autoscaler currently targets, one per targeted instance with a resolvable root volume.
                 format: int32
                 type: integer
               instances:
@@ -284,8 +258,7 @@ spec:
                   description: One target instance as observed in the latest pass.
                   properties:
                     cooldownUntil:
-                      description: When the volume may be modified again. Set while a cooldown runs, including
-                        right after a resize.
+                      description: When the volume may be modified again. Set while a cooldown runs, including right after a resize.
                       format: date-time
                       nullable: true
                       type: string
@@ -338,16 +311,13 @@ spec:
                 nullable: true
                 type: integer
               reason:
-                description: The most actionable condition reason, or `Ready` when every condition is
-                  healthy.
+                description: The most actionable condition reason, or `Ready` when every condition is healthy.
                 type: string
               target:
-                description: 'The scale target in one line: an instance ID, or the required tags as `Key=Value`
-                  pairs.'
+                description: 'The scale target in one line: an instance ID, or the required tags as `Key=Value` pairs.'
                 type: string
               utilization:
-                description: The highest root filesystem usage among the targets against the utilization
-                  target, as `92%/80%`, or `<unknown>/80%` before a measurement.
+                description: The highest root filesystem usage among the targets against the utilization target, as `92%/80%`, or `<unknown>/80%` before a measurement.
                 type: string
             type: object
         required:

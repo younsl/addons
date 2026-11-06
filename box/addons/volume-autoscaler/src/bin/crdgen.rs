@@ -1,24 +1,18 @@
-//! Prints a `CustomResourceDefinition` as JSON for `make crd` to render into
-//! the chart. A build tool, never shipped in the image.
+//! Writes every CRD into the Helm chart (`make crd`). A build tool, never
+//! shipped in the image.
 
-use std::io::Write as _;
+use std::path::Path;
 
-use anyhow::Result;
-use clap::Parser;
+use anyhow::{Context as _, Result};
 use volume_autoscaler::autoscaler::CrdKind;
-
-#[derive(Parser)]
-#[command(name = "crdgen", about = "Print a CustomResourceDefinition as JSON")]
-struct Args {
-    /// The custom resource to print
-    #[arg(value_enum)]
-    kind: CrdKind,
-}
+use volume_autoscaler::autoscaler::chart::{chart_path, render};
 
 fn main() -> Result<()> {
-    let args = Args::parse();
-    let mut out = std::io::stdout().lock();
-    serde_json::to_writer_pretty(&mut out, &args.kind.crd())?;
-    writeln!(out)?;
+    for kind in CrdKind::ALL {
+        let rel = chart_path(kind);
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join(&rel);
+        std::fs::write(&path, render(kind)).with_context(|| format!("write {}", path.display()))?;
+        eprintln!("wrote {rel}");
+    }
     Ok(())
 }

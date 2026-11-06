@@ -127,10 +127,10 @@ The Makefile wraps each command against it; override the file with
 
 ```bash
 make validate     # validate     --config config.example.yaml
-make crd          # crdgen, rendered into the chart
+make crd          # crdgen, writes the chart CRDs
 ```
 
-`make crd` runs `crdgen`, a separate binary the image does not ship, and renders its output into the chart. `cargo test` fails when a chart CRD no longer matches the Rust types.
+`make crd` runs `crdgen`, a separate binary the image does not ship, which writes the chart CRD templates. `cargo test` fails when a chart CRD no longer matches the Rust types.
 
 `unused` has no local equivalent: it reads the Kubernetes API through the
 in-cluster config, which does not exist outside a Pod.

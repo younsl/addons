@@ -60,17 +60,14 @@ spec:
     name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: Grows the PersistentVolumeClaims selected by scaleTargetRef when space or inode utilization
-          crosses the target.
+        description: Grows the PersistentVolumeClaims selected by scaleTargetRef when space or inode utilization crosses the target.
         properties:
           spec:
-            description: Grows the `PersistentVolumeClaims` selected by `scaleTargetRef` when their space
-              or inode utilization crosses the target.
+            description: Grows the `PersistentVolumeClaims` selected by `scaleTargetRef` when their space or inode utilization crosses the target.
             properties:
               behavior:
                 default: {}
-                description: How the claim grows once a target is crossed. The API server fills in the
-                  scale-up defaults when it is omitted.
+                description: How the claim grows once a target is crossed. The API server fills in the scale-up defaults when it is omitted.
                 nullable: true
                 properties:
                   scaleUp:
@@ -80,10 +77,7 @@ spec:
                     properties:
                       cooldownDuration:
                         default: 30m
-                        description: Minimum time between two resizes of the same claim, in hours, minutes,
-                          and seconds (`30m`, `6h`). At least `1m`. EBS volumes accept one modification
-                          every six hours, and a request inside that window stays in progress until it
-                          passes.
+                        description: Minimum time between two resizes of the same claim, in hours, minutes, and seconds (`30m`, `6h`). At least `1m`. EBS volumes accept one modification every six hours, and a request inside that window stays in progress until it passes.
                         nullable: true
                         pattern: ^([0-9]+(h|m|s))+$
                         type: string
@@ -112,8 +106,7 @@ spec:
                         type: array
                       selectPolicy:
                         default: Max
-                        description: '`Max` (default) takes the largest policy step, `Min` the smallest,
-                          `Disabled` stops scaling for this autoscaler.'
+                        description: '`Max` (default) takes the largest policy step, `Min` the smallest, `Disabled` stops scaling for this autoscaler.'
                         enum:
                         - Max
                         - Min
@@ -122,18 +115,14 @@ spec:
                     type: object
                 type: object
               maxCapacity:
-                description: The upper bound of a claim's capacity. A step that would pass it is clamped
-                  to it.
+                description: The upper bound of a claim's capacity. A step that would pass it is clamped to it.
                 pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                 x-kubernetes-int-or-string: true
                 x-kubernetes-validations:
                 - message: maxCapacity must be at least 1Gi
-                  rule: isQuantity(string(self)) && quantity(string(self)).compareTo(quantity('1Gi'))
-                    >= 0
+                  rule: isQuantity(string(self)) && quantity(string(self)).compareTo(quantity('1Gi')) >= 0
               metrics:
-                description: 'The utilization targets that trigger a scale up: `storage` (used space)
-                  and `inodes`. Any one crossing its target grows the claim. Empty means `storage` at
-                  80 percent.'
+                description: 'The utilization targets that trigger a scale up: `storage` (used space) and `inodes`. Any one crossing its target grows the claim. Empty means `storage` at 80 percent.'
                 items:
                   description: One metric the autoscaler scales on.
                   properties:
@@ -180,8 +169,7 @@ spec:
                 maxItems: 2
                 type: array
               scaleTargetRef:
-                description: 'The claims this autoscaler grows: every claim of a `StatefulSet`, or one
-                  `PersistentVolumeClaim`, in the autoscaler''s namespace.'
+                description: 'The claims this autoscaler grows: every claim of a `StatefulSet`, or one `PersistentVolumeClaim`, in the autoscaler''s namespace.'
                 properties:
                   kind:
                     description: '`StatefulSet` or `PersistentVolumeClaim`.'
@@ -204,8 +192,7 @@ spec:
             type: object
             x-kubernetes-validations:
             - message: each metrics resource name may appear once
-              rule: '!has(self.metrics) || self.metrics.all(a, self.metrics.exists_one(b, b.resource.name
-                == a.resource.name))'
+              rule: '!has(self.metrics) || self.metrics.all(a, self.metrics.exists_one(b, b.resource.name == a.resource.name))'
           status:
             description: What the controller last observed and did.
             nullable: true
@@ -216,9 +203,7 @@ spec:
                   description: One target claim as observed in the latest pass.
                   properties:
                     capacityAtLastScale:
-                      description: The filesystem size kubelet reported when the last resize was requested.
-                        Until kubelet reports a larger one, utilization is measured against the old size
-                        and the claim is not grown again.
+                      description: The filesystem size kubelet reported when the last resize was requested. Until kubelet reports a larger one, utilization is measured against the old size and the claim is not grown again.
                       nullable: true
                       x-kubernetes-int-or-string: true
                     cooldownUntil:
@@ -259,8 +244,7 @@ spec:
                       description: Why the claim is in its current state, in `CamelCase`.
                       type: string
                     trackedBy:
-                      description: The Argo CD Application tracking the claim. A resize leaves it `OutOfSync`
-                        unless it ignores `/spec/resources/requests/storage`.
+                      description: The Argo CD Application tracking the claim. A resize leaves it `OutOfSync` unless it ignores `/spec/resources/requests/storage`.
                       nullable: true
                       type: string
                   required:
@@ -271,32 +255,21 @@ spec:
               conditions:
                 description: '`AbleToScale`, `ScalingActive`, and `ScalingLimited`, as on an HPA.'
                 items:
-                  description: Condition contains details for one aspect of the current state of this
-                    API Resource.
+                  description: Condition contains details for one aspect of the current state of this API Resource.
                   properties:
                     lastTransitionTime:
-                      description: lastTransitionTime is the last time the condition transitioned from
-                        one status to another. This should be when the underlying condition changed. If
-                        that is not known, then using the time when the API field changed is acceptable.
+                      description: lastTransitionTime is the last time the condition transitioned from one status to another. This should be when the underlying condition changed. If that is not known, then using the time when the API field changed is acceptable.
                       format: date-time
                       type: string
                     message:
-                      description: message is a human readable message indicating details about the transition.
-                        This may be an empty string.
+                      description: message is a human readable message indicating details about the transition. This may be an empty string.
                       type: string
                     observedGeneration:
-                      description: observedGeneration represents the .metadata.generation that the condition
-                        was set based upon. For instance, if .metadata.generation is currently 12, but
-                        the .status.conditions[x].observedGeneration is 9, the condition is out of date
-                        with respect to the current state of the instance.
+                      description: observedGeneration represents the .metadata.generation that the condition was set based upon. For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date with respect to the current state of the instance.
                       format: int64
                       type: integer
                     reason:
-                      description: reason contains a programmatic identifier indicating the reason for
-                        the condition's last transition. Producers of specific condition types may define
-                        expected values and meanings for this field, and whether the values are considered
-                        a guaranteed API. The value should be a CamelCase string. This field may not be
-                        empty.
+                      description: reason contains a programmatic identifier indicating the reason for the condition's last transition. Producers of specific condition types may define expected values and meanings for this field, and whether the values are considered a guaranteed API. The value should be a CamelCase string. This field may not be empty.
                       type: string
                     status:
                       description: status of the condition, one of True, False, Unknown.
@@ -331,15 +304,13 @@ spec:
                 nullable: true
                 type: integer
               reason:
-                description: The most actionable condition reason, or `Ready` when every condition is
-                  healthy.
+                description: The most actionable condition reason, or `Ready` when every condition is healthy.
                 type: string
               target:
                 description: The scale target in one line, as `StatefulSet/web`.
                 type: string
               utilization:
-                description: The fullest claim against its space target, as `92%/80%`, or `<unknown>/80%`
-                  before a measurement.
+                description: The fullest claim against its space target, as `92%/80%`, or `<unknown>/80%` before a measurement.
                 type: string
             type: object
         required:

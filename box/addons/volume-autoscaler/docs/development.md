@@ -11,7 +11,7 @@ make coverage       # enforce minimum line coverage (70%, cargo-llvm-cov)
 make lint           # rustfmt check + clippy (pedantic and nursery as warnings, denied in CI)
 make zigbuild       # static musl binaries for linux/amd64 and linux/arm64 (cargo-zigbuild)
 make docker-build   # multi-arch scratch image from the zigbuild binaries
-make crd            # regenerate both chart CRDs from src/autoscaler/*/crd.rs (needs PyYAML)
+make crd            # regenerate both chart CRDs from src/autoscaler/*/crd.rs
 ```
 
 ## Conclusion
