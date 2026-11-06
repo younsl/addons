@@ -27,7 +27,6 @@ metadata:
 spec:
   group: kuo.io
   names:
-    categories: []
     kind: EKSUpgrade
     plural: eksupgrades
     shortNames:

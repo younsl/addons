@@ -74,6 +74,15 @@ pub fn render() -> String {
     let name = crd.metadata.name.clone().unwrap_or_default();
     let mut spec = serde_json::to_value(&crd.spec).expect("a CRD spec serializes");
     collapse_descriptions(&mut spec);
+    // The API server drops an empty list, which Argo CD would show as drift.
+    if let Some(names) = spec.get_mut("names").and_then(Value::as_object_mut)
+        && names
+            .get("categories")
+            .and_then(Value::as_array)
+            .is_some_and(Vec::is_empty)
+    {
+        names.remove("categories");
+    }
     let body = serde_yaml::to_string(&serde_json::json!({ "spec": spec }))
         .expect("a JSON value serializes as YAML");
 
@@ -97,6 +106,7 @@ mod tests {
         assert!(out.contains("  name: eksupgrades.kuo.io\n"), "{out}");
         assert!(out.contains("\nspec:\n  group: kuo.io\n"), "{out}");
         assert!(out.contains("- eu\n"), "{out}");
+        assert!(!out.contains("categories"), "{out}");
     }
 
     #[test]
