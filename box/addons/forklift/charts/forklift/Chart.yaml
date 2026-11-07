@@ -3,14 +3,14 @@ name: forklift
 description: Lightweight Kubernetes-native artifact repository (Maven, npm, Cargo, Go, PyPI) with proxy caching and supply-chain controls (age policy, package approval, vulnerability scanning)
 type: application
 deprecated: false
-version: 0.21.0
+version: 0.22.0
 appVersion: "0.20.0"
 home: https://github.com/younsl/addons/tree/main/box/addons/forklift
 sources:
   - https://github.com/younsl/addons/tree/main/box/addons/forklift/charts/forklift
 dependencies:
   - name: seaweedfs
-    version: "4.48.0"
+    version: "4.52.0"
     repository: https://seaweedfs.github.io/seaweedfs/helm
     condition: seaweedfs.enabled
 maintainers:
@@ -28,11 +28,5 @@ keywords:
   - nexus
 annotations:
   artifacthub.io/changes: |
-    - kind: added
-      description: "An expired cache entry answers when revalidating it fails (transport error, timeout, 5xx, 429), for up to FORKLIFT_PROXY_STALE_IF_ERROR (default 168h) past its TTL, marked X-Forklift-Stale and counted in forklift_stale_served_total"
-    - kind: added
-      description: "Expired metadata is revalidated with If-None-Match and If-Modified-Since, and a 304 restarts the TTL of the cached copy without a body transfer (forklift_upstream_revalidations_total)"
     - kind: changed
-      description: "Upstream fetches are bounded by connect (10s), no-data read (30s) and whole-fetch (10m) timeouts instead of a 60 second total, so a large document that keeps arriving is no longer cut"
-    - kind: changed
-      description: "A body that stalls or breaks mid-stream counts in forklift_upstream_errors_total with its reason"
+      description: "Bundled SeaweedFS subchart bumped from 4.48.0 to 4.52.0 (image chrislusf/seaweedfs:4.52). The all-in-one Deployment uses the Recreate strategy, so object storage is briefly unavailable during the upgrade"
