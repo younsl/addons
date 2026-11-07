@@ -10,7 +10,7 @@ The resize loop grows a root volume once its filesystem crosses a usage threshol
 
 ## The problem
 
-A resize is not instant. Between the measurement that crosses the threshold and the extended filesystem sit an SSM round trip, `ModifyVolume`, the wait for `optimizing`, and `growpart` with `resize2fs`, which together take minutes. Two guards can also stop the resize entirely: the 6-hour EBS modification cooldown and `maxVolumeSizeGiB`. In those cases the disk keeps filling with no relief coming.
+A resize is not instant. Between the measurement that crosses the threshold and the extended filesystem sit an SSM round trip, `ModifyVolume`, the wait for `optimizing`, and `growpart` with `resize2fs`, which together take minutes. Two guards can also stop the resize entirely: the 6-hour minimum modification cooldown and `maxVolumeSizeGiB`. In those cases the disk keeps filling with no relief coming.
 
 On an EKS node the root filesystem holds the container runtime's image store, container writable layers, [emptyDir][k8s-emptydir] volumes, and logs. Every new Pod scheduled there pulls images and writes to the same disk that is already running out.
 

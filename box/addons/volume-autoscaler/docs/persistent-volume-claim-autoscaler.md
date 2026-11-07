@@ -91,7 +91,7 @@ A third query reads `kubelet_volume_stats_capacity_bytes`, the filesystem size k
 | `behavior.scaleUp.policies` | 10 percent and 1 GiB | `Percent` of the current capacity (rounded up to whole GiB) or a fixed `GiB` step |
 | `behavior.scaleUp.cooldownDuration` | `30m` | Minimum time between two resizes of one claim, at least `1m` |
 
-EBS accepts one modification per volume every six hours. A resize requested inside that window stays in progress until the window passes, and the controller reports `ResizeInProgress` meanwhile instead of stacking requests.
+[EBS accepts four modifications per volume in a rolling 24 hours][ebs-modify-limit]. A resize requested past that limit stays in progress until the window allows it, and the controller reports `ResizeInProgress` meanwhile instead of stacking requests.
 
 ## Validation
 
@@ -171,3 +171,4 @@ A PersistentVolumeClaimAutoscaler grows the claims of a StatefulSet, or one clai
 [k8s-hpa]: https://kubernetes.io/docs/concepts/workloads/autoscaling/horizontal-pod-autoscale/
 [gardener]: https://github.com/gardener/pvc-autoscaler
 [topolvm]: https://github.com/topolvm/pvc-autoresizer
+[ebs-modify-limit]: https://docs.aws.amazon.com/ebs/latest/userguide/ebs-modify-volume.html

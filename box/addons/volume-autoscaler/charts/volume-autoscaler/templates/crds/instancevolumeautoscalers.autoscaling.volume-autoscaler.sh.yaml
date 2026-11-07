@@ -81,12 +81,12 @@ spec:
                     properties:
                       cooldownDuration:
                         default: 6h
-                        description: Minimum time between two modifications of the same volume, in hours, minutes, and seconds (`6h`, `6h30m`, `90m`). At least `6h`, the EBS limit of one modification per volume every six hours, which is also the default.
+                        description: Minimum time between two modifications of the same volume, in hours, minutes, and seconds (`6h`, `6h30m`, `90m`). At least `6h`, which is also the default, so a volume never exceeds the EBS limit of four modifications in a rolling 24 hours.
                         nullable: true
                         pattern: ^([0-9]+(h|m|s))+$
                         type: string
                         x-kubernetes-validations:
-                        - message: cooldownDuration must be at least 6h, the EBS limit of one modification per volume every six hours
+                        - message: cooldownDuration must be at least 6h, which keeps a volume within the EBS limit of four modifications in 24 hours
                           rule: duration(self) >= duration('6h')
                       policies:
                         description: Step policies. Empty means 10 percent and 1 GiB with `Max`.

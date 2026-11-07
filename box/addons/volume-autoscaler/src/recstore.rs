@@ -2,7 +2,7 @@
 //! resizer. The recommender publishes its latest decision per volume; the
 //! resizer looks a volume up right before modifying it, so an increase
 //! recommendation can ride along on the same `ModifyVolume` call (and the same
-//! once-per-6h modification slot) as a size expansion.
+//! one of four daily modification slots) as a size expansion.
 //!
 //! The store is deliberately process-local. Both loops run in the same binary
 //! under the same leader, so shared memory is the whole persistence this needs:

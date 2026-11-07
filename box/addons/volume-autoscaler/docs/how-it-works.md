@@ -19,9 +19,10 @@ Each reconcile pass lists the [InstanceVolumeAutoscalers](instance-volume-autosc
 2. **Decide**: skip if usage is below the autoscaler's `averageUtilization` target.
 3. **Resolve**: find the root EBS volume from the instance block device mapping
    and read its current size.
-4. **Guard**: skip if the volume was modified within the cooldown window ([EBS
-   allows one modification per volume every 6 hours][ebs-modify-reqs]) or if the
-   target size would exceed the autoscaler's `maxCapacity`.
+4. **Guard**: skip if the volume was modified within the cooldown window (at
+   least 6 hours, so it stays within [the EBS limit of four modifications per
+   24 hours][ebs-modify-limit]) or if the target size would exceed the
+   autoscaler's `maxCapacity`.
 5. **Grow**: call [`ec2:ModifyVolume`][ec2-modifyvolume] to the target size. Each
    `behavior.scaleUp` policy proposes a step (`Percent` of the current size
    rounded up to whole GiB, or a fixed `GiB` amount), `selectPolicy` takes the
@@ -71,6 +72,7 @@ so extra replicas stand by and only the leader reconciles. This avoids concurren
 
 [ebs-modify-reqs]: https://docs.aws.amazon.com/ebs/latest/userguide/modify-volume-requirements.html
 [ebs-monitor]: https://docs.aws.amazon.com/ebs/latest/userguide/monitoring-volume-modifications.html
+[ebs-modify-limit]: https://docs.aws.amazon.com/ebs/latest/userguide/ebs-modify-volume.html
 [ebs-extend-fs]: https://docs.aws.amazon.com/ebs/latest/userguide/recognize-expanded-volume-linux.html
 [ec2-modifyvolume]: https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_ModifyVolume.html
 [ssm-run-command]: https://docs.aws.amazon.com/systems-manager/latest/userguide/run-command.html

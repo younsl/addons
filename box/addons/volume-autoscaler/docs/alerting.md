@@ -80,8 +80,10 @@ afterward.
 
 ### Failed: ModifyVolume rejected
 
-The `ec2:ModifyVolume` call itself failed, for example because the volume was
-modified less than 6 hours ago or an IAM permission is missing.
+The [`ec2:ModifyVolume`][ec2-modifyvolume] call itself failed, for example
+because an IAM permission is missing, or because the volume was also modified
+outside the autoscaler and reached the [EBS limit of four modifications in 24
+hours][ebs-modify-limit].
 
 | Annotation | Value |
 |------------|-------|
@@ -288,3 +290,5 @@ durable history, pair alerting with the metrics described in
 
 [k8s-deployment]: https://kubernetes.io/docs/concepts/workloads/controllers/deployment/
 [k8s-events]: https://kubernetes.io/docs/reference/kubernetes-api/cluster-resources/event-v1/
+[ec2-modifyvolume]: https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_ModifyVolume.html
+[ebs-modify-limit]: https://docs.aws.amazon.com/ebs/latest/userguide/ebs-modify-volume.html

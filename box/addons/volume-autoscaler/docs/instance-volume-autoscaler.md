@@ -76,7 +76,14 @@ The controller resizes whatever an autoscaler targets, within the reach of its I
 - `metrics` holds at most one `storage` utilization target. Omitted, the target is 80 percent, as an HPA without metrics defaults to 80 percent CPU.
 - `behavior.scaleUp.policies` lists step sizes. `Percent` is a share of the current capacity, rounded up to whole GiB. `GiB` is a fixed amount. Omitted, the policies are 10 percent and 1 GiB.
 - `behavior.scaleUp.selectPolicy` picks the largest step (`Max`, the default) or the smallest (`Min`). `Disabled` stops the autoscaler from measuring or resizing its instances without deleting it.
-- `behavior.scaleUp.cooldownDuration` is the minimum time between two modifications of the same volume, written in hours, minutes, and seconds (`6h`, `6h30m`, `390m`). It cannot be shorter than `6h`, the EBS limit of one modification per volume every six hours, which is also the default.
+- `behavior.scaleUp.cooldownDuration` is the minimum time between two modifications of the same volume, written in hours, minutes, and seconds (`6h`, `6h30m`, `390m`). It cannot be shorter than `6h`, which is also the default. [EBS accepts four modifications per volume in a rolling 24 hours][ebs-modify-limit], and modifications at least six hours apart never exceed that.
+
+  > You can modify a volume up to four times within a rolling 24-hour period, as long as the volume is in the in-use or available state, and all previous modifications for that volume are completed.
+  >
+  > [Modify a volume using Amazon EBS Elastic Volumes][ebs-modify-limit]
+
+- The floor exists because the EC2 API cannot tell how many times a volume was modified in the last 24 hours. [`DescribeVolumesModifications`][ec2-describevolumesmodifications] returns only the most recent modification of each volume, so the controller cannot count modifications against the limit, and a shorter cooldown could send a fifth [`ModifyVolume`][ec2-modifyvolume] that EBS rejects.
+- The `6h` floor is temporary. Once the EC2 API reports how many of the four modification slots a volume has used in the rolling 24 hours, or when the next slot frees up, the floor will be lifted. The controller will then check the remaining slots before each modification, so a fast-filling volume can grow again as soon as its previous modification completes.
 - `alertEnabled` (default true) mutes Alertmanager alerts for this autoscaler when false. The controller-wide `alertmanager.enabled` switch remains the master gate.
 
 Every step grows the volume by at least 1 GiB.
@@ -166,6 +173,8 @@ The `defaultPolicy` and `policies` config keys are retired, and a config file th
 [k8s-hpa]: https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/
 [k8s-quantity]: https://kubernetes.io/docs/reference/kubernetes-api/common-definitions/quantity/
 [ec2-modifyvolume]: https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_ModifyVolume.html
+[ec2-describevolumesmodifications]: https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_DescribeVolumesModifications.html
+[ebs-modify-limit]: https://docs.aws.amazon.com/ebs/latest/userguide/ebs-modify-volume.html
 [ebs-modify-reqs]: https://docs.aws.amazon.com/ebs/latest/userguide/modify-volume-requirements.html
 
 ## Conclusion

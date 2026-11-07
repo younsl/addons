@@ -26,7 +26,7 @@ root EBS volume when usage crosses a threshold. One full scan is called a
 
 1. `discover` find the target instances and their root volumes.
 2. `measure` run `df` over SSM and read the root usage percent.
-3. `cooldown` check that the volume is not inside the 6-hour modify window.
+3. `cooldown` check that the volume is not inside its cooldown (at least 6 hours) or still modifying.
 4. `modify` call `ec2:ModifyVolume` to grow the volume.
 5. `wait` poll until the modification reaches the `optimizing` state.
 6. `resize` extend the filesystem with `growpart` and `resize2fs`.
@@ -140,7 +140,7 @@ of:
 |--------|---------|
 | `below_threshold` | Root usage was under the autoscaler's `averageUtilization` target, so nothing was needed. This is the normal healthy case and grows on every pass. |
 | `max_size` | The target size would exceed the autoscaler's `maxCapacity`, so the volume was left as is. |
-| `cooldown` | The volume was modified within the AWS 6-hour window, or is still modifying, so it could not be grown yet. |
+| `cooldown` | The volume was modified within its cooldown (at least 6 hours), or is [still modifying][ebs-monitor], so it could not be grown yet. |
 | `dry_run` | `dryRun` is enabled, so the addon only logged what it would have done. |
 | `paused` | The autoscaler has `behavior.scaleUp.selectPolicy: Disabled`, so the instance is out of scope and never measured. |
 | `ambiguous` | More than one autoscaler targets the instance, so none of them scales it (one count per autoscaler). |
@@ -670,3 +670,4 @@ per-instance usage views using the labels on `root_usage_percent`.
 [k8s-annotations]: https://kubernetes.io/docs/concepts/overview/working-with-objects/annotations/
 [k8s-leader-election]: https://kubernetes.io/docs/concepts/architecture/leases/#leader-election
 [k8s-statefulset]: https://kubernetes.io/docs/concepts/workloads/controllers/statefulset/
+[ebs-monitor]: https://docs.aws.amazon.com/ebs/latest/userguide/monitoring-volume-modifications.html

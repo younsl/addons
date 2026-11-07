@@ -100,8 +100,8 @@ pub struct Behavior {
     pub scale_up: Option<ScalingRules>,
 }
 
-/// How one step is sized. EBS allows one modification per volume every six
-/// hours, so there is no `periodSeconds`.
+/// How one step is sized. The cooldown spaces modifications within the EBS
+/// limit, so there is no `periodSeconds`.
 #[derive(KubeSchema, Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct ScalingRules {
@@ -113,12 +113,12 @@ pub struct ScalingRules {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub policies: Vec<ScalingPolicy>,
     /// Minimum time between two modifications of the same volume, in hours,
-    /// minutes, and seconds (`6h`, `6h30m`, `90m`). At least `6h`, the EBS
-    /// limit of one modification per volume every six hours, which is also
-    /// the default.
+    /// minutes, and seconds (`6h`, `6h30m`, `90m`). At least `6h`, which is
+    /// also the default, so a volume never exceeds the EBS limit of four
+    /// modifications in a rolling 24 hours.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(regex(pattern = r"^([0-9]+(h|m|s))+$"), extend("default" = "6h"))]
-    #[x_kube(validation = Rule::new("duration(self) >= duration('6h')").message("cooldownDuration must be at least 6h, the EBS limit of one modification per volume every six hours"))]
+    #[x_kube(validation = Rule::new("duration(self) >= duration('6h')").message("cooldownDuration must be at least 6h, which keeps a volume within the EBS limit of four modifications in 24 hours"))]
     pub cooldown_duration: Option<String>,
 }
 
@@ -195,8 +195,10 @@ pub fn step_up(current: i32, steps: &[Step], select_min: bool) -> i32 {
     i32::try_from((current + step).max(current + 1)).unwrap_or(i32::MAX)
 }
 
-/// EBS allows one modification per volume every six hours, so no cooldown can
-/// be shorter.
+/// EBS allows four modifications per volume in a rolling 24 hours, and
+/// modifications at least six hours apart never exceed it. The floor stands in
+/// for counting, since `DescribeVolumesModifications` returns only the latest
+/// modification of a volume.
 pub const MIN_COOLDOWN: std::time::Duration = std::time::Duration::from_hours(6);
 
 /// Parses a cooldown in hours, minutes, and seconds, such as `6h30m`.

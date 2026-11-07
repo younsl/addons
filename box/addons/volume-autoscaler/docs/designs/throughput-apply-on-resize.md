@@ -13,9 +13,9 @@ without spending an extra EBS modification slot.
 
 ## The modification slot problem
 
-EC2 allows one modification per volume per 6 hours. A `ModifyVolume` call may
-change size, throughput, and IOPS together, and any combination consumes the
-same single slot. The resize loop already spends a slot whenever a root
+[EBS allows four modifications per volume in a rolling 24 hours][ebs-modify-limit].
+A [`ModifyVolume`][ec2-modifyvolume] call may change size, throughput, and IOPS together, and any combination
+consumes one slot. The resize loop already spends a slot whenever a root
 filesystem crosses its usage threshold, so a size expansion is a free ride for
 a throughput change: piggybacking it costs nothing, while a throughput-only
 modification would spend a slot the next urgent size expansion might need.
@@ -169,7 +169,9 @@ recommender is enabled, which is a precondition of this feature.
 [k8s-events]: https://kubernetes.io/docs/reference/kubernetes-api/cluster-resources/event-v1/
 [k8s-kubectl-describe]: https://kubernetes.io/docs/reference/kubectl/generated/kubectl_describe/
 [k8s-pod]: https://kubernetes.io/docs/concepts/workloads/pods/
+[ebs-modify-limit]: https://docs.aws.amazon.com/ebs/latest/userguide/ebs-modify-volume.html
+[ec2-modifyvolume]: https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_ModifyVolume.html
 
 ## Conclusion
 
-Because EC2 allows one modification per volume per 6 hours, the resize loop applies a fresh `increase` recommendation only by folding it into a size expansion it is already making, so it never spends an extra slot and never issues a throughput-only change. The hand-off is an in-process store rather than the Node annotations, stale or downward recommendations are skipped, and a failed combined request always retries size-only so the urgent expansion is never lost. Watch `volume_autoscaler_throughput_apply_total` for fallbacks and `volume_autoscaler_throughput_apply_skip_total{reason="stale"}`, which means the recommender has stopped.
+Because [EBS allows four modifications per volume in 24 hours][ebs-modify-limit], the resize loop applies a fresh `increase` recommendation only by folding it into a size expansion it is already making, so it never spends an extra slot and never issues a throughput-only change. The hand-off is an in-process store rather than the Node annotations, stale or downward recommendations are skipped, and a failed combined request always retries size-only so the urgent expansion is never lost. Watch `volume_autoscaler_throughput_apply_total` for fallbacks and `volume_autoscaler_throughput_apply_skip_total{reason="stale"}`, which means the recommender has stopped.

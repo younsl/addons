@@ -26,7 +26,7 @@ AWS client.
 
 When the recommender is enabled, the resize loop also folds a fresh **increase**
 recommendation into a volume modification it is already making for a size
-expansion. EC2 allows one modification per volume per 6 hours, so the combined
+expansion. [EBS allows four modifications per volume in 24 hours][ebs-modify-limit], so the combined
 request spends the same slot the size change would have spent alone; a
 throughput-only change is never issued. This only ever fires on volumes that are in
 both loops' scope (EKS nodes an InstanceVolumeAutoscaler targets).
@@ -54,6 +54,7 @@ and why single-volume nodes are the supported case.
 [k8s-node]: https://kubernetes.io/docs/concepts/architecture/nodes/
 [k8s-annotations]: https://kubernetes.io/docs/concepts/overview/working-with-objects/annotations/
 [k8s-leader-election]: https://kubernetes.io/docs/concepts/architecture/leases/#leader-election
+[ebs-modify-limit]: https://docs.aws.amazon.com/ebs/latest/userguide/ebs-modify-volume.html
 
 ## Conclusion
 

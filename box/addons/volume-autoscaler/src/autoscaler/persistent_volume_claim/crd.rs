@@ -93,8 +93,8 @@ pub struct ClaimScalingRules {
     pub policies: Vec<ScalingPolicy>,
     /// Minimum time between two resizes of the same claim, in hours,
     /// minutes, and seconds (`30m`, `6h`). At least `1m`. EBS volumes accept
-    /// one modification every six hours, and a request inside that window
-    /// stays in progress until it passes.
+    /// four modifications in a rolling 24 hours, and a request past that
+    /// stays in progress until the window allows it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(regex(pattern = r"^([0-9]+(h|m|s))+$"), extend("default" = "30m"))]
     #[x_kube(validation = Rule::new("duration(self) >= duration('1m')").message("cooldownDuration must be at least 1m"))]

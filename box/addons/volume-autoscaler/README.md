@@ -19,7 +19,7 @@ volume-autoscaler is the successor of external-ebs-autoresizer, renamed when Per
 - **PersistentVolumeClaim growth**: Grows every claim of a StatefulSet, or a single claim, on space or inode utilization.
 - **HPA-style resources**: Custom resources modeled on the HorizontalPodAutoscaler with step policies, max capacity, cooldown, status conditions, and Events.
 - **Prometheus and Mimir**: Reads claim utilization from a cluster-local Prometheus or a central Mimir scoped to this cluster.
-- **Safety guards**: Max capacity, the AWS 6-hour modification cooldown, and dry run.
+- **Safety guards**: Max capacity, a 6-hour minimum cooldown that keeps each volume within the [EBS limit of four modifications per 24 hours](https://docs.aws.amazon.com/ebs/latest/userguide/ebs-modify-volume.html), and dry run.
 - **High availability**: Leader election across replicas through a Kubernetes Lease. See [High availability](docs/how-it-works.md#high-availability).
 - **Protective auto-cordon**: Keeps new Pods off an EKS node whose root disk is filling up. See [Protective auto-cordon](docs/protective-auto-cordon.md).
 - **Throughput recommendations**: Optional gp3 throughput recommendations for Nodes. See [Node throughput recommendations](docs/throughput-recommendation.md).

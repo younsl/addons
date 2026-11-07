@@ -77,7 +77,7 @@ spec:
                     properties:
                       cooldownDuration:
                         default: 30m
-                        description: Minimum time between two resizes of the same claim, in hours, minutes, and seconds (`30m`, `6h`). At least `1m`. EBS volumes accept one modification every six hours, and a request inside that window stays in progress until it passes.
+                        description: Minimum time between two resizes of the same claim, in hours, minutes, and seconds (`30m`, `6h`). At least `1m`. EBS volumes accept four modifications in a rolling 24 hours, and a request past that stays in progress until the window allows it.
                         nullable: true
                         pattern: ^([0-9]+(h|m|s))+$
                         type: string

@@ -1,6 +1,6 @@
 //! Decides whether a volume modification should carry the throughput
 //! recommender's latest increase recommendation along with the size change.
-//! EC2 allows one modification per volume per 6 hours, so a size expansion
+//! EBS allows four modifications per volume in 24 hours, so a size expansion
 //! is the only free ride a throughput change ever gets; a volume whose disk
 //! never fills simply keeps its recommendation as an annotation.
 

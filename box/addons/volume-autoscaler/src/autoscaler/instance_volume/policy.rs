@@ -192,7 +192,7 @@ fn cooldown_of(raw: Option<&str>) -> Result<Duration, String> {
     let d = parse_cooldown(raw).map_err(|e| format!("behavior.scaleUp.cooldownDuration: {e}"))?;
     if d < MIN_COOLDOWN {
         return Err(format!(
-            "behavior.scaleUp.cooldownDuration {raw:?} is shorter than 6h, the EBS limit of one modification per volume every six hours"
+            "behavior.scaleUp.cooldownDuration {raw:?} is shorter than 6h, which keeps a volume within the EBS limit of four modifications in 24 hours"
         ));
     }
     Ok(d)

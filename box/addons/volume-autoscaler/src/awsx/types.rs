@@ -47,7 +47,7 @@ pub struct EbsCaps {
 /// One `ModifyVolume` request. `size_gib` is always sent; the throughput and
 /// IOPS fields are omitted from the request when zero, leaving those
 /// dimensions of the volume untouched. Bundling them into the size call
-/// matters because EC2 allows one modification per volume per 6 hours.
+/// matters because EBS allows four modifications per volume in 24 hours.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct ModifySpec {
     pub size_gib: i32,
