@@ -170,6 +170,16 @@ enum FeedCmd {
         /// YAML list of signatures
         #[arg(long)]
         signatures: Vec<PathBuf>,
+        /// Known-good SHA-256 list, one digest per line, removed from the feed
+        #[arg(long)]
+        allowlist: Vec<PathBuf>,
+        /// Known-good file tree: feed hashes found here are removed and
+        /// rules that match here are disabled
+        #[arg(long)]
+        corpus: Vec<PathBuf>,
+        /// Fail when pruning would disable more rules and signatures than this
+        #[arg(long, default_value_t = 25)]
+        max_disabled: usize,
     },
     /// Self-test a database and scan a false-positive corpus
     Check {
@@ -188,32 +198,43 @@ fn feed(cmd: FeedCmd) -> anyhow::Result<()> {
             malwarebazaar,
             yara_dirs,
             signatures,
+            allowlist,
+            corpus,
+            max_disabled,
         } => {
             let (db, report) = build(&BuildInput {
                 revision,
                 malwarebazaar,
                 yara_dirs,
                 signatures,
+                allowlists: allowlist,
+                corpus,
+                max_disabled,
             })?;
             std::fs::write(&out, db.encode())?;
             for d in &report.dropped_yara {
                 eprintln!("dropped {d}");
             }
+            for d in &report.disabled {
+                eprintln!("disabled {d}");
+            }
             println!(
-                "{} revision {}: {} hashes, {} signatures, {} YARA files ({} dropped)",
+                "{} revision {}: {} hashes ({} known-good removed), {} signatures, {} YARA files ({} dropped, {} rules disabled)",
                 out.display(),
                 db.manifest.revision,
                 report.hashes,
+                report.known_good,
                 report.signatures,
                 report.yara_files,
-                report.dropped_yara.len()
+                report.dropped_yara.len(),
+                report.disabled.len()
             );
         }
         FeedCmd::Check { db, corpus } => {
             let db = FeedDb::decode(&std::fs::read(&db)?)?;
             let report = check(&db, &corpus)?;
             println!(
-                "revision {}: self-test passed, {} corpus files clean",
+                "revision {}: self-test passed, {} distinct corpus files clean",
                 db.manifest.revision, report.scanned
             );
         }
@@ -341,6 +362,9 @@ mod tests {
             malwarebazaar: vec![mb],
             yara_dirs: vec![],
             signatures: vec![],
+            allowlist: vec![],
+            corpus: vec![],
+            max_disabled: 25,
         })
         .unwrap();
         let corpus = dir.path().join("corpus");

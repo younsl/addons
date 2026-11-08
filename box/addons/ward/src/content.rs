@@ -123,6 +123,10 @@ pub struct FeedDb {
     pub hash_sets: Vec<HashSet32>,
     #[serde(default)]
     pub yara: Vec<YaraSource>,
+    /// YARA rules, as `namespace.identifier`, that the engine ignores
+    /// because they matched the false-positive corpus at build time.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub yara_disabled: Vec<String>,
 }
 
 impl FeedDb {
@@ -295,6 +299,7 @@ pub struct Engine {
     sigs: SignatureDb,
     index: Option<HashIndex>,
     yara: Option<yara_x::Rules>,
+    yara_disabled: HashSet<String>,
     allow: HashSet<String>,
     block: HashMap<String, String>,
     pub dropped_yara: Vec<String>,
@@ -306,11 +311,13 @@ impl Engine {
         let mut sigs = builtin();
         sigs.extend_from_slice(parts.custom_signatures);
         let mut yara_sources: Vec<YaraSource> = parts.custom_yara.to_vec();
+        let mut yara_disabled = HashSet::new();
         let mut index = None;
         if let Some(db) = parts.feed {
             sigs.extend(db.signatures.iter().cloned());
             if parts.yara {
                 yara_sources.extend(db.yara.iter().cloned());
+                yara_disabled.extend(db.yara_disabled.iter().cloned());
             }
             let mut entries = Vec::new();
             let mut names = Vec::new();
@@ -329,7 +336,13 @@ impl Engine {
         }
         let db = SignatureDb::compile(&sigs)?;
         let (yara, dropped_yara) = compile_yara(&yara_sources);
-        let yara_count = yara.as_ref().map_or(0, |r| r.iter().len());
+        let yara_count = yara.as_ref().map_or(0, |r| {
+            r.iter()
+                .filter(|rule| {
+                    !yara_disabled.contains(&format!("{}.{}", rule.namespace(), rule.identifier()))
+                })
+                .count()
+        });
         let (allow, block): (HashSet<String>, HashMap<String, String>) =
             parts.indicators.map_or_else(Default::default, |i| {
                 (
@@ -350,6 +363,7 @@ impl Engine {
             sigs: db,
             index,
             yara,
+            yara_disabled,
             allow,
             block,
             dropped_yara,
@@ -427,8 +441,12 @@ impl EngineScanner<'_> {
             && let Ok(results) = scanner.scan(data)
         {
             for rule in results.matching_rules() {
+                let id = format!("{}.{}", rule.namespace(), rule.identifier());
+                if e.yara_disabled.contains(&id) {
+                    continue;
+                }
                 consider(Match {
-                    name: format!("yara:{}.{}", rule.namespace(), rule.identifier()),
+                    name: format!("yara:{id}"),
                     severity: yara_severity(&rule),
                     description: yara_description(&rule),
                     sha256: sha256.clone(),
@@ -478,6 +496,7 @@ pub(crate) mod tests {
                 name: "t.yar".into(),
                 source: r#"rule Evil { meta: score = 85 description = "evil marker" strings: $a = "EVILMARKER" condition: $a }"#.into(),
             }],
+            yara_disabled: vec![],
         }
     }
 
@@ -575,6 +594,22 @@ pub(crate) mod tests {
             no_yara.scanner().scan(b"known bad payload").unwrap().name,
             "Feed.Bad"
         );
+
+        let disabled_db = FeedDb {
+            yara_disabled: vec!["default.Evil".into()],
+            ..db
+        };
+        let disabled = Engine::build(&EngineParts {
+            feed: Some(&disabled_db),
+            yara: true,
+            ..EngineParts::default()
+        })
+        .unwrap();
+        assert!(disabled.scanner().scan(b"EVILMARKER").is_none());
+        assert_eq!(
+            disabled.signature_count, no_yara.signature_count,
+            "a disabled rule is not counted"
+        );
     }
 
     #[test]
@@ -584,6 +619,7 @@ pub(crate) mod tests {
             sigs: SignatureDb::default(),
             index: None,
             yara: None,
+            yara_disabled: HashSet::new(),
             allow: HashSet::new(),
             block: HashMap::new(),
             dropped_yara: vec![],

@@ -1,6 +1,8 @@
 //! `ward feed build` and `ward feed check`: assemble a database from local
-//! source files and gate it on a false-positive corpus.
+//! source files, prune what matches known-good files, and gate it on a
+//! false-positive corpus.
 
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use chrono::Utc;
@@ -11,9 +13,10 @@ use crate::content::{
     YaraSource, compile_yara,
 };
 use crate::policy::Severity;
-use crate::signature::{Signature, SignatureDb};
+use crate::signature::{Match, Signature, SignatureDb, sha256_hex};
 
 const CORPUS_MAX_FILE: u64 = 64 * 1024 * 1024;
+const YARA_PREFIX: &str = "yara:";
 
 #[derive(Debug, thiserror::Error)]
 pub enum BuildError {
@@ -28,6 +31,14 @@ pub enum BuildError {
     Content(#[from] ContentError),
     #[error("{hits} corpus file(s) matched: {first}")]
     FalsePositive { hits: usize, first: String },
+    #[error("{count} rules matched the corpus, more than --max-disabled {max}: {first}")]
+    TooManyDisabled {
+        count: usize,
+        max: usize,
+        first: String,
+    },
+    #[error("{path} matched {name}, which is not feed content and cannot be pruned")]
+    Unprunable { path: String, name: String },
 }
 
 #[derive(Debug, Default)]
@@ -36,6 +47,13 @@ pub struct BuildInput {
     pub malwarebazaar: Vec<PathBuf>,
     pub yara_dirs: Vec<PathBuf>,
     pub signatures: Vec<PathBuf>,
+    /// Known-good SHA-256 lists, removed from every hash in the feed.
+    pub allowlists: Vec<PathBuf>,
+    /// Known-good file trees. Feed hashes found here are removed and rules
+    /// that match here are disabled.
+    pub corpus: Vec<PathBuf>,
+    /// The most YARA rules and signatures pruning may disable.
+    pub max_disabled: usize,
 }
 
 #[derive(Debug, Default, PartialEq, Eq)]
@@ -44,6 +62,10 @@ pub struct BuildReport {
     pub signatures: usize,
     pub yara_files: usize,
     pub dropped_yara: Vec<String>,
+    /// Feed hashes removed because an allowlist or the corpus holds them.
+    pub known_good: usize,
+    /// Rules and signatures disabled, each with the corpus file it matched.
+    pub disabled: Vec<String>,
 }
 
 fn read(path: &Path) -> Result<String, BuildError> {
@@ -53,19 +75,24 @@ fn read(path: &Path) -> Result<String, BuildError> {
     })
 }
 
+fn decode_digest(hex: &str) -> Option<[u8; 32]> {
+    if hex.len() != 64 {
+        return None;
+    }
+    let mut h = [0u8; 32];
+    for (i, b) in h.iter_mut().enumerate() {
+        *b = u8::from_str_radix(hex.get(i * 2..i * 2 + 2)?, 16).ok()?;
+    }
+    Some(h)
+}
+
 /// SHA-256 digests from a hash dump: one hex digest per line, `#` comments
 /// and anything else skipped.
 pub fn parse_hash_dump(text: &str) -> Vec<[u8; 32]> {
     text.lines()
         .map(|l| l.trim().trim_matches('"'))
-        .filter(|l| l.len() == 64 && !l.starts_with('#'))
-        .filter_map(|l| {
-            let mut h = [0u8; 32];
-            for (i, b) in h.iter_mut().enumerate() {
-                *b = u8::from_str_radix(&l[i * 2..i * 2 + 2], 16).ok()?;
-            }
-            Some(h)
-        })
+        .filter(|l| !l.starts_with('#'))
+        .filter_map(decode_digest)
         .collect()
 }
 
@@ -85,6 +112,143 @@ fn yara_files(dir: &Path) -> Vec<PathBuf> {
     files
 }
 
+fn corpus_files(corpus: &[PathBuf]) -> Vec<PathBuf> {
+    corpus
+        .iter()
+        .flat_map(|dir| WalkDir::new(dir).follow_links(false).into_iter())
+        .filter_map(Result::ok)
+        .filter(|e| {
+            e.file_type().is_file() && e.metadata().is_ok_and(|m| m.len() <= CORPUS_MAX_FILE)
+        })
+        .map(walkdir::DirEntry::into_path)
+        .collect()
+}
+
+/// Scans each distinct file once and returns how many were scanned and
+/// every match with its path.
+fn scan_corpus(
+    db: &FeedDb,
+    files: &[PathBuf],
+) -> Result<(usize, Vec<(PathBuf, Match)>), BuildError> {
+    let engine = Engine::build(&EngineParts {
+        revision: db.manifest.revision.clone(),
+        feed: Some(db),
+        yara: true,
+        ..EngineParts::default()
+    })?;
+    engine.self_test()?;
+    let mut scanner = engine.scanner();
+    let mut seen = HashSet::new();
+    let mut hits = Vec::new();
+    for path in files {
+        let Ok(data) = std::fs::read(path) else {
+            continue;
+        };
+        if !seen.insert(sha256_hex(&data)) {
+            continue;
+        }
+        if let Some(m) = scanner.scan(&data) {
+            hits.push((path.clone(), m));
+        }
+    }
+    Ok((seen.len(), hits))
+}
+
+/// Removes `drop` from every hash set and signature hash list, drops
+/// signatures left with nothing to match, and returns the hashes removed.
+fn remove_hashes(
+    db: &mut FeedDb,
+    drop: &HashSet<[u8; 32]>,
+) -> Result<HashSet<[u8; 32]>, BuildError> {
+    let mut removed = HashSet::new();
+    if drop.is_empty() {
+        return Ok(removed);
+    }
+    for set in &mut db.hash_sets {
+        let digests = set.digests()?;
+        let before = digests.len();
+        let kept: Vec<[u8; 32]> = digests
+            .into_iter()
+            .filter(|h| {
+                let hit = drop.contains(h);
+                if hit {
+                    removed.insert(*h);
+                }
+                !hit
+            })
+            .collect();
+        if kept.len() != before {
+            *set = HashSet32::pack(&set.name, set.severity, &set.description, &kept);
+        }
+    }
+    for sig in &mut db.signatures {
+        sig.sha256.retain(|hex| {
+            let hit = decode_digest(&hex.to_ascii_lowercase()).filter(|h| drop.contains(h));
+            if let Some(h) = hit {
+                removed.insert(h);
+            }
+            hit.is_none()
+        });
+    }
+    db.signatures
+        .retain(|s| !(s.sha256.is_empty() && s.strings.is_empty() && s.hex.is_empty()));
+    Ok(removed)
+}
+
+/// Prunes `db` until no corpus file matches: feed hashes of corpus files
+/// are removed, YARA rules and feed signatures that match are disabled.
+/// Pruning only removes detections, so later rounds rescan hits only.
+fn prune(db: &mut FeedDb, input: &BuildInput, report: &mut BuildReport) -> Result<(), BuildError> {
+    let (_, mut hits) = scan_corpus(db, &corpus_files(&input.corpus))?;
+    while !hits.is_empty() {
+        let candidates: HashSet<[u8; 32]> = hits
+            .iter()
+            .filter_map(|(_, m)| decode_digest(&m.sha256))
+            .collect();
+        let removed = remove_hashes(db, &candidates)?;
+        report.known_good += removed.len();
+        let mut progressed = !removed.is_empty();
+        for (path, m) in &hits {
+            if decode_digest(&m.sha256).is_some_and(|h| removed.contains(&h)) {
+                continue;
+            }
+            if let Some(rule) = m.name.strip_prefix(YARA_PREFIX) {
+                if !db.yara_disabled.iter().any(|r| r == rule) {
+                    db.yara_disabled.push(rule.to_string());
+                    report
+                        .disabled
+                        .push(format!("{} ({})", m.name, path.display()));
+                    progressed = true;
+                }
+            } else if db.signatures.iter().any(|s| s.name == m.name) {
+                db.signatures.retain(|s| s.name != m.name);
+                report
+                    .disabled
+                    .push(format!("{} ({})", m.name, path.display()));
+                progressed = true;
+            }
+        }
+        if report.disabled.len() > input.max_disabled {
+            return Err(BuildError::TooManyDisabled {
+                count: report.disabled.len(),
+                max: input.max_disabled,
+                first: report.disabled[0].clone(),
+            });
+        }
+        if !progressed {
+            let (path, m) = &hits[0];
+            return Err(BuildError::Unprunable {
+                path: path.display().to_string(),
+                name: m.name.clone(),
+            });
+        }
+        let paths: Vec<PathBuf> = hits.into_iter().map(|(p, _)| p).collect();
+        hits = scan_corpus(db, &paths)?.1;
+    }
+    db.yara_disabled.sort();
+    Ok(())
+}
+
 pub fn build(input: &BuildInput) -> Result<(FeedDb, BuildReport), BuildError> {
     let mut report = BuildReport::default();
     let mut sources = Vec::new();
@@ -93,12 +257,11 @@ pub fn build(input: &BuildInput) -> Result<(FeedDb, BuildReport), BuildError> {
         let mut hashes = parse_hash_dump(&read(path)?);
         hashes.sort_unstable();
         hashes.dedup();
-        report.hashes += hashes.len();
         sources.push(Source {
             name: "MalwareBazaar".into(),
             license: "CC0-1.0".into(),
             url: "https://bazaar.abuse.ch".into(),
-            count: hashes.len() as u64,
+            count: 0,
         });
         hash_sets.push(HashSet32::pack(
             "MalwareBazaar",
@@ -129,7 +292,6 @@ pub fn build(input: &BuildInput) -> Result<(FeedDb, BuildReport), BuildError> {
         });
         signatures.extend(list);
     }
-    report.signatures = signatures.len();
 
     let mut yara = Vec::new();
     for dir in &input.yara_dirs {
@@ -162,7 +324,7 @@ pub fn build(input: &BuildInput) -> Result<(FeedDb, BuildReport), BuildError> {
         });
     }
 
-    let db = FeedDb {
+    let mut db = FeedDb {
         manifest: Manifest {
             revision: input
                 .revision
@@ -175,8 +337,38 @@ pub fn build(input: &BuildInput) -> Result<(FeedDb, BuildReport), BuildError> {
         signatures,
         hash_sets,
         yara,
+        yara_disabled: Vec::new(),
     };
+
+    finish(&mut db, input, &mut report)?;
     Ok((db, report))
+}
+
+/// Applies the allowlists and the corpus, then counts what is left.
+fn finish(db: &mut FeedDb, input: &BuildInput, report: &mut BuildReport) -> Result<(), BuildError> {
+    let mut allow = HashSet::new();
+    for path in &input.allowlists {
+        allow.extend(parse_hash_dump(&read(path)?));
+    }
+    report.known_good += remove_hashes(db, &allow)?.len();
+    if !input.corpus.is_empty() {
+        prune(db, input, report)?;
+    }
+
+    for set in &db.hash_sets {
+        let count = set.digests()?.len();
+        report.hashes += count;
+        if let Some(source) = db
+            .manifest
+            .sources
+            .iter_mut()
+            .find(|s| s.name == set.name && s.count == 0)
+        {
+            source.count = count as u64;
+        }
+    }
+    report.signatures = db.signatures.len();
+    Ok(())
 }
 
 #[derive(Debug, Default, PartialEq, Eq)]
@@ -185,40 +377,17 @@ pub struct CheckReport {
     pub hits: Vec<String>,
 }
 
-/// Compiles `db`, runs the EICAR self-test, and scans every corpus file.
-/// Any corpus match is a false positive.
+/// Compiles `db`, runs the EICAR self-test, and scans every distinct corpus
+/// file. Any corpus match is a false positive.
 pub fn check(db: &FeedDb, corpus: &[PathBuf]) -> Result<CheckReport, BuildError> {
-    let engine = Engine::build(&EngineParts {
-        revision: db.manifest.revision.clone(),
-        feed: Some(db),
-        yara: true,
-        ..EngineParts::default()
-    })?;
-    engine.self_test()?;
-    let mut scanner = engine.scanner();
-    let mut report = CheckReport::default();
-    for dir in corpus {
-        for entry in WalkDir::new(dir)
-            .follow_links(false)
+    let (scanned, hits) = scan_corpus(db, &corpus_files(corpus))?;
+    let report = CheckReport {
+        scanned,
+        hits: hits
             .into_iter()
-            .filter_map(Result::ok)
-        {
-            if !entry.file_type().is_file()
-                || entry.metadata().map_or(true, |m| m.len() > CORPUS_MAX_FILE)
-            {
-                continue;
-            }
-            let Ok(data) = std::fs::read(entry.path()) else {
-                continue;
-            };
-            report.scanned += 1;
-            if let Some(m) = scanner.scan(&data) {
-                report
-                    .hits
-                    .push(format!("{} ({})", entry.path().display(), m.name));
-            }
-        }
-    }
+            .map(|(p, m)| format!("{} ({})", p.display(), m.name))
+            .collect(),
+    };
     if let Some(first) = report.hits.first() {
         return Err(BuildError::FalsePositive {
             hits: report.hits.len(),
@@ -274,6 +443,7 @@ mod tests {
             malwarebazaar: vec![mb],
             yara_dirs: vec![ydir],
             signatures: vec![sigs],
+            ..BuildInput::default()
         })
         .unwrap();
         assert_eq!(db.manifest.revision, "test");
@@ -310,5 +480,96 @@ mod tests {
             })
             .is_err()
         );
+    }
+
+    #[test]
+    fn prunes_known_good_hashes_and_rules() {
+        let dir = tempfile::tempdir().unwrap();
+        let corpus = dir.path().join("corpus");
+        std::fs::create_dir_all(corpus.join("usr/bin")).unwrap();
+        let tool = b"a legitimate tool".to_vec();
+        let packed = b"..BENIGNMARKER..".to_vec();
+        let lib = b"lib with SIGMARKER".to_vec();
+        std::fs::write(corpus.join("usr/bin/tool"), &tool).unwrap();
+        std::fs::write(corpus.join("usr/bin/tool-copy"), &tool).unwrap();
+        std::fs::write(corpus.join("usr/bin/packed"), &packed).unwrap();
+        std::fs::write(corpus.join("usr/bin/lib.so"), &lib).unwrap();
+
+        let allowed = "d".repeat(64);
+        let evil = "e".repeat(64);
+        let mb = dir.path().join("mb.txt");
+        std::fs::write(&mb, format!("{}\n{allowed}\n{evil}\n", sha256_hex(&tool))).unwrap();
+        let allow = dir.path().join("allow.txt");
+        std::fs::write(&allow, format!("# local exceptions\n{allowed}\n")).unwrap();
+        let ydir = dir.path().join("yara");
+        std::fs::create_dir_all(&ydir).unwrap();
+        std::fs::write(
+            ydir.join("core.yar"),
+            r#"rule Noisy { strings: $a = "BENIGNMARKER" condition: $a } rule Real { strings: $a = "REALEVILMARKER" condition: $a }"#,
+        )
+        .unwrap();
+        let sigs = dir.path().join("sigs.yaml");
+        std::fs::write(
+            &sigs,
+            format!(
+                "- name: Feed.Noisy\n  severity: Low\n  strings: [SIGMARKER]\n- name: Feed.Hashes\n  severity: High\n  sha256: [\"{}\", \"{evil}\"]\n",
+                sha256_hex(&tool).to_uppercase()
+            ),
+        )
+        .unwrap();
+
+        let input = BuildInput {
+            revision: Some("p".into()),
+            malwarebazaar: vec![mb],
+            yara_dirs: vec![ydir],
+            signatures: vec![sigs],
+            allowlists: vec![allow],
+            corpus: vec![corpus.clone()],
+            max_disabled: 5,
+        };
+        let (db, report) = build(&input).unwrap();
+        assert_eq!(report.hashes, 1, "only the unknown hash stays");
+        assert_eq!(report.known_good, 2);
+        assert_eq!(db.manifest.sources[0].count, 1);
+        assert_eq!(db.yara_disabled, vec!["default.Noisy".to_string()]);
+        assert_eq!(report.disabled.len(), 2);
+        assert_eq!(report.signatures, 1);
+        assert_eq!(db.signatures[0].name, "Feed.Hashes");
+        assert_eq!(db.signatures[0].sha256, vec![evil]);
+        let checked = check(&db, std::slice::from_ref(&corpus)).unwrap();
+        assert_eq!(checked.scanned, 3, "duplicate files are scanned once");
+
+        let engine = Engine::build(&EngineParts {
+            feed: Some(&db),
+            yara: true,
+            ..EngineParts::default()
+        })
+        .unwrap();
+        assert_eq!(
+            engine.scanner().scan(b"REALEVILMARKER").unwrap().name,
+            "yara:default.Real"
+        );
+
+        assert!(matches!(
+            build(&BuildInput {
+                max_disabled: 1,
+                ..input
+            }),
+            Err(BuildError::TooManyDisabled {
+                count: 2,
+                max: 1,
+                ..
+            })
+        ));
+
+        std::fs::write(corpus.join("eicar.com"), crate::content::tests::eicar()).unwrap();
+        assert!(matches!(
+            build(&BuildInput {
+                corpus: vec![corpus],
+                max_disabled: 5,
+                ..BuildInput::default()
+            }),
+            Err(BuildError::Unprunable { .. })
+        ));
     }
 }

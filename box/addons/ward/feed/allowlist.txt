@@ -1,0 +1,2 @@
+# Known-good SHA-256 digests removed from the ward signature feed at build time.
+# One hex digest per line, lines starting with # are ignored.

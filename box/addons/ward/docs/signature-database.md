@@ -6,13 +6,32 @@ How the signed signature feed is built, verified, rolled out to nodes, and store
 
 The [ward-db workflow](../../../../.github/workflows/ward-db.yml) rebuilds the database daily:
 
-1. Downloads the [MalwareBazaar](https://bazaar.abuse.ch/) SHA-256 dump and the [YARA Forge](https://github.com/YARAHQ/yara-forge) core rule set.
-2. Packs them with `ward feed build` into `ward-db.json.gz` (gzipped JSON: manifest, signatures, hash sets, YARA sources).
-3. Runs `ward feed check`: the database must match the EICAR self-test and produce zero hits on a false-positive corpus exported from Debian, Alpine, and Ubuntu base images.
-4. Signs the file with `cosign sign-blob` (ECDSA P-256 over the gzipped bytes) in a separate job that alone holds the signing key.
-5. Pushes it with oras to `ghcr.io/younsl/ward-db:<revision>` and moves `latest`.
+1. Downloads the [MalwareBazaar](https://bazaar.abuse.ch/) SHA-256 dump and the [YARA Forge](https://github.com/YARAHQ/yara-forge) core rule set, and takes the repository [allowlist](../feed/allowlist.txt).
+2. Exports a known-good corpus from popular base and runtime images for both `linux/amd64` and `linux/arm64` (listed in [ci-ward-db.sh](../../../../.github/scripts/ci-ward-db.sh)).
+3. Packs everything with `ward feed build` into `ward-db.json.gz` (gzipped JSON: manifest, signatures, hash sets, YARA sources, disabled YARA rules) and prunes it against the allowlist and the corpus (see [Pruning](#pruning)).
+4. Runs `ward feed check`: the database must match the EICAR self-test and produce zero hits on the corpus.
+5. Signs the file with `cosign sign-blob` (ECDSA P-256 over the gzipped bytes) in a separate job that alone holds the signing key.
+6. Pushes it with oras to `ghcr.io/younsl/ward-db:<revision>` and moves `latest`.
 
-A run whose inputs match the published `latest` publishes nothing.
+A run whose inputs (feed sources and allowlist) match the published `latest` publishes nothing.
+
+## Pruning
+
+MalwareBazaar accepts submissions from anyone, so a benign binary can end up in the feed. In `Protect` mode one such hash kills that workload on every node, so `ward feed build` removes known-good content before the database ships:
+
+| Match | Action |
+| --- | --- |
+| Feed hash listed in an `--allowlist` file | Removed from the hash sets and signature hash lists |
+| Feed hash of a corpus file | Removed the same way, counted as known-good |
+| YARA rule that matches a corpus file | Added to the database's disabled rule list, which every engine skips |
+| Feed signature pattern that matches a corpus file | Signature removed |
+
+- Each distinct corpus file is scanned once, so identical files across images and architectures cost one scan.
+- The build fails when pruning would disable more YARA rules and signatures than `--max-disabled` (default 25). That many hits means a broken rule set, not a few noisy rules.
+- The build also fails when a corpus file matches content it cannot prune, such as a built-in signature.
+- The build log lists every disabled rule with the corpus file it matched.
+
+To exclude a hash the corpus does not cover, add it to [feed/allowlist.txt](../feed/allowlist.txt). It takes effect in the next daily build. Clusters that cannot wait use `spec.indicators.allow`.
 
 ## Artifact format
 
@@ -50,4 +69,4 @@ Agents report their active revision and detection counters in their Lease `ward-
 
 ## Conclusion
 
-Verification happens before distribution, rollout happens in rings with automatic halts, and every node always has a working revision. Custom content that should not wait for the feed goes into a [WardSignature](configuration.md#wardsignature).
+Known-good content is pruned at build time, verification happens before distribution, rollout happens in rings with automatic halts, and every node always has a working revision. Custom content that should not wait for the feed goes into a [WardSignature](configuration.md#wardsignature).

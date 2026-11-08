@@ -45,6 +45,7 @@ Rules compile once per database revision. Compiling per scan would cost seconds 
 - One scanner is created per full scan and reused for every file in it, since the scanner holds per-scan state that is expensive to rebuild.
 - Each file gets a 10 second timeout, so a pathological rule or file cannot stall the full scan.
 - `WardSignature` YARA that does not compile is reported on that object and left out. The rest of the rule set still compiles.
+- Feed rules listed as disabled in the database, because they matched the known-good corpus at build time, still compile but their matches are ignored and they are not counted. This removes one noisy rule without editing a rule file that holds thousands.
 
 `scan.yara: false` removes YARA from the pipeline for nodes where memory is tight.
 

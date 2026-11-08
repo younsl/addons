@@ -33,8 +33,8 @@ jobs:
     permissions:
       contents: read
     outputs:
-      changed: ${{ steps.build.outputs.changed }}
-      revision: ${{ steps.build.outputs.revision }}
+      changed: ${{ steps.plan.outputs.changed }}
+      revision: ${{ steps.plan.outputs.revision }}
     env:
       WARD_BIN: ${{ github.workspace }}/box/addons/ward/target/release/ward
     steps:
@@ -66,22 +66,26 @@ jobs:
           ABUSE_CH_AUTH_KEY: ${{ secrets.ABUSE_CH_AUTH_KEY }}
         run: .github/scripts/ci-ward-db.sh fetch
 
-      - name: Build database
-        id: build
+      - name: Compare inputs
+        id: plan
         env:
           FORCE: ${{ inputs.force }}
-        run: .github/scripts/ci-ward-db.sh build
+        run: .github/scripts/ci-ward-db.sh plan
 
-      - name: Export false-positive corpus
-        if: steps.build.outputs.changed == 'true'
+      - name: Export known-good corpus
+        if: steps.plan.outputs.changed == 'true'
         run: .github/scripts/ci-ward-db.sh corpus
 
+      - name: Build database
+        if: steps.plan.outputs.changed == 'true'
+        run: .github/scripts/ci-ward-db.sh build
+
       - name: Check database
-        if: steps.build.outputs.changed == 'true'
+        if: steps.plan.outputs.changed == 'true'
         run: .github/scripts/ci-ward-db.sh check
 
       - name: Upload database
-        if: steps.build.outputs.changed == 'true'
+        if: steps.plan.outputs.changed == 'true'
         uses: actions/upload-artifact@v6
         with:
           name: ward-db

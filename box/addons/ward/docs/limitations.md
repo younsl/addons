@@ -13,6 +13,7 @@ Known gaps, so you can decide what ward covers and what needs another control.
 - **One manager replica**: Detections posted while the manager restarts wait in the agent's bounded buffer, and the oldest are dropped if it fills. Logs and Events are not affected.
 - **Plain Helm first install**: With `ward.create=true`, the first `helm install` fails because the CRDs and the `Ward` are in the same release. Argo CD is not affected. See [Installation](installation.md).
 - **Feed scope**: The public feed covers MalwareBazaar hashes and the YARA Forge core rules. It is not a commercial threat intelligence feed. Add your own content with `WardSignature`.
+- **Known-good coverage**: Feed pruning removes only what the build corpus (common base and runtime images) and the repository allowlist hold. A benign file outside them that a feed source lists is still detected. Allowlist it with `spec.indicators.allow`.
 - **Not a replacement for image scanning or admission control**: ward protects running workloads. Scan images before they run and restrict what may run.
 
 ## Conclusion
