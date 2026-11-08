@@ -7,7 +7,8 @@
 # Projects come from ci-rust-projects.json, keyed by Dockerfile path. Every field
 # is optional: project defaults to the directory the Dockerfile sits in, binary to
 # project, frontend_manager to none (npm|pnpm otherwise), frontend_dir and
-# embed_dir (the directory the crate embeds assets from) to "-".
+# embed_dir (the directory the crate embeds assets from) to "-", and ebpf_dir
+# (the aya kernel crate built before the binary) to "-".
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -70,7 +71,8 @@ done < <(jq -c 'to_entries[]
       project: ($base_dir | split("/") | last),
       frontend_manager: "none",
       frontend_dir: "-",
-      embed_dir: "-"
+      embed_dir: "-",
+      ebpf_dir: "-"
     } + .value
   | . + {binary: (.binary // .project)}' "${TABLE}")
 
@@ -88,7 +90,8 @@ BINARY_JSON=$(jq -c '[ .[] as $p
       arch: .value,
       frontend_manager: $p.frontend_manager,
       frontend_dir: $p.frontend_dir,
-      embed_dir: $p.embed_dir
+      embed_dir: $p.embed_dir,
+      ebpf_dir: $p.ebpf_dir
     } ]' <<< "${RELEASES}")
 
 DOCKER_JSON=$(jq -c '[ .[] | {

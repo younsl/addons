@@ -15,6 +15,7 @@ on:
       - 'box/addons/volume-autoscaler/Dockerfile'
       - 'box/addons/forklift/Dockerfile'
       - 'box/addons/forklift/Dockerfile.mcp'
+      - 'box/addons/ward/Dockerfile'
   workflow_dispatch:
     inputs:
       project:
@@ -32,6 +33,7 @@ on:
           - volume-autoscaler
           - forklift
           - forklift-mcp
+          - ward
       force:
         description: "Rebuild even if the version already exists on GHCR (overwrites the tag)"
         required: false
@@ -159,6 +161,8 @@ jobs:
         with:
           toolchain: 1.99.1
           targets: ${{ matrix.target }}
+          # build-std for the eBPF target needs the core sources
+          components: rust-src
 
       - name: Install cargo-zigbuild
         # Pinned: binaries built with zig 0.16.0 (LLVM 21) leak memory at runtime
@@ -214,6 +218,27 @@ jobs:
               exit 1
               ;;
           esac
+
+      # The crate's build.rs embeds this object, an absent one only disables eBPF
+      - name: Build eBPF object
+        if: matrix.ebpf_dir != '-'
+        working-directory: ${{ env.PROJECT_BASE_DIR }}/${{ matrix.ebpf_dir }}
+        env:
+          BPF_LINKER_VERSION: "0.13.0"
+          TARGET: ${{ matrix.target }}
+        run: |
+          tools="${RUNNER_TEMP}/bpf-linker"
+          mkdir -p "${tools}"
+          curl -fsSL -o "${tools}/bpf-linker.tar.zst" \
+            "https://github.com/aya-rs/bpf-linker/releases/download/v${BPF_LINKER_VERSION}/bpf-linker-x86_64-unknown-linux-musl.tar.zst"
+          tar --zstd -xf "${tools}/bpf-linker.tar.zst" -C "${tools}"
+          chmod +x "${tools}/bpf-linker"
+
+          arch="${TARGET%%-*}"
+          PATH="${tools}:${PATH}" RUSTC_BOOTSTRAP=1 \
+            CARGO_ENCODED_RUSTFLAGS="$(printf -- '--cfg=bpf_target_arch="%s"\037-Cdebuginfo=2\037-Clink-arg=--btf' "${arch}")" \
+            cargo +1.99.1 build --release -Z build-std=core --target bpfel-unknown-none --target-dir "target/${arch}"
+          ls -l "target/${arch}/bpfel-unknown-none/release/ward"
 
       - name: Build binary with cargo-zigbuild
         working-directory: ${{ env.PROJECT_BASE_DIR }}
