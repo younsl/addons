@@ -950,11 +950,14 @@ spec:
                   interval: 5m
                   realtime: true
                   whodata: true
-                  reportChanges: true
+                  reportChanges: false
                   noDiff:
                   - /etc/shadow
+                  - /etc/shadow-
                   - /etc/gshadow
+                  - /etc/gshadow-
                   - /etc/security/opasswd
+                  - /etc/kubernetes/pki
                   recursionLevel: 256
                   fileLimit: 100000
                 description: File integrity monitoring of host files.
@@ -980,8 +983,11 @@ spec:
                   noDiff:
                     default:
                     - /etc/shadow
+                    - /etc/shadow-
                     - /etc/gshadow
+                    - /etc/gshadow-
                     - /etc/security/opasswd
+                    - /etc/kubernetes/pki
                     description: Files and directories whose content never goes into a diff or a copy on the node, as Wazuh `nodiff`.
                     items:
                       maxLength: 4096
@@ -989,8 +995,8 @@ spec:
                     maxItems: 256
                     type: array
                     x-kubernetes-validations:
-                    - message: noDiff paths must be absolute
-                      rule: self.all(p, p.startsWith('/'))
+                    - message: noDiff paths must be absolute and canonical
+                      rule: self.all(p, p.startsWith('/') && !p.contains('//') && !p.contains('/./') && !p.contains('/../') && !p.endsWith('/.') && !p.endsWith('/..'))
                   paths:
                     default:
                     - /etc/passwd
@@ -1011,8 +1017,8 @@ spec:
                     maxItems: 256
                     type: array
                     x-kubernetes-validations:
-                    - message: integrity paths must be absolute
-                      rule: self.all(p, p.startsWith('/'))
+                    - message: integrity paths must be absolute and canonical
+                      rule: self.all(p, p.startsWith('/') && !p.contains('//') && !p.contains('/./') && !p.contains('/../') && !p.endsWith('/.') && !p.endsWith('/..'))
                   realtime:
                     default: true
                     description: Report changes as they happen with inotify, as Wazuh `realtime`. The periodic check stays on as a safety net.
@@ -1025,8 +1031,8 @@ spec:
                     minimum: 0.0
                     type: integer
                   reportChanges:
-                    default: true
-                    description: Keep copies of watched text files up to 256 KiB and report a modification as a unified diff, as Wazuh `report_changes`.
+                    default: false
+                    description: Keep copies of watched text files up to 256 KiB and report a modification as a unified diff, as Wazuh `report_changes`. Off by default as in Wazuh, since a diff carries file content into logs, Events, and the manager.
                     type: boolean
                   whodata:
                     default: true

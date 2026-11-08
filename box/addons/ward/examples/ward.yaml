@@ -110,11 +110,15 @@ spec:
     interval: 5m
     realtime: true
     whodata: true
+    # Diffs carry file content into logs, Events, and the manager.
     reportChanges: true
     noDiff:
       - /etc/shadow
+      - /etc/shadow-
       - /etc/gshadow
+      - /etc/gshadow-
       - /etc/security/opasswd
+      - /etc/kubernetes/pki
     recursionLevel: 256
     fileLimit: 100000
   rootcheck:

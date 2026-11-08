@@ -100,6 +100,7 @@ struct Ctx {
     /// When the last integrity check started. Whodata actors from before
     /// it are not attributed to the changes of the next one.
     integrity_since: Mutex<Option<std::time::Instant>>,
+    integrity_truncated: AtomicBool,
     cache: Mutex<ScanCache>,
     own: Mutex<HashSet<i32>>,
     metrics: AgentMetrics,
@@ -489,11 +490,11 @@ impl Ctx {
             return;
         }
         let host = self.proc.host_root();
-        let roots = p.paths.clone();
+        let roots = integrity::normalize_all(&p.paths);
         let limits = integrity_limits(p);
         let realtime = changed.is_some();
         let old = baseline.clone();
-        let Ok(now) = tokio::task::spawn_blocking(move || match (&old, changed) {
+        let Ok((now, truncated)) = tokio::task::spawn_blocking(move || match (&old, changed) {
             (Some(b), Some(c)) => integrity::rescan(&host, &roots, limits, b, &c),
             _ => integrity::snapshot(&host, &roots, limits),
         })
@@ -501,6 +502,7 @@ impl Ctx {
         else {
             return;
         };
+        self.file_limit_reached(truncated, limits.file_limit).await;
         let started = std::time::Instant::now();
         let since = self
             .integrity_since
@@ -642,13 +644,42 @@ impl Ctx {
         d_out
     }
 
+    /// Reports once when the baseline hits `fileLimit`, since files past it
+    /// are not watched, and again after it recovers and hits it again.
+    async fn file_limit_reached(&self, truncated: bool, limit: usize) {
+        let was = self
+            .integrity_truncated
+            .swap(truncated, std::sync::atomic::Ordering::Relaxed);
+        if !truncated || was {
+            return;
+        }
+        tracing::warn!(
+            limit,
+            "integrity baseline reached fileLimit, files past it are not watched"
+        );
+        let d = Detection::new(
+            &self.node,
+            Kind::Integrity,
+            "integrity-file-limit",
+            Severity::Medium,
+            format!(
+                "the integrity baseline reached fileLimit {limit}, files past it in watched directories are not monitored"
+            ),
+        );
+        self.emit(d).await;
+    }
+
     /// Points the whodata hooks at the watched files and directories.
     async fn watch_inodes(&self, policy: &Policy, now: &integrity::Baseline) {
         let Some(inodes) = self.inodes.clone() else {
             return;
         };
         let p = &policy.integrity;
-        let (host, roots, limits) = (self.proc.host_root(), p.paths.clone(), integrity_limits(p));
+        let (host, roots, limits) = (
+            self.proc.host_root(),
+            integrity::normalize_all(&p.paths),
+            integrity_limits(p),
+        );
         let (now, on) = (now.clone(), p.enabled && p.whodata);
         let res = tokio::task::spawn_blocking(move || {
             let set = if on {
@@ -801,7 +832,8 @@ impl RealtimeWatcher {
         p: &crate::policy::IntegrityPolicy,
         tx: &mpsc::Sender<Vec<String>>,
     ) {
-        let want = (p.enabled && p.realtime).then(|| (p.paths.clone(), integrity_limits(p)));
+        let want = (p.enabled && p.realtime)
+            .then(|| (integrity::normalize_all(&p.paths), integrity_limits(p)));
         let same = match (&self.running, &want) {
             (Some((paths, limits, _)), Some((wp, wl))) => paths == wp && limits == wl,
             (None, None) => true,
@@ -1011,6 +1043,7 @@ pub async fn run(args: AgentArgs, shutdown: watch::Receiver<bool>) -> anyhow::Re
         inodes,
         whodata: Mutex::new(whodata::Whodata::default()),
         integrity_since: Mutex::new(None),
+        integrity_truncated: AtomicBool::new(false),
         cache: Mutex::new(ScanCache::default()),
         own: Mutex::new(own),
         metrics: metrics.clone(),
@@ -1244,6 +1277,7 @@ mod tests {
             inodes: None,
             whodata: Mutex::new(whodata::Whodata::default()),
             integrity_since: Mutex::new(None),
+            integrity_truncated: AtomicBool::new(false),
             cache: Mutex::new(ScanCache::default()),
             own: Mutex::new(HashSet::new()),
             metrics: AgentMetrics::register(&mut Registry::default()),
@@ -1538,6 +1572,23 @@ mod tests {
                 .contains("+evil ALL=(ALL) NOPASSWD: ALL"),
             "{changes:?}"
         );
+    }
+
+    #[tokio::test]
+    async fn file_limit_and_realtime_watcher() {
+        let fake = FakeProc::new();
+        let state = tempfile::tempdir().unwrap();
+        let mut policy = Policy::default();
+        policy.integrity.enabled = true;
+        let (ctx, mut rx) = ctx(&fake, state.path(), policy);
+        ctx.file_limit_reached(true, 5).await;
+        ctx.file_limit_reached(true, 5).await;
+        let limit = drain(&mut rx);
+        assert_eq!(limit.len(), 1, "reported once while it lasts");
+        assert_eq!(limit[0].rule, "integrity-file-limit");
+        ctx.file_limit_reached(false, 5).await;
+        ctx.file_limit_reached(true, 5).await;
+        assert_eq!(drain(&mut rx).len(), 1, "reported again after recovering");
 
         let mut off = ctx.policy();
         off.integrity.whodata = false;

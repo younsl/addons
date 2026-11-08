@@ -614,7 +614,7 @@ pub struct IntegritySpec {
     /// walked down to `recursionLevel`.
     #[serde(default = "default_integrity_paths")]
     #[schemars(length(max = 256), inner(length(max = 4096)))]
-    #[x_kube(validation = Rule::new("self.all(p, p.startsWith('/'))").message("integrity paths must be absolute"))]
+    #[x_kube(validation = Rule::new("self.all(p, p.startsWith('/') && !p.contains('//') && !p.contains('/./') && !p.contains('/../') && !p.endsWith('/.') && !p.endsWith('/..'))").message("integrity paths must be absolute and canonical"))]
     pub paths: Vec<String>,
     #[serde(default = "default_integrity_interval")]
     #[schemars(length(max = 32), regex(pattern = r"^([0-9]+(ms|s|m|h))+$"))]
@@ -629,14 +629,16 @@ pub struct IntegritySpec {
     #[serde(default = "default_true")]
     pub whodata: bool,
     /// Keep copies of watched text files up to 256 KiB and report a
-    /// modification as a unified diff, as Wazuh `report_changes`.
-    #[serde(default = "default_true")]
+    /// modification as a unified diff, as Wazuh `report_changes`. Off by
+    /// default as in Wazuh, since a diff carries file content into logs,
+    /// Events, and the manager.
+    #[serde(default)]
     pub report_changes: bool,
     /// Files and directories whose content never goes into a diff or a
     /// copy on the node, as Wazuh `nodiff`.
     #[serde(default = "default_no_diff")]
     #[schemars(length(max = 256), inner(length(max = 4096)))]
-    #[x_kube(validation = Rule::new("self.all(p, p.startsWith('/'))").message("noDiff paths must be absolute"))]
+    #[x_kube(validation = Rule::new("self.all(p, p.startsWith('/') && !p.contains('//') && !p.contains('/./') && !p.contains('/../') && !p.endsWith('/.') && !p.endsWith('/..'))").message("noDiff paths must be absolute and canonical"))]
     pub no_diff: Vec<String>,
     /// Directory levels below a watched directory, as Wazuh
     /// `recursion_level`.
@@ -677,7 +679,7 @@ impl Default for IntegritySpec {
             interval: default_integrity_interval(),
             realtime: true,
             whodata: true,
-            report_changes: true,
+            report_changes: false,
             no_diff: default_no_diff(),
             recursion_level: default_recursion_level(),
             file_limit: default_file_limit(),
@@ -985,9 +987,16 @@ const fn default_file_limit() -> u32 {
 /// Secrets whose content must never land in a log, an Event, or the
 /// manager as a diff.
 fn default_no_diff() -> Vec<String> {
-    ["/etc/shadow", "/etc/gshadow", "/etc/security/opasswd"]
-        .map(String::from)
-        .to_vec()
+    [
+        "/etc/shadow",
+        "/etc/shadow-",
+        "/etc/gshadow",
+        "/etc/gshadow-",
+        "/etc/security/opasswd",
+        "/etc/kubernetes/pki",
+    ]
+    .map(String::from)
+    .to_vec()
 }
 
 fn default_integrity_paths() -> Vec<String> {
@@ -1069,7 +1078,9 @@ mod tests {
         assert_eq!(spec.scan.interval, "6h");
         assert!(spec.behavior.enabled);
         assert!(spec.integrity.paths.contains(&"/etc/shadow".to_string()));
-        assert!(spec.integrity.realtime && spec.integrity.whodata && spec.integrity.report_changes);
+        assert!(
+            spec.integrity.realtime && spec.integrity.whodata && !spec.integrity.report_changes
+        );
         assert!(spec.integrity.no_diff.contains(&"/etc/shadow".to_string()));
         assert_eq!(spec.integrity.recursion_level, 256);
         assert_eq!(spec.integrity.file_limit, 100_000);

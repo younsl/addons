@@ -70,13 +70,15 @@ File integrity monitoring answers whether a sensitive host file changed, how, an
 | --- | --- | --- |
 | `realtime` | `realtime` (on) | inotify watches every monitored directory and the parent of every monitored file through the host root, and a change is reported within a second. Changes that arrive within half a second are checked together, so an editor's write, rename, and chmod make one report. The periodic check every `interval` stays on as a safety net, for example after an inotify queue overflow |
 | `whodata` | `whodata` (on) | BPF LSM hooks on `file_open` (for writing), `inode_create`, `inode_unlink`, `inode_rename`, `path_chmod`, and `path_chown` report the process behind each change of a watched inode. The detection carries that process (pid, comm, exe, cmdline, uid, storyline) and its Pod, and `changes.operation` says which operation it was (`write`, `create`, `delete`, `rename-from`, `rename-to`, `attrib`). Needs the `ebpf-lsm` event source |
-| `report_changes` | `reportChanges` (on) | Text files up to 256 KiB are copied to the node (mode `0600`) and a modification carries a unified diff, cut at 8 KiB |
-| `nodiff` | `noDiff` | Paths whose content never goes into a copy or a diff. Defaults to `/etc/shadow`, `/etc/gshadow`, and `/etc/security/opasswd`. A file holding a private key is never copied whatever the list says |
+| `report_changes` | `reportChanges` (off, as in Wazuh) | Text files up to 256 KiB are copied to the node (mode `0600`) and a modification carries a unified diff, cut at 8 KiB. A diff carries file content into logs, Events, and the manager, so turn it on only for paths whose content may travel |
+| `nodiff` | `noDiff` | Paths whose content never goes into a copy or a diff. Defaults to `/etc/shadow`, `/etc/shadow-`, `/etc/gshadow`, `/etc/gshadow-`, `/etc/security/opasswd`, and `/etc/kubernetes/pki`. A file holding a PEM private key, base64 PEM, or `client-key-data` is never copied whatever the list says, and a diff line shows `<redacted>` for the value of a key named like `password`, `secret`, `token`, `api_key`, or `credential` |
 | `recursion_level` | `recursionLevel` (256) | Directory levels below a monitored directory |
-| `file_limit` | `fileLimit` (100000) | Files the baseline holds at most |
+| `file_limit` | `fileLimit` (100000) | Files the baseline holds at most. Files named in `paths` always stay in, only files found by walking a directory count against it, so flooding a watched directory cannot push a named file out. Reaching it raises one `integrity-file-limit` detection |
 | `check_*` attributes | always on | `changes.attributes` lists what differs: `size`, `permission`, `uid`, `gid`, `mtime`, `inode`, `sha256` |
 
 - `changes.mode` is `realtime` or `scheduled`, as in Wazuh's `syscheck.mode`.
+- Files are opened with `O_NOFOLLOW` and checked through the open descriptor, so a watched file swapped for a symlink to a secret is reported as changed but never read, hashed, copied, or diffed through the link.
+- Paths and `noDiff` entries must be canonical (no `//`, `.`, or `..`), which CEL enforces, and the agent normalizes them again, so `/etc//shadow` can never slip past `noDiff`.
 - The whodata hooks never deny anything. `file_open` checks the open mode first, so only opens for writing reach the map lookup.
 - An editor that writes a temporary file and renames it over the original (`sed -i`, `vim`) is attributed through the rename into the watched directory.
 - A content change is attributed to a writer or an entry change, a mode or owner change only to `path_chmod` or `path_chown`, and only to actors seen since the previous check, so an old writer is never blamed for a later `chmod`. The mode and owner hooks need `CONFIG_SECURITY_PATH`, which distribution kernels set.

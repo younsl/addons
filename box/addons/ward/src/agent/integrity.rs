@@ -101,19 +101,68 @@ pub struct Diff {
     pub attributes: Vec<&'static str>,
 }
 
+/// `path` made absolute and canonical without touching the file system:
+/// empty and `.` components dropped, `..` applied. Baseline keys, roots, and
+/// `noDiff` rules all go through it, so `/etc//shadow` and `/etc/shadow`
+/// are the same file to every check.
+pub fn normalize(path: &str) -> String {
+    let mut parts: Vec<&str> = Vec::new();
+    for c in path.split('/') {
+        match c {
+            "" | "." => {}
+            ".." => {
+                parts.pop();
+            }
+            c => parts.push(c),
+        }
+    }
+    format!("/{}", parts.join("/"))
+}
+
+pub fn normalize_all(paths: &[String]) -> Vec<String> {
+    paths.iter().map(|p| normalize(p)).collect()
+}
+
 fn host(host_root: &Path, path: &str) -> PathBuf {
     host_root.join(path.trim_start_matches('/'))
 }
 
 /// The entry of one host file, `None` when it is missing or not a file.
+/// Opens a regular file without following a symlink in its last component,
+/// so a watched file swapped for a link to a secret is never read through.
+/// Size and type come from the open descriptor, not a second lookup.
+fn open_file(real: &Path) -> Option<(std::fs::File, std::fs::Metadata)> {
+    use std::os::unix::fs::OpenOptionsExt as _;
+    let flags = nix::fcntl::OFlag::O_NOFOLLOW | nix::fcntl::OFlag::O_NONBLOCK;
+    let f = std::fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(flags.bits())
+        .open(real)
+        .ok()?;
+    let m = f.metadata().ok()?;
+    m.is_file().then_some((f, m))
+}
+
+/// Up to `max` bytes of a regular file, read from one descriptor.
+fn read_file(real: &Path, max: u64) -> Option<(Vec<u8>, std::fs::Metadata)> {
+    use std::io::Read as _;
+    let (f, m) = open_file(real)?;
+    if m.len() > max {
+        return None;
+    }
+    let mut data = Vec::new();
+    f.take(max).read_to_end(&mut data).ok()?;
+    Some((data, m))
+}
+
 pub fn entry_of(real: &Path) -> Option<Entry> {
     let m = std::fs::symlink_metadata(real).ok()?;
     if !m.is_file() {
         return None;
     }
-    let sha256 = (m.len() <= MAX_HASH)
-        .then(|| std::fs::read(real).ok().map(|d| sha256_hex(&d)))
-        .flatten();
+    let sha256 = read_file(real, MAX_HASH)
+        .filter(|(_, opened)| opened.ino() == m.ino() && opened.dev() == m.dev())
+        .map(|(d, _)| sha256_hex(&d));
     Some(Entry {
         sha256,
         size: m.len(),
@@ -127,19 +176,30 @@ pub fn entry_of(real: &Path) -> Option<Entry> {
 }
 
 /// Adds every file under `path` (a file or a directory walked down to the
-/// recursion level) to `out`, stopping at the file limit.
-fn collect(host_root: &Path, path: &str, levels: usize, limits: Limits, out: &mut Baseline) {
+/// recursion level) to `out`. A file named as a root (`explicit`) always
+/// goes in, files found by walking stop at the file limit, so flooding a
+/// watched directory cannot push a named file out of the baseline. Returns
+/// whether the limit left files out.
+fn collect(
+    host_root: &Path,
+    path: &str,
+    levels: usize,
+    limits: Limits,
+    explicit: bool,
+    out: &mut Baseline,
+) -> bool {
     let real = host(host_root, path);
     let Ok(m) = std::fs::symlink_metadata(&real) else {
-        return;
+        return false;
     };
     if !m.is_dir() {
-        if out.len() < limits.file_limit
-            && let Some(e) = entry_of(&real)
-        {
+        if !explicit && out.len() >= limits.file_limit {
+            return true;
+        }
+        if let Some(e) = entry_of(&real) {
             out.insert(path.to_string(), e);
         }
-        return;
+        return false;
     }
     for e in WalkDir::new(&real)
         .follow_links(false)
@@ -150,7 +210,7 @@ fn collect(host_root: &Path, path: &str, levels: usize, limits: Limits, out: &mu
         .filter(|e| e.file_type().is_file())
     {
         if out.len() >= limits.file_limit {
-            return;
+            return true;
         }
         let rel = e.path().strip_prefix(&real).unwrap_or_else(|_| e.path());
         if let Some(entry) = entry_of(e.path()) {
@@ -160,15 +220,20 @@ fn collect(host_root: &Path, path: &str, levels: usize, limits: Limits, out: &mu
             );
         }
     }
+    false
 }
 
-/// The baseline of every watched path under `host_root`.
-pub fn snapshot(host_root: &Path, roots: &[String], limits: Limits) -> Baseline {
+/// The baseline of every watched path under `host_root`, and whether the
+/// file limit left files out. Named files go in before any directory walk.
+pub fn snapshot(host_root: &Path, roots: &[String], limits: Limits) -> (Baseline, bool) {
     let mut out = Baseline::new();
-    for r in roots {
-        collect(host_root, r, limits.recursion_level, limits, &mut out);
+    let mut truncated = false;
+    let (dirs, files): (Vec<&String>, Vec<&String>) =
+        roots.iter().partition(|r| host(host_root, r).is_dir());
+    for r in files.into_iter().chain(dirs) {
+        truncated |= collect(host_root, r, limits.recursion_level, limits, true, &mut out);
     }
-    out
+    (out, truncated)
 }
 
 /// The watched root that covers `path`, with the directory levels left
@@ -194,17 +259,19 @@ pub fn rescan(
     limits: Limits,
     base: &Baseline,
     changed: &[String],
-) -> Baseline {
+) -> (Baseline, bool) {
     let mut out = base.clone();
+    let mut truncated = false;
     for path in changed {
         let Some(levels) = covering(roots, path, limits) else {
             continue;
         };
         let prefix = format!("{}/", path.trim_end_matches('/'));
         out.retain(|k, _| k != path && !k.starts_with(&prefix));
-        collect(host_root, path, levels, limits, &mut out);
+        let explicit = roots.iter().any(|r| r == path);
+        truncated |= collect(host_root, path, levels, limits, explicit, &mut out);
     }
-    out
+    (out, truncated)
 }
 
 pub fn diff(old: &Baseline, new: &Baseline) -> Vec<Diff> {
@@ -310,12 +377,12 @@ impl Contents {
     /// The text of a host file small enough to keep, `None` for binaries
     /// and for anything holding a private key, whatever `noDiff` says.
     pub fn text(real: &Path) -> Option<String> {
-        let m = std::fs::metadata(real).ok()?;
-        if !m.is_file() || m.len() > MAX_DIFF_FILE {
-            return None;
-        }
-        let data = std::fs::read(real).ok()?;
-        if data.contains(&0) || memchr::memmem::find(&data, b"PRIVATE KEY-----").is_some() {
+        let (data, _) = read_file(real, MAX_DIFF_FILE)?;
+        if data.contains(&0)
+            || SECRET_MARKERS
+                .iter()
+                .any(|m| memchr::memmem::find(&data, m).is_some())
+        {
             return None;
         }
         String::from_utf8(data).ok()
@@ -351,13 +418,62 @@ impl Contents {
     }
 }
 
-/// A unified diff of two texts, cut at `MAX_DIFF` bytes.
+/// Content that marks a file as a secret store: it is never copied, so it
+/// never shows up in a diff. PEM private keys, base64 PEM as in kubeconfig
+/// `client-key-data`, and that key itself.
+const SECRET_MARKERS: [&[u8]; 3] = [b"PRIVATE KEY-----", b"LS0tLS1CRUdJTi", b"client-key-data"];
+/// Keys whose values a diff line never shows.
+const SECRET_KEYS: [&str; 8] = [
+    "password",
+    "passwd",
+    "secret",
+    "token",
+    "apikey",
+    "api_key",
+    "api-key",
+    "credential",
+];
+
+/// The diff line with the value of a `key = value` or `key: value` pair
+/// replaced when the key names a secret.
+fn redact(line: &str) -> String {
+    let lower = line.to_ascii_lowercase();
+    let Some(at) = lower.find(['=', ':']) else {
+        return line.to_string();
+    };
+    if SECRET_KEYS.iter().any(|k| lower[..at].contains(k)) {
+        format!("{} <redacted>", &line[..=at])
+    } else {
+        line.to_string()
+    }
+}
+
+/// A unified diff of two texts, values of secret looking keys redacted,
+/// cut at `MAX_DIFF` bytes.
 pub fn unified_diff(path: &str, old: &str, new: &str) -> Option<String> {
-    let diff = similar::TextDiff::from_lines(old, new)
+    let raw = similar::TextDiff::from_lines(old, new)
         .unified_diff()
         .context_radius(3)
         .header(path, path)
         .to_string();
+    let diff: String = raw
+        .split_inclusive('\n')
+        .map(|l| {
+            let body = l.trim_end_matches('\n');
+            let redacted = if body.starts_with("+++") || body.starts_with("---") {
+                body.to_string()
+            } else if let Some(rest) = body.strip_prefix(['+', '-', ' ']) {
+                format!("{}{}", &body[..1], redact(rest))
+            } else {
+                body.to_string()
+            };
+            if l.ends_with('\n') {
+                format!("{redacted}\n")
+            } else {
+                redacted
+            }
+        })
+        .collect();
     if diff.is_empty() {
         return None;
     }
@@ -377,11 +493,13 @@ pub fn unified_diff(path: &str, old: &str, new: &str) -> Option<String> {
 /// Whether `path` matches a `noDiff` entry: the path itself or anything
 /// under it.
 pub fn no_diff(rules: &[String], path: &str) -> bool {
+    let path = normalize(path);
     rules.iter().any(|r| {
-        let r = r.trim_end_matches('/');
-        path == r
+        let r = normalize(r);
+        r == "/"
+            || path == r
             || path
-                .strip_prefix(r)
+                .strip_prefix(&r)
                 .is_some_and(|rest| rest.starts_with('/'))
     })
 }
@@ -410,7 +528,7 @@ mod tests {
             "/etc/cron.d".into(),
             "/etc/missing".into(),
         ];
-        let before = snapshot(host.path(), &paths, LIMITS);
+        let (before, _) = snapshot(host.path(), &paths, LIMITS);
         assert_eq!(before.len(), 3, "recursive: {before:?}");
         save(state.path(), &before).unwrap();
         assert_eq!(load(state.path()).unwrap(), before);
@@ -423,7 +541,7 @@ mod tests {
             std::fs::Permissions::from_mode(0o777),
         )
         .unwrap();
-        let after = snapshot(host.path(), &paths, LIMITS);
+        let (after, _) = snapshot(host.path(), &paths, LIMITS);
         let mut d = diff(&before, &after);
         d.sort_by(|a, b| a.path.cmp(&b.path));
         let summary: Vec<(&str, Change)> = d.iter().map(|x| (x.path.as_str(), x.change)).collect();
@@ -460,28 +578,33 @@ mod tests {
             recursion_level: 1,
             file_limit: 100,
         };
-        let base = snapshot(h, &roots, shallow);
+        let (base, truncated) = snapshot(h, &roots, shallow);
+        assert!(!truncated);
         assert_eq!(base.keys().collect::<Vec<_>>(), vec!["/w/a", "/w/sub/b"]);
-        let few = snapshot(
-            h,
-            &roots,
-            Limits {
-                recursion_level: 8,
-                file_limit: 2,
-            },
-        );
+        let tight = Limits {
+            recursion_level: 8,
+            file_limit: 2,
+        };
+        let (few, truncated) = snapshot(h, &roots, tight);
         assert_eq!(few.len(), 2);
+        assert!(truncated, "the limit is reported");
+        std::fs::write(h.join("named"), "keep").unwrap();
+        let (named, _) = snapshot(h, &["/w".into(), "/named".into()], tight);
+        assert!(
+            named.contains_key("/named"),
+            "a named file survives a flooded directory"
+        );
 
         std::fs::write(h.join("w/a"), "changed").unwrap();
         std::fs::remove_dir_all(h.join("w/sub")).unwrap();
         std::fs::write(h.join("outside"), "x").unwrap();
-        let only_a = rescan(h, &roots, shallow, &base, &["/w/a".into()]);
+        let (only_a, _) = rescan(h, &roots, shallow, &base, &["/w/a".into()]);
         assert_eq!(
             diff(&base, &only_a).len(),
             1,
             "unlisted paths keep their entries"
         );
-        let both = rescan(
+        let (both, _) = rescan(
             h,
             &roots,
             shallow,
@@ -538,13 +661,52 @@ mod tests {
 
         std::fs::write(&file, b"bin\0ary").unwrap();
         assert!(Contents::text(&file).is_none());
+        let secret = host.path().join("shadow");
+        std::fs::write(&secret, "root:$6$hash:19000::::::\n").unwrap();
+        let link = host.path().join("swapped");
+        std::os::unix::fs::symlink(&secret, &link).unwrap();
+        assert!(
+            Contents::text(&link).is_none(),
+            "a symlink is never read through"
+        );
+        assert!(entry_of(&link).is_none());
         std::fs::write(&file, "-----BEGIN OPENSSH PRIVATE KEY-----\nabc\n").unwrap();
         assert!(Contents::text(&file).is_none(), "keys never get copied");
+        std::fs::write(
+            &file,
+            "users:\n- user:\n    client-key-data: LS0tLS1CRUdJTiBF\n",
+        )
+        .unwrap();
+        assert!(
+            Contents::text(&file).is_none(),
+            "kubeconfig keys never get copied"
+        );
+        let diff = unified_diff(
+            "/etc/app.conf",
+            "user=app\npassword=old\nPasswordAuthentication no\n",
+            "user=app\npassword=n3w-s3cret\nPasswordAuthentication yes\napi_token: abc\n",
+        )
+        .unwrap();
+        assert!(
+            !diff.contains("n3w-s3cret") && !diff.contains("=old") && !diff.contains("abc"),
+            "{diff}"
+        );
+        assert!(diff.contains("+password= <redacted>"), "{diff}");
+        assert!(diff.contains("+PasswordAuthentication yes"), "{diff}");
+        assert_eq!(normalize("/etc//./cron.d/../shadow/"), "/etc/shadow");
+        assert_eq!(normalize("etc"), "/etc");
+        assert_eq!(normalize_all(&["/a//b".into()]), vec!["/a/b".to_string()]);
         contents.keep("/etc/sudoers", None);
         assert!(contents.previous("/etc/sudoers").is_none());
 
         let rules = vec!["/etc/shadow".to_string(), "/etc/ssl/private/".into()];
         assert!(no_diff(&rules, "/etc/shadow"));
+        assert!(
+            no_diff(&rules, "/etc//shadow"),
+            "non-canonical paths still match"
+        );
+        assert!(no_diff(&rules, "/etc/./ssl/../shadow"));
+        assert!(no_diff(&["/etc/./shadow".to_string()], "/etc/shadow"));
         assert!(no_diff(&rules, "/etc/ssl/private/key.pem"));
         assert!(!no_diff(&rules, "/etc/shadow-"));
         assert!(!no_diff(&rules, "/etc/passwd"));
