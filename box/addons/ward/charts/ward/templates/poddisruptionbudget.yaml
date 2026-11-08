@@ -1,0 +1,14 @@
+{{- if include "ward.leaderElectEnabled" . }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "ward.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "ward.labels" . | nindent 4 }}
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      {{- include "ward.selectorLabels" . | nindent 6 }}
+{{- end }}

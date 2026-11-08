@@ -1,0 +1,12 @@
+{{- if and .Values.leaseAdmissionPolicy.enabled (.Capabilities.APIVersions.Has "admissionregistration.k8s.io/v1/ValidatingAdmissionPolicyBinding") -}}
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: {{ include "ward.leaseClusterRoleName" . }}
+  labels:
+    {{- include "ward.labels" . | nindent 4 }}
+spec:
+  policyName: {{ include "ward.leaseClusterRoleName" . }}
+  validationActions:
+    - Deny
+{{- end }}

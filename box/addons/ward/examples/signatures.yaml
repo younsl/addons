@@ -1,0 +1,39 @@
+apiVersion: security.ward.sh/v1alpha1
+kind: WardSignature
+metadata:
+  name: custom
+  namespace: ward-system
+spec:
+  signatures:
+    - name: Custom.Miner.Stratum
+      severity: High
+      description: Binary that embeds a mining pool URL and a donation switch
+      strings:
+        - stratum+tcp://
+        - --donate-level
+      condition: All
+    - name: Custom.Dropper.KnownHash
+      severity: Critical
+      description: Dropper seen in a past incident
+      sha256:
+        - 486ea46224d1bb4fb680f34f7c9ad96a8f24ec88be73ea8e5a6c65260e9cb8a7
+    - name: Custom.ELF.UPXPacked
+      severity: Low
+      description: ELF packed with UPX
+      hex:
+        - "7f454c46"
+        - "55505821"
+      condition: All
+  yara: |
+    rule Custom_Reverse_Shell_Oneliner
+    {
+      meta:
+        severity = "High"
+        description = "Script that pipes an interactive shell over /dev/tcp"
+      strings:
+        $tcp = "/dev/tcp/" ascii
+        $sh1 = "bash -i" ascii
+        $sh2 = "sh -i" ascii
+      condition:
+        filesize < 1MB and $tcp and any of ($sh*)
+    }

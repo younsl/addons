@@ -1,0 +1,341 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "title": "ward values",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "global": {
+      "type": "object"
+    },
+    "nameOverride": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "fullnameOverride": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "image": {
+      "$ref": "#/definitions/image"
+    },
+    "imagePullSecrets": {
+      "$ref": "#/definitions/nullableObjectList"
+    },
+    "replicaCount": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "revisionHistoryLimit": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "crds": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "install": {
+          "type": "boolean"
+        },
+        "keep": {
+          "type": "boolean"
+        },
+        "annotations": {
+          "$ref": "#/definitions/nullableStringMap"
+        },
+        "additionalLabels": {
+          "$ref": "#/definitions/nullableStringMap"
+        }
+      }
+    },
+    "operator": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "allowedImagePrefixes": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "allowPrivilegedAgent": {
+          "type": "boolean"
+        },
+        "logLevel": {
+          "type": "string",
+          "enum": [
+            "trace",
+            "debug",
+            "info",
+            "warn",
+            "error"
+          ]
+        },
+        "logFormat": {
+          "type": "string",
+          "enum": [
+            "json",
+            "text"
+          ]
+        }
+      }
+    },
+    "ward": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "create": {
+          "type": "boolean"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 63,
+          "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"
+        },
+        "labels": {
+          "$ref": "#/definitions/nullableStringMap"
+        },
+        "annotations": {
+          "$ref": "#/definitions/nullableStringMap"
+        },
+        "spec": {
+          "type": [
+            "object",
+            "null"
+          ]
+        }
+      }
+    },
+    "extraEnv": {
+      "$ref": "#/definitions/nullableObjectList"
+    },
+    "extraEnvFrom": {
+      "$ref": "#/definitions/nullableObjectList"
+    },
+    "ports": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "http": {
+          "$ref": "#/definitions/port"
+        }
+      }
+    },
+    "rbac": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "create": {
+          "type": "boolean"
+        }
+      }
+    },
+    "serviceAccount": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "create": {
+          "type": "boolean"
+        },
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "annotations": {
+          "$ref": "#/definitions/nullableStringMap"
+        },
+        "automountServiceAccountToken": {
+          "type": "boolean"
+        },
+        "imagePullSecrets": {
+          "$ref": "#/definitions/nullableObjectList"
+        }
+      }
+    },
+    "service": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "ClusterIP",
+            "NodePort",
+            "LoadBalancer"
+          ]
+        },
+        "trafficDistribution": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "podMonitor": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "interval": {
+          "type": "string"
+        },
+        "scrapeTimeout": {
+          "type": "string"
+        },
+        "labels": {
+          "$ref": "#/definitions/nullableStringMap"
+        }
+      }
+    },
+    "wardNamespacePolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        }
+      }
+    },
+    "leaseAdmissionPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        }
+      }
+    },
+    "serviceMonitor": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "interval": {
+          "type": "string"
+        },
+        "scrapeTimeout": {
+          "type": "string"
+        },
+        "labels": {
+          "$ref": "#/definitions/nullableStringMap"
+        }
+      }
+    },
+    "resources": {
+      "type": "object"
+    },
+    "resizePolicy": {
+      "$ref": "#/definitions/nullableObjectList"
+    },
+    "podAnnotations": {
+      "$ref": "#/definitions/nullableStringMap"
+    },
+    "podLabels": {
+      "$ref": "#/definitions/nullableStringMap"
+    },
+    "podSecurityContext": {
+      "type": "object"
+    },
+    "securityContext": {
+      "type": "object"
+    },
+    "priorityClassName": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "nodeSelector": {
+      "$ref": "#/definitions/nullableStringMap"
+    },
+    "tolerations": {
+      "$ref": "#/definitions/nullableObjectList"
+    },
+    "affinity": {
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "extraObjects": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    }
+  },
+  "definitions": {
+    "nullableStringMap": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "nullableObjectList": {
+      "type": [
+        "array",
+        "null"
+      ],
+      "items": {
+        "type": "object"
+      }
+    },
+    "port": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 65535
+    },
+    "image": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "registry": {
+          "type": "string"
+        },
+        "repository": {
+          "type": "string",
+          "minLength": 1
+        },
+        "tag": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "digest": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^(sha256:[a-f0-9]{64})?$"
+        },
+        "pullPolicy": {
+          "type": "string",
+          "enum": [
+            "Always",
+            "IfNotPresent",
+            "Never"
+          ]
+        }
+      }
+    }
+  }
+}

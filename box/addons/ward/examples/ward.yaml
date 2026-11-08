@@ -1,0 +1,100 @@
+apiVersion: security.ward.sh/v1alpha1
+kind: Ward
+metadata:
+  name: ward
+  namespace: ward-system
+spec:
+  # Detect reports only. Protect also kills, quarantines, and blocks exec.
+  mode: Detect
+  manager:
+    enabled: true
+    storage:
+      size: 1Gi
+    retention: 10000
+    nodeSelector:
+      kubernetes.io/os: linux
+    tolerations:
+      - key: dedicated
+        operator: Equal
+        value: system
+        effect: NoSchedule
+    affinity:
+      nodeAffinity:
+        preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            preference:
+              matchExpressions:
+                - key: node-role.kubernetes.io/system
+                  operator: Exists
+    topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: topology.kubernetes.io/zone
+        whenUnsatisfiable: ScheduleAnyway
+        labelSelector:
+          matchLabels:
+            app.kubernetes.io/name: ward
+            app.kubernetes.io/component: manager
+    dnsPolicy: ClusterFirst
+    dnsConfig:
+      options:
+        - name: ndots
+          value: "2"
+  agent:
+    eventSource: Auto
+    resources:
+      requests:
+        cpu: 50m
+        memory: 128Mi
+      limits:
+        memory: 512Mi
+    # Unset tolerates every taint so every node is covered.
+    tolerations:
+      - operator: Exists
+    priorityClassName: system-node-critical
+    affinity:
+      nodeAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          nodeSelectorTerms:
+            - matchExpressions:
+                - key: eks.amazonaws.com/compute-type
+                  operator: NotIn
+                  values:
+                    - fargate
+    # Start the new agent before the old one stops, so no node goes
+    # unprotected during a rollout.
+    updateStrategy:
+      type: RollingUpdate
+      rollingUpdate:
+        maxUnavailable: 0
+        maxSurge: 1
+    dnsPolicy: ClusterFirst
+    dnsConfig:
+      options:
+        - name: ndots
+          value: "2"
+  scan:
+    onExec: true
+    yara: true
+    interval: 6h
+    maxFileSizeMib: 32
+  behavior:
+    enabled: true
+    pollInterval: 1s
+    disabledRules:
+      - recon-tool
+  integrity:
+    enabled: true
+    interval: 5m
+  exclusions:
+    namespaces:
+      - kube-system
+    # Exact executable paths that skip behavior rules. Signatures still apply.
+    processes:
+      - /usr/bin/containerd
+  indicators:
+    allow:
+      - sha256: 2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824
+        comment: in-house tool flagged by a feed signature
+    block:
+      - sha256: 486ea46224d1bb4fb680f34f7c9ad96a8f24ec88be73ea8e5a6c65260e9cb8a7
+        comment: Example.Backdoor.Internal

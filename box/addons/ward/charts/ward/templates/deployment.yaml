@@ -1,0 +1,121 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "ward.fullname" . }}
+  labels:
+    {{- include "ward.labels" . | nindent 4 }}
+    app.kubernetes.io/component: operator
+spec:
+  replicas: {{ .Values.replicaCount }}
+  revisionHistoryLimit: {{ .Values.revisionHistoryLimit }}
+  strategy:
+    {{- if include "ward.leaderElectEnabled" . }}
+    type: RollingUpdate
+    {{- else }}
+    type: Recreate
+    {{- end }}
+  selector:
+    matchLabels:
+      {{- include "ward.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "ward.selectorLabels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      serviceAccountName: {{ include "ward.serviceAccountName" . }}
+      {{- with .Values.priorityClassName }}
+      priorityClassName: {{ . }}
+      {{- end }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: operator
+          image: {{ include "ward.image" . | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args:
+            - operator
+          {{- with .Values.extraEnvFrom }}
+          envFrom:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          env:
+            - name: WARD_IMAGE
+              value: {{ include "ward.image" . | quote }}
+            - name: WARD_IMAGE_PULL_POLICY
+              value: {{ .Values.image.pullPolicy | quote }}
+            - name: WARD_WORKLOAD_CLUSTER_ROLE
+              value: {{ include "ward.workloadClusterRoleName" . | quote }}
+            - name: WARD_LEASE_CLUSTER_ROLE
+              value: {{ include "ward.leaseClusterRoleName" . | quote }}
+            - name: LEADER_ELECT
+              value: {{ include "ward.leaderElectEnabled" . | default "false" | quote }}
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: WARD_NAMESPACE
+              value: {{ .Release.Namespace | quote }}
+            - name: WARD_ALLOWED_IMAGE_PREFIXES
+              value: {{ join "," .Values.operator.allowedImagePrefixes | quote }}
+            - name: WARD_ALLOW_PRIVILEGED_AGENT
+              value: {{ .Values.operator.allowPrivilegedAgent | quote }}
+            - name: HEALTH_ADDR
+              value: {{ printf "0.0.0.0:%d" (int .Values.ports.http) | quote }}
+            - name: LOG_LEVEL
+              value: {{ .Values.operator.logLevel | quote }}
+            - name: LOG_FORMAT
+              value: {{ .Values.operator.logFormat | quote }}
+            {{- with .Values.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.ports.http }}
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 15
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          {{- with .Values.resizePolicy }}
+          resizePolicy:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

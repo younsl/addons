@@ -1,0 +1,46 @@
+[package]
+name = "ward-ebpf"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.99.1"
+# GPL-compatible so the kernel grants the GPL-only helpers and LSM attach
+license = "MIT OR GPL-2.0-only"
+description = "ward kernel programs: process, network, and exec-blocking probes"
+publish = false
+
+[dependencies]
+aya-ebpf = "0.3.0"
+ward-ebpf-common = { path = "../ebpf-common" }
+
+# Builds only for bpfel-unknown-none, see the ward Makefile `ebpf` target
+[package.metadata.cargo-changed]
+host-build = false
+
+[[bin]]
+name = "ward"
+path = "src/main.rs"
+
+# Kernel programs dereference kernel memory through probe helpers, which is
+# unsafe by construction. This crate is the only one in the repo allowed to.
+[lints.rust]
+unsafe_op_in_unsafe_fn = "deny"
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+nursery = { level = "warn", priority = -1 }
+cast_possible_truncation = "allow"
+# BPF helpers are inlined so the verifier sees one flat program
+inline_always = "allow"
+# aya program entry points take their context by value
+needless_pass_by_value = "allow"
+
+[profile.dev]
+panic = "abort"
+opt-level = 3
+
+[profile.release]
+panic = "abort"
+lto = true
+codegen-units = 1
+debug = 2

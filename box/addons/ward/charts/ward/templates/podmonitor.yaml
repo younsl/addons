@@ -1,0 +1,36 @@
+{{- if and .Values.podMonitor.enabled (.Capabilities.APIVersions.Has "monitoring.coreos.com/v1/PodMonitor") -}}
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: {{ include "ward.fullname" . }}-workloads
+  labels:
+    {{- include "ward.labels" . | nindent 4 }}
+    {{- with .Values.podMonitor.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  namespaceSelector:
+    matchNames:
+      - {{ .Release.Namespace }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ward
+    matchExpressions:
+      - key: app.kubernetes.io/component
+        operator: In
+        values:
+          - manager
+          - agent
+  podMetricsEndpoints:
+    - port: metrics
+      path: /metrics
+      interval: {{ .Values.podMonitor.interval }}
+      scrapeTimeout: {{ .Values.podMonitor.scrapeTimeout }}
+      relabelings:
+        - sourceLabels:
+            - __meta_kubernetes_pod_label_app_kubernetes_io_component
+          targetLabel: component
+        - sourceLabels:
+            - __meta_kubernetes_pod_node_name
+          targetLabel: node
+{{- end }}

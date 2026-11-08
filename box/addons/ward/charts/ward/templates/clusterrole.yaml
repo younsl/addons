@@ -1,0 +1,122 @@
+{{- if .Values.rbac.create -}}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "ward.fullname" . }}
+  labels:
+    {{- include "ward.labels" . | nindent 4 }}
+rules:
+  - apiGroups:
+      - security.ward.sh
+    resources:
+      - wards
+    verbs:
+      - get
+      - list
+      - watch
+      - patch
+      - update
+  - apiGroups:
+      - security.ward.sh
+    resources:
+      - wards/status
+      - wardsignatures/status
+    verbs:
+      - get
+      - patch
+      - update
+  - apiGroups:
+      - security.ward.sh
+    resources:
+      - wards/finalizers
+    verbs:
+      - update
+  - apiGroups:
+      - security.ward.sh
+    resources:
+      - wardsignatures
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - apps
+    resources:
+      - daemonsets
+      - statefulsets
+    verbs:
+      - get
+      - list
+      - watch
+      - create
+      - patch
+      - update
+      - delete
+  - apiGroups:
+      - ""
+    resources:
+      - configmaps
+      - secrets
+      - services
+      - serviceaccounts
+    verbs:
+      - get
+      - list
+      - watch
+      - create
+      - patch
+      - update
+      - delete
+  - apiGroups:
+      - ""
+    resources:
+      - nodes
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - coordination.k8s.io
+    resources:
+      - leases
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - rbac.authorization.k8s.io
+    resources:
+      - clusterrolebindings
+      - rolebindings
+    verbs:
+      - get
+      - list
+      - watch
+      - create
+      - patch
+      - update
+      - delete
+  - apiGroups:
+      - rbac.authorization.k8s.io
+    resources:
+      - clusterroles
+    resourceNames:
+      - {{ include "ward.workloadClusterRoleName" . }}
+      - {{ include "ward.leaseClusterRoleName" . }}
+    verbs:
+      - bind
+  - apiGroups:
+      - ""
+    resources:
+      - events
+    verbs:
+      - create
+      - patch
+  - apiGroups:
+      - events.k8s.io
+    resources:
+      - events
+    verbs:
+      - create
+      - patch
+{{- end }}

@@ -1,0 +1,17 @@
+{{ include "ward.fullname" . }} operator is deployed.
+
+Wards are accepted only in namespace {{ .Release.Namespace }}.
+{{- if .Values.ward.create }}
+
+Ward {{ .Release.Namespace }}/{{ .Values.ward.name }} is rendered by this release.
+{{- else }}
+
+No Ward object is rendered. Create one to deploy the node agents:
+  kubectl apply -f https://raw.githubusercontent.com/younsl/addons/main/box/addons/ward/examples/ward.yaml
+{{- end }}
+
+Status:
+  kubectl get wards -A
+
+Logs:
+  kubectl -n {{ .Release.Namespace }} logs deploy/{{ include "ward.fullname" . }} -f
