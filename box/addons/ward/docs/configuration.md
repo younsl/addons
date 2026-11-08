@@ -36,6 +36,25 @@ A `Ward` runs an agent with `hostPID` and broad capabilities on every node, so c
 | `emitEvents` | `true` | Publish a Kubernetes Event on the affected Pod |
 | `resources`, `nodeSelector`, `tolerations`, `affinity`, `topologySpreadConstraints` | none | Manager Pod resources and scheduling, standard Kubernetes fields |
 | `dnsPolicy`, `dnsConfig` | Kubernetes default | Manager Pod DNS. `dnsPolicy: None` needs at least one `dnsConfig.nameservers` entry, which CEL enforces |
+| `httpRoute.enabled` | `false` | Own a Gateway API `HTTPRoute` to the admin API. See [Manager](manager.md#through-a-gateway) |
+| `httpRoute.parentRefs` | none | `group` (default `gateway.networking.k8s.io`), `kind` (default `Gateway`), `name`, `namespace` (required), `sectionName`, `port`. At least one when enabled, which CEL enforces |
+| `httpRoute.hostnames`, `httpRoute.labels`, `httpRoute.annotations` | none | Route host names and metadata |
+
+### postgresql
+
+Where the manager keeps detections. See [Manager](manager.md#detection-storage).
+
+| Field | Default | Description |
+| --- | --- | --- |
+| `enabled` | `false` | Keep detections in PostgreSQL. Needs `manager.enabled`, which CEL enforces |
+| `embedded.image` | operator setting | Image of the embedded server |
+| `embedded.storage.size`, `embedded.storage.storageClassName` | `8Gi`, cluster default | Data volume. Immutable |
+| `embedded.resources`, `embedded.nodeSelector`, `embedded.tolerations`, `embedded.affinity` | none | Embedded server Pod resources and scheduling |
+| `external.host`, `external.port` | required, `5432` | An existing server instead of the embedded one. `external` and `embedded` are exclusive |
+| `external.database`, `external.username` | `ward` | Database and role. The role needs `CREATE` on the database for the first start |
+| `external.passwordSecretRef` | required | `name` and `key` of the password in the `Ward` namespace |
+| `external.sslMode` | `VerifyFull` | `VerifyFull` or `Disable` |
+| `external.caSecretRef` | none | `name` and `key` of the PEM CA bundle. Required with `VerifyFull` |
 
 ### agent
 
@@ -74,6 +93,13 @@ A `Ward` runs an agent with `hostPID` and broad capabilities on every node, so c
 | `enabled` | `true` | Run file integrity monitoring |
 | `paths` | sensitive host files | Absolute host files and directories (one level deep), up to 256 |
 | `interval` | `5m` | Check period, at least `10s` |
+
+### rootcheck
+
+| Field | Default | Description |
+| --- | --- | --- |
+| `enabled` | `true` | Run the [rootkit anomaly checks](detection-engines.md#rootcheck) |
+| `interval` | `12h` | Check period, at least `10m`. A run probes every PID up to `pid_max` |
 
 ### exclusions
 

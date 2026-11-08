@@ -5,13 +5,15 @@ use std::collections::BTreeMap;
 
 use k8s_openapi::api::apps::v1::{DaemonSet, StatefulSet};
 use k8s_openapi::api::core::v1::{ConfigMap, Secret, Service, ServiceAccount};
+use k8s_openapi::api::networking::v1::NetworkPolicy;
 use k8s_openapi::api::rbac::v1::{ClusterRoleBinding, RoleBinding};
 use k8s_openapi::apimachinery::pkg::apis::meta::v1::OwnerReference;
 use kube::Resource as _;
+use kube::api::{ApiResource, DynamicObject};
 use serde_json::{Value, json};
 
-use crate::crd::{AgentUpdateStrategy, DnsPolicy, UpdateStrategyType, Ward, WardSpec};
-use crate::k8s::{COMPONENT_AGENT, COMPONENT_MANAGER, labels};
+use crate::crd::{AgentUpdateStrategy, DnsPolicy, SslMode, UpdateStrategyType, Ward, WardSpec};
+use crate::k8s::{COMPONENT_AGENT, COMPONENT_MANAGER, COMPONENT_POSTGRESQL, labels};
 use crate::policy::POLICY_FILE;
 use crate::rollout::ROLLOUT_FILE;
 
@@ -21,6 +23,14 @@ pub const AGENT_SERVICE_ACCOUNT: &str = "ward-agent";
 pub const AGENT_PORT: i32 = 8443;
 pub const ADMIN_PORT: i32 = 8080;
 pub const METRICS_PORT: i32 = 8081;
+pub const POSTGRESQL_PORT: i32 = 5432;
+/// The account and database of the embedded PostgreSQL server.
+pub const POSTGRESQL_USER: &str = "ward";
+/// Key of the password in the embedded server's auth `Secret`.
+pub const POSTGRESQL_PASSWORD_KEY: &str = "password";
+/// UID and GID of the `postgres` user in the Alpine based images.
+const POSTGRESQL_UID: i64 = 70;
+const PG_HBA: &str = "local all all trust\nhostssl all all all scram-sha-256\n";
 pub const AGENT_CAPABILITIES: [&str; 9] = [
     "BPF",
     "PERFMON",
@@ -46,6 +56,8 @@ pub struct Defaults {
     /// operator's own repository.
     pub allowed_image_prefixes: Vec<String>,
     pub allow_privileged_agent: bool,
+    /// Image of the embedded PostgreSQL server.
+    pub postgresql_image: String,
 }
 
 /// Names of every object a `Ward` owns.
@@ -99,9 +111,26 @@ impl Names {
             self.namespace
         )
     }
+    pub fn postgresql(&self) -> String {
+        format!("{}-postgresql", self.name)
+    }
+    pub fn postgresql_tls(&self) -> String {
+        format!("{}-postgresql-tls", self.name)
+    }
+    pub fn postgresql_auth(&self) -> String {
+        format!("{}-postgresql-auth", self.name)
+    }
+    pub fn postgresql_host(&self) -> String {
+        format!("{}.{}.svc", self.postgresql(), self.namespace)
+    }
+    pub fn postgresql_dns(&self) -> Vec<String> {
+        Self::dns(&self.postgresql(), &self.namespace)
+    }
     pub fn manager_dns(&self) -> Vec<String> {
-        let svc = self.manager();
-        let ns = &self.namespace;
+        Self::dns(&self.manager(), &self.namespace)
+    }
+    fn dns(svc: &str, ns: &str) -> Vec<String> {
+        let svc = svc.to_string();
         vec![
             svc.clone(),
             format!("{svc}.{ns}"),
@@ -268,6 +297,10 @@ pub fn manager_statefulset(ward: &Ward, d: &Defaults) -> StatefulSet {
             json!({"name": "WARD_REGISTRY_AUTH", "value": "/etc/ward/registry/.dockerconfigjson"}),
         );
     }
+    let (pg_env, pg_volumes, pg_mounts) = postgresql_client(ward);
+    env.extend(pg_env);
+    volumes.extend(pg_volumes);
+    mounts.extend(pg_mounts);
     let mut pvc_labels = labels(&n.name, COMPONENT_MANAGER);
     pvc_labels.remove(crate::k8s::LABEL_MANAGED_BY);
     typed(json!({
@@ -319,6 +352,240 @@ pub fn manager_statefulset(ward: &Ward, d: &Defaults) -> StatefulSet {
             }],
         },
     }))
+}
+
+/// Environment, volumes, and mounts that point the manager at its
+/// PostgreSQL server, empty when detections stay in a file.
+#[allow(
+    clippy::option_if_let_else,
+    reason = "the external arm also adds the CA volume"
+)]
+fn postgresql_client(ward: &Ward) -> (Vec<Value>, Vec<Value>, Vec<Value>) {
+    let n = Names::of(ward);
+    let pg = &ward.spec.postgresql;
+    if !pg.enabled {
+        return (Vec::new(), Vec::new(), Vec::new());
+    }
+    let mut volumes = Vec::new();
+    let mut mounts = vec![
+        json!({"name": "postgresql-auth", "mountPath": "/etc/ward/postgresql", "readOnly": true}),
+    ];
+    let (host, port, database, user, password, ssl, ca) = match &pg.external {
+        Some(e) => {
+            if let Some(ca) = &e.ca_secret_ref {
+                volumes.push(json!({"name": "postgresql-ca", "secret": {"secretName": ca.name, "items": [{"key": ca.key, "path": "ca.crt"}]}}));
+                mounts.push(json!({"name": "postgresql-ca", "mountPath": "/etc/ward/postgresql-ca", "readOnly": true}));
+            }
+            (
+                e.host.clone(),
+                e.port,
+                e.database.clone(),
+                e.username.clone(),
+                (
+                    e.password_secret_ref.name.clone(),
+                    e.password_secret_ref.key.clone(),
+                ),
+                e.ssl_mode,
+                "/etc/ward/postgresql-ca/ca.crt",
+            )
+        }
+        None => (
+            n.postgresql_host(),
+            5432,
+            POSTGRESQL_USER.to_string(),
+            POSTGRESQL_USER.to_string(),
+            (n.postgresql_auth(), POSTGRESQL_PASSWORD_KEY.to_string()),
+            SslMode::VerifyFull,
+            "/etc/ward/tls/ca.crt",
+        ),
+    };
+    volumes.push(json!({"name": "postgresql-auth", "secret": {"secretName": password.0, "items": [{"key": password.1, "path": "password"}]}}));
+    let mut env = vec![
+        json!({"name": "WARD_POSTGRESQL_HOST", "value": host}),
+        json!({"name": "WARD_POSTGRESQL_PORT", "value": port.to_string()}),
+        json!({"name": "WARD_POSTGRESQL_DATABASE", "value": database}),
+        json!({"name": "WARD_POSTGRESQL_USER", "value": user}),
+        json!({"name": "WARD_POSTGRESQL_PASSWORD_FILE", "value": "/etc/ward/postgresql/password"}),
+    ];
+    if ssl == SslMode::VerifyFull {
+        env.push(json!({"name": "WARD_POSTGRESQL_CA_FILE", "value": ca}));
+    }
+    (env, volumes, mounts)
+}
+
+pub fn postgresql_service(ward: &Ward) -> Service {
+    let n = Names::of(ward);
+    typed(json!({
+        "metadata": meta(ward, &n.postgresql(), COMPONENT_POSTGRESQL),
+        "spec": {
+            "selector": selector(&n, COMPONENT_POSTGRESQL)["matchLabels"],
+            "ports": [{"name": "postgresql", "port": POSTGRESQL_PORT, "targetPort": "postgresql"}],
+        },
+    }))
+}
+
+/// `pg_hba.conf` of the embedded server: TLS with a password over the
+/// network, the socket only inside the container.
+pub fn postgresql_config(ward: &Ward) -> ConfigMap {
+    let n = Names::of(ward);
+    typed(json!({
+        "metadata": meta(ward, &n.postgresql(), COMPONENT_POSTGRESQL),
+        "data": {"pg_hba.conf": PG_HBA},
+    }))
+}
+
+/// Only the manager reaches the embedded server.
+pub fn postgresql_network_policy(ward: &Ward) -> NetworkPolicy {
+    let n = Names::of(ward);
+    typed(json!({
+        "metadata": meta(ward, &n.postgresql(), COMPONENT_POSTGRESQL),
+        "spec": {
+            "podSelector": selector(&n, COMPONENT_POSTGRESQL),
+            "policyTypes": ["Ingress"],
+            "ingress": [{
+                "from": [{"podSelector": selector(&n, COMPONENT_MANAGER)}],
+                "ports": [{"protocol": "TCP", "port": POSTGRESQL_PORT}],
+            }],
+        },
+    }))
+}
+
+pub fn postgresql_statefulset(ward: &Ward, d: &Defaults) -> Option<StatefulSet> {
+    let n = Names::of(ward);
+    let pg = ward.spec.postgresql.embedded()?;
+    let image = pg
+        .image
+        .clone()
+        .unwrap_or_else(|| d.postgresql_image.clone());
+    let ready = json!({"exec": {"command": ["pg_isready", "-h", "/var/run/postgresql", "-U", POSTGRESQL_USER, "-d", POSTGRESQL_USER]}, "periodSeconds": 10});
+    let mut live = ready.clone();
+    live["failureThreshold"] = json!(6);
+    let mut startup = ready.clone();
+    startup["failureThreshold"] = json!(60);
+    startup["periodSeconds"] = json!(5);
+    let mut pvc_labels = labels(&n.name, COMPONENT_POSTGRESQL);
+    pvc_labels.remove(crate::k8s::LABEL_MANAGED_BY);
+    let read_only = 0o440;
+    Some(typed(json!({
+        "metadata": meta(ward, &n.postgresql(), COMPONENT_POSTGRESQL),
+        "spec": {
+            "serviceName": n.postgresql(),
+            "replicas": 1,
+            "selector": selector(&n, COMPONENT_POSTGRESQL),
+            "persistentVolumeClaimRetentionPolicy": {"whenDeleted": "Delete", "whenScaled": "Retain"},
+            "template": {
+                "metadata": {"labels": labels(&n.name, COMPONENT_POSTGRESQL)},
+                "spec": {
+                    "automountServiceAccountToken": false,
+                    "imagePullSecrets": pull_secrets(&ward.spec),
+                    "nodeSelector": pg.node_selector,
+                    "tolerations": pg.tolerations,
+                    "affinity": pg.affinity,
+                    "securityContext": {"runAsNonRoot": true, "runAsUser": POSTGRESQL_UID, "runAsGroup": POSTGRESQL_UID, "fsGroup": POSTGRESQL_UID, "seccompProfile": {"type": "RuntimeDefault"}},
+                    "terminationGracePeriodSeconds": 60,
+                    "containers": [{
+                        "name": "postgresql",
+                        "image": image,
+                        "imagePullPolicy": "IfNotPresent",
+                        "args": [
+                            "-c", "ssl=on",
+                            "-c", "ssl_cert_file=/etc/ward/tls/tls.crt",
+                            "-c", "ssl_key_file=/etc/ward/tls/tls.key",
+                            "-c", "hba_file=/etc/ward/postgresql/pg_hba.conf",
+                            "-c", "password_encryption=scram-sha-256",
+                        ],
+                        "env": [
+                            {"name": "POSTGRES_USER", "value": POSTGRESQL_USER},
+                            {"name": "POSTGRES_DB", "value": POSTGRESQL_USER},
+                            {"name": "POSTGRES_PASSWORD_FILE", "value": "/etc/ward/auth/password"},
+                            {"name": "PGDATA", "value": "/var/lib/postgresql/data/pgdata"},
+                        ],
+                        "ports": [{"name": "postgresql", "containerPort": POSTGRESQL_PORT}],
+                        "startupProbe": startup,
+                        "readinessProbe": ready,
+                        "livenessProbe": live,
+                        "resources": resources(pg.resources.as_ref(), "50m", "128Mi", "512Mi"),
+                        "securityContext": {"allowPrivilegeEscalation": false, "readOnlyRootFilesystem": true, "capabilities": {"drop": ["ALL"]}},
+                        "volumeMounts": [
+                            {"name": "data", "mountPath": "/var/lib/postgresql/data"},
+                            {"name": "run", "mountPath": "/var/run/postgresql"},
+                            {"name": "tmp", "mountPath": "/tmp"},
+                            {"name": "tls", "mountPath": "/etc/ward/tls", "readOnly": true},
+                            {"name": "config", "mountPath": "/etc/ward/postgresql", "readOnly": true},
+                            {"name": "auth", "mountPath": "/etc/ward/auth", "readOnly": true},
+                        ],
+                    }],
+                    "volumes": [
+                        {"name": "run", "emptyDir": {}},
+                        {"name": "tmp", "emptyDir": {}},
+                        {"name": "tls", "secret": {"secretName": n.postgresql_tls(), "defaultMode": read_only}},
+                        {"name": "config", "configMap": {"name": n.postgresql()}},
+                        {"name": "auth", "secret": {"secretName": n.postgresql_auth(), "defaultMode": read_only}},
+                    ],
+                },
+            },
+            "volumeClaimTemplates": [{
+                "metadata": {"name": "data", "labels": pvc_labels},
+                "spec": {
+                    "accessModes": ["ReadWriteOnce"],
+                    "storageClassName": pg.storage.storage_class_name,
+                    "resources": {"requests": {"storage": pg.storage.size}},
+                },
+            }],
+        },
+    })))
+}
+
+/// The Gateway API `HTTPRoute` kind, which `k8s-openapi` does not carry.
+pub fn http_route_resource() -> ApiResource {
+    ApiResource {
+        group: "gateway.networking.k8s.io".into(),
+        version: "v1".into(),
+        api_version: "gateway.networking.k8s.io/v1".into(),
+        kind: "HTTPRoute".into(),
+        plural: "httproutes".into(),
+    }
+}
+
+/// The `HTTPRoute` to the manager admin API, when the manager runs and the
+/// route is enabled.
+pub fn manager_http_route(ward: &Ward) -> Option<DynamicObject> {
+    let n = Names::of(ward);
+    let route = ward.spec.manager.http_route.as_ref()?;
+    if !ward.spec.manager.enabled || !route.enabled {
+        return None;
+    }
+    let mut m = meta(ward, &n.manager(), COMPONENT_MANAGER);
+    for (k, v) in &route.labels {
+        m["labels"][k] = json!(v);
+    }
+    m["annotations"] = json!(route.annotations);
+    let parents: Vec<Value> = route
+        .parent_refs
+        .iter()
+        .map(|p| {
+            let mut r =
+                json!({"group": p.group, "kind": p.kind, "name": p.name, "namespace": p.namespace});
+            if let Some(s) = &p.section_name {
+                r["sectionName"] = json!(s);
+            }
+            if let Some(port) = p.port {
+                r["port"] = json!(port);
+            }
+            r
+        })
+        .collect();
+    let mut obj = DynamicObject::new(&n.manager(), &http_route_resource()).within(&n.namespace);
+    obj.metadata = typed(m);
+    obj.data = json!({"spec": {
+        "parentRefs": parents,
+        "hostnames": route.hostnames,
+        "rules": [{
+            "matches": [{"path": {"type": "PathPrefix", "value": "/v1"}}],
+            "backendRefs": [{"group": "", "kind": "Service", "name": n.manager(), "namespace": n.namespace, "port": ADMIN_PORT}],
+        }],
+    }});
+    Some(obj)
 }
 
 fn update_strategy(s: Option<&AgentUpdateStrategy>) -> Value {
@@ -461,6 +728,7 @@ pub(crate) mod tests {
             ward_namespace: "ward-system".into(),
             allowed_image_prefixes: Vec::new(),
             allow_privileged_agent: false,
+            postgresql_image: "docker.io/library/postgres:18.6-alpine3.24".into(),
         }
     }
 
@@ -587,6 +855,145 @@ pub(crate) mod tests {
         let plain =
             serde_json::to_value(agent_daemonset(&ward(WardSpec::default()), &defaults())).unwrap();
         assert!(plain["spec"]["template"]["spec"].get("dnsPolicy").is_none());
+    }
+
+    #[test]
+    fn manager_http_route_targets_the_admin_api() {
+        let mut spec = WardSpec::default();
+        assert!(manager_http_route(&ward(spec.clone())).is_none());
+        spec.manager.http_route = Some(crate::crd::HttpRouteSpec {
+            enabled: true,
+            parent_refs: vec![crate::crd::ParentRef {
+                group: "gateway.networking.k8s.io".into(),
+                kind: "Gateway".into(),
+                name: "public".into(),
+                namespace: "gateway-system".into(),
+                section_name: Some("https".into()),
+                port: None,
+            }],
+            hostnames: vec!["ward.example.com".into()],
+            labels: BTreeMap::from([("team".into(), "security".into())]),
+            annotations: BTreeMap::from([("example.com/owner".into(), "sec".into())]),
+        });
+        let route = serde_json::to_value(manager_http_route(&ward(spec.clone())).unwrap()).unwrap();
+        assert_eq!(route["apiVersion"], "gateway.networking.k8s.io/v1");
+        assert_eq!(route["kind"], "HTTPRoute");
+        assert_eq!(route["metadata"]["labels"]["team"], "security");
+        assert_eq!(
+            route["metadata"]["labels"]["app.kubernetes.io/component"],
+            "manager"
+        );
+        assert_eq!(route["metadata"]["annotations"]["example.com/owner"], "sec");
+        let spec_json = &route["spec"];
+        assert_eq!(spec_json["parentRefs"][0]["namespace"], "gateway-system");
+        assert_eq!(spec_json["parentRefs"][0]["sectionName"], "https");
+        assert!(spec_json["parentRefs"][0].get("port").is_none());
+        assert_eq!(spec_json["hostnames"][0], "ward.example.com");
+        let backend = &spec_json["rules"][0]["backendRefs"][0];
+        assert_eq!(backend["kind"], "Service");
+        assert_eq!(backend["group"], "");
+        assert_eq!(backend["name"], "default-manager");
+        assert_eq!(backend["namespace"], "ward-system");
+        assert_eq!(backend["port"], ADMIN_PORT);
+        assert_eq!(spec_json["rules"][0]["matches"][0]["path"]["value"], "/v1");
+        spec.manager.enabled = false;
+        assert!(manager_http_route(&ward(spec)).is_none());
+    }
+
+    #[test]
+    fn postgresql_embedded_and_external() {
+        let env = |sts: &Value| -> BTreeMap<String, String> {
+            sts["spec"]["template"]["spec"]["containers"][0]["env"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter_map(|e| {
+                    Some((
+                        e["name"].as_str()?.to_string(),
+                        e["value"].as_str()?.to_string(),
+                    ))
+                })
+                .collect()
+        };
+        let mut spec = WardSpec::default();
+        let w = ward(spec.clone());
+        assert!(postgresql_statefulset(&w, &defaults()).is_none());
+        let plain = serde_json::to_value(manager_statefulset(&w, &defaults())).unwrap();
+        assert!(!env(&plain).contains_key("WARD_POSTGRESQL_HOST"));
+
+        spec.postgresql.enabled = true;
+        let w = ward(spec.clone());
+        let manager = serde_json::to_value(manager_statefulset(&w, &defaults())).unwrap();
+        let e = env(&manager);
+        assert_eq!(
+            e["WARD_POSTGRESQL_HOST"],
+            "default-postgresql.ward-system.svc"
+        );
+        assert_eq!(e["WARD_POSTGRESQL_CA_FILE"], "/etc/ward/tls/ca.crt");
+        let pg = serde_json::to_value(postgresql_statefulset(&w, &defaults()).unwrap()).unwrap();
+        let pod = &pg["spec"]["template"]["spec"];
+        assert_eq!(pod["containers"][0]["image"], defaults().postgresql_image);
+        assert_eq!(pod["securityContext"]["runAsUser"], 70);
+        assert_eq!(pod["automountServiceAccountToken"], false);
+        assert_eq!(
+            pod["volumes"][2]["secret"]["secretName"],
+            "default-postgresql-tls"
+        );
+        assert_eq!(pod["volumes"][2]["secret"]["defaultMode"], 0o440);
+        assert_eq!(
+            pg["spec"]["volumeClaimTemplates"][0]["spec"]["resources"]["requests"]["storage"],
+            "8Gi"
+        );
+        assert_eq!(
+            pg["spec"]["persistentVolumeClaimRetentionPolicy"]["whenDeleted"],
+            "Delete"
+        );
+        let svc = serde_json::to_value(postgresql_service(&w)).unwrap();
+        assert_eq!(
+            svc["spec"]["selector"]["app.kubernetes.io/component"],
+            "postgresql"
+        );
+        let np = serde_json::to_value(postgresql_network_policy(&w)).unwrap();
+        assert_eq!(
+            np["spec"]["ingress"][0]["from"][0]["podSelector"]["matchLabels"]["app.kubernetes.io/component"],
+            "manager"
+        );
+        let hba = serde_json::to_value(postgresql_config(&w)).unwrap();
+        assert!(
+            hba["data"]["pg_hba.conf"]
+                .as_str()
+                .unwrap()
+                .contains("hostssl")
+        );
+
+        spec.postgresql.external = Some(crate::crd::ExternalPostgresql {
+            host: "db.example.com".into(),
+            port: 6432,
+            database: "sec".into(),
+            username: "ward_rw".into(),
+            password_secret_ref: crate::crd::SecretKeyRef {
+                name: "db".into(),
+                key: "pw".into(),
+            },
+            ssl_mode: SslMode::Disable,
+            ca_secret_ref: None,
+        });
+        let w = ward(spec);
+        assert!(postgresql_statefulset(&w, &defaults()).is_none());
+        let manager = serde_json::to_value(manager_statefulset(&w, &defaults())).unwrap();
+        let e = env(&manager);
+        assert_eq!(e["WARD_POSTGRESQL_HOST"], "db.example.com");
+        assert_eq!(e["WARD_POSTGRESQL_PORT"], "6432");
+        assert_eq!(e["WARD_POSTGRESQL_USER"], "ward_rw");
+        assert!(!e.contains_key("WARD_POSTGRESQL_CA_FILE"));
+        let vols = manager["spec"]["template"]["spec"]["volumes"]
+            .as_array()
+            .unwrap();
+        let auth = vols
+            .iter()
+            .find(|v| v["name"] == "postgresql-auth")
+            .unwrap();
+        assert_eq!(auth["secret"]["items"][0]["key"], "pw");
     }
 
     #[test]

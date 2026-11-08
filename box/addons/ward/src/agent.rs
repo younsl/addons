@@ -15,6 +15,7 @@ mod process;
 mod procfs;
 mod report;
 mod response;
+mod rootcheck;
 mod scanner;
 mod store;
 #[cfg(any(target_os = "linux", test))]
@@ -503,6 +504,63 @@ impl Ctx {
         }
         *baseline = Some(now);
     }
+
+    /// Runs the rootkit anomaly checks and reports findings not reported
+    /// since the agent started.
+    async fn rootcheck(&self, reported: &mut HashSet<rootcheck::Finding>) {
+        if !self.policy().rootcheck.enabled {
+            return;
+        }
+        let proc = self.proc.clone();
+        let Ok(findings) = tokio::task::spawn_blocking(move || {
+            let host = proc.host_root();
+            let listed = proc.pids().into_iter().collect();
+            let mut out: Vec<rootcheck::Finding> = rootcheck::hidden_processes(
+                &listed,
+                proc.pid_max(),
+                rootcheck::signal_alive,
+                |p| proc.tgid(p),
+                || proc.pids().into_iter().collect(),
+            )
+            .into_iter()
+            .map(rootcheck::Finding::HiddenProcess)
+            .collect();
+            out.extend(rootcheck::dev_anomalies(&host));
+            out.extend(rootcheck::temp_setuid(&host));
+            out
+        })
+        .await
+        else {
+            return;
+        };
+        for f in findings {
+            if !reported.insert(f.clone()) {
+                continue;
+            }
+            let severity = match f {
+                rootcheck::Finding::HiddenProcess(_) | rootcheck::Finding::TempSetuid(_) => {
+                    Severity::High
+                }
+                rootcheck::Finding::DevFile(_) | rootcheck::Finding::DevHidden(_) => {
+                    Severity::Medium
+                }
+            };
+            let mut d =
+                Detection::new(&self.node, Kind::Rootcheck, f.rule(), severity, f.message());
+            if let rootcheck::Finding::HiddenProcess(pid) = f {
+                d.process = Some(crate::policy::ProcessInfo {
+                    pid,
+                    ..crate::policy::ProcessInfo::default()
+                });
+            }
+            d.file = f.path().map(|p| FileInfo {
+                path: p.to_string(),
+                sha256: None,
+                size: None,
+            });
+            self.emit(d).await;
+        }
+    }
 }
 
 /// Polls `/proc` for new and exited processes.
@@ -770,6 +828,26 @@ pub async fn run(args: AgentArgs, shutdown: watch::Receiver<bool>) -> anyhow::Re
             loop {
                 ctx.integrity(&mut baseline).await;
                 let secs = ctx.policy().integrity.interval_secs.max(10);
+                tokio::select! {
+                    () = tokio::time::sleep(Duration::from_secs(secs)) => {}
+                    _ = shutdown.changed() => return,
+                }
+            }
+        });
+    }
+
+    {
+        let ctx = ctx.clone();
+        let mut shutdown = shutdown.clone();
+        tokio::spawn(async move {
+            tokio::select! {
+                () = tokio::time::sleep(FIRST_FULL_SCAN) => {}
+                _ = shutdown.changed() => return,
+            }
+            let mut reported = HashSet::new();
+            loop {
+                ctx.rootcheck(&mut reported).await;
+                let secs = ctx.policy().rootcheck.interval_secs.max(600);
                 tokio::select! {
                     () = tokio::time::sleep(Duration::from_secs(secs)) => {}
                     _ = shutdown.changed() => return,

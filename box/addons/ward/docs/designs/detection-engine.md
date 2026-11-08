@@ -28,7 +28,7 @@ Severity decides, not the source. A source order such as `WardSignature` over fe
 
 ## Feed hash index
 
-The MalwareBazaar dump holds about a million SHA-256 hashes. As a hash set in memory that is tens of megabytes per agent, multiplied by every node.
+A hash feed can hold a million SHA-256 hashes (the full MalwareBazaar dump does). As a hash set in memory that is tens of megabytes per agent, multiplied by every node.
 
 The agent stores feed hashes instead as a sorted file of 34-byte records on the node (32 bytes of hash and a 2-byte index into the hash set that names the match and holds its severity), with a bloom filter in memory in front:
 

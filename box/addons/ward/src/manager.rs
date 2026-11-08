@@ -2,6 +2,7 @@
 
 mod api;
 mod auth;
+mod postgres;
 mod relay;
 mod store;
 
@@ -21,6 +22,7 @@ use crate::policy::{POLICY_FILE, Policy};
 use crate::rollout::{ROLLOUT_FILE, Rollout};
 
 pub use auth::AUDIENCE;
+pub use postgres::Settings as PostgresqlSettings;
 
 #[derive(Clone, Debug)]
 pub struct ManagerArgs {
@@ -36,6 +38,8 @@ pub struct ManagerArgs {
     pub retention: usize,
     /// Namespace of the agent `ServiceAccount` whose tokens are accepted.
     pub namespace: String,
+    /// Keep detections in PostgreSQL instead of a file in `data_dir`.
+    pub postgresql: Option<postgres::Settings>,
 }
 
 const RELAY_EVERY: Duration = Duration::from_secs(30);
@@ -67,6 +71,58 @@ pub async fn run(args: ManagerArgs, shutdown: watch::Receiver<bool>) -> anyhow::
     serve_with(args, auth, shutdown).await
 }
 
+/// Loads the stored detections and starts the writer that persists new
+/// ones, to PostgreSQL or the file in `data_dir`. `None` means shutdown
+/// came first.
+async fn open_store(
+    args: &ManagerArgs,
+    retention: usize,
+    rx: mpsc::UnboundedReceiver<Vec<crate::policy::Detection>>,
+    shutdown: watch::Receiver<bool>,
+) -> anyhow::Result<Option<std::collections::VecDeque<crate::policy::Detection>>> {
+    let path = args.data_dir.join(store::FILE);
+    let items = if let Some(pg) = &args.postgresql {
+        let Some(client) = postgres::connect_retrying(pg, shutdown.clone()).await else {
+            return Ok(None);
+        };
+        let per_node = store::per_node(retention);
+        let mut items = postgres::load(&client, retention)
+            .await
+            .context("load detections from postgresql")?;
+        if items.is_empty() {
+            let (old, _) = store::load(&path, retention);
+            if !old.is_empty() {
+                let old: Vec<_> = old.into_iter().collect();
+                postgres::insert(&client, &old, retention, per_node)
+                    .await
+                    .context("import detections into postgresql")?;
+                tracing::info!(
+                    count = old.len(),
+                    "imported detections from the manager volume into postgresql"
+                );
+                items = postgres::load(&client, retention)
+                    .await
+                    .context("load detections from postgresql")?;
+            }
+        }
+        tracing::info!(host = %pg.host, tls = pg.ca_file.is_some(), "detections stored in postgresql");
+        tokio::spawn(postgres::writer(
+            pg.clone(),
+            client,
+            retention,
+            per_node,
+            shutdown.clone(),
+            rx,
+        ));
+        items
+    } else {
+        let (items, lines) = store::load(&path, retention);
+        tokio::spawn(store::writer(path, retention, lines, rx));
+        items
+    };
+    Ok(Some(items))
+}
+
 async fn serve_with(
     args: ManagerArgs,
     auth: auth::Authenticator,
@@ -82,11 +138,11 @@ async fn serve_with(
     ));
 
     std::fs::create_dir_all(&args.data_dir).context("data dir")?;
-    let path = args.data_dir.join(store::FILE);
     let retention = args.retention.max(100);
-    let (items, lines) = store::load(&path, retention);
     let (tx, rx) = mpsc::unbounded_channel();
-    tokio::spawn(store::writer(path, retention, lines, rx));
+    let Some(items) = open_store(&args, retention, rx, shutdown.clone()).await? else {
+        return Ok(());
+    };
     let store = Arc::new(store::Store::new(items, retention, tx));
     #[allow(clippy::cast_possible_wrap)]
     metrics.stored.set(store.len() as i64);
@@ -237,6 +293,7 @@ mod tests {
             registry_auth: None,
             retention: 100,
             namespace: "ward-system".into(),
+            postgresql: None,
         };
         let auth = auth::Authenticator::Static(std::collections::HashMap::from([(
             "agent-token".to_string(),

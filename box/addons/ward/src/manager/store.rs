@@ -24,6 +24,13 @@ pub struct Query {
     pub engine: Option<String>,
 }
 
+/// The most detections one node may hold, so a single noisy or
+/// compromised node cannot push every other node's out of retention.
+pub const fn per_node(retention: usize) -> usize {
+    let share = retention / 10;
+    if share < 100 { 100 } else { share }
+}
+
 pub struct Store {
     items: RwLock<VecDeque<Detection>>,
     retention: usize,
@@ -122,11 +129,8 @@ impl Store {
         self.items.read().map_or(0, |i| i.len())
     }
 
-    /// The most detections one node may hold, so a single noisy or
-    /// compromised node cannot push every other node's out of retention.
     pub const fn per_node(&self) -> usize {
-        let share = self.retention / 10;
-        if share < 100 { 100 } else { share }
+        per_node(self.retention)
     }
 
     pub fn add(&self, batch: Vec<Detection>) {

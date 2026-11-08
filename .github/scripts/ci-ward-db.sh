@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Build, test, sign, and publish the ward signature database as an OCI artifact.
 # Usage: ci-ward-db.sh <fetch|plan|corpus|build|check|publish>
-#   fetch    download the MalwareBazaar SHA-256 dump and the latest YARA Forge core
-#            release with its provenance, and copy the repository allowlist
+#   fetch    download the malicious-hash SHA-256 lists and the latest YARA Forge
+#            core release (neither needs an account or key) with their provenance,
+#            and copy the repository allowlist
 #   plan     compare the inputs with latest, skip the rest when they match
 #   corpus   export known-good images for both architectures
 #   build    run `ward feed build`, pruning what matches the allowlist and corpus
@@ -10,8 +11,7 @@
 #   publish  sign with cosign and push with oras, then tag latest
 # Env: WORK_DIR, WARD_BIN, REPOSITORY (ghcr.io/<owner>/ward-db), GITHUB_OUTPUT,
 #   GITHUB_RUN_NUMBER, GITHUB_STEP_SUMMARY, FORCE (true rebuilds identical inputs),
-#   MAX_PRUNED, ABUSE_CH_AUTH_KEY (optional), COSIGN_PRIVATE_KEY, COSIGN_PASSWORD, REGISTRY_USER,
-#   REGISTRY_PASSWORD (publish).
+#   MAX_PRUNED, COSIGN_PRIVATE_KEY, COSIGN_PASSWORD, REGISTRY_USER, REGISTRY_PASSWORD (publish).
 set -euo pipefail
 
 WORK_DIR="${WORK_DIR:?}"
@@ -39,32 +39,35 @@ CORPUS_IMAGES=(
 )
 INPUTS_ANNOTATION="sh.ward.db.inputs-digest"
 YARA_FORGE_REPO="https://github.com/YARAHQ/yara-forge"
+HASH_REPO="https://github.com/romainmarcoux/malicious-hash"
+CURL=(curl -fsSL --retry 5 --retry-all-errors)
+
+source_json() {
+  jq -n --arg name "$1" --arg license "$2" --arg url "$3" --arg version "$4" --arg sha256 "$5" \
+    '{name: $name, license: $license, url: $url, version: $version, sha256: $sha256}'
+}
 
 fetch() {
-  mkdir -p "${SOURCES}/yara"
-  local auth=()
-  if [[ -n "${ABUSE_CH_AUTH_KEY:-}" ]]; then
-    auth=(-H "Auth-Key: ${ABUSE_CH_AUTH_KEY}")
-  fi
-  curl -fsSL --retry 5 --retry-all-errors "${auth[@]}" -o "${SOURCES}/malwarebazaar.zip" \
-    https://bazaar.abuse.ch/export/txt/sha256/full/
-  unzip -p "${SOURCES}/malwarebazaar.zip" > "${SOURCES}/malwarebazaar.txt"
-  rm -f "${SOURCES}/malwarebazaar.zip"
+  local clone="${WORK_DIR}/malicious-hash" commit tag zip="${SOURCES}/yara-forge-core.zip"
+  mkdir -p "${SOURCES}/hashes" "${SOURCES}/yara"
 
-  local tag zip="${SOURCES}/yara-forge-core.zip"
-  tag=$(curl -fsSL --retry 5 --retry-all-errorsI -o /dev/null -w '%{url_effective}' "${YARA_FORGE_REPO}/releases/latest")
+  git clone --quiet --depth 1 "${HASH_REPO}" "${clone}"
+  commit=$(git -C "${clone}" rev-parse HEAD)
+  cp "${clone}"/full-hash-sha256-*.txt "${SOURCES}/hashes/"
+  rm -rf "${clone}"
+  source_json malicious-hash MIT "${HASH_REPO}" "${commit}" "" > "${SOURCES}/hashes/source.json"
+
+  tag=$("${CURL[@]}" -o /dev/null -w '%{url_effective}' "${YARA_FORGE_REPO}/releases/latest")
   tag="${tag##*/}"
-  curl -fsSL --retry 5 --retry-all-errors -o "${zip}" "${YARA_FORGE_REPO}/releases/download/${tag}/yara-forge-rules-core.zip"
+  "${CURL[@]}" -o "${zip}" "${YARA_FORGE_REPO}/releases/download/${tag}/yara-forge-rules-core.zip"
   unzip -q -o -j "${zip}" '*.yar' -d "${SOURCES}/yara"
-  jq -n --arg version "${tag}" --arg sha256 "$(sha256sum "${zip}" | cut -d' ' -f1)" \
-    --arg url "${YARA_FORGE_REPO}" \
-    '{name: "YARA Forge core", license: "Per rule, see the license meta of each rule", url: $url, version: $version, sha256: $sha256}' \
-    > "${SOURCES}/yara/source.json"
+  source_json "YARA Forge core" "Per rule, see the license meta of each rule" "${YARA_FORGE_REPO}" \
+    "${tag}" "$(sha256sum "${zip}" | cut -d' ' -f1)" > "${SOURCES}/yara/source.json"
   rm -f "${zip}"
 
   cp "${ALLOWLIST}" "${SOURCES}/allowlist.txt"
 
-  echo "hashes: $(grep -cvE '^(#|$)' "${SOURCES}/malwarebazaar.txt")"
+  echo "malicious-hash ${commit}: $(cat "${SOURCES}"/hashes/*.txt | grep -cE '^[0-9a-fA-F]{64}$') hashes"
   echo "yara forge ${tag}: $(find "${SOURCES}/yara" -name '*.yar' | wc -l) files"
 }
 
@@ -115,8 +118,9 @@ build() {
   "${WARD_BIN}" feed build \
     --out "${DB}" \
     --revision "${REVISION}" \
-    --malwarebazaar "${SOURCES}/malwarebazaar.txt" \
+    --hash-dir "${SOURCES}/hashes" \
     --yara-dir "${SOURCES}/yara" \
+    --yara-linux-only \
     --allowlist "${SOURCES}/allowlist.txt" \
     --max-pruned "${MAX_PRUNED}" \
     "${args[@]}" 2>&1 | tee "${BUILD_LOG}"

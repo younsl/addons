@@ -113,6 +113,25 @@ impl ProcFs {
             .ok()
     }
 
+    /// The thread group leader of `pid`, which differs for a thread.
+    pub fn tgid(&self, pid: i32) -> Option<i32> {
+        std::fs::read_to_string(self.pid_path(pid, "status"))
+            .ok()?
+            .lines()
+            .find_map(|l| l.strip_prefix("Tgid:"))?
+            .trim()
+            .parse()
+            .ok()
+    }
+
+    /// The highest PID the kernel hands out.
+    pub fn pid_max(&self) -> i32 {
+        std::fs::read_to_string(self.root.join("sys/kernel/pid_max"))
+            .ok()
+            .and_then(|s| s.trim().parse().ok())
+            .unwrap_or(32_768)
+    }
+
     pub fn cgroup(&self, pid: i32) -> Option<String> {
         std::fs::read_to_string(self.pid_path(pid, "cgroup")).ok()
     }
@@ -267,6 +286,8 @@ pub(crate) mod tests {
         assert!(fs.host_root().ends_with("1/root"));
         assert!(fs.root_path(10).ends_with("10/root"));
         assert!(fs.stat(999).is_none());
+        assert!(fs.tgid(999).is_none());
+        assert_eq!(fs.pid_max(), 32_768);
         assert_eq!(fs.cmdline(999), "");
         assert!(ProcFs::new("/nonexistent").pids().is_empty());
     }

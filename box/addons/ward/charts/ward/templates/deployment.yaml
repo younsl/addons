@@ -74,6 +74,8 @@ spec:
               value: {{ join "," .Values.operator.allowedImagePrefixes | quote }}
             - name: WARD_ALLOW_PRIVILEGED_AGENT
               value: {{ .Values.operator.allowPrivilegedAgent | quote }}
+            - name: WARD_POSTGRESQL_IMAGE
+              value: {{ .Values.operator.postgresqlImage | quote }}
             - name: HEALTH_ADDR
               value: {{ printf "0.0.0.0:%d" (int .Values.ports.http) | quote }}
             - name: LOG_LEVEL

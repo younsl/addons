@@ -17,7 +17,7 @@ Files above `scan.maxFileSizeMib` and paths under `exclusions.paths` are skipped
 | --- | --- |
 | Built-in | EICAR test file, XMRig miner, PHP web shells. Stored as hex so the agent binary never contains the bytes it hunts |
 | `WardSignature` | Hashes, literal strings, hex patterns, and YARA rules from your namespace. See [Configuration](configuration.md#wardsignature) |
-| Feed | The signed database: MalwareBazaar SHA-256 hashes and YARA Forge core rules. See [Signature database](signature-database.md) |
+| Feed | The signed database: [malicious-hash](https://github.com/romainmarcoux/malicious-hash) SHA-256 lists and the YARA Forge core rules that can match on Linux. See [Signature database](signature-database.md) |
 | YARA-X | Every YARA rule from the feed and `WardSignatures`, compiled with [YARA-X](https://github.com/VirusTotal/yara-x) when `scan.yara` is on |
 
 ### Precedence
@@ -51,6 +51,22 @@ File integrity monitoring answers whether a sensitive host file changed. The age
 
 The default paths are `/etc/passwd`, `/etc/shadow`, `/etc/group`, `/etc/sudoers`, `/etc/sudoers.d`, `/etc/ssh/sshd_config`, `/root/.ssh/authorized_keys`, `/etc/ld.so.preload`, `/etc/crontab`, `/etc/cron.d`, and `/etc/kubernetes/manifests`. Integrity detections are alerts in both modes.
 
+## Rootcheck
+
+Rootcheck looks for the marks a rootkit leaves instead of known files, after the anomaly checks [Wazuh rootcheck](https://github.com/wazuh/wazuh/tree/main/docs/ref/modules/rootcheck) runs since Wazuh 5.0 (which dropped its rootkit file and trojan signature lists as outdated). Every `spec.rootcheck.interval` (default `12h`) the agent runs:
+
+| Rule | Detects | Severity |
+| --- | --- | --- |
+| `hidden-process` | A PID that answers `kill(pid, 0)` and leads its thread group but is missing from the `/proc` listing, rechecked after a second listing | High |
+| `setuid-in-temp` | A setuid or setgid file under the host `/tmp`, `/var/tmp`, or `/dev/shm` | High |
+| `dev-regular-file` | A regular file in the host `/dev`, where only device nodes belong | Medium |
+| `dev-hidden-entry` | A dot-named entry in the host `/dev`, other than the ones a stock system ships (`.udev`, `.initramfs`, ...) | Medium |
+
+- The `/dev` and temporary directory walks stay on one file system, so `/dev/shm`, `/dev/pts`, and other mounts under `/dev` are not read as `/dev` itself.
+- A finding is reported once per agent start, not on every run.
+- Rootcheck detections are alerts in both modes. A hidden process cannot be trusted to be what `/proc` says, so ward does not act on it.
+- Wazuh's hidden port and promiscuous interface checks are left out: agents do not share the host network namespace, and Kubernetes bridges and CNI interfaces run promiscuous by design.
+
 ## Detection output
 
 Every detection is one JSON line on the agent's stdout with a top-level `detection` object holding the engine, rule, severity, process, file, workload, and actions taken:
@@ -63,4 +79,4 @@ The agent also publishes an Event on the affected Pod (reason `ThreatDetected`, 
 
 ## Conclusion
 
-Signatures catch known files, behavior rules catch known techniques, and integrity monitoring catches tampering with the node itself. What happens after a detection is in [Response](response.md).
+Signatures catch known files, behavior rules catch known techniques, integrity monitoring catches tampering with the node itself, and rootcheck catches what a rootkit hides. What happens after a detection is in [Response](response.md).

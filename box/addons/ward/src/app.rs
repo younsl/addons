@@ -10,7 +10,7 @@ use clap::{Args, Parser, Subcommand};
 use crate::agent::AgentArgs;
 use crate::content::FeedDb;
 use crate::feed::build::{BuildInput, build, check};
-use crate::manager::ManagerArgs;
+use crate::manager::{ManagerArgs, PostgresqlSettings};
 use crate::observability::{shutdown_channel, subscriber};
 use crate::operator::OperatorArgs;
 use crate::operator::resources::Defaults;
@@ -76,6 +76,14 @@ struct OperatorCmd {
     /// Honor `spec.agent.privileged`. Off, such a Ward is refused.
     #[arg(long, env = "WARD_ALLOW_PRIVILEGED_AGENT", default_value_t = false)]
     allow_privileged_agent: bool,
+    /// Image of the embedded PostgreSQL server a Ward deploys with
+    /// `spec.postgresql`.
+    #[arg(
+        long,
+        env = "WARD_POSTGRESQL_IMAGE",
+        default_value = "docker.io/library/postgres:18.6-alpine3.24"
+    )]
+    postgresql_image: String,
     #[arg(long, env = "LEADER_ELECT", default_value_t = false)]
     leader_elect: bool,
     #[arg(long, env = "POD_NAME", default_value = "ward-operator")]
@@ -113,6 +121,26 @@ struct ManagerCmd {
     /// Namespace of the agent `ServiceAccount` whose tokens are accepted
     #[arg(long, env = "POD_NAMESPACE", default_value = "default")]
     namespace: String,
+    /// PostgreSQL host for detections. Unset keeps them in a file in the
+    /// data directory
+    #[arg(long, env = "WARD_POSTGRESQL_HOST")]
+    postgresql_host: Option<String>,
+    #[arg(long, env = "WARD_POSTGRESQL_PORT", default_value_t = 5432)]
+    postgresql_port: u16,
+    #[arg(long, env = "WARD_POSTGRESQL_DATABASE", default_value = "ward")]
+    postgresql_database: String,
+    #[arg(long, env = "WARD_POSTGRESQL_USER", default_value = "ward")]
+    postgresql_user: String,
+    #[arg(
+        long,
+        env = "WARD_POSTGRESQL_PASSWORD_FILE",
+        default_value = "/etc/ward/postgresql/password"
+    )]
+    postgresql_password_file: PathBuf,
+    /// CA bundle the server certificate must chain to. Unset connects
+    /// without TLS
+    #[arg(long, env = "WARD_POSTGRESQL_CA_FILE")]
+    postgresql_ca_file: Option<PathBuf>,
 }
 
 #[derive(Args, Debug)]
@@ -161,12 +189,17 @@ enum FeedCmd {
         out: PathBuf,
         #[arg(long)]
         revision: Option<String>,
-        /// `MalwareBazaar` SHA-256 dump, one digest per line
-        #[arg(long)]
-        malwarebazaar: Vec<PathBuf>,
+        /// Directory of SHA-256 lists (.txt, one digest per line) that
+        /// becomes one hash set, named by its source.json
+        #[arg(long = "hash-dir")]
+        hash_dirs: Vec<PathBuf>,
         /// Directory of .yar or .yara files
         #[arg(long = "yara-dir")]
         yara_dirs: Vec<PathBuf>,
+        /// Leave out YARA rules that only match PE, Mach-O, OLE, RTF, PDF,
+        /// or LNK files
+        #[arg(long)]
+        yara_linux_only: bool,
         /// YAML list of signatures
         #[arg(long)]
         signatures: Vec<PathBuf>,
@@ -195,8 +228,9 @@ fn feed(cmd: FeedCmd) -> anyhow::Result<()> {
         FeedCmd::Build {
             out,
             revision,
-            malwarebazaar,
+            hash_dirs,
             yara_dirs,
+            yara_linux_only,
             signatures,
             allowlist,
             corpus,
@@ -204,8 +238,9 @@ fn feed(cmd: FeedCmd) -> anyhow::Result<()> {
         } => {
             let (db, report) = build(&BuildInput {
                 revision,
-                malwarebazaar,
+                hash_dirs,
                 yara_dirs,
+                yara_linux_only,
                 signatures,
                 allowlists: allowlist,
                 corpus,
@@ -219,7 +254,7 @@ fn feed(cmd: FeedCmd) -> anyhow::Result<()> {
                 eprintln!("pruned {d}");
             }
             println!(
-                "{} revision {}: {} hashes ({} allowlisted), {} signatures, {} YARA rules in {} files ({} dropped), {} pruned against the corpus",
+                "{} revision {}: {} hashes ({} allowlisted), {} signatures, {} YARA rules in {} files ({} dropped, {} non-Linux left out), {} pruned against the corpus",
                 out.display(),
                 db.manifest.revision,
                 report.hashes,
@@ -228,6 +263,7 @@ fn feed(cmd: FeedCmd) -> anyhow::Result<()> {
                 report.yara_rules,
                 report.yara_files,
                 report.dropped_yara.len(),
+                report.foreign_yara,
                 report.pruned.len()
             );
         }
@@ -267,6 +303,7 @@ fn dispatch(cli: Cli) -> anyhow::Result<()> {
                         .filter(|p| !p.is_empty())
                         .collect(),
                     allow_privileged_agent: c.allow_privileged_agent,
+                    postgresql_image: c.postgresql_image,
                 },
                 leader_elect: c.leader_elect,
                 pod_name: c.pod_name,
@@ -288,6 +325,14 @@ fn dispatch(cli: Cli) -> anyhow::Result<()> {
                 registry_auth: c.registry_auth,
                 retention: c.retention,
                 namespace: c.namespace,
+                postgresql: c.postgresql_host.map(|host| PostgresqlSettings {
+                    host,
+                    port: c.postgresql_port,
+                    database: c.postgresql_database,
+                    user: c.postgresql_user,
+                    password_file: c.postgresql_password_file,
+                    ca_file: c.postgresql_ca_file,
+                }),
             };
             crate::manager::run(args, shutdown_channel()).await
         }),
@@ -355,13 +400,15 @@ mod tests {
     fn feed_build_then_check() {
         let dir = tempfile::tempdir().unwrap();
         let out = dir.path().join("db.json.gz");
-        let mb = dir.path().join("mb.txt");
-        std::fs::write(&mb, "a".repeat(64)).unwrap();
+        let mb = dir.path().join("mb");
+        std::fs::create_dir_all(&mb).unwrap();
+        std::fs::write(mb.join("hashes.txt"), "a".repeat(64)).unwrap();
         feed(FeedCmd::Build {
             out: out.clone(),
             revision: Some("t".into()),
-            malwarebazaar: vec![mb],
+            hash_dirs: vec![mb],
             yara_dirs: vec![],
+            yara_linux_only: true,
             signatures: vec![],
             allowlist: vec![],
             corpus: vec![],

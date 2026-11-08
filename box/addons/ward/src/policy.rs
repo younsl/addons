@@ -24,6 +24,8 @@ pub struct Policy {
     pub scan: ScanPolicy,
     pub behavior: BehaviorPolicy,
     pub integrity: IntegrityPolicy,
+    #[serde(default)]
+    pub rootcheck: RootcheckPolicy,
     pub exclusions: Exclusions,
     #[serde(default)]
     pub indicators: Indicators,
@@ -69,6 +71,13 @@ pub struct IntegrityPolicy {
     pub interval_secs: u64,
 }
 
+#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct RootcheckPolicy {
+    pub enabled: bool,
+    pub interval_secs: u64,
+}
+
 fn millis(s: &str, fallback: Duration) -> u64 {
     u64::try_from(parse_duration(s).unwrap_or(fallback).as_millis()).unwrap_or(u64::MAX)
 }
@@ -98,6 +107,10 @@ impl Policy {
                 enabled: spec.integrity.enabled,
                 paths: spec.integrity.paths.clone(),
                 interval_secs: secs(&spec.integrity.interval, Duration::from_mins(5)),
+            },
+            rootcheck: RootcheckPolicy {
+                enabled: spec.rootcheck.enabled,
+                interval_secs: secs(&spec.rootcheck.interval, Duration::from_hours(12)),
             },
             exclusions: spec.exclusions.clone(),
             indicators: spec.indicators.clone(),
@@ -200,6 +213,7 @@ pub enum Engine {
     Signature,
     Behavior,
     Integrity,
+    Rootcheck,
 }
 
 impl Engine {
@@ -208,6 +222,7 @@ impl Engine {
             Self::Signature => "Signature",
             Self::Behavior => "Behavior",
             Self::Integrity => "Integrity",
+            Self::Rootcheck => "Rootcheck",
         }
     }
 }
@@ -358,6 +373,8 @@ mod tests {
         assert_eq!(p.scan.max_file_size_bytes, 32 * 1024 * 1024);
         assert_eq!(p.behavior.poll_interval_ms, 1_000);
         assert_eq!(p.integrity.interval_secs, 300);
+        assert!(p.rootcheck.enabled);
+        assert_eq!(p.rootcheck.interval_secs, 12 * 3600);
         assert!(p.path_excluded("/usr/share/doc/x"));
         assert!(!p.path_excluded("/usr/bin/x"));
         assert!(p.namespace_excluded("kube-system"));
@@ -405,6 +422,7 @@ mod tests {
         assert_eq!(Severity::parse("nope"), None);
         assert!(Severity::Critical > Severity::High);
         assert_eq!(Engine::Integrity.as_str(), "Integrity");
+        assert_eq!(Engine::Rootcheck.as_str(), "Rootcheck");
         assert_eq!(Engine::Signature.as_str(), "Signature");
         assert_eq!(Engine::Behavior.as_str(), "Behavior");
         assert_eq!(Response::Kill.as_str(), "Kill");

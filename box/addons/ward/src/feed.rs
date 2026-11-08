@@ -3,6 +3,7 @@
 
 pub mod build;
 pub mod oci;
+mod platform;
 
 use crate::content::{ContentError, FeedDb, check_digest, verify_signature};
 use crate::crd::FeedSpec;

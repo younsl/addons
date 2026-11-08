@@ -98,7 +98,7 @@ impl HashSet32 {
         }
     }
 
-    pub fn digests(&self) -> Result<Vec<[u8; 32]>, ContentError> {
+    fn raw(&self) -> Result<Vec<u8>, ContentError> {
         let raw = B64
             .decode(&self.data)
             .map_err(|e| ContentError::Decode(format!("hash set {}: {e}", self.name)))?;
@@ -108,7 +108,15 @@ impl HashSet32 {
                 self.name
             )));
         }
-        Ok(raw.as_chunks::<32>().0.to_vec())
+        Ok(raw)
+    }
+
+    pub fn digests(&self) -> Result<Vec<[u8; 32]>, ContentError> {
+        Ok(self.raw()?.as_chunks::<32>().0.to_vec())
+    }
+
+    pub fn count(&self) -> Result<usize, ContentError> {
+        Ok(self.raw()?.len() / 32)
     }
 }
 
@@ -143,20 +151,28 @@ impl FeedDb {
         gz.finish().unwrap_or_default()
     }
 
+    /// Decodes without holding the decompressed JSON in memory.
     pub fn decode(bytes: &[u8]) -> Result<Self, ContentError> {
-        let mut json = Vec::new();
-        flate2::read::GzDecoder::new(bytes)
-            .take(MAX_DB_BYTES)
-            .read_to_end(&mut json)
-            .map_err(|e| ContentError::Decode(e.to_string()))?;
+        let json = std::io::BufReader::new(flate2::read::GzDecoder::new(bytes).take(MAX_DB_BYTES));
         let db: Self =
-            serde_json::from_slice(&json).map_err(|e| ContentError::Decode(e.to_string()))?;
+            serde_json::from_reader(json).map_err(|e| ContentError::Decode(e.to_string()))?;
         if db.manifest.min_engine_version > ENGINE_VERSION {
             return Err(ContentError::Engine {
                 need: db.manifest.min_engine_version,
             });
         }
         Ok(db)
+    }
+
+    /// Checks what can fail an engine build, without building one: hash sets
+    /// are whole digests and signatures compile. YARA rules are left to the
+    /// agents, which drop a rule that fails and keep the rest.
+    pub fn validate(&self) -> Result<(), ContentError> {
+        for set in &self.hash_sets {
+            set.count()?;
+        }
+        SignatureDb::compile(&self.signatures)?;
+        Ok(())
     }
 }
 
@@ -542,11 +558,16 @@ pub(crate) mod tests {
     fn hash_sets_pack_and_reject_bad_data() {
         let s = HashSet32::pack("x", Severity::Low, "", &[[1; 32], [2; 32]]);
         assert_eq!(s.digests().unwrap(), vec![[1; 32], [2; 32]]);
+        assert_eq!(s.count().unwrap(), 2);
         let bad = HashSet32 {
             data: B64.encode([0u8; 31]),
             ..s.clone()
         };
         assert!(bad.digests().is_err());
+        let mut db = sample_db();
+        db.validate().unwrap();
+        db.hash_sets.push(bad);
+        assert!(db.validate().is_err());
         let worse = HashSet32 {
             data: "!!".into(),
             ..s

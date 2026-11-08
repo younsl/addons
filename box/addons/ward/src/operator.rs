@@ -15,10 +15,11 @@ use futures::StreamExt as _;
 use k8s_openapi::api::apps::v1::{DaemonSet, StatefulSet};
 use k8s_openapi::api::coordination::v1::Lease;
 use k8s_openapi::api::core::v1::{ConfigMap, Node, Secret, Service, ServiceAccount};
+use k8s_openapi::api::networking::v1::NetworkPolicy;
 use k8s_openapi::api::rbac::v1::{ClusterRoleBinding, RoleBinding};
 use k8s_openapi::apimachinery::pkg::apis::meta::v1::Condition;
 use kube::ResourceExt as _;
-use kube::api::{Api, DeleteParams, ListParams, Patch, PatchParams};
+use kube::api::{Api, DeleteParams, DynamicObject, ListParams, Patch, PatchParams};
 use kube::runtime::controller::{Action, Controller};
 use kube::runtime::finalizer::{Event as Finalizer, finalizer};
 use kube::runtime::reflector::ObjectRef;
@@ -31,7 +32,6 @@ use prometheus_client::registry::Registry;
 use serde_json::json;
 use tokio::sync::watch;
 
-use crate::content::{Engine, EngineParts};
 use crate::crd::{ContentStatus, Ward, WardSignature, WardStatus, parse_duration};
 use crate::feed::oci::{Reference, Registry as OciRegistry, credentials};
 use crate::k8s::{AgentStatus, COMPONENT_AGENT, K8sError, selector, time};
@@ -226,6 +226,17 @@ pub fn refusal(w: &Ward, d: &Defaults) -> Option<(&'static str, String)> {
             format!("spec.image {image} is outside the operator's allowed image prefixes"),
         ));
     }
+    if let Some(image) = w.spec.postgresql.embedded().and_then(|e| e.image)
+        && image != d.postgresql_image
+        && !image_allowed(&image, d)
+    {
+        return Some((
+            "ImageNotAllowed",
+            format!(
+                "spec.postgresql.embedded.image {image} is outside the operator's allowed image prefixes"
+            ),
+        ));
+    }
     if w.spec.agent.privileged && !d.allow_privileged_agent {
         return Some((
             "PrivilegedNotAllowed",
@@ -341,19 +352,7 @@ async fn check_feed(
             return Err(e.to_string());
         }
     };
-    let db = pulled.db;
-    tokio::task::spawn_blocking(move || {
-        let engine = Engine::build(&EngineParts {
-            revision: db.manifest.revision.clone(),
-            feed: Some(&db),
-            yara: true,
-            ..EngineParts::default()
-        })?;
-        engine.self_test()
-    })
-    .await
-    .map_err(|e| e.to_string())?
-    .map_err(|e| {
+    pulled.db.validate().map_err(|e| {
         ctx.metrics.feed("verify_failed");
         e.to_string()
     })?;
@@ -387,10 +386,19 @@ async fn ensure_pki(api: &Api<Secret>, w: &Ward, n: &Names) -> Result<(), Operat
         }
     };
     let ca_hash = revision_of(&[ca.cert_pem.as_bytes()]);
-    for (name, cn, server) in [
-        (n.manager_tls(), "ward-manager", true),
-        (n.agent_tls(), "ward-agent", false),
-    ] {
+    let mut leaves = vec![
+        (n.manager_tls(), "ward-manager", true, n.manager_dns()),
+        (n.agent_tls(), "ward-agent", false, n.manager_dns()),
+    ];
+    if w.spec.postgresql.embedded().is_some() {
+        leaves.push((
+            n.postgresql_tls(),
+            "ward-postgresql",
+            true,
+            n.postgresql_dns(),
+        ));
+    }
+    for (name, cn, server, dns) in leaves {
         let existing = api.get_opt(&name).await?;
         let ann = existing
             .as_ref()
@@ -403,7 +411,7 @@ async fn ensure_pki(api: &Api<Secret>, w: &Ward, n: &Names) -> Result<(), Operat
         if !needs_renewal(not_after, now) && ann.get(ANN_CA) == Some(&ca_hash) {
             continue;
         }
-        let leaf = ca.issue(cn, &n.manager_dns(), server, now).map_err(pki)?;
+        let leaf = ca.issue(cn, &dns, server, now).map_err(pki)?;
         let data = BTreeMap::from([
             (CERT_FILE.to_string(), leaf.cert_pem),
             (KEY_FILE.to_string(), leaf.key_pem),
@@ -415,15 +423,52 @@ async fn ensure_pki(api: &Api<Secret>, w: &Ward, n: &Names) -> Result<(), Operat
         ]);
         apply(api, &resources::secret(w, &name, &data, &annotations)).await?;
     }
-    if api.get_opt(&n.api_token()).await?.is_none() {
-        let data = BTreeMap::from([("token".to_string(), random_hex(32))]);
-        apply(
-            api,
-            &resources::secret(w, &n.api_token(), &data, &BTreeMap::new()),
-        )
-        .await?;
+    let mut generated = vec![(n.api_token(), "token")];
+    if w.spec.postgresql.embedded().is_some() {
+        generated.push((n.postgresql_auth(), resources::POSTGRESQL_PASSWORD_KEY));
+    }
+    for (name, key) in generated {
+        if api.get_opt(&name).await?.is_none() {
+            let data = BTreeMap::from([(key.to_string(), random_hex(32))]);
+            apply(api, &resources::secret(w, &name, &data, &BTreeMap::new())).await?;
+        }
     }
     Ok(())
+}
+
+/// Deploys the embedded PostgreSQL server, or removes it with its data
+/// when the `Ward` no longer asks for one. Returns whether it is ready.
+async fn reconcile_postgresql(
+    w: &Ward,
+    ctx: &Ctx,
+    n: &Names,
+    sets: &Api<StatefulSet>,
+    services: &Api<Service>,
+    secrets: &Api<Secret>,
+) -> Result<bool, OperatorError> {
+    let maps: Api<ConfigMap> = Api::namespaced(ctx.client.clone(), &n.namespace);
+    let policies: Api<NetworkPolicy> = Api::namespaced(ctx.client.clone(), &n.namespace);
+    let sts = w
+        .spec
+        .manager
+        .enabled
+        .then(|| resources::postgresql_statefulset(w, &ctx.defaults))
+        .flatten();
+    let Some(sts) = sts else {
+        delete_if_present(sets, &n.postgresql()).await?;
+        delete_if_present(services, &n.postgresql()).await?;
+        delete_if_present(&maps, &n.postgresql()).await?;
+        delete_if_present(&policies, &n.postgresql()).await?;
+        for s in [n.postgresql_tls(), n.postgresql_auth()] {
+            delete_if_present(secrets, &s).await?;
+        }
+        return Ok(true);
+    };
+    apply(&maps, &resources::postgresql_config(w)).await?;
+    apply(services, &resources::postgresql_service(w)).await?;
+    apply(&policies, &resources::postgresql_network_policy(w)).await?;
+    let sts = apply(sets, &sts).await?;
+    Ok(sts.status.and_then(|s| s.ready_replicas).unwrap_or(0) >= 1)
 }
 
 #[allow(clippy::too_many_lines)]
@@ -631,10 +676,13 @@ async fn reconcile_ward(w: Arc<Ward>, ctx: Arc<Ctx>) -> Result<Action, OperatorE
     let sets: Api<StatefulSet> = Api::namespaced(client.clone(), &ns);
     let manager_ready = if w.spec.manager.enabled {
         ensure_pki(&secrets, &w, &n).await?;
+        let postgresql_ready =
+            reconcile_postgresql(&w, &ctx, &n, &sets, &services, &secrets).await?;
         apply(&services, &resources::manager_service(&w)).await?;
         let sts = apply(&sets, &resources::manager_statefulset(&w, &ctx.defaults)).await?;
-        sts.status.and_then(|s| s.ready_replicas).unwrap_or(0) >= 1
+        postgresql_ready && sts.status.and_then(|s| s.ready_replicas).unwrap_or(0) >= 1
     } else {
+        reconcile_postgresql(&w, &ctx, &n, &sets, &services, &secrets).await?;
         delete_if_present(&sets, &n.manager()).await?;
         delete_if_present(&services, &n.manager()).await?;
         for s in [n.ca(), n.manager_tls(), n.agent_tls(), n.api_token()] {
@@ -642,6 +690,30 @@ async fn reconcile_ward(w: Arc<Ward>, ctx: Arc<Ctx>) -> Result<Action, OperatorE
         }
         false
     };
+    let routes: Api<DynamicObject> =
+        Api::namespaced_with(client.clone(), &ns, &resources::http_route_resource());
+    if let Some(route) = resources::manager_http_route(&w) {
+        conditions.push(match apply(&routes, &route).await {
+            Ok(_) => condition(
+                "HTTPRouteReady",
+                true,
+                "Applied",
+                "the admin API route is applied",
+                &prev.conditions,
+                generation,
+            ),
+            Err(e) => condition(
+                "HTTPRouteReady",
+                false,
+                "ApplyFailed",
+                &format!("apply HTTPRoute (is the Gateway API installed?): {e}"),
+                &prev.conditions,
+                generation,
+            ),
+        });
+    } else if let Err(e) = delete_if_present(&routes, &n.manager()).await {
+        tracing::debug!(error = %e, "delete HTTPRoute");
+    }
     let ds = apply(
         &Api::<DaemonSet>::namespaced(client.clone(), &ns),
         &resources::agent_daemonset(&w, &ctx.defaults),
@@ -946,6 +1018,21 @@ mod tests {
         };
         img.spec.image = Some("harbor.example.com/mirror/ward@sha256:00".into());
         assert_eq!(refusal(&img, &mirror), None);
+        let mut pg = ok.clone();
+        pg.spec.postgresql.enabled = true;
+        pg.spec.postgresql.embedded = Some(crate::crd::EmbeddedPostgresql {
+            image: Some("evil.example.com/postgres:18".into()),
+            ..Default::default()
+        });
+        assert_eq!(refusal(&pg, &d).unwrap().0, "ImageNotAllowed");
+        let pg_default = Defaults {
+            postgresql_image: "docker.io/library/postgres:18".into(),
+            ..d.clone()
+        };
+        if let Some(e) = pg.spec.postgresql.embedded.as_mut() {
+            e.image = Some("docker.io/library/postgres:18".into());
+        }
+        assert_eq!(refusal(&pg, &pg_default), None);
         let mut privileged = ok;
         privileged.spec.agent.privileged = true;
         assert_eq!(refusal(&privileged, &d).unwrap().0, "PrivilegedNotAllowed");

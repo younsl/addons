@@ -15,10 +15,11 @@ Kubernetes-native open source antivirus and EDR. One `Ward` object puts an [eBPF
 - **Signature scanning**: Hashes, byte patterns, and YARA rules compiled with YARA-X, on every exec and on a schedule. See [Detection engines](docs/detection-engines.md).
 - **Behavior rules**: Reverse shells, fileless exec, miners, web shells, and more, with the process storyline. See [Detection engines](docs/detection-engines.md#behavior-rules).
 - **File integrity monitoring**: Baselines and watches sensitive host files. See [Detection engines](docs/detection-engines.md#file-integrity-monitoring).
+- **Rootcheck**: Wazuh-style rootkit anomaly checks for hidden processes, files in `/dev`, and setuid files in temporary directories. See [Detection engines](docs/detection-engines.md#rootcheck).
 - **Autonomous response**: Kill, quarantine, and exec blocking in `Protect` mode. See [Response](docs/response.md).
 - **Signed signature feed**: A daily signed OCI artifact rolled out in rings with false-positive storm halts. See [Signature database](docs/signature-database.md).
 - **Custom signatures as code**: `WardSignature` objects and hash indicators managed through GitOps. See [Configuration](docs/configuration.md).
-- **Optional manager**: Feed relay, detection store, and mTLS when you want them, logs and Events when you do not. See [Manager](docs/manager.md).
+- **Optional manager**: Feed relay, detection store (a file, or an embedded or external PostgreSQL), an optional Gateway API route to its query API, and mTLS when you want them, logs and Events when you do not. See [Manager](docs/manager.md).
 - **Validated at the API server**: CEL rules reject bad specs before they reach a node. See [Validation](docs/validation.md).
 
 ## Quick Start

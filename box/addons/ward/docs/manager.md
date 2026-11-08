@@ -33,6 +33,44 @@ curl -s -H "Authorization: Bearer ${TOKEN}" 'localhost:8080/v1/detections?severi
 
 `/v1/detections` filters by `severity`, `namespace`, `node`, and `engine` and returns newest first. `/v1/agents` lists agents with their last report.
 
+### Through a Gateway
+
+`spec.manager.httpRoute` makes the operator own a Gateway API `HTTPRoute` named `<name>-manager` that sends `/v1` on the listed host names to the admin API:
+
+```yaml
+spec:
+  manager:
+    httpRoute:
+      enabled: true
+      parentRefs:
+        - group: gateway.networking.k8s.io
+          kind: Gateway
+          name: internal
+          namespace: gateway-system
+          sectionName: https
+      hostnames:
+        - ward.example.com
+```
+
+- Every `parentRefs` entry needs `namespace`, and that Gateway must allow routes from the `Ward` namespace.
+- Only the admin API is routed. The agent API on port 8443 is mutual TLS and is never exposed.
+- The admin API is plain HTTP behind a bearer token, so attach the route to an HTTPS listener and keep the Gateway internal.
+- The `Ward` status reports `HTTPRouteReady`, `False` with the API server's error when the Gateway API CRDs are missing.
+
+## Detection storage
+
+Detections stay in `detections.jsonl` on the manager volume unless `spec.postgresql.enabled` is set. With PostgreSQL the manager still answers queries from memory, and the database is the durable copy, so detections survive the manager volume and other tools (SQL, Grafana) can read the `ward_detections` table. The same `retention` and per node share bound both.
+
+| Setting | Server | Connection |
+| --- | --- | --- |
+| `postgresql.enabled: true` | Embedded: the operator deploys `<name>-postgresql`, a one replica StatefulSet with an 8Gi volume by default | TLS with a certificate the Ward CA issues, verified by host name, and a generated password in `<name>-postgresql-auth`. A NetworkPolicy admits only the manager, and `pg_hba.conf` refuses connections without TLS |
+| `postgresql.external` set | Yours | `sslMode: VerifyFull` (default) checks the server certificate against `caSecretRef`. `Disable` sends everything in clear |
+
+- On its first start against an empty table, the manager imports the detections already in `detections.jsonl`.
+- Disabling the embedded server deletes it with its volume and password, so the next enable starts empty.
+- The embedded server is a single replica without backups. Use an external, managed server when detections must survive the cluster.
+- The embedded image comes from the operator setting `operator.postgresqlImage`, and a `Ward` may override it only within `operator.allowedImagePrefixes`.
+
 ## mTLS and PKI
 
 The operator owns a private CA in `<name>-ca` and issues the manager's server certificate (`<name>-manager-tls`, valid for the Service DNS names) and the agents' client certificate (`<name>-agent-tls`). The manager accepts only clients the CA signed, and agents accept only a server the CA signed.

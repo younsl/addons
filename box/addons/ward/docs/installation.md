@@ -42,6 +42,7 @@ More examples:
 - [Custom signatures and YARA rules](../examples/signatures.yaml)
 - [Signed feed with the manager relay](../examples/feed.yaml)
 - [Agents only, no manager](../examples/ward-agent-only.yaml)
+- [Detections in an existing PostgreSQL server](../examples/ward-external-postgresql.yaml)
 
 ## Enable the signature feed
 

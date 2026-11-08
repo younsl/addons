@@ -39,7 +39,8 @@ pub const KIND: &str = "Ward";
     printcolumn = r#"{"name":"Agents","type":"string","jsonPath":".status.agents"}"#,
     printcolumn = r#"{"name":"Revision","type":"string","jsonPath":".status.policyRevision"}"#,
     printcolumn = r#"{"name":"Age","type":"date","jsonPath":".metadata.creationTimestamp"}"#,
-    validation = Rule::new("self.metadata.name.size() <= 40").message("name must be at most 40 characters so derived object names stay valid")
+    validation = Rule::new("self.metadata.name.size() <= 40").message("name must be at most 40 characters so derived object names stay valid"),
+    validation = Rule::new("!has(self.spec) || !has(self.spec.postgresql) || !has(self.spec.postgresql.enabled) || !self.spec.postgresql.enabled || !has(self.spec.manager) || !has(self.spec.manager.enabled) || self.spec.manager.enabled").message("postgresql stores the manager's detections, so it needs manager.enabled")
 )]
 #[serde(rename_all = "camelCase")]
 pub struct WardSpec {
@@ -59,6 +60,10 @@ pub struct WardSpec {
     /// The manager `StatefulSet`.
     #[serde(default)]
     pub manager: ManagerSpec,
+    /// Keep the manager's detections in PostgreSQL, an embedded server the
+    /// operator deploys or an existing one.
+    #[serde(default)]
+    pub postgresql: PostgresqlSpec,
     /// The agent `DaemonSet`.
     #[serde(default)]
     pub agent: AgentSpec,
@@ -71,6 +76,10 @@ pub struct WardSpec {
     /// File integrity monitoring of host files.
     #[serde(default)]
     pub integrity: IntegritySpec,
+    /// Rootkit anomaly checks on the host: hidden processes, files in
+    /// `/dev`, and setuid files in temporary directories.
+    #[serde(default)]
+    pub rootcheck: RootcheckSpec,
     /// What every engine skips.
     #[serde(default)]
     pub exclusions: Exclusions,
@@ -146,6 +155,66 @@ pub struct ManagerSpec {
     /// Extra DNS settings merged into the Pods' resolver configuration.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dns_config: Option<PodDNSConfig>,
+    /// A Gateway API `HTTPRoute` that exposes the admin API (`/v1`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub http_route: Option<HttpRouteSpec>,
+}
+
+#[derive(KubeSchema, Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[x_kube(
+    validation = Rule::new("!(has(self.enabled) && self.enabled) || (has(self.parentRefs) && size(self.parentRefs) > 0)").message("an enabled httpRoute needs at least one parentRefs entry")
+)]
+#[serde(rename_all = "camelCase")]
+pub struct HttpRouteSpec {
+    #[serde(default)]
+    pub enabled: bool,
+    /// Gateways the route attaches to. Each must allow routes from the
+    /// `Ward` namespace.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[schemars(length(max = 32))]
+    pub parent_refs: Vec<ParentRef>,
+    /// Host names the route matches. Empty matches every host name of the
+    /// listener.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[schemars(length(max = 16), inner(length(min = 1, max = 253)))]
+    pub hostnames: Vec<String>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub labels: BTreeMap<String, String>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub annotations: BTreeMap<String, String>,
+}
+
+/// A `Gateway` (or other parent) the route attaches to. `namespace` is
+/// required so the target is never implied.
+#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ParentRef {
+    #[serde(default = "default_gateway_group")]
+    #[schemars(length(max = 253))]
+    pub group: String,
+    #[serde(default = "default_gateway_kind")]
+    #[schemars(length(min = 1, max = 63))]
+    pub kind: String,
+    #[schemars(length(min = 1, max = 253))]
+    pub name: String,
+    #[schemars(length(min = 1, max = 63))]
+    pub namespace: String,
+    /// Listener name on the parent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(length(min = 1, max = 253))]
+    pub section_name: Option<String>,
+    /// Listener port on the parent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(range(min = 1))]
+    pub port: Option<u16>,
+}
+
+fn default_gateway_group() -> String {
+    "gateway.networking.k8s.io".to_string()
+}
+
+fn default_gateway_kind() -> String {
+    "Gateway".to_string()
 }
 
 impl Default for ManagerSpec {
@@ -162,13 +231,14 @@ impl Default for ManagerSpec {
             topology_spread_constraints: Vec::new(),
             dns_policy: None,
             dns_config: None,
+            http_route: None,
         }
     }
 }
 
 #[derive(KubeSchema, Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[x_kube(
-    validation = Rule::new("self == oldSelf").message("manager storage is immutable, a StatefulSet cannot change its volume claims")
+    validation = Rule::new("self == oldSelf").message("storage is immutable, a StatefulSet cannot change its volume claims")
 )]
 #[serde(rename_all = "camelCase")]
 pub struct StorageSpec {
@@ -188,6 +258,110 @@ impl Default for StorageSpec {
         Self {
             size: default_storage_size(),
             storage_class_name: None,
+        }
+    }
+}
+
+#[derive(KubeSchema, Clone, Debug, Default, Deserialize, Serialize, PartialEq)]
+#[x_kube(
+    validation = Rule::new("!(has(self.external) && has(self.embedded))").message("set postgresql.external or postgresql.embedded, not both")
+)]
+#[serde(rename_all = "camelCase")]
+pub struct PostgresqlSpec {
+    /// Keep detections in PostgreSQL instead of a file on the manager
+    /// volume. Needs the manager.
+    #[serde(default)]
+    pub enabled: bool,
+    /// An existing server. Unset, the operator deploys an embedded one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub external: Option<ExternalPostgresql>,
+    /// Settings of the embedded server, used when `external` is unset.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub embedded: Option<EmbeddedPostgresql>,
+}
+
+impl PostgresqlSpec {
+    /// The embedded server to deploy, when there is one.
+    pub fn embedded(&self) -> Option<EmbeddedPostgresql> {
+        (self.enabled && self.external.is_none()).then(|| self.embedded.clone().unwrap_or_default())
+    }
+}
+
+#[derive(KubeSchema, Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[x_kube(
+    validation = Rule::new("(has(self.sslMode) && self.sslMode == 'Disable') || has(self.caSecretRef)").message("sslMode VerifyFull needs caSecretRef")
+)]
+#[serde(rename_all = "camelCase")]
+pub struct ExternalPostgresql {
+    #[schemars(length(min = 1, max = 253))]
+    pub host: String,
+    #[serde(default = "default_postgresql_port")]
+    #[schemars(range(min = 1))]
+    pub port: u16,
+    #[serde(default = "default_postgresql_name")]
+    #[schemars(length(min = 1, max = 63))]
+    pub database: String,
+    #[serde(default = "default_postgresql_name")]
+    #[schemars(length(min = 1, max = 63))]
+    pub username: String,
+    /// Secret key in the `Ward` namespace holding the password.
+    pub password_secret_ref: SecretKeyRef,
+    /// `VerifyFull` encrypts and checks the server certificate and host
+    /// name against `caSecretRef`. `Disable` sends everything in clear.
+    #[serde(default)]
+    pub ssl_mode: SslMode,
+    /// Secret key in the `Ward` namespace holding the PEM CA bundle the
+    /// server certificate chains to.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ca_secret_ref: Option<SecretKeyRef>,
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq, JsonSchema)]
+pub enum SslMode {
+    Disable,
+    #[default]
+    VerifyFull,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct SecretKeyRef {
+    #[schemars(length(min = 1, max = 253))]
+    pub name: String,
+    #[schemars(length(min = 1, max = 253))]
+    pub key: String,
+}
+
+#[derive(KubeSchema, Clone, Debug, Deserialize, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct EmbeddedPostgresql {
+    /// Image of the server. Empty means the operator's PostgreSQL image.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(length(max = 512))]
+    pub image: Option<String>,
+    /// The data volume. Disabling the embedded server deletes it with its
+    /// data.
+    #[serde(default = "default_postgresql_storage")]
+    pub storage: StorageSpec,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resources: Option<ResourceRequirements>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub node_selector: BTreeMap<String, String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tolerations: Vec<Toleration>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub affinity: Option<Affinity>,
+}
+
+impl Default for EmbeddedPostgresql {
+    fn default() -> Self {
+        Self {
+            image: None,
+            storage: default_postgresql_storage(),
+            resources: None,
+            node_selector: BTreeMap::new(),
+            tolerations: Vec::new(),
+            affinity: None,
         }
     }
 }
@@ -424,6 +598,26 @@ pub struct IntegritySpec {
     #[schemars(length(max = 32), regex(pattern = r"^([0-9]+(ms|s|m|h))+$"))]
     #[x_kube(validation = Rule::new("duration(self) >= duration('10s')").message("interval must be at least 10s"))]
     pub interval: String,
+}
+
+#[derive(KubeSchema, Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct RootcheckSpec {
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    #[serde(default = "default_rootcheck_interval")]
+    #[schemars(length(max = 32), regex(pattern = r"^([0-9]+(ms|s|m|h))+$"))]
+    #[x_kube(validation = Rule::new("duration(self) >= duration('10m')").message("rootcheck interval must be at least 10m"))]
+    pub interval: String,
+}
+
+impl Default for RootcheckSpec {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            interval: default_rootcheck_interval(),
+        }
+    }
 }
 
 impl Default for IntegritySpec {
@@ -706,6 +900,25 @@ fn default_integrity_interval() -> String {
     "5m".to_string()
 }
 
+const fn default_postgresql_port() -> u16 {
+    5432
+}
+
+fn default_postgresql_name() -> String {
+    "ward".to_string()
+}
+
+fn default_postgresql_storage() -> StorageSpec {
+    StorageSpec {
+        size: "8Gi".to_string(),
+        storage_class_name: None,
+    }
+}
+
+fn default_rootcheck_interval() -> String {
+    "12h".to_string()
+}
+
 fn default_integrity_paths() -> Vec<String> {
     [
         "/etc/passwd",
@@ -789,6 +1002,7 @@ mod tests {
             &spec.scan.interval,
             &spec.behavior.poll_interval,
             &spec.integrity.interval,
+            &spec.rootcheck.interval,
         ] {
             assert!(parse_duration(d).is_some(), "{d}");
         }
@@ -800,13 +1014,14 @@ mod tests {
         let crd = serde_json::to_string(&Ward::crd()).unwrap();
         assert!(crd.contains("wards.security.ward.sh"));
         assert!(crd.contains("interval must be at least 1m"));
+        assert!(crd.contains("rootcheck interval must be at least 10m"));
         assert!(crd.contains("integrity paths must be absolute"));
         assert_eq!(PullPolicy::Never.as_str(), "Never");
         assert_eq!(PullPolicy::Always.as_str(), "Always");
         assert_eq!(PullPolicy::IfNotPresent.as_str(), "IfNotPresent");
         assert!(crd.contains("feed needs publicKey unless insecureSkipVerify is true"));
         for msg in [
-            "manager storage is immutable",
+            "storage is immutable",
             "hostPaths must be absolute",
             "exclusion paths must be absolute",
             "name must be at most 40 characters",

@@ -12,7 +12,8 @@ Known gaps, so you can decide what ward covers and what needs another control.
 - **One Ward per cluster**: A second `Ward` is reported in status and deploys nothing.
 - **One manager replica**: Detections posted while the manager restarts wait in the agent's bounded buffer, and the oldest are dropped if it fills. Logs and Events are not affected.
 - **Plain Helm first install**: With `ward.create=true`, the first `helm install` fails because the CRDs and the `Ward` are in the same release. Argo CD is not affected. See [Installation](installation.md).
-- **Feed scope**: The public feed covers MalwareBazaar hashes and the YARA Forge core rules. It is not a commercial threat intelligence feed. Add your own content with `WardSignature`.
+- **Feed scope**: The public feed covers the [malicious-hash](https://github.com/romainmarcoux/malicious-hash) SHA-256 lists (about 85 thousand abuse.ch hashes) and the YARA Forge core rules that can match on Linux. It is not a commercial threat intelligence feed. Add your own content with `WardSignature`.
+- **Feed trust**: [malicious-hash](https://github.com/romainmarcoux/malicious-hash) is a mirror kept by one maintainer. Each revision records the commit it used, and the corpus, the allowlist, and the canary ring stand between a bad hash and `Protect`, but a hash the corpus does not cover still reaches the canary ring.
 - **Known-good coverage**: Feed pruning removes only what the build corpus (common base and runtime images) and the repository allowlist hold. A benign file outside them that a feed source lists is still detected. Allowlist it with `spec.indicators.allow`. Corpus images are pulled by tag, so a compromised upstream image can suppress at most `--max-pruned` entries per build, and each one shows in the workflow run summary.
 - **Not a replacement for image scanning or admission control**: ward protects running workloads. Scan images before they run and restrict what may run.
 

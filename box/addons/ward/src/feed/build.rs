@@ -17,7 +17,7 @@ use crate::signature::{Match, Signature, SignatureDb, sha256_hex};
 
 const CORPUS_MAX_FILE: u64 = 64 * 1024 * 1024;
 const YARA_PREFIX: &str = "yara:";
-/// Optional provenance next to the rules of a `--yara-dir`, a JSON `Source`.
+/// Optional provenance in a `--yara-dir` or `--hash-dir`, a JSON `Source`.
 pub const SOURCE_META: &str = "source.json";
 
 #[derive(Debug, thiserror::Error)]
@@ -46,8 +46,12 @@ pub enum BuildError {
 #[derive(Debug, Default)]
 pub struct BuildInput {
     pub revision: Option<String>,
-    pub malwarebazaar: Vec<PathBuf>,
+    /// Directories of SHA-256 lists (`*.txt`, one digest per line), each
+    /// one hash set named after its `source.json`.
+    pub hash_dirs: Vec<PathBuf>,
     pub yara_dirs: Vec<PathBuf>,
+    /// Leave out YARA rules that only match non-Linux file formats.
+    pub yara_linux_only: bool,
     pub signatures: Vec<PathBuf>,
     /// Known-good SHA-256 lists, removed from every hash in the feed.
     pub allowlists: Vec<PathBuf>,
@@ -65,6 +69,8 @@ pub struct BuildReport {
     pub yara_files: usize,
     pub yara_rules: usize,
     pub dropped_yara: Vec<String>,
+    /// YARA rules left out because they only match non-Linux file formats.
+    pub foreign_yara: usize,
     /// Feed hashes removed because an allowlist holds them.
     pub allowlisted: usize,
     /// Hashes removed, rules disabled, and signatures dropped because they
@@ -100,7 +106,7 @@ pub fn parse_hash_dump(text: &str) -> Vec<[u8; 32]> {
         .collect()
 }
 
-fn yara_files(dir: &Path) -> Vec<PathBuf> {
+fn files_with(dir: &Path, extensions: &[&str]) -> Vec<PathBuf> {
     let mut files: Vec<PathBuf> = WalkDir::new(dir)
         .follow_links(false)
         .into_iter()
@@ -109,11 +115,60 @@ fn yara_files(dir: &Path) -> Vec<PathBuf> {
         .map(walkdir::DirEntry::into_path)
         .filter(|p| {
             p.extension()
-                .is_some_and(|e| e.eq_ignore_ascii_case("yar") || e.eq_ignore_ascii_case("yara"))
+                .is_some_and(|e| extensions.iter().any(|x| e.eq_ignore_ascii_case(x)))
         })
         .collect();
     files.sort();
     files
+}
+
+/// The provenance in `dir/source.json`, or a bare source named after `dir`.
+fn source_meta(dir: &Path) -> Result<Source, BuildError> {
+    let meta_path = dir.join(SOURCE_META);
+    if meta_path.is_file() {
+        return serde_json::from_str::<Source>(&read(&meta_path)?).map_err(|e| BuildError::Parse {
+            path: meta_path.display().to_string(),
+            reason: e.to_string(),
+        });
+    }
+    Ok(Source {
+        name: dir
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default(),
+        ..Source::default()
+    })
+}
+
+/// One hash set from the digest lists under `dir`.
+fn collect_hashes(dir: &Path) -> Result<(Source, HashSet32), BuildError> {
+    let mut source = source_meta(dir)?;
+    let mut hashes = Vec::new();
+    let mut digest = sha2::Sha256::default();
+    let files = files_with(dir, &["txt"]);
+    if files.is_empty() {
+        return Err(BuildError::Parse {
+            path: dir.display().to_string(),
+            reason: "no .txt digest lists".into(),
+        });
+    }
+    for file in files {
+        let text = read(&file)?;
+        sha2::Digest::update(&mut digest, text.as_bytes());
+        hashes.extend(parse_hash_dump(&text));
+    }
+    hashes.sort_unstable();
+    hashes.dedup();
+    if source.sha256.is_empty() {
+        source.sha256 = format!("{:x}", sha2::Digest::finalize(digest));
+    }
+    let set = HashSet32::pack(
+        &source.name,
+        Severity::High,
+        &format!("SHA-256 listed by {}", source.name),
+        &hashes,
+    );
+    Ok((source, set))
 }
 
 fn corpus_files(corpus: &[PathBuf]) -> Vec<PathBuf> {
@@ -260,18 +315,25 @@ fn prune(db: &mut FeedDb, input: &BuildInput, report: &mut BuildReport) -> Resul
 /// from `source.json` when present.
 fn collect_yara(
     dir: &Path,
+    linux_only: bool,
     yara: &mut Vec<YaraSource>,
     report: &mut BuildReport,
 ) -> Result<Source, BuildError> {
     let mut rules = 0usize;
-    for file in yara_files(dir) {
+    for file in files_with(dir, &["yar", "yara"]) {
+        let mut text = read(&file)?;
+        if linux_only {
+            let (kept, foreign) = super::platform::linux_rules(&text);
+            report.foreign_yara += foreign.len();
+            text = kept;
+        }
         let src = YaraSource {
             name: file
                 .strip_prefix(dir)
                 .unwrap_or(&file)
                 .display()
                 .to_string(),
-            source: read(&file)?,
+            source: text,
         };
         let (compiled, dropped) = compile_yara(std::slice::from_ref(&src));
         report.dropped_yara.extend(dropped);
@@ -282,21 +344,7 @@ fn collect_yara(
         }
     }
     report.yara_rules += rules;
-    let meta_path = dir.join(SOURCE_META);
-    let mut source = if meta_path.is_file() {
-        serde_json::from_str::<Source>(&read(&meta_path)?).map_err(|e| BuildError::Parse {
-            path: meta_path.display().to_string(),
-            reason: e.to_string(),
-        })?
-    } else {
-        Source {
-            name: dir
-                .file_name()
-                .map(|n| n.to_string_lossy().into_owned())
-                .unwrap_or_default(),
-            ..Source::default()
-        }
-    };
+    let mut source = source_meta(dir)?;
     source.count = rules as u64;
     Ok(source)
 }
@@ -305,24 +353,10 @@ pub fn build(input: &BuildInput) -> Result<(FeedDb, BuildReport), BuildError> {
     let mut report = BuildReport::default();
     let mut sources = Vec::new();
     let mut hash_sets = Vec::new();
-    for path in &input.malwarebazaar {
-        let text = read(path)?;
-        let mut hashes = parse_hash_dump(&text);
-        hashes.sort_unstable();
-        hashes.dedup();
-        sources.push(Source {
-            name: "MalwareBazaar".into(),
-            license: "CC0-1.0".into(),
-            url: "https://bazaar.abuse.ch".into(),
-            sha256: sha256_hex(text.as_bytes()),
-            ..Source::default()
-        });
-        hash_sets.push(HashSet32::pack(
-            "MalwareBazaar",
-            Severity::High,
-            "SHA-256 listed by abuse.ch MalwareBazaar",
-            &hashes,
-        ));
+    for dir in &input.hash_dirs {
+        let (source, set) = collect_hashes(dir)?;
+        sources.push(source);
+        hash_sets.push(set);
     }
 
     let mut signatures: Vec<Signature> = Vec::new();
@@ -349,7 +383,12 @@ pub fn build(input: &BuildInput) -> Result<(FeedDb, BuildReport), BuildError> {
 
     let mut yara = Vec::new();
     for dir in &input.yara_dirs {
-        sources.push(collect_yara(dir, &mut yara, &mut report)?);
+        sources.push(collect_yara(
+            dir,
+            input.yara_linux_only,
+            &mut yara,
+            &mut report,
+        )?);
     }
 
     let mut db = FeedDb {
@@ -445,9 +484,10 @@ mod tests {
     #[test]
     fn builds_and_checks_a_database() {
         let dir = tempfile::tempdir().unwrap();
-        let mb = dir.path().join("mb.txt");
+        let mb = dir.path().join("mb");
+        std::fs::create_dir_all(&mb).unwrap();
         std::fs::write(
-            &mb,
+            mb.join("mb.txt"),
             format!("# x\n{}\n{}\n", "c".repeat(64), "c".repeat(64)),
         )
         .unwrap();
@@ -468,7 +508,7 @@ mod tests {
         .unwrap();
         let (db, report) = build(&BuildInput {
             revision: Some("test".into()),
-            malwarebazaar: vec![mb],
+            hash_dirs: vec![mb],
             yara_dirs: vec![ydir],
             signatures: vec![sigs],
             ..BuildInput::default()
@@ -507,7 +547,7 @@ mod tests {
         );
         assert!(
             build(&BuildInput {
-                malwarebazaar: vec![dir.path().join("missing")],
+                hash_dirs: vec![dir.path().join("missing")],
                 ..BuildInput::default()
             })
             .is_err()
@@ -529,8 +569,14 @@ mod tests {
 
         let allowed = "d".repeat(64);
         let evil = "e".repeat(64);
-        let mb = dir.path().join("mb.txt");
-        std::fs::write(&mb, format!("{}\n{allowed}\n{evil}\n", sha256_hex(&tool))).unwrap();
+        let mb = dir.path().join("mb");
+        std::fs::create_dir_all(&mb).unwrap();
+        std::fs::write(
+            mb.join("a.txt"),
+            format!("{}\n{allowed}\n", sha256_hex(&tool)),
+        )
+        .unwrap();
+        std::fs::write(mb.join("b.txt"), format!("{evil}\n")).unwrap();
         let allow = dir.path().join("allow.txt");
         std::fs::write(&allow, format!("# local exceptions\n{allowed}\n")).unwrap();
         let ydir = dir.path().join("yara");
@@ -552,12 +598,13 @@ mod tests {
 
         let input = BuildInput {
             revision: Some("p".into()),
-            malwarebazaar: vec![mb],
+            hash_dirs: vec![mb],
             yara_dirs: vec![ydir],
             signatures: vec![sigs],
             allowlists: vec![allow],
             corpus: vec![corpus.clone()],
             max_pruned: 5,
+            ..BuildInput::default()
         };
         let (db, report) = build(&input).unwrap();
         assert_eq!(report.hashes, 1, "only the unknown hash stays");
@@ -635,6 +682,20 @@ mod tests {
         assert_eq!(src.sha256, "abc");
         assert_eq!(src.count, 1);
         assert_eq!(FeedDb::decode(&db.encode()).unwrap(), db);
+
+        std::fs::write(
+            ydir.join("win.yar"),
+            "rule Win { condition: false }\nrule WinOnly\n{\n\tcondition:\n\t\tuint16( 0 ) == 0x5a4d\n}\n",
+        )
+        .unwrap();
+        let (_, report) = build(&BuildInput {
+            yara_dirs: vec![ydir.clone()],
+            yara_linux_only: true,
+            ..BuildInput::default()
+        })
+        .unwrap();
+        assert_eq!(report.foreign_yara, 1);
+        assert_eq!(report.yara_rules, 2);
 
         std::fs::write(ydir.join(SOURCE_META), "{").unwrap();
         assert!(matches!(

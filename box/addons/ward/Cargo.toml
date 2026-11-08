@@ -58,6 +58,8 @@ aws-lc-rs = "1.16.3"
 rcgen = { version = "0.14.10", default-features = false, features = ["aws_lc_rs", "pem"] }
 rustls-pki-types = { version = "1.14.1", features = ["std"] }
 axum-server = { version = "0.8.0", default-features = false, features = ["tls-rustls-no-provider"] }
+tokio-postgres = { version = "0.7.18", default-features = false, features = ["runtime", "with-serde_json-1"] }
+tokio-postgres-rustls = { version = "0.14.0", default-features = false }
 ward-ebpf-common = { path = "ebpf-common" }
 
 [target.'cfg(target_os = "linux")'.dependencies]

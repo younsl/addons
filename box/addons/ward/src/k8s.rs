@@ -21,6 +21,7 @@ pub const LABEL_COMPONENT: &str = "app.kubernetes.io/component";
 pub const LABEL_MANAGED_BY: &str = "app.kubernetes.io/managed-by";
 pub const COMPONENT_AGENT: &str = "agent";
 pub const COMPONENT_MANAGER: &str = "manager";
+pub const COMPONENT_POSTGRESQL: &str = "postgresql";
 pub const MANAGER_FIELD: &str = "ward-operator";
 
 pub const ANN_VERSION: &str = "ward.sh/version";

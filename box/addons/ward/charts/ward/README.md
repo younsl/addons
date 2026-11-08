@@ -89,6 +89,7 @@ The following table lists the configurable parameters and their default values.
 | crds.additionalLabels | object | `{}` | Extra CRD labels |
 | operator.allowedImagePrefixes | list | `[]` | Image prefixes a Ward's `spec.image` may use, empty allows only this chart's image repository |
 | operator.allowPrivilegedAgent | bool | `false` | Honor `spec.agent.privileged`, otherwise such a Ward is refused |
+| operator.postgresqlImage | string | `"docker.io/library/postgres:18.6-alpine3.24"` | Image of the embedded PostgreSQL server a Ward deploys with `spec.postgresql`. A Ward may override it only within `allowedImagePrefixes` |
 | operator.logLevel | string | `"info"` | `debug`, `info`, `warn`, or `error` |
 | operator.logFormat | string | `"json"` | `json` or `text` |
 | ward.create | bool | `false` | Render a Ward object from `ward.spec` |

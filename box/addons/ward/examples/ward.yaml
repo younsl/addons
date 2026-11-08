@@ -39,6 +39,29 @@ spec:
       options:
         - name: ndots
           value: "2"
+    # Expose the admin API (/v1) through a Gateway API HTTPS listener.
+    httpRoute:
+      enabled: false
+      parentRefs:
+        - group: gateway.networking.k8s.io
+          kind: Gateway
+          name: internal
+          namespace: gateway-system
+          sectionName: https
+      hostnames:
+        - ward.example.com
+  # Keep detections in an embedded PostgreSQL server the operator deploys.
+  postgresql:
+    enabled: true
+    embedded:
+      storage:
+        size: 8Gi
+      resources:
+        requests:
+          cpu: 50m
+          memory: 128Mi
+        limits:
+          memory: 512Mi
   agent:
     eventSource: Auto
     resources:
@@ -85,6 +108,9 @@ spec:
   integrity:
     enabled: true
     interval: 5m
+  rootcheck:
+    enabled: true
+    interval: 12h
   exclusions:
     namespaces:
       - kube-system

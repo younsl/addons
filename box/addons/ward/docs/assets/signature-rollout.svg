@@ -31,7 +31,7 @@
   <text x="296" y="166" class="t n">Operator verifies</text>
   <text x="296" y="186" class="t d">layer digest</text>
   <text x="296" y="203" class="t d">ECDSA P-256 signature</text>
-  <text x="296" y="220" class="t d">engine compile</text>
+  <text x="296" y="220" class="t d">hash sets, signatures</text>
   <rect x="540" y="140" width="220" height="104" rx="8" class="card"/>
   <text x="556" y="166" class="t n">Canary ring</text>
   <text x="556" y="186" class="t d">ward.sh/ring=canary nodes</text>
