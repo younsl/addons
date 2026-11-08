@@ -164,7 +164,7 @@ fn collect_hashes(dir: &Path) -> Result<(Source, HashSet32), BuildError> {
     }
     let set = HashSet32::pack(
         &source.name,
-        Severity::High,
+        source.severity.unwrap_or(Severity::High),
         &format!("SHA-256 listed by {}", source.name),
         &hashes,
     );
@@ -651,6 +651,35 @@ mod tests {
             }),
             Err(BuildError::Unprunable { .. })
         ));
+    }
+
+    #[test]
+    fn hash_dir_takes_name_and_severity_from_its_source() {
+        let dir = tempfile::tempdir().unwrap();
+        let hashes = dir.path().join("mirror");
+        std::fs::create_dir_all(&hashes).unwrap();
+        std::fs::write(hashes.join("a.txt"), "f".repeat(64)).unwrap();
+        std::fs::write(
+            hashes.join(SOURCE_META),
+            r#"{"name":"malicious-hash","license":"MIT","url":"https://example.com","version":"abc","sha256":"","severity":"Medium"}"#,
+        )
+        .unwrap();
+        let (db, _) = build(&BuildInput {
+            hash_dirs: vec![hashes],
+            ..BuildInput::default()
+        })
+        .unwrap();
+        assert_eq!(db.hash_sets[0].name, "malicious-hash");
+        assert_eq!(db.hash_sets[0].severity, Severity::Medium);
+        assert_eq!(db.manifest.sources[0].severity, Some(Severity::Medium));
+        assert_eq!(db.manifest.sources[0].sha256.len(), 64);
+        assert!(
+            build(&BuildInput {
+                hash_dirs: vec![dir.path().join("empty")],
+                ..BuildInput::default()
+            })
+            .is_err()
+        );
     }
 
     #[test]

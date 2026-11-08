@@ -60,6 +60,10 @@ pub struct Source {
     pub sha256: String,
     #[serde(default)]
     pub count: u64,
+    /// Severity of the hash set a `--hash-dir` source becomes, `High` when
+    /// unset. `Protect` acts on `High` and above only.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub severity: Option<Severity>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]

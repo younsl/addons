@@ -44,7 +44,9 @@ CURL=(curl -fsSL --retry 5 --retry-all-errors)
 
 source_json() {
   jq -n --arg name "$1" --arg license "$2" --arg url "$3" --arg version "$4" --arg sha256 "$5" \
-    '{name: $name, license: $license, url: $url, version: $version, sha256: $sha256}'
+    --arg severity "${6:-}" \
+    '{name: $name, license: $license, url: $url, version: $version, sha256: $sha256}
+      + (if $severity == "" then {} else {severity: $severity} end)'
 }
 
 fetch() {
@@ -55,7 +57,8 @@ fetch() {
   commit=$(git -C "${clone}" rev-parse HEAD)
   cp "${clone}"/full-hash-sha256-*.txt "${SOURCES}/hashes/"
   rm -rf "${clone}"
-  source_json malicious-hash MIT "${HASH_REPO}" "${commit}" "" > "${SOURCES}/hashes/source.json"
+  # A mirror kept by one maintainer, so its hashes alert but never trigger the Protect response.
+  source_json malicious-hash MIT "${HASH_REPO}" "${commit}" "" Medium > "${SOURCES}/hashes/source.json"
 
   tag=$("${CURL[@]}" -o /dev/null -w '%{url_effective}' "${YARA_FORGE_REPO}/releases/latest")
   tag="${tag##*/}"

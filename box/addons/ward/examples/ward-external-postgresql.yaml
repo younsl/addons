@@ -7,7 +7,8 @@ spec:
   mode: Detect
   manager:
     enabled: true
-  # Keep detections in an existing PostgreSQL server over verified TLS.
+  # Keep detections in an existing PostgreSQL server over verified TLS. Both
+  # Secrets need the label ward.sh/postgresql: "true".
   postgresql:
     enabled: true
     external:

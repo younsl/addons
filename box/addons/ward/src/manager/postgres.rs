@@ -34,6 +34,8 @@ pub enum PgError {
     },
     #[error("CA bundle {0} holds no certificate")]
     NoCa(String),
+    #[error("no CA bundle to verify the server with, and plaintext is not allowed")]
+    Plaintext,
     #[error("TLS: {0}")]
     Tls(#[from] rustls::Error),
     #[error(transparent)]
@@ -50,9 +52,11 @@ pub struct Settings {
     pub database: String,
     pub user: String,
     pub password_file: PathBuf,
-    /// CA bundle the server certificate must chain to. Without it the
-    /// connection is not encrypted.
+    /// CA bundle the server certificate must chain to.
     pub ca_file: Option<PathBuf>,
+    /// Connect without TLS when there is no CA bundle. Off, a missing
+    /// bundle is an error instead of a silent downgrade.
+    pub allow_plaintext: bool,
 }
 
 fn read(path: &PathBuf) -> Result<String, PgError> {
@@ -79,6 +83,9 @@ fn tls(ca_file: &PathBuf) -> Result<tokio_postgres_rustls::MakeRustlsConnect, Pg
 
 /// Connects and creates the table when it is missing.
 pub async fn connect(s: &Settings) -> Result<Client, PgError> {
+    if s.ca_file.is_none() && !s.allow_plaintext {
+        return Err(PgError::Plaintext);
+    }
     let mut config = tokio_postgres::Config::new();
     config
         .host(&s.host)
@@ -89,7 +96,11 @@ pub async fn connect(s: &Settings) -> Result<Client, PgError> {
         .application_name("ward-manager")
         .connect_timeout(CONNECT_TIMEOUT);
     let client = if let Some(ca) = &s.ca_file {
-        config.ssl_mode(tokio_postgres::config::SslMode::Require);
+        // SCRAM with channel binding: the server cannot ask for the password
+        // in clear, and a relay cannot reuse the exchange.
+        config
+            .ssl_mode(tokio_postgres::config::SslMode::Require)
+            .channel_binding(tokio_postgres::config::ChannelBinding::Require);
         let (client, conn) = config.connect(tls(ca)?).await?;
         tokio::spawn(async move {
             if let Err(e) = conn.await {
@@ -98,6 +109,7 @@ pub async fn connect(s: &Settings) -> Result<Client, PgError> {
         });
         client
     } else {
+        tracing::warn!(host = %s.host, "connecting to postgresql without TLS, passwords and detections cross the network in clear");
         config.ssl_mode(tokio_postgres::config::SslMode::Disable);
         let (client, conn) = config.connect(NoTls).await?;
         tokio::spawn(async move {
@@ -237,8 +249,28 @@ mod tests {
         assert_eq!(limit(usize::MAX), i64::MAX);
     }
 
+    #[tokio::test]
+    async fn refuses_plaintext_unless_allowed() {
+        let s = Settings {
+            host: "127.0.0.1".into(),
+            port: 1,
+            database: "ward".into(),
+            user: "ward".into(),
+            password_file: PathBuf::from("/nonexistent"),
+            ca_file: None,
+            allow_plaintext: false,
+        };
+        assert!(matches!(connect(&s).await, Err(PgError::Plaintext)));
+        let allowed = Settings {
+            allow_plaintext: true,
+            ..s
+        };
+        assert!(matches!(connect(&allowed).await, Err(PgError::Read { .. })));
+    }
+
     /// Runs against a real server when `WARD_TEST_POSTGRESQL` holds
-    /// `host:port:password` of a throwaway database.
+    /// `host:port:password` of a throwaway database, over TLS with channel
+    /// binding when `WARD_TEST_POSTGRESQL_CA` names its CA bundle.
     #[tokio::test]
     async fn stores_and_prunes_detections() {
         let Ok(target) = std::env::var("WARD_TEST_POSTGRESQL") else {
@@ -258,8 +290,10 @@ mod tests {
             database: "postgres".into(),
             user: "postgres".into(),
             password_file: dir.path().join("password"),
-            ca_file: None,
+            ca_file: std::env::var_os("WARD_TEST_POSTGRESQL_CA").map(PathBuf::from),
+            allow_plaintext: true,
         };
+        crate::tls::install_provider();
         let client = connect(&settings).await.unwrap();
         client
             .batch_execute("TRUNCATE ward_detections")

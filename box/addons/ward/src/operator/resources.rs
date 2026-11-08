@@ -26,6 +26,9 @@ pub const METRICS_PORT: i32 = 8081;
 pub const POSTGRESQL_PORT: i32 = 5432;
 /// The account and database of the embedded PostgreSQL server.
 pub const POSTGRESQL_USER: &str = "ward";
+/// Label a `Secret` needs before a `Ward` may mount it as PostgreSQL
+/// credentials, so a `Ward` cannot send any other `Secret` to a server.
+pub const LABEL_POSTGRESQL_SECRET: &str = "ward.sh/postgresql";
 /// Key of the password in the embedded server's auth `Secret`.
 pub const POSTGRESQL_PASSWORD_KEY: &str = "password";
 /// UID and GID of the `postgres` user in the Alpine based images.
@@ -58,6 +61,8 @@ pub struct Defaults {
     pub allow_privileged_agent: bool,
     /// Image of the embedded PostgreSQL server.
     pub postgresql_image: String,
+    /// Honor `spec.postgresql.external.sslMode: Disable`.
+    pub allow_postgresql_plaintext: bool,
 }
 
 /// Names of every object a `Ward` owns.
@@ -128,6 +133,17 @@ impl Names {
     }
     pub fn manager_dns(&self) -> Vec<String> {
         Self::dns(&self.manager(), &self.namespace)
+    }
+    /// Every `Secret` the operator generates for this `Ward`.
+    pub fn owned_secrets(&self) -> [String; 6] {
+        [
+            self.ca(),
+            self.manager_tls(),
+            self.agent_tls(),
+            self.api_token(),
+            self.postgresql_tls(),
+            self.postgresql_auth(),
+        ]
     }
     fn dns(svc: &str, ns: &str) -> Vec<String> {
         let svc = svc.to_string();
@@ -407,8 +423,13 @@ fn postgresql_client(ward: &Ward) -> (Vec<Value>, Vec<Value>, Vec<Value>) {
         json!({"name": "WARD_POSTGRESQL_USER", "value": user}),
         json!({"name": "WARD_POSTGRESQL_PASSWORD_FILE", "value": "/etc/ward/postgresql/password"}),
     ];
-    if ssl == SslMode::VerifyFull {
-        env.push(json!({"name": "WARD_POSTGRESQL_CA_FILE", "value": ca}));
+    match ssl {
+        SslMode::VerifyFull => {
+            env.push(json!({"name": "WARD_POSTGRESQL_CA_FILE", "value": ca}));
+        }
+        SslMode::Disable => {
+            env.push(json!({"name": "WARD_POSTGRESQL_ALLOW_PLAINTEXT", "value": "true"}));
+        }
     }
     (env, volumes, mounts)
 }
@@ -729,6 +750,7 @@ pub(crate) mod tests {
             allowed_image_prefixes: Vec::new(),
             allow_privileged_agent: false,
             postgresql_image: "docker.io/library/postgres:18.6-alpine3.24".into(),
+            allow_postgresql_plaintext: false,
         }
     }
 
@@ -986,6 +1008,7 @@ pub(crate) mod tests {
         assert_eq!(e["WARD_POSTGRESQL_PORT"], "6432");
         assert_eq!(e["WARD_POSTGRESQL_USER"], "ward_rw");
         assert!(!e.contains_key("WARD_POSTGRESQL_CA_FILE"));
+        assert_eq!(e["WARD_POSTGRESQL_ALLOW_PLAINTEXT"], "true");
         let vols = manager["spec"]["template"]["spec"]["volumes"]
             .as_array()
             .unwrap();

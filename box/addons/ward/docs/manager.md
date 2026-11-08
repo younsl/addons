@@ -64,7 +64,7 @@ Detections stay in `detections.jsonl` on the manager volume unless `spec.postgre
 | Setting | Server | Connection |
 | --- | --- | --- |
 | `postgresql.enabled: true` | Embedded: the operator deploys `<name>-postgresql`, a one replica StatefulSet with an 8Gi volume by default | TLS with a certificate the Ward CA issues, verified by host name, and a generated password in `<name>-postgresql-auth`. A NetworkPolicy admits only the manager, and `pg_hba.conf` refuses connections without TLS |
-| `postgresql.external` set | Yours | `sslMode: VerifyFull` (default) checks the server certificate against `caSecretRef`. `Disable` sends everything in clear |
+| `postgresql.external` set | Yours | `sslMode: VerifyFull` (default) checks the server certificate against `caSecretRef` and authenticates with SCRAM channel binding, so the server can never ask for the password in clear. The password and CA `Secrets` need the label `ward.sh/postgresql: "true"`. `Disable` sends everything in clear, needs `operator.allowPostgresqlPlaintext`, and works only because the operator then sets `WARD_POSTGRESQL_ALLOW_PLAINTEXT`: a manager without a CA bundle and without that setting refuses to connect, and logs a warning on every plaintext connect |
 
 - On its first start against an empty table, the manager imports the detections already in `detections.jsonl`.
 - Disabling the embedded server deletes it with its volume and password, so the next enable starts empty.

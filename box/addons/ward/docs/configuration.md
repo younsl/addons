@@ -15,6 +15,9 @@ A `Ward` runs an agent with `hostPID` and broad capabilities on every node, so c
 | The `Ward` lives in the operator's namespace (the chart's release namespace) | `NamespaceNotAllowed` | Fixed. The chart's `wardNamespacePolicy` also rejects it at admission |
 | `spec.image` starts with an allowed prefix | `ImageNotAllowed` | `operator.allowedImagePrefixes`, empty allows only the chart's own image repository |
 | `spec.agent.privileged` is only honored when allowed | `PrivilegedNotAllowed` | `operator.allowPrivilegedAgent`, `false` by default |
+| `spec.postgresql.embedded.image` stays within the allowed prefixes, or equals the operator's PostgreSQL image | `ImageNotAllowed` | `operator.postgresqlImage`, `operator.allowedImagePrefixes` |
+| `spec.postgresql.external.sslMode: Disable` is only honored when allowed | `PlaintextNotAllowed` | `operator.allowPostgresqlPlaintext`, `false` by default |
+| `passwordSecretRef` and `caSecretRef` name a `Secret` labeled `ward.sh/postgresql: "true"`, never one the operator generates | `SecretNotAllowed` | Fixed, so a `Ward` cannot send another `Secret` to a server it names |
 
 ### Top level
 
@@ -52,9 +55,9 @@ Where the manager keeps detections. See [Manager](manager.md#detection-storage).
 | `embedded.resources`, `embedded.nodeSelector`, `embedded.tolerations`, `embedded.affinity` | none | Embedded server Pod resources and scheduling |
 | `external.host`, `external.port` | required, `5432` | An existing server instead of the embedded one. `external` and `embedded` are exclusive |
 | `external.database`, `external.username` | `ward` | Database and role. The role needs `CREATE` on the database for the first start |
-| `external.passwordSecretRef` | required | `name` and `key` of the password in the `Ward` namespace |
-| `external.sslMode` | `VerifyFull` | `VerifyFull` or `Disable` |
-| `external.caSecretRef` | none | `name` and `key` of the PEM CA bundle. Required with `VerifyFull` |
+| `external.passwordSecretRef` | required | `name` and `key` of the password in the `Ward` namespace. The `Secret` needs the label `ward.sh/postgresql: "true"` |
+| `external.sslMode` | `VerifyFull` | `VerifyFull` or `Disable`. `VerifyFull` also requires SCRAM with channel binding, so the role's password must be stored as SCRAM (the default since PostgreSQL 14). `Disable` needs `operator.allowPostgresqlPlaintext` |
+| `external.caSecretRef` | none | `name` and `key` of the PEM CA bundle, in a `Secret` with the same label. Required with `VerifyFull` |
 
 ### agent
 

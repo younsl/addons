@@ -76,6 +76,10 @@ struct OperatorCmd {
     /// Honor `spec.agent.privileged`. Off, such a Ward is refused.
     #[arg(long, env = "WARD_ALLOW_PRIVILEGED_AGENT", default_value_t = false)]
     allow_privileged_agent: bool,
+    /// Honor `spec.postgresql.external.sslMode: Disable`. Off, such a Ward
+    /// is refused.
+    #[arg(long, env = "WARD_ALLOW_POSTGRESQL_PLAINTEXT", default_value_t = false)]
+    allow_postgresql_plaintext: bool,
     /// Image of the embedded PostgreSQL server a Ward deploys with
     /// `spec.postgresql`.
     #[arg(
@@ -141,6 +145,9 @@ struct ManagerCmd {
     /// without TLS
     #[arg(long, env = "WARD_POSTGRESQL_CA_FILE")]
     postgresql_ca_file: Option<PathBuf>,
+    /// Connect without TLS when no CA file is set. Off, that is an error
+    #[arg(long, env = "WARD_POSTGRESQL_ALLOW_PLAINTEXT", default_value_t = false)]
+    postgresql_allow_plaintext: bool,
 }
 
 #[derive(Args, Debug)]
@@ -304,6 +311,7 @@ fn dispatch(cli: Cli) -> anyhow::Result<()> {
                         .collect(),
                     allow_privileged_agent: c.allow_privileged_agent,
                     postgresql_image: c.postgresql_image,
+                    allow_postgresql_plaintext: c.allow_postgresql_plaintext,
                 },
                 leader_elect: c.leader_elect,
                 pod_name: c.pod_name,
@@ -332,6 +340,7 @@ fn dispatch(cli: Cli) -> anyhow::Result<()> {
                     user: c.postgresql_user,
                     password_file: c.postgresql_password_file,
                     ca_file: c.postgresql_ca_file,
+                    allow_plaintext: c.postgresql_allow_plaintext,
                 }),
             };
             crate::manager::run(args, shutdown_channel()).await

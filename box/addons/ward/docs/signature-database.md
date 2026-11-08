@@ -67,7 +67,7 @@ The manifest lists every source with its name, license, URL, upstream version, S
 | [malicious-hash](https://github.com/romainmarcoux/malicious-hash) | Git commit | The concatenated hash lists | `MIT` |
 | YARA Forge core | Release tag | Release zip | Per rule, in each rule's `license` meta |
 
-`ward feed build` reads the provenance of a `--yara-dir` or `--hash-dir` from a `source.json` (a manifest `Source` object) in the directory, and falls back to the directory name. A `--hash-dir` becomes one hash set named after its source, made of every `*.txt` digest list in it.
+`ward feed build` reads the provenance of a `--yara-dir` or `--hash-dir` from a `source.json` (a manifest `Source` object) in the directory, and falls back to the directory name. A `--hash-dir` becomes one hash set named after its source, made of every `*.txt` digest list in it, at the source's `severity` (`High` when unset). The workflow sets malicious-hash to `Medium`: a single maintainer controls that mirror, so its hashes raise alerts but never start the `Protect` response, which acts on `High` and above. Hashes you trust enough to act on go in `spec.indicators.block` or a `WardSignature`.
 
 A rule that fails to compile is left out with its file and line in the build log, and the other rules in the same file still ship. YARA Forge core is one file of thousands of rules, so one rule the YARA-X version cannot compile no longer drops the whole set.
 

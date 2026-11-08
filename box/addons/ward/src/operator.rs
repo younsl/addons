@@ -237,6 +237,32 @@ pub fn refusal(w: &Ward, d: &Defaults) -> Option<(&'static str, String)> {
             ),
         ));
     }
+    if let Some(e) = w
+        .spec
+        .postgresql
+        .external
+        .as_ref()
+        .filter(|_| w.spec.postgresql.enabled)
+    {
+        if e.ssl_mode == crate::crd::SslMode::Disable && !d.allow_postgresql_plaintext {
+            return Some((
+                "PlaintextNotAllowed",
+                "spec.postgresql.external.sslMode Disable needs the operator flag --allow-postgresql-plaintext".into(),
+            ));
+        }
+        let owned = Names::of(w).owned_secrets();
+        for r in std::iter::once(&e.password_secret_ref).chain(e.ca_secret_ref.as_ref()) {
+            if owned.contains(&r.name) {
+                return Some((
+                    "SecretNotAllowed",
+                    format!(
+                        "Secret {} belongs to the operator and cannot be PostgreSQL credentials",
+                        r.name
+                    ),
+                ));
+            }
+        }
+    }
     if w.spec.agent.privileged && !d.allow_privileged_agent {
         return Some((
             "PrivilegedNotAllowed",
@@ -436,6 +462,43 @@ async fn ensure_pki(api: &Api<Secret>, w: &Ward, n: &Names) -> Result<(), Operat
     Ok(())
 }
 
+/// Refuses PostgreSQL credentials from a `Secret` that is missing or not
+/// labeled for that use, so a `Ward` writer cannot send another `Secret`'s
+/// value to a server of their choosing.
+async fn secret_refusal(
+    w: &Ward,
+    secrets: &Api<Secret>,
+) -> Result<Option<(&'static str, String)>, kube::Error> {
+    let Some(e) = w
+        .spec
+        .postgresql
+        .external
+        .as_ref()
+        .filter(|_| w.spec.postgresql.enabled)
+    else {
+        return Ok(None);
+    };
+    for r in std::iter::once(&e.password_secret_ref).chain(e.ca_secret_ref.as_ref()) {
+        let labeled = secrets.get_opt(&r.name).await?.is_some_and(|s| {
+            s.labels()
+                .get(resources::LABEL_POSTGRESQL_SECRET)
+                .map(String::as_str)
+                == Some("true")
+        });
+        if !labeled {
+            return Ok(Some((
+                "SecretNotAllowed",
+                format!(
+                    "Secret {} must exist and carry the label {}=true to be PostgreSQL credentials",
+                    r.name,
+                    resources::LABEL_POSTGRESQL_SECRET
+                ),
+            )));
+        }
+    }
+    Ok(None)
+}
+
 /// Deploys the embedded PostgreSQL server, or removes it with its data
 /// when the `Ward` no longer asks for one. Returns whether it is ready.
 async fn reconcile_postgresql(
@@ -493,6 +556,10 @@ async fn reconcile_ward(w: Arc<Ward>, ctx: Arc<Ctx>) -> Result<Action, OperatorE
             )
         })
     });
+    let refused = match refused {
+        Some(r) => Some(r),
+        None => secret_refusal(&w, &Api::namespaced(client.clone(), &ns)).await?,
+    };
     if let Some((reason, message)) = refused {
         let status = WardStatus {
             observed_generation: generation,
@@ -1033,6 +1100,37 @@ mod tests {
             e.image = Some("docker.io/library/postgres:18".into());
         }
         assert_eq!(refusal(&pg, &pg_default), None);
+        let mut ext = ok.clone();
+        ext.spec.postgresql.enabled = true;
+        ext.spec.postgresql.external = Some(crate::crd::ExternalPostgresql {
+            host: "db.example.com".into(),
+            port: 5432,
+            database: "ward".into(),
+            username: "ward".into(),
+            password_secret_ref: crate::crd::SecretKeyRef {
+                name: "w-api-token".into(),
+                key: "token".into(),
+            },
+            ssl_mode: crate::crd::SslMode::VerifyFull,
+            ca_secret_ref: Some(crate::crd::SecretKeyRef {
+                name: "db-ca".into(),
+                key: "ca.crt".into(),
+            }),
+        });
+        assert_eq!(refusal(&ext, &d).unwrap().0, "SecretNotAllowed");
+        if let Some(e) = ext.spec.postgresql.external.as_mut() {
+            e.password_secret_ref.name = "db-password".into();
+        }
+        assert_eq!(refusal(&ext, &d), None);
+        if let Some(e) = ext.spec.postgresql.external.as_mut() {
+            e.ssl_mode = crate::crd::SslMode::Disable;
+        }
+        assert_eq!(refusal(&ext, &d).unwrap().0, "PlaintextNotAllowed");
+        let plain = Defaults {
+            allow_postgresql_plaintext: true,
+            ..d.clone()
+        };
+        assert_eq!(refusal(&ext, &plain), None);
         let mut privileged = ok;
         privileged.spec.agent.privileged = true;
         assert_eq!(refusal(&privileged, &d).unwrap().0, "PrivilegedNotAllowed");
