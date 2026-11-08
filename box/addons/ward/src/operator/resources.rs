@@ -256,8 +256,10 @@ pub fn manager_statefulset(ward: &Ward, d: &Defaults) -> StatefulSet {
         json!({"name": "tls", "mountPath": "/etc/ward/tls", "readOnly": true}),
         json!({"name": "token", "mountPath": "/etc/ward/api-token", "readOnly": true}),
     ];
-    let mut env =
-        vec![json!({"name": "WARD_RETENTION", "value": spec.manager.retention.to_string()})];
+    let mut env = vec![
+        json!({"name": "WARD_RETENTION", "value": spec.manager.retention.to_string()}),
+        json!({"name": "POD_NAMESPACE", "valueFrom": {"fieldRef": {"fieldPath": "metadata.namespace"}}}),
+    ];
     if let Some(ps) = spec.feed.as_ref().and_then(|f| f.pull_secret_ref.as_ref()) {
         volumes.push(json!({"name": "registry", "secret": {"secretName": ps.name}}));
         mounts
@@ -358,6 +360,14 @@ pub fn agent_daemonset(ward: &Ward, d: &Defaults) -> DaemonSet {
         env.push(json!({"name": "WARD_MANAGER_URL", "value": n.manager_url()}));
         volumes.push(json!({"name": "tls", "secret": {"secretName": n.agent_tls()}}));
         mounts.push(json!({"name": "tls", "mountPath": "/etc/ward/tls", "readOnly": true}));
+        volumes.push(
+            json!({"name": "manager-token", "projected": {"sources": [{"serviceAccountToken": {
+                "audience": crate::manager::AUDIENCE,
+                "expirationSeconds": 3600,
+                "path": "token",
+            }}]}}),
+        );
+        mounts.push(json!({"name": "manager-token", "mountPath": "/var/run/secrets/ward/manager", "readOnly": true}));
     } else if let Some(ps) = spec.feed.as_ref().and_then(|f| f.pull_secret_ref.as_ref()) {
         volumes.push(json!({"name": "registry", "secret": {"secretName": ps.name}}));
         mounts
@@ -622,6 +632,11 @@ pub(crate) mod tests {
             "manager"
         );
         assert!(sts.to_string().contains("WARD_REGISTRY_AUTH"));
+        assert!(
+            sts.to_string()
+                .contains(r#"{"fieldPath":"metadata.namespace"}"#),
+            "the manager needs its namespace to accept agent tokens"
+        );
         let svc = serde_json::to_value(manager_service(&w)).unwrap();
         assert_eq!(svc["spec"]["clusterIP"], "None");
         assert_eq!(svc["spec"]["ports"].as_array().unwrap().len(), 3);

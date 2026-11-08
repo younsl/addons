@@ -122,10 +122,22 @@ impl Store {
         self.items.read().map_or(0, |i| i.len())
     }
 
+    /// The most detections one node may hold, so a single noisy or
+    /// compromised node cannot push every other node's out of retention.
+    pub const fn per_node(&self) -> usize {
+        let share = self.retention / 10;
+        if share < 100 { 100 } else { share }
+    }
+
     pub fn add(&self, batch: Vec<Detection>) {
+        let cap = self.per_node();
         if let Ok(mut items) = self.items.write() {
             for d in &batch {
-                if items.len() == self.retention {
+                if items.iter().filter(|x| x.node == d.node).count() >= cap
+                    && let Some(i) = items.iter().position(|x| x.node == d.node)
+                {
+                    items.remove(i);
+                } else if items.len() >= self.retention {
                     items.pop_front();
                 }
                 items.push_back(d.clone());
@@ -229,6 +241,25 @@ mod tests {
             })
             .is_empty()
         );
+    }
+
+    #[test]
+    fn one_node_cannot_evict_the_others() {
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let s = Store::new(VecDeque::new(), 1000, tx);
+        assert_eq!(s.per_node(), 100);
+        s.add(vec![det("quiet", Severity::High, None)]);
+        s.add(
+            (0..500)
+                .map(|_| det("noisy", Severity::Low, None))
+                .collect(),
+        );
+        let all = s.query(&Query {
+            limit: Some(1000),
+            ..Query::default()
+        });
+        assert_eq!(all.iter().filter(|d| d.node == "noisy").count(), 100);
+        assert_eq!(all.iter().filter(|d| d.node == "quiet").count(), 1);
     }
 
     #[tokio::test]

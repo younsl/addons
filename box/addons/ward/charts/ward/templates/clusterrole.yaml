@@ -14,59 +14,13 @@ rules:
       - get
       - list
       - watch
-      - patch
-      - update
   - apiGroups:
       - security.ward.sh
     resources:
       - wards/status
-      - wardsignatures/status
     verbs:
       - get
       - patch
-      - update
-  - apiGroups:
-      - security.ward.sh
-    resources:
-      - wards/finalizers
-    verbs:
-      - update
-  - apiGroups:
-      - security.ward.sh
-    resources:
-      - wardsignatures
-    verbs:
-      - get
-      - list
-      - watch
-  - apiGroups:
-      - apps
-    resources:
-      - daemonsets
-      - statefulsets
-    verbs:
-      - get
-      - list
-      - watch
-      - create
-      - patch
-      - update
-      - delete
-  - apiGroups:
-      - ""
-    resources:
-      - configmaps
-      - secrets
-      - services
-      - serviceaccounts
-    verbs:
-      - get
-      - list
-      - watch
-      - create
-      - patch
-      - update
-      - delete
   - apiGroups:
       - ""
     resources:
@@ -76,18 +30,9 @@ rules:
       - list
       - watch
   - apiGroups:
-      - coordination.k8s.io
-    resources:
-      - leases
-    verbs:
-      - get
-      - list
-      - watch
-  - apiGroups:
       - rbac.authorization.k8s.io
     resources:
       - clusterrolebindings
-      - rolebindings
     verbs:
       - get
       - list
@@ -105,18 +50,4 @@ rules:
       - {{ include "ward.leaseClusterRoleName" . }}
     verbs:
       - bind
-  - apiGroups:
-      - ""
-    resources:
-      - events
-    verbs:
-      - create
-      - patch
-  - apiGroups:
-      - events.k8s.io
-    resources:
-      - events
-    verbs:
-      - create
-      - patch
 {{- end }}

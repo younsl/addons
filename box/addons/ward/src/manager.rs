@@ -1,6 +1,7 @@
 //! The optional manager: feed relay, detection store, and APIs.
 
 mod api;
+mod auth;
 mod relay;
 mod store;
 
@@ -19,7 +20,7 @@ use crate::observability::{Health, router, serve, stopped};
 use crate::policy::{POLICY_FILE, Policy};
 use crate::rollout::{ROLLOUT_FILE, Rollout};
 
-pub use api::NODE_HEADER;
+pub use auth::AUDIENCE;
 
 #[derive(Clone, Debug)]
 pub struct ManagerArgs {
@@ -33,6 +34,8 @@ pub struct ManagerArgs {
     pub token_file: PathBuf,
     pub registry_auth: Option<PathBuf>,
     pub retention: usize,
+    /// Namespace of the agent `ServiceAccount` whose tokens are accepted.
+    pub namespace: String,
 }
 
 const RELAY_EVERY: Duration = Duration::from_secs(30);
@@ -55,6 +58,20 @@ fn registry(auth: Option<&Path>, policy: &Policy) -> anyhow::Result<OciRegistry>
 }
 
 pub async fn run(args: ManagerArgs, shutdown: watch::Receiver<bool>) -> anyhow::Result<()> {
+    let client = crate::k8s::client().await?;
+    let auth = auth::Authenticator::token_review(
+        client,
+        &args.namespace,
+        crate::operator::resources::AGENT_SERVICE_ACCOUNT,
+    );
+    serve_with(args, auth, shutdown).await
+}
+
+async fn serve_with(
+    args: ManagerArgs,
+    auth: auth::Authenticator,
+    shutdown: watch::Receiver<bool>,
+) -> anyhow::Result<()> {
     let mut reg = Registry::default();
     let metrics = api::ManagerMetrics::register(&mut reg);
     let health = Health::new(reg);
@@ -86,6 +103,7 @@ pub async fn run(args: ManagerArgs, shutdown: watch::Receiver<bool>) -> anyhow::
         relay: relay.clone(),
         agents: RwLock::new(BTreeMap::new()),
         token,
+        auth,
         metrics,
     });
 
@@ -177,21 +195,15 @@ mod tests {
         std::fs::write(dir.join(CA_FILE), ca).unwrap();
     }
 
-    #[tokio::test]
-    async fn agents_reach_the_manager_over_mutual_tls() {
-        crate::tls::install_provider();
+    /// A CA, then server and agent TLS directories issued from it.
+    fn pki() -> (Ca, tempfile::TempDir, tempfile::TempDir) {
         let now = Utc::now();
         let ca = Ca::generate(now).unwrap();
         let server = ca
             .issue("ward-manager", &["localhost".into()], true, now)
             .unwrap();
         let agent = ca.issue("ward-agent", &[], false, now).unwrap();
-        let (server_dir, agent_dir, data, token_dir) = (
-            tempfile::tempdir().unwrap(),
-            tempfile::tempdir().unwrap(),
-            tempfile::tempdir().unwrap(),
-            tempfile::tempdir().unwrap(),
-        );
+        let (server_dir, agent_dir) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
         write(
             server_dir.path(),
             &server.cert_pem,
@@ -204,6 +216,14 @@ mod tests {
             &agent.key_pem,
             &ca.cert_pem,
         );
+        (ca, server_dir, agent_dir)
+    }
+
+    #[tokio::test]
+    async fn agents_reach_the_manager_over_mutual_tls() {
+        crate::tls::install_provider();
+        let (ca, server_dir, agent_dir) = pki();
+        let (data, token_dir) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
         std::fs::write(token_dir.path().join("token"), "secret\n").unwrap();
         let args = ManagerArgs {
             agent_addr: free_addr(),
@@ -216,15 +236,21 @@ mod tests {
             token_file: token_dir.path().join("token"),
             registry_auth: None,
             retention: 100,
+            namespace: "ward-system".into(),
         };
+        let auth = auth::Authenticator::Static(std::collections::HashMap::from([(
+            "agent-token".to_string(),
+            "node-a".to_string(),
+        )]));
         let (stop_tx, stop_rx) = watch::channel(false);
-        let task = tokio::spawn(run(args.clone(), stop_rx));
+        let task = tokio::spawn(serve_with(args.clone(), auth, stop_rx));
         tokio::time::sleep(Duration::from_millis(300)).await;
 
         let url = format!("https://localhost:{}", args.agent_addr.port());
-        let c = client(&url, agent_dir.path(), "node-a");
+        std::fs::write(token_dir.path().join("agent"), "agent-token\n").unwrap();
+        let c = client(&url, agent_dir.path(), &token_dir.path().join("agent"));
         let d = Detection::new(
-            "node-a",
+            "spoofed-node",
             Engine::Behavior,
             "reverse-shell",
             Severity::Critical,
@@ -272,6 +298,15 @@ mod tests {
             .await
             .unwrap();
         assert!(body.contains("reverse-shell"), "{body}");
+        assert!(
+            body.contains("node-a") && !body.contains("spoofed-node"),
+            "{body}"
+        );
+        let anon = client(&url, agent_dir.path(), &token_dir.path().join("missing"));
+        assert!(
+            anon.post_detections(&[]).await.is_err(),
+            "no token, no access"
+        );
 
         stop_tx.send(true).unwrap();
         task.await.unwrap().unwrap();

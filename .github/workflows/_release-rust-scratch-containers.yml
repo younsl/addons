@@ -225,12 +225,15 @@ jobs:
         working-directory: ${{ env.PROJECT_BASE_DIR }}/${{ matrix.ebpf_dir }}
         env:
           BPF_LINKER_VERSION: "0.13.0"
+          # Digest of the v0.13.0 release asset, so a replaced asset fails the build
+          BPF_LINKER_SHA256: "0e9b2b30f68898177f1cb6f0ecbfa909a82479473a49a0ef66529fd088e3e410"
           TARGET: ${{ matrix.target }}
         run: |
           tools="${RUNNER_TEMP}/bpf-linker"
           mkdir -p "${tools}"
           curl -fsSL -o "${tools}/bpf-linker.tar.zst" \
             "https://github.com/aya-rs/bpf-linker/releases/download/v${BPF_LINKER_VERSION}/bpf-linker-x86_64-unknown-linux-musl.tar.zst"
+          echo "${BPF_LINKER_SHA256}  ${tools}/bpf-linker.tar.zst" | sha256sum -c -
           tar --zstd -xf "${tools}/bpf-linker.tar.zst" -C "${tools}"
           chmod +x "${tools}/bpf-linker"
 

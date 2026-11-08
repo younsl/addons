@@ -110,6 +110,9 @@ struct ManagerCmd {
     registry_auth: Option<PathBuf>,
     #[arg(long, env = "WARD_RETENTION", default_value_t = 10_000)]
     retention: usize,
+    /// Namespace of the agent `ServiceAccount` whose tokens are accepted
+    #[arg(long, env = "POD_NAMESPACE", default_value = "default")]
+    namespace: String,
 }
 
 #[derive(Args, Debug)]
@@ -133,6 +136,13 @@ struct AgentCmd {
     manager_url: Option<String>,
     #[arg(long, env = "WARD_TLS_DIR", default_value = "/etc/ward/tls")]
     tls_dir: PathBuf,
+    /// Projected `ServiceAccount` token with the manager audience
+    #[arg(
+        long,
+        env = "WARD_MANAGER_TOKEN_FILE",
+        default_value = "/var/run/secrets/ward/manager/token"
+    )]
+    manager_token_file: PathBuf,
     #[arg(long, env = "WARD_REGISTRY_AUTH")]
     registry_auth: Option<PathBuf>,
     #[arg(long, env = "HEALTH_ADDR", default_value = "0.0.0.0:8081")]
@@ -255,6 +265,7 @@ fn dispatch(cli: Cli) -> anyhow::Result<()> {
                 token_file: c.token_file,
                 registry_auth: c.registry_auth,
                 retention: c.retention,
+                namespace: c.namespace,
             };
             crate::manager::run(args, shutdown_channel()).await
         }),
@@ -269,6 +280,7 @@ fn dispatch(cli: Cli) -> anyhow::Result<()> {
                 proc_root: c.proc_root,
                 manager_url: c.manager_url,
                 tls_dir: c.tls_dir,
+                manager_token_file: c.manager_token_file,
                 registry_auth: c.registry_auth,
                 health_addr: c.health_addr,
                 tracefs: c.tracefs,

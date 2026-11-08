@@ -90,7 +90,21 @@ pub fn scan_path(
     path: &Path,
     max_size: u64,
 ) -> Option<(Match, FileInfo, (u64, u64))> {
-    let meta = std::fs::metadata(path).ok()?;
+    let file = std::fs::File::open(path).ok()?;
+    scan_file(scanner, revision, cache, file, path, max_size)
+}
+
+/// Scans an already opened file. Identity and content both come from the
+/// descriptor, so what is reported is exactly what was read.
+pub fn scan_file(
+    scanner: &mut EngineScanner<'_>,
+    revision: &str,
+    cache: &Mutex<ScanCache>,
+    mut file: std::fs::File,
+    path: &Path,
+    max_size: u64,
+) -> Option<(Match, FileInfo, (u64, u64))> {
+    let meta = file.metadata().ok()?;
     if !meta.is_file() || meta.len() > max_size {
         return None;
     }
@@ -107,7 +121,8 @@ pub fn scan_path(
         }
         None => {}
     }
-    let data = std::fs::read(path).ok()?;
+    let mut data = Vec::with_capacity(usize::try_from(meta.len()).unwrap_or(0));
+    std::io::Read::read_to_end(&mut std::io::Read::take(&mut file, max_size), &mut data).ok()?;
     let result = scanner.scan(&data);
     if let Ok(mut c) = cache.lock() {
         c.put(key, result.clone());
@@ -259,6 +274,41 @@ mod tests {
             )
             .is_empty()
         );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn full_scan_walks_through_a_process_root() {
+        let engine = Engine::build(&EngineParts {
+            revision: "r".into(),
+            ..EngineParts::default()
+        })
+        .unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("eicar.com"), eicar()).unwrap();
+        let mut child = std::process::Command::new("sleep")
+            .arg("30")
+            .spawn()
+            .unwrap();
+        let roots = vec![ScanRoot {
+            base: PathBuf::from(format!("/proc/{}/root", child.id())),
+            dirs: vec![dir.path().display().to_string()],
+            workload: None,
+        }];
+        let mut policy = Policy::default();
+        policy.scan.max_file_size_bytes = 1 << 20;
+        let found = full_scan(
+            &engine,
+            &roots,
+            &policy,
+            &Mutex::new(ScanCache::default()),
+            &AtomicBool::new(false),
+            &|| {},
+        );
+        let _ = child.kill();
+        let _ = child.wait();
+        assert_eq!(found.len(), 1, "{found:?}");
+        assert!(found[0].file.path.ends_with("eicar.com"));
     }
 
     #[test]

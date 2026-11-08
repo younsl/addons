@@ -60,6 +60,7 @@ pub struct AgentArgs {
     pub proc_root: PathBuf,
     pub manager_url: Option<String>,
     pub tls_dir: PathBuf,
+    pub manager_token_file: PathBuf,
     pub registry_auth: Option<PathBuf>,
     pub health_addr: SocketAddr,
     pub tracefs: PathBuf,
@@ -241,22 +242,40 @@ impl Ctx {
         workload: Option<Workload>,
         policy: &Policy,
     ) -> bool {
-        let mut targets = vec![(self.proc.exe_path(p.pid), p.exe.clone(), true)];
+        // The executable through the kernel's /proc/<pid>/exe link. A script
+        // run by an interpreter is opened inside the container's root, never
+        // by a host path, so a symlink cannot steer the agent outside it.
+        let mut targets = vec![(None, p.exe.clone(), true)];
         if !e.filename.is_empty() && Some(&e.filename) != p.exe.as_ref() {
-            let script = self
-                .proc
-                .root_path(p.pid)
-                .join(e.filename.trim_start_matches('/'));
-            targets.push((script, Some(e.filename.clone()), false));
+            let script = if e.filename.starts_with('/') {
+                e.filename.clone()
+            } else {
+                let cwd = std::fs::read_link(self.proc.root_path(p.pid).with_file_name("cwd"))
+                    .map(|c| c.to_string_lossy().into_owned())
+                    .unwrap_or_default();
+                format!("{}/{}", cwd.trim_end_matches('/'), e.filename)
+            };
+            targets.push((Some(script.clone()), Some(script), false));
         }
-        for (path, shown, is_exe) in targets {
+        for (script, shown, is_exe) in targets {
             let ctx = self.clone();
             let max = policy.scan.max_file_size_bytes;
+            let pid = p.pid;
             let found = tokio::task::spawn_blocking(move || {
                 let engine = ctx.store.engine();
                 let mut scanner = engine.scanner();
                 ctx.metrics.scanned("exec");
-                scanner::scan_path(&mut scanner, &engine.revision, &ctx.cache, &path, max)
+                let (file, path) = match &script {
+                    None => {
+                        let path = ctx.proc.exe_path(pid);
+                        (std::fs::File::open(&path).ok()?, path)
+                    }
+                    Some(s) => (
+                        response::open_in_root(&ctx.proc.root_path(pid), s).ok()?,
+                        std::path::PathBuf::from(s),
+                    ),
+                };
+                scanner::scan_file(&mut scanner, &engine.revision, &ctx.cache, file, &path, max)
             })
             .await
             .ok()
@@ -493,19 +512,29 @@ async fn poll_procfs(
     policy: watch::Receiver<Policy>,
     mut shutdown: watch::Receiver<bool>,
 ) {
-    let mut known: HashSet<i32> = HashSet::new();
+    // The executable each PID ran when last seen. An exec keeps the PID, so
+    // a changed executable is reported as a new exec, as in `sh -c 'x; y'`
+    // where the shell becomes `y`.
+    let mut known: HashMap<i32, Option<String>> = HashMap::new();
     loop {
         let interval = Duration::from_millis(policy.borrow().behavior.poll_interval_ms.max(100));
-        let now: HashSet<i32> = proc.pids().into_iter().collect();
-        for pid in now.difference(&known) {
-            let _ = tx
-                .send(ProcessEvent::Exec(Exec {
-                    pid: *pid,
-                    ..Exec::default()
-                }))
-                .await;
+        let mut now: HashMap<i32, Option<String>> = HashMap::new();
+        for pid in proc.pids() {
+            let exe = proc.exe(pid);
+            let changed = known
+                .get(&pid)
+                .is_none_or(|before| exe.is_some() && *before != exe);
+            if changed {
+                let _ = tx
+                    .send(ProcessEvent::Exec(Exec {
+                        pid,
+                        ..Exec::default()
+                    }))
+                    .await;
+            }
+            now.insert(pid, exe);
         }
-        for pid in known.difference(&now) {
+        for pid in known.keys().filter(|p| !now.contains_key(p)) {
             let _ = tx.send(ProcessEvent::Exit { pid: *pid }).await;
         }
         known = now;
@@ -556,8 +585,8 @@ fn start_source(
 
 /// A manager client for other modules' tests.
 #[cfg(test)]
-pub fn client_for_tests(url: &str, tls: &Path, node: &str) -> client::ManagerClient {
-    client::ManagerClient::new(url, tls, node).unwrap()
+pub fn client_for_tests(url: &str, tls: &Path, token_file: &Path) -> client::ManagerClient {
+    client::ManagerClient::new(url, tls, token_file).unwrap()
 }
 
 #[allow(clippy::too_many_lines)]
@@ -587,7 +616,8 @@ pub async fn run(args: AgentArgs, shutdown: watch::Receiver<bool>) -> anyhow::Re
     let store = Arc::new(ContentStore::new(&args.state_dir));
     let manager = match &args.manager_url {
         Some(url) => Some(Arc::new(
-            client::ManagerClient::new(url, &args.tls_dir, &args.node).context("manager TLS")?,
+            client::ManagerClient::new(url, &args.tls_dir, &args.manager_token_file)
+                .context("manager TLS")?,
         )),
         None => None,
     };
@@ -1031,6 +1061,17 @@ mod tests {
             .unwrap()
             .unwrap();
         assert!(matches!(first, ProcessEvent::Exec(Exec { pid: 50, .. })));
+        let link = fake.dir.path().join("50/exe");
+        std::fs::remove_file(&link).unwrap();
+        std::os::unix::fs::symlink("/tmp/other", &link).unwrap();
+        let reexec = tokio::time::timeout(Duration::from_secs(2), rx.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(
+            matches!(reexec, ProcessEvent::Exec(Exec { pid: 50, .. })),
+            "an exec in the same PID is reported"
+        );
         std::fs::remove_dir_all(fake.dir.path().join("50")).unwrap();
         let gone = tokio::time::timeout(Duration::from_secs(2), rx.recv())
             .await

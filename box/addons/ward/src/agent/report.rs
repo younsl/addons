@@ -111,7 +111,7 @@ pub async fn run(
                         match m.post_detections(&batch).await {
                             Ok(()) => { pending.drain(..n); }
                             Err(e) => {
-                                tracing::debug!(error = %e, pending = pending.len(), "manager unreachable, keeping detections");
+                                tracing::warn!(error = %e, pending = pending.len(), "manager did not accept detections, keeping them");
                                 break;
                             }
                         }

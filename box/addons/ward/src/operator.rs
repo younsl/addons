@@ -764,6 +764,11 @@ async fn cleanup(w: Arc<Ward>, ctx: Arc<Ctx>) -> Result<Action, OperatorError> {
 async fn reconcile(w: Arc<Ward>, ctx: Arc<Ctx>) -> Result<Action, OperatorError> {
     let ns = w.namespace().unwrap_or_default();
     let api: Api<Ward> = Api::namespaced(ctx.client.clone(), &ns);
+    if ns != ctx.defaults.ward_namespace {
+        // No finalizer outside the home namespace: the operator only reports
+        // the refusal there, and a finalizer would outlive an uninstall.
+        return reconcile_ward(w, ctx).await;
+    }
     let result = finalizer(&api, FINALIZER, w, |event| async {
         match event {
             Finalizer::Apply(w) => reconcile_ward(w, ctx.clone()).await,

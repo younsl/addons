@@ -119,6 +119,42 @@ pub fn quarantine(
     Ok(dst)
 }
 
+/// Opens `path` as a process inside `root` would see it, refusing every
+/// symlink, so a container cannot point the agent at a file outside it.
+#[cfg(target_os = "linux")]
+pub fn open_in_root(root: &Path, path: &str) -> Result<std::fs::File, String> {
+    use nix::fcntl::{OFlag, OpenHow, ResolveFlag, open, openat2};
+    use nix::sys::stat::Mode;
+
+    let root_fd = open(
+        root,
+        OFlag::O_PATH | OFlag::O_DIRECTORY | OFlag::O_CLOEXEC,
+        Mode::empty(),
+    )
+    .map_err(|e| format!("open root {}: {e}", root.display()))?;
+    let rel = path.trim_start_matches('/');
+    let fd = openat2(
+        &root_fd,
+        if rel.is_empty() { "." } else { rel },
+        OpenHow::new()
+            .flags(OFlag::O_RDONLY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC)
+            .resolve(
+                ResolveFlag::RESOLVE_IN_ROOT
+                    | ResolveFlag::RESOLVE_NO_SYMLINKS
+                    | ResolveFlag::RESOLVE_NO_MAGICLINKS,
+            ),
+    )
+    .map_err(|e| format!("open {path}: {e}"))?;
+    Ok(std::fs::File::from(fd))
+}
+
+#[cfg(not(target_os = "linux"))]
+pub fn open_in_root(_root: &Path, path: &str) -> Result<std::fs::File, String> {
+    Err(format!(
+        "opening {path} inside a container needs Linux openat2"
+    ))
+}
+
 #[cfg(not(target_os = "linux"))]
 pub fn quarantine(
     _root: &Path,
@@ -214,9 +250,30 @@ pub(crate) mod tests {
         assert!(victim.exists());
     }
 
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn open_in_root_refuses_symlinks() {
+        let root = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        std::fs::write(outside.path().join("secret"), b"host").unwrap();
+        std::fs::write(root.path().join("run.sh"), b"echo hi").unwrap();
+        std::os::unix::fs::symlink(outside.path().join("secret"), root.path().join("link.sh"))
+            .unwrap();
+        std::os::unix::fs::symlink(outside.path(), root.path().join("dir")).unwrap();
+        let mut f = open_in_root(root.path(), "/run.sh").unwrap();
+        let mut s = String::new();
+        std::io::Read::read_to_string(&mut f, &mut s).unwrap();
+        assert_eq!(s, "echo hi");
+        assert!(open_in_root(root.path(), "/link.sh").is_err());
+        assert!(open_in_root(root.path(), "/dir/secret").is_err());
+        assert!(open_in_root(root.path(), "/../../etc/passwd").is_err());
+    }
+
     #[cfg(not(target_os = "linux"))]
     #[test]
     fn quarantine_needs_linux() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(open_in_root(dir.path(), "/x").is_err());
         let dir = tempfile::tempdir().unwrap();
         assert!(quarantine(dir.path(), "/x", (0, 0), dir.path(), SHA).is_err());
     }

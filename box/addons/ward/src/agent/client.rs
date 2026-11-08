@@ -18,20 +18,17 @@ pub enum ClientError {
 
 pub struct ManagerClient {
     base: String,
-    node: String,
+    /// The projected `ServiceAccount` token with the manager audience. The
+    /// kubelet rotates it, so it is read for every request.
+    token_file: PathBuf,
     tls_dir: PathBuf,
     http: RwLock<(reqwest::Client, Instant)>,
 }
 
-fn build(tls_dir: &Path, node: &str) -> Result<reqwest::Client, ClientError> {
+fn build(tls_dir: &Path) -> Result<reqwest::Client, ClientError> {
     let tls = crate::tls::client_config(tls_dir)?;
-    let mut headers = reqwest::header::HeaderMap::new();
-    if let Ok(v) = reqwest::header::HeaderValue::from_str(node) {
-        headers.insert(crate::manager::NODE_HEADER, v);
-    }
     reqwest::Client::builder()
         .tls_backend_preconfigured(tls)
-        .default_headers(headers)
         .timeout(Duration::from_mins(2))
         .build()
         .map_err(|e| ClientError::Http {
@@ -41,13 +38,19 @@ fn build(tls_dir: &Path, node: &str) -> Result<reqwest::Client, ClientError> {
 }
 
 impl ManagerClient {
-    pub fn new(base: &str, tls_dir: &Path, node: &str) -> Result<Self, ClientError> {
+    pub fn new(base: &str, tls_dir: &Path, token_file: &Path) -> Result<Self, ClientError> {
         Ok(Self {
             base: base.trim_end_matches('/').to_string(),
-            node: node.to_string(),
+            token_file: token_file.to_path_buf(),
             tls_dir: tls_dir.to_path_buf(),
-            http: RwLock::new((build(tls_dir, node)?, Instant::now())),
+            http: RwLock::new((build(tls_dir)?, Instant::now())),
         })
+    }
+
+    fn token(&self) -> String {
+        std::fs::read_to_string(&self.token_file)
+            .map(|t| t.trim().to_string())
+            .unwrap_or_default()
     }
 
     /// The client, rebuilt hourly so renewed certificates are picked up.
@@ -57,7 +60,7 @@ impl ManagerClient {
         {
             return g.0.clone();
         }
-        if let (Ok(c), Ok(mut g)) = (build(&self.tls_dir, &self.node), self.http.write()) {
+        if let (Ok(c), Ok(mut g)) = (build(&self.tls_dir), self.http.write()) {
             *g = (c, Instant::now());
         }
         self.http.read().map(|g| g.0.clone()).unwrap_or_default()
@@ -71,6 +74,7 @@ impl ManagerClient {
         let res = self
             .http()
             .get(format!("{}{path}", self.base))
+            .bearer_auth(self.token())
             .send()
             .await
             .map_err(|e| err(e.to_string()))?;
@@ -93,6 +97,7 @@ impl ManagerClient {
         let res = self
             .http()
             .post(format!("{}{path}", self.base))
+            .bearer_auth(self.token())
             .json(batch)
             .send()
             .await
@@ -120,7 +125,7 @@ mod tests {
         crate::tls::install_provider();
         let dir = tempfile::tempdir().unwrap();
         assert!(matches!(
-            ManagerClient::new("https://m:8443", dir.path(), "node-a"),
+            ManagerClient::new("https://m:8443", dir.path(), &dir.path().join("token")),
             Err(ClientError::Tls(_))
         ));
     }

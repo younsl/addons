@@ -5,6 +5,11 @@ IMAGE      := $(REGISTRY)/$(BINARY)
 COVER_MIN  ?= 70
 
 BPF_LINKER_VERSION ?= 0.13.0
+# Digests of the v0.13.0 release assets, checked before the binary runs
+BPF_LINKER_SHA256_x86_64-unknown-linux-musl := 0e9b2b30f68898177f1cb6f0ecbfa909a82479473a49a0ef66529fd088e3e410
+BPF_LINKER_SHA256_aarch64-unknown-linux-musl := 248e25f5c6a7242b054bd8f705470abb7a5a79b2b7c07df347c5d7049b783452
+BPF_LINKER_SHA256_x86_64-apple-darwin := 4f33e0aac922606522fe5e4a3a23a5ed8083c3af50a05108301315e50b995502
+BPF_LINKER_SHA256_aarch64-apple-darwin := a4882533f5d423f8397ba431256d1cef45a3e13dbfc359decafee3800ee90e55
 TOOLS_DIR   := $(CURDIR)/.tools
 BPF_LINKER  := $(TOOLS_DIR)/bpf-linker
 EBPF_ARCHES := x86_64 aarch64
@@ -75,6 +80,7 @@ $(BPF_LINKER):
 	mkdir -p $(TOOLS_DIR)
 	curl -fsSL -o $(TOOLS_DIR)/bpf-linker.tar.zst \
 		https://github.com/aya-rs/bpf-linker/releases/download/v$(BPF_LINKER_VERSION)/bpf-linker-$(HOST_TRIPLE).tar.zst
+	echo "$(BPF_LINKER_SHA256_$(HOST_TRIPLE))  $(TOOLS_DIR)/bpf-linker.tar.zst" | shasum -a 256 -c -
 	tar --zstd -xf $(TOOLS_DIR)/bpf-linker.tar.zst -C $(TOOLS_DIR)
 	rm -f $(TOOLS_DIR)/bpf-linker.tar.zst
 	chmod +x $(BPF_LINKER)
