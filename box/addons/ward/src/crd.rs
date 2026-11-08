@@ -554,10 +554,17 @@ pub enum BehaviorRule {
     PipeToShell,
     ReconTool,
     SaTokenRead,
+    ContainerEscape,
+    KernelModuleLoad,
+    RuntimeSocket,
+    CredentialAccess,
+    AttackTool,
+    Persistence,
+    DefenseEvasion,
 }
 
 impl BehaviorRule {
-    pub const ALL: [Self; 9] = [
+    pub const ALL: [Self; 16] = [
         Self::ReverseShell,
         Self::ShellNetworkConnect,
         Self::FilelessExec,
@@ -567,6 +574,13 @@ impl BehaviorRule {
         Self::PipeToShell,
         Self::ReconTool,
         Self::SaTokenRead,
+        Self::ContainerEscape,
+        Self::KernelModuleLoad,
+        Self::RuntimeSocket,
+        Self::CredentialAccess,
+        Self::AttackTool,
+        Self::Persistence,
+        Self::DefenseEvasion,
     ];
 
     pub const fn id(self) -> &'static str {
@@ -580,6 +594,13 @@ impl BehaviorRule {
             Self::PipeToShell => "pipe-to-shell",
             Self::ReconTool => "recon-tool",
             Self::SaTokenRead => "sa-token-read",
+            Self::ContainerEscape => "container-escape",
+            Self::KernelModuleLoad => "kernel-module-load",
+            Self::RuntimeSocket => "runtime-socket",
+            Self::CredentialAccess => "credential-access",
+            Self::AttackTool => "attack-tool",
+            Self::Persistence => "persistence",
+            Self::DefenseEvasion => "defense-evasion",
         }
     }
 }
@@ -1086,7 +1107,7 @@ mod tests {
         ] {
             assert!(crd.contains(msg), "{msg}");
         }
-        assert_eq!(BehaviorRule::ALL.len(), 9);
+        assert_eq!(BehaviorRule::ALL.len(), 16);
         for p in [
             DnsPolicy::ClusterFirst,
             DnsPolicy::ClusterFirstWithHostNet,

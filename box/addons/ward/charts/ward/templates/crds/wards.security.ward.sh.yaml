@@ -731,6 +731,13 @@ spec:
                       - pipe-to-shell
                       - recon-tool
                       - sa-token-read
+                      - container-escape
+                      - kernel-module-load
+                      - runtime-socket
+                      - credential-access
+                      - attack-tool
+                      - persistence
+                      - defense-evasion
                       type: string
                     type: array
                     x-kubernetes-list-type: set
