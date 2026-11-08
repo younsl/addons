@@ -6,7 +6,7 @@ How the signed signature feed is built, verified, rolled out to nodes, and store
 
 The [ward-db workflow](../../../../.github/workflows/ward-db.yml) rebuilds the database daily:
 
-1. Downloads the [MalwareBazaar](https://bazaar.abuse.ch/) SHA-256 dump and the [YARA Forge](https://github.com/YARAHQ/yara-forge) core rule set, and takes the repository [allowlist](../feed/allowlist.txt).
+1. Downloads the [MalwareBazaar](https://bazaar.abuse.ch/) SHA-256 dump and the [YARA Forge](https://github.com/YARAHQ/yara-forge) core rule set, and takes the repository [allowlist](../feed/allowlist.txt). The latest YARA Forge release is resolved to its tag first, so the tag and the downloaded zip always match.
 2. Exports a known-good corpus from popular base and runtime images for both `linux/amd64` and `linux/arm64` (listed in [ci-ward-db.sh](../../../../.github/scripts/ci-ward-db.sh)).
 3. Packs everything with `ward feed build` into `ward-db.json.gz` (gzipped JSON: manifest, signatures, hash sets, YARA sources, disabled YARA rules) and prunes it against the allowlist and the corpus (see [Pruning](#pruning)).
 4. Runs `ward feed check`: the database must match the EICAR self-test and produce zero hits on the corpus.
@@ -42,6 +42,19 @@ To exclude a hash the corpus does not cover, add it to [feed/allowlist.txt](../f
 | Layer 2 | `ward-db.json.gz.sig`, `application/vnd.ward.db.signature.v1`, DER or base64 of DER |
 
 Build your own feed with the same layout and point `spec.feed.image` and `spec.feed.publicKey` at it.
+
+## Provenance
+
+The manifest lists every source with its name, license, URL, upstream version, SHA-256 of the downloaded artifact, and entry count, so each revision can be traced back to exactly what went in.
+
+| Source | `version` | `sha256` | `license` |
+| --- | --- | --- | --- |
+| MalwareBazaar | none (rolling dump) | Hash dump file | `CC0-1.0` |
+| YARA Forge core | Release tag | Release zip | Per rule, in each rule's `license` meta |
+
+`ward feed build` reads the provenance of a `--yara-dir` from a `source.json` (a manifest `Source` object) next to its rules, and falls back to the directory name.
+
+A rule that fails to compile is left out with its file and line in the build log, and the other rules in the same file still ship. YARA Forge core is one file of thousands of rules, so one rule the YARA-X version cannot compile no longer drops the whole set.
 
 ## Verification
 

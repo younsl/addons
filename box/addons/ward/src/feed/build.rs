@@ -17,6 +17,8 @@ use crate::signature::{Match, Signature, SignatureDb, sha256_hex};
 
 const CORPUS_MAX_FILE: u64 = 64 * 1024 * 1024;
 const YARA_PREFIX: &str = "yara:";
+/// Optional provenance next to the rules of a `--yara-dir`, a JSON `Source`.
+pub const SOURCE_META: &str = "source.json";
 
 #[derive(Debug, thiserror::Error)]
 pub enum BuildError {
@@ -61,6 +63,7 @@ pub struct BuildReport {
     pub hashes: usize,
     pub signatures: usize,
     pub yara_files: usize,
+    pub yara_rules: usize,
     pub dropped_yara: Vec<String>,
     /// Feed hashes removed because an allowlist holds them.
     pub allowlisted: usize,
@@ -252,19 +255,67 @@ fn prune(db: &mut FeedDb, input: &BuildInput, report: &mut BuildReport) -> Resul
     Ok(())
 }
 
+/// Reads the rule files under `dir` into `yara`, keeping each file that
+/// compiles at least one rule, and returns the source with its provenance
+/// from `source.json` when present.
+fn collect_yara(
+    dir: &Path,
+    yara: &mut Vec<YaraSource>,
+    report: &mut BuildReport,
+) -> Result<Source, BuildError> {
+    let mut rules = 0usize;
+    for file in yara_files(dir) {
+        let src = YaraSource {
+            name: file
+                .strip_prefix(dir)
+                .unwrap_or(&file)
+                .display()
+                .to_string(),
+            source: read(&file)?,
+        };
+        let (compiled, dropped) = compile_yara(std::slice::from_ref(&src));
+        report.dropped_yara.extend(dropped);
+        if let Some(compiled) = compiled {
+            rules += compiled.iter().len();
+            report.yara_files += 1;
+            yara.push(src);
+        }
+    }
+    report.yara_rules += rules;
+    let meta_path = dir.join(SOURCE_META);
+    let mut source = if meta_path.is_file() {
+        serde_json::from_str::<Source>(&read(&meta_path)?).map_err(|e| BuildError::Parse {
+            path: meta_path.display().to_string(),
+            reason: e.to_string(),
+        })?
+    } else {
+        Source {
+            name: dir
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default(),
+            ..Source::default()
+        }
+    };
+    source.count = rules as u64;
+    Ok(source)
+}
+
 pub fn build(input: &BuildInput) -> Result<(FeedDb, BuildReport), BuildError> {
     let mut report = BuildReport::default();
     let mut sources = Vec::new();
     let mut hash_sets = Vec::new();
     for path in &input.malwarebazaar {
-        let mut hashes = parse_hash_dump(&read(path)?);
+        let text = read(path)?;
+        let mut hashes = parse_hash_dump(&text);
         hashes.sort_unstable();
         hashes.dedup();
         sources.push(Source {
             name: "MalwareBazaar".into(),
             license: "CC0-1.0".into(),
             url: "https://bazaar.abuse.ch".into(),
-            count: 0,
+            sha256: sha256_hex(text.as_bytes()),
+            ..Source::default()
         });
         hash_sets.push(HashSet32::pack(
             "MalwareBazaar",
@@ -298,33 +349,7 @@ pub fn build(input: &BuildInput) -> Result<(FeedDb, BuildReport), BuildError> {
 
     let mut yara = Vec::new();
     for dir in &input.yara_dirs {
-        let mut kept = 0u64;
-        for file in yara_files(dir) {
-            let src = YaraSource {
-                name: file
-                    .strip_prefix(dir)
-                    .unwrap_or(&file)
-                    .display()
-                    .to_string(),
-                source: read(&file)?,
-            };
-            let (_, dropped) = compile_yara(std::slice::from_ref(&src));
-            if dropped.is_empty() {
-                kept += 1;
-                yara.push(src);
-            } else {
-                report.dropped_yara.extend(dropped);
-            }
-        }
-        report.yara_files += usize::try_from(kept).unwrap_or(usize::MAX);
-        sources.push(Source {
-            name: dir
-                .file_name()
-                .map(|n| n.to_string_lossy().into_owned())
-                .unwrap_or_default(),
-            count: kept,
-            ..Source::default()
-        });
+        sources.push(collect_yara(dir, &mut yara, &mut report)?);
     }
 
     let mut db = FeedDb {
@@ -453,8 +478,12 @@ mod tests {
         assert_eq!(report.hashes, 1);
         assert_eq!(report.signatures, 1);
         assert_eq!(report.yara_files, 1);
+        assert_eq!(report.yara_rules, 1);
         assert_eq!(report.dropped_yara.len(), 1);
         assert_eq!(db.manifest.sources.len(), 3);
+        assert_eq!(db.manifest.sources[0].sha256.len(), 64);
+        assert_eq!(db.manifest.sources[2].name, "yara");
+        assert_eq!(db.manifest.sources[2].count, 1);
 
         let clean = dir.path().join("corpus");
         std::fs::create_dir_all(&clean).unwrap();
@@ -574,6 +603,46 @@ mod tests {
                 ..BuildInput::default()
             }),
             Err(BuildError::Unprunable { .. })
+        ));
+    }
+
+    #[test]
+    fn yara_provenance_and_partial_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let ydir = dir.path().join("forge");
+        std::fs::create_dir_all(&ydir).unwrap();
+        std::fs::write(
+            ydir.join("core.yar"),
+            "rule Kept { condition: false }\nrule Broken { condition: nope }\n",
+        )
+        .unwrap();
+        std::fs::write(
+            ydir.join(SOURCE_META),
+            r#"{"name":"YARA Forge core","license":"per rule","url":"https://example.com","version":"20261108","sha256":"abc"}"#,
+        )
+        .unwrap();
+        let (db, report) = build(&BuildInput {
+            yara_dirs: vec![ydir.clone()],
+            ..BuildInput::default()
+        })
+        .unwrap();
+        assert_eq!(report.yara_files, 1);
+        assert_eq!(report.yara_rules, 1);
+        assert_eq!(report.dropped_yara.len(), 1);
+        let src = &db.manifest.sources[0];
+        assert_eq!(src.name, "YARA Forge core");
+        assert_eq!(src.version, "20261108");
+        assert_eq!(src.sha256, "abc");
+        assert_eq!(src.count, 1);
+        assert_eq!(FeedDb::decode(&db.encode()).unwrap(), db);
+
+        std::fs::write(ydir.join(SOURCE_META), "{").unwrap();
+        assert!(matches!(
+            build(&BuildInput {
+                yara_dirs: vec![ydir],
+                ..BuildInput::default()
+            }),
+            Err(BuildError::Parse { .. })
         ));
     }
 }

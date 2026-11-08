@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Build, test, sign, and publish the ward signature database as an OCI artifact.
 # Usage: ci-ward-db.sh <fetch|plan|corpus|build|check|publish>
-#   fetch    download the MalwareBazaar SHA-256 dump and YARA Forge core rules,
-#            and copy the repository allowlist next to them
+#   fetch    download the MalwareBazaar SHA-256 dump and the latest YARA Forge core
+#            release with its provenance, and copy the repository allowlist
 #   plan     compare the inputs with latest, skip the rest when they match
 #   corpus   export known-good images for both architectures
 #   build    run `ward feed build`, pruning what matches the allowlist and corpus
@@ -38,6 +38,7 @@ CORPUS_IMAGES=(
   nginx:stable
 )
 INPUTS_ANNOTATION="sh.ward.db.inputs-digest"
+YARA_FORGE_REPO="https://github.com/YARAHQ/yara-forge"
 
 fetch() {
   mkdir -p "${SOURCES}/yara"
@@ -45,20 +46,26 @@ fetch() {
   if [[ -n "${ABUSE_CH_AUTH_KEY:-}" ]]; then
     auth=(-H "Auth-Key: ${ABUSE_CH_AUTH_KEY}")
   fi
-  curl -fsSL "${auth[@]}" -o "${SOURCES}/malwarebazaar.zip" \
+  curl -fsSL --retry 5 --retry-all-errors "${auth[@]}" -o "${SOURCES}/malwarebazaar.zip" \
     https://bazaar.abuse.ch/export/txt/sha256/full/
   unzip -p "${SOURCES}/malwarebazaar.zip" > "${SOURCES}/malwarebazaar.txt"
   rm -f "${SOURCES}/malwarebazaar.zip"
 
-  curl -fsSL -o "${SOURCES}/yara-forge-core.zip" \
-    https://github.com/YARAHQ/yara-forge/releases/latest/download/yara-forge-rules-core.zip
-  unzip -q -o -j "${SOURCES}/yara-forge-core.zip" '*.yar' -d "${SOURCES}/yara"
-  rm -f "${SOURCES}/yara-forge-core.zip"
+  local tag zip="${SOURCES}/yara-forge-core.zip"
+  tag=$(curl -fsSL --retry 5 --retry-all-errorsI -o /dev/null -w '%{url_effective}' "${YARA_FORGE_REPO}/releases/latest")
+  tag="${tag##*/}"
+  curl -fsSL --retry 5 --retry-all-errors -o "${zip}" "${YARA_FORGE_REPO}/releases/download/${tag}/yara-forge-rules-core.zip"
+  unzip -q -o -j "${zip}" '*.yar' -d "${SOURCES}/yara"
+  jq -n --arg version "${tag}" --arg sha256 "$(sha256sum "${zip}" | cut -d' ' -f1)" \
+    --arg url "${YARA_FORGE_REPO}" \
+    '{name: "YARA Forge core", license: "Per rule, see the license meta of each rule", url: $url, version: $version, sha256: $sha256}' \
+    > "${SOURCES}/yara/source.json"
+  rm -f "${zip}"
 
   cp "${ALLOWLIST}" "${SOURCES}/allowlist.txt"
 
   echo "hashes: $(grep -cvE '^(#|$)' "${SOURCES}/malwarebazaar.txt")"
-  echo "yara files: $(find "${SOURCES}/yara" -name '*.yar' | wc -l)"
+  echo "yara forge ${tag}: $(find "${SOURCES}/yara" -name '*.yar' | wc -l) files"
 }
 
 corpus() {

@@ -52,6 +52,12 @@ pub struct Source {
     pub license: String,
     #[serde(default)]
     pub url: String,
+    /// Upstream release the content came from, when it has one.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub version: String,
+    /// SHA-256 of the downloaded upstream artifact.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub sha256: String,
     #[serde(default)]
     pub count: u64,
 }
@@ -254,6 +260,19 @@ fn yara_description(rule: &yara_x::Rule<'_, '_>) -> String {
 
 /// Compiles YARA sources, dropping any that fail. Returns the rules and the
 /// names of the sources that were dropped with their errors.
+/// `<source>:<line>: <code> <title>` for one compile error.
+fn describe_yara_error(src: &YaraSource, e: &yara_x::errors::CompileError) -> String {
+    let line = e.labels().next().map_or(0, |l| {
+        src.source
+            .get(..l.span().start())
+            .map_or(0, |before| before.matches('\n').count())
+            + 1
+    });
+    format!("{}:{line}: {} {}", src.name, e.code(), e.title())
+}
+
+/// Compiles every source into one rule set. A rule that fails to compile is
+/// left out and reported, the other rules in its source still compile.
 pub fn compile_yara(sources: &[YaraSource]) -> (Option<yara_x::Rules>, Vec<String>) {
     if sources.is_empty() {
         return (None, Vec::new());
@@ -261,13 +280,13 @@ pub fn compile_yara(sources: &[YaraSource]) -> (Option<yara_x::Rules>, Vec<Strin
     let mut dropped = Vec::new();
     let mut compiler = yara_x::Compiler::new();
     for src in sources {
-        let mut probe = yara_x::Compiler::new();
-        if let Err(e) = probe.add_source(src.source.as_str()) {
-            dropped.push(format!("{}: {e}", src.name));
-            continue;
-        }
-        if let Err(e) = compiler.add_source(src.source.as_str()) {
-            dropped.push(format!("{}: {e}", src.name));
+        let before = compiler.errors().len();
+        if compiler.add_source(src.source.as_str()).is_err() {
+            dropped.extend(
+                compiler.errors()[before..]
+                    .iter()
+                    .map(|e| describe_yara_error(src, e)),
+            );
         }
     }
     let rules = compiler.build();
@@ -481,8 +500,8 @@ pub(crate) mod tests {
                 sources: vec![Source {
                     name: "test".into(),
                     license: "CC0-1.0".into(),
-                    url: String::new(),
                     count: 1,
+                    ..Source::default()
                 }],
             },
             signatures: vec![],
@@ -657,6 +676,22 @@ pub(crate) mod tests {
         assert_eq!(sev["Mid"], Severity::Medium);
         assert_eq!(sev["H2"], Severity::High);
         assert!(compile_yara(&[]).0.is_none());
+    }
+
+    #[test]
+    fn one_bad_rule_does_not_drop_its_file() {
+        let (rules, dropped) = compile_yara(&[YaraSource {
+            name: "core.yar".into(),
+            source: "rule Good { condition: true }\nrule Bad { condition: nope }\nrule Also { condition: true }".into(),
+        }]);
+        let ids: Vec<String> = rules
+            .unwrap()
+            .iter()
+            .map(|r| r.identifier().to_string())
+            .collect();
+        assert_eq!(ids, vec!["Good", "Also"]);
+        assert_eq!(dropped.len(), 1);
+        assert!(dropped[0].starts_with("core.yar:2: "), "{}", dropped[0]);
     }
 
     pub const TEST_PUBLIC_KEY: &str =

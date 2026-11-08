@@ -219,12 +219,13 @@ fn feed(cmd: FeedCmd) -> anyhow::Result<()> {
                 eprintln!("pruned {d}");
             }
             println!(
-                "{} revision {}: {} hashes ({} allowlisted), {} signatures, {} YARA files ({} dropped), {} pruned against the corpus",
+                "{} revision {}: {} hashes ({} allowlisted), {} signatures, {} YARA rules in {} files ({} dropped), {} pruned against the corpus",
                 out.display(),
                 db.manifest.revision,
                 report.hashes,
                 report.allowlisted,
                 report.signatures,
+                report.yara_rules,
                 report.yara_files,
                 report.dropped_yara.len(),
                 report.pruned.len()
