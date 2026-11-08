@@ -25,6 +25,12 @@ crates=$(for f in "$@"; do
 done | sort -u)
 
 for c in $crates; do
+  # Crates that only build for a non-host target (eBPF programs) are linted by
+  # their own build, so only formatting runs here.
+  if [[ "$cmd" != fmt ]] && grep -q '^host-build = false' "$c/Cargo.toml"; then
+    echo "==> $c: skip cargo $cmd (host-build = false)"
+    continue
+  fi
   echo "==> $c: cargo $cmd"
   # cd, not --manifest-path: rustup resolves rust-toolchain.toml from cwd
   case "$cmd" in
