@@ -1,13 +1,15 @@
 //! Loads the embedded eBPF object, resolves kernel offsets into its
 //! globals, attaches the probes, and streams ring buffer records.
 
+use std::collections::HashSet;
 use std::path::Path;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use tokio::sync::mpsc;
 use ward_ebpf_common::{
-    CONFIG_ENFORCE, CONFIG_SELF_TGID, UNKNOWN_OFFSET, globals, inode_key, names,
+    CONFIG_ENFORCE, CONFIG_SELF_TGID, FIM_INODES_MAX, InodeKey, UNKNOWN_OFFSET, globals, inode_key,
+    names,
 };
 
 use super::btf::Btf;
@@ -15,6 +17,7 @@ use super::events::{self, ProcessEvent};
 use super::metrics::AgentMetrics;
 use super::response::Blocker;
 use super::tracefs::read_format;
+use super::whodata::InodeWatch;
 
 /// The object for this architecture, empty when the build had none.
 pub const OBJECT: &[u8] = aya::include_bytes_aligned!(concat!(env!("OUT_DIR"), "/ward.bpf.o"));
@@ -59,11 +62,35 @@ pub fn offsets(btf: Option<&Btf>, tracefs: &Path) -> Vec<(&'static str, u32)> {
         (globals::INODE_INO, k("inode", "i_ino")),
         (globals::INODE_SB, k("inode", "i_sb")),
         (globals::SB_DEV, k("super_block", "s_dev")),
+        (globals::FILE_F_MODE, k("file", "f_mode")),
+        (globals::DENTRY_D_NAME, k("dentry", "d_name")),
+        (globals::QSTR_NAME, k("qstr", "name")),
+        (globals::PATH_DENTRY, k("path", "dentry")),
+        (globals::DENTRY_D_INODE, k("dentry", "d_inode")),
     ]
 }
 
+/// Mode and owner hooks. They need `CONFIG_SECURITY_PATH`, so a kernel
+/// without it still gets whodata for content and entry changes.
+const FIM_ATTRIB_PROGRAMS: [(&str, &str); 2] = [
+    (names::PROG_PATH_CHMOD, "path_chmod"),
+    (names::PROG_PATH_CHOWN, "path_chown"),
+];
+
+/// The FIM hooks and the kernel functions they attach to.
+const FIM_PROGRAMS: [(&str, &str); 4] = [
+    (names::PROG_FILE_OPEN, "file_open"),
+    (names::PROG_INODE_CREATE, "inode_create"),
+    (names::PROG_INODE_UNLINK, "inode_unlink"),
+    (names::PROG_INODE_RENAME, "inode_rename"),
+];
+
 type BlockMap = aya::maps::HashMap<aya::maps::MapData, [u8; 16], u32>;
 type ConfigMap = aya::maps::Array<aya::maps::MapData, u64>;
+
+type FimMap = aya::maps::HashMap<aya::maps::MapData, InodeKey, u32>;
+/// The FIM inode map with the keys the agent last wrote into it.
+type FimInodes = Mutex<(FimMap, HashSet<InodeKey>)>;
 
 pub struct Kernel {
     _ebpf: aya::Ebpf,
@@ -71,6 +98,43 @@ pub struct Kernel {
     config: Mutex<ConfigMap>,
     entries: AtomicUsize,
     pub lsm: bool,
+    /// The FIM hooks' inode set, present when they are attached.
+    fim: Option<FimInodes>,
+}
+
+impl Kernel {
+    pub const fn whodata(&self) -> bool {
+        self.fim.is_some()
+    }
+}
+
+impl InodeWatch for Kernel {
+    fn watch(&self, inodes: &[(u64, u64)]) -> Result<usize, String> {
+        let fim = self.fim.as_ref().ok_or("whodata hooks are not attached")?;
+        let mut guard = fim.lock().map_err(|e| e.to_string())?;
+        let (map, current) = &mut *guard;
+        let want: HashSet<InodeKey> = inodes
+            .iter()
+            .take(FIM_INODES_MAX as usize)
+            .map(|(d, i)| inode_key(*d, *i))
+            .collect();
+        current.retain(|k| {
+            let keep = want.contains(k);
+            if !keep {
+                let _ = map.remove(k);
+            }
+            keep
+        });
+        for key in want {
+            if current.insert(key)
+                && let Err(e) = map.insert(&key, &1, 0)
+            {
+                current.remove(&key);
+                return Err(e.to_string());
+            }
+        }
+        Ok(current.len())
+    }
 }
 
 impl Kernel {
@@ -141,24 +205,7 @@ pub fn load(
         .load(OBJECT)
         .map_err(|e| EbpfError::Load(chain(&e)))?;
 
-    for (prog, category, event) in [
-        (names::PROG_EXEC, "sched", "sched_process_exec"),
-        (names::PROG_EXIT, "sched", "sched_process_exit"),
-        (names::PROG_CONNECT, "sock", "inet_sock_set_state"),
-    ] {
-        let attach = |e: String| EbpfError::Attach {
-            program: prog.into(),
-            reason: e,
-        };
-        let p: &mut aya::programs::TracePoint = ebpf
-            .program_mut(prog)
-            .ok_or_else(|| attach("missing".into()))?
-            .try_into()
-            .map_err(|e: aya::programs::ProgramError| attach(e.to_string()))?;
-        p.load().map_err(|e| attach(e.to_string()))?;
-        p.attach(category, event)
-            .map_err(|e| attach(e.to_string()))?;
-    }
+    attach_tracepoints(&mut ebpf)?;
 
     let lsm_ready = offsets
         .iter()
@@ -181,6 +228,11 @@ pub fn load(
                 false
             }
         };
+    let fim = if lsm {
+        whodata(&mut ebpf, &offsets)?
+    } else {
+        None
+    };
 
     let mut config: ConfigMap = ebpf
         .take_map(names::CONFIG)
@@ -227,7 +279,83 @@ pub fn load(
         config: Mutex::new(config),
         entries: AtomicUsize::new(0),
         lsm,
+        fim,
     }))
+}
+
+/// Attaches the FIM hooks and takes their inode map, `None` when the
+/// kernel lacks a field they read or refuses a hook.
+fn whodata(
+    ebpf: &mut aya::Ebpf,
+    offsets: &[(&'static str, u32)],
+) -> Result<Option<FimInodes>, EbpfError> {
+    let ready = offsets
+        .iter()
+        .any(|(n, v)| *n == globals::FILE_F_MODE && *v != UNKNOWN_OFFSET);
+    if !ready {
+        return Ok(None);
+    }
+    if let Err(e) = attach_fim(ebpf) {
+        tracing::warn!(error = %e, "FIM hooks unavailable, integrity changes carry no whodata");
+        return Ok(None);
+    }
+    let map: FimMap = ebpf
+        .take_map(names::FIM_INODES)
+        .ok_or_else(|| EbpfError::Load("FIM_INODES map missing".into()))?
+        .try_into()
+        .map_err(|e: aya::maps::MapError| EbpfError::Load(e.to_string()))?;
+    Ok(Some(Mutex::new((map, HashSet::new()))))
+}
+
+fn attach_fim(ebpf: &mut aya::Ebpf) -> Result<(), String> {
+    let btf = aya::Btf::from_sys_fs().map_err(|e| e.to_string())?;
+    for (name, hook) in FIM_PROGRAMS {
+        let p: &mut aya::programs::Lsm = ebpf
+            .program_mut(name)
+            .ok_or_else(|| format!("{name} missing"))?
+            .try_into()
+            .map_err(|e: aya::programs::ProgramError| e.to_string())?;
+        p.load(hook, &btf).map_err(|e| format!("{hook}: {e}"))?;
+        p.attach().map_err(|e| format!("{hook}: {e}"))?;
+    }
+    for (name, hook) in FIM_ATTRIB_PROGRAMS {
+        let attached = ebpf
+            .program_mut(name)
+            .ok_or_else(|| format!("{name} missing"))
+            .and_then(|p| {
+                let p: &mut aya::programs::Lsm = p
+                    .try_into()
+                    .map_err(|e: aya::programs::ProgramError| e.to_string())?;
+                p.load(hook, &btf).map_err(|e| e.to_string())?;
+                p.attach().map(|_| ()).map_err(|e| e.to_string())
+            });
+        if let Err(e) = attached {
+            tracing::warn!(hook, error = %e, "mode and owner changes carry no whodata");
+        }
+    }
+    Ok(())
+}
+
+fn attach_tracepoints(ebpf: &mut aya::Ebpf) -> Result<(), EbpfError> {
+    for (prog, category, event) in [
+        (names::PROG_EXEC, "sched", "sched_process_exec"),
+        (names::PROG_EXIT, "sched", "sched_process_exit"),
+        (names::PROG_CONNECT, "sock", "inet_sock_set_state"),
+    ] {
+        let attach = |e: String| EbpfError::Attach {
+            program: prog.into(),
+            reason: e,
+        };
+        let p: &mut aya::programs::TracePoint = ebpf
+            .program_mut(prog)
+            .ok_or_else(|| attach("missing".into()))?
+            .try_into()
+            .map_err(|e: aya::programs::ProgramError| attach(e.to_string()))?;
+        p.load().map_err(|e| attach(e.to_string()))?;
+        p.attach(category, event)
+            .map_err(|e| attach(e.to_string()))?;
+    }
+    Ok(())
 }
 
 fn attach_lsm(ebpf: &mut aya::Ebpf) -> Result<(), String> {

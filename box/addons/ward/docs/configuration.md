@@ -94,8 +94,16 @@ Where the manager keeps detections. See [Manager](manager.md#detection-storage).
 | Field | Default | Description |
 | --- | --- | --- |
 | `enabled` | `true` | Run file integrity monitoring |
-| `paths` | sensitive host files | Absolute host files and directories (one level deep), up to 256 |
-| `interval` | `5m` | Check period, at least `10s` |
+| `paths` | sensitive host files | Absolute host files and directories, up to 256 |
+| `interval` | `5m` | Period of the full check, at least `10s` |
+| `realtime` | `true` | Report changes as they happen with inotify |
+| `whodata` | `true` | Attribute each change to its process and user with BPF LSM hooks (`ebpf-lsm` only) |
+| `reportChanges` | `true` | Report a modified text file (up to 256 KiB) as a unified diff |
+| `noDiff` | `/etc/shadow`, `/etc/gshadow`, `/etc/security/opasswd` | Absolute paths whose content is never copied or diffed, up to 256 |
+| `recursionLevel` | `256` | Directory levels below a watched directory, 0 to 320 |
+| `fileLimit` | `100000` | Files the baseline holds at most, 1 to 1000000 |
+
+See [File integrity monitoring](detection-engines.md#file-integrity-monitoring).
 
 ### rootcheck
 

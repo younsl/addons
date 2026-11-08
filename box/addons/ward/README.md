@@ -11,10 +11,10 @@ Kubernetes-native open source antivirus and EDR. One `Ward` object puts an [eBPF
 
 ## Features
 
-- **eBPF probes**: Process and network activity from tracepoints, and exec blocking through the BPF LSM. See [eBPF probes](docs/ebpf.md).
+- **eBPF probes**: Process and network activity from tracepoints, exec blocking and file change attribution through the BPF LSM. See [eBPF probes](docs/ebpf.md).
 - **Signature scanning**: Hashes, byte patterns, and YARA rules compiled with YARA-X, on every exec and on a schedule. See [Detection engines](docs/detection-engines.md).
-- **Behavior rules**: Reverse shells, fileless exec, miners, web shells, and more, with the process storyline. See [Detection engines](docs/detection-engines.md#behavior-rules).
-- **File integrity monitoring**: Baselines and watches sensitive host files. See [Detection engines](docs/detection-engines.md#file-integrity-monitoring).
+- **Behavior rules**: Reverse shells, container escapes, credential theft, persistence, log tampering, miners, and more, with the process storyline. See [Detection engines](docs/detection-engines.md#behavior-rules).
+- **File integrity monitoring**: Wazuh syscheck parity for host files: real-time detection with inotify, whodata (the process and user behind each change) from BPF LSM hooks, changed attributes, text diffs, recursive directories, and `noDiff` for secrets. See [Detection engines](docs/detection-engines.md#file-integrity-monitoring).
 - **Rootcheck**: Wazuh-style rootkit anomaly checks for hidden processes, files in `/dev`, and setuid files in temporary directories. See [Detection engines](docs/detection-engines.md#rootcheck).
 - **Autonomous response**: Kill, quarantine, and exec blocking in `Protect` mode. See [Response](docs/response.md).
 - **Signed signature feed**: A daily signed OCI artifact rolled out in rings with false-positive storm halts. See [Signature database](docs/signature-database.md).

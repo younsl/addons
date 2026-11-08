@@ -941,11 +941,27 @@ spec:
                   - /etc/cron.d
                   - /etc/kubernetes/manifests
                   interval: 5m
+                  realtime: true
+                  whodata: true
+                  reportChanges: true
+                  noDiff:
+                  - /etc/shadow
+                  - /etc/gshadow
+                  - /etc/security/opasswd
+                  recursionLevel: 256
+                  fileLimit: 100000
                 description: File integrity monitoring of host files.
                 properties:
                   enabled:
                     default: true
                     type: boolean
+                  fileLimit:
+                    default: 100000
+                    description: Files the baseline holds at most, as Wazuh `file_limit`.
+                    format: uint32
+                    maximum: 1000000.0
+                    minimum: 1.0
+                    type: integer
                   interval:
                     default: 5m
                     maxLength: 32
@@ -954,6 +970,20 @@ spec:
                     x-kubernetes-validations:
                     - message: interval must be at least 10s
                       rule: duration(self) >= duration('10s')
+                  noDiff:
+                    default:
+                    - /etc/shadow
+                    - /etc/gshadow
+                    - /etc/security/opasswd
+                    description: Files and directories whose content never goes into a diff or a copy on the node, as Wazuh `nodiff`.
+                    items:
+                      maxLength: 4096
+                      type: string
+                    maxItems: 256
+                    type: array
+                    x-kubernetes-validations:
+                    - message: noDiff paths must be absolute
+                      rule: self.all(p, p.startsWith('/'))
                   paths:
                     default:
                     - /etc/passwd
@@ -967,7 +997,7 @@ spec:
                     - /etc/crontab
                     - /etc/cron.d
                     - /etc/kubernetes/manifests
-                    description: Host files and directories (one level deep) to baseline and watch.
+                    description: Host files and directories to baseline and watch. Directories are walked down to `recursionLevel`.
                     items:
                       maxLength: 4096
                       type: string
@@ -976,6 +1006,25 @@ spec:
                     x-kubernetes-validations:
                     - message: integrity paths must be absolute
                       rule: self.all(p, p.startsWith('/'))
+                  realtime:
+                    default: true
+                    description: Report changes as they happen with inotify, as Wazuh `realtime`. The periodic check stays on as a safety net.
+                    type: boolean
+                  recursionLevel:
+                    default: 256
+                    description: Directory levels below a watched directory, as Wazuh `recursion_level`.
+                    format: uint32
+                    maximum: 320.0
+                    minimum: 0.0
+                    type: integer
+                  reportChanges:
+                    default: true
+                    description: Keep copies of watched text files up to 256 KiB and report a modification as a unified diff, as Wazuh `report_changes`.
+                    type: boolean
+                  whodata:
+                    default: true
+                    description: Record the process and user behind each change with BPF LSM hooks, as Wazuh `whodata`. Needs the `ebpf-lsm` event source.
+                    type: boolean
                 type: object
               manager:
                 default:

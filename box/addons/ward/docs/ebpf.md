@@ -12,6 +12,9 @@ The agent embeds one eBPF object written in Rust with [aya](https://github.com/a
 | `ward_exit` | tracepoint `sched:sched_process_exit` | Thread group exits, so the process table stays small |
 | `ward_connect` | tracepoint `sock:inet_sock_set_state` | Outbound TCP connects (transition to `SYN_SENT`) with destination address and port |
 | `ward_bprm_check` | BPF LSM `bprm_check_security` | The kernel inode of each executable, and a denial when that inode is blocklisted and enforcement is on |
+| `ward_file_open` | BPF LSM `file_open` | Opens for writing of a file integrity monitoring watches, with the process behind them |
+| `ward_inode_create`, `ward_inode_unlink`, `ward_inode_rename` | BPF LSM `inode_create`, `inode_unlink`, `inode_rename` | Entries created, deleted, or renamed in a watched directory, with the name and the process |
+| `ward_path_chmod`, `ward_path_chown` | BPF LSM `path_chmod`, `path_chown` | Mode and owner changes of a watched file, with the process |
 
 Tracepoints see processes that live for milliseconds, which `/proc` polling misses. The argv read stops at the end of the argument area, so environment variables (and the secrets they may hold) never leave the kernel.
 
@@ -25,7 +28,7 @@ The agent picks the strongest source the node allows and reports it in its Lease
 
 | Mode | Needs | Exec blocking | Short-lived processes |
 | --- | --- | --- | --- |
-| `ebpf-lsm` | BTF, kernel 5.8+, BPF LSM | Yes | Seen |
+| `ebpf-lsm` | BTF, kernel 5.8+, BPF LSM | Yes, and integrity whodata | Seen |
 | `ebpf` | BTF, kernel 5.8+ | No | Seen |
 | `procfs` | Nothing | No | May be missed |
 

@@ -34,6 +34,7 @@ The PodMonitor selects every Pod labeled `app.kubernetes.io/name=ward` with comp
 | `ward_agent_content_info` | gauge | `revision`, `source` | 1 for the active database revision and event source mode |
 | `ward_agent_content_swap_total` | counter | `result` | Revision swaps: `ok` or `rejected` |
 | `ward_agent_blocklist_entries` | gauge | | Inodes in the BPF LSM blocklist |
+| `ward_agent_whodata_inodes` | gauge | | Files and directories the integrity whodata hooks watch |
 
 ## Manager
 

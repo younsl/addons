@@ -108,6 +108,15 @@ spec:
   integrity:
     enabled: true
     interval: 5m
+    realtime: true
+    whodata: true
+    reportChanges: true
+    noDiff:
+      - /etc/shadow
+      - /etc/gshadow
+      - /etc/security/opasswd
+    recursionLevel: 256
+    fileLimit: 100000
   rootcheck:
     enabled: true
     interval: 12h

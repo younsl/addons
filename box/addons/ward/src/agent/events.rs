@@ -6,8 +6,8 @@ use std::net::{Ipv4Addr, Ipv6Addr};
 
 #[cfg(any(target_os = "linux", test))]
 use ward_ebpf_common::{
-    BlockEvent, ConnectEvent, EVENT_BLOCK, EVENT_CONNECT, EVENT_EXEC, EVENT_EXIT, ExecEvent,
-    ExitEvent, kind_of,
+    BlockEvent, ConnectEvent, EVENT_BLOCK, EVENT_CONNECT, EVENT_EXEC, EVENT_EXIT, EVENT_FIM,
+    ExecEvent, ExitEvent, FimEvent, kind_of,
 };
 
 #[cfg(any(target_os = "linux", test))]
@@ -49,6 +49,21 @@ pub enum ProcessEvent {
         ino: u64,
         denied: bool,
     },
+    /// A write to a watched file or an entry change in a watched directory.
+    Fim(Fim),
+}
+
+/// What a FIM hook reported.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Fim {
+    pub pid: i32,
+    pub uid: u32,
+    pub comm: String,
+    /// One of the `FIM_*` operations.
+    pub op: u32,
+    pub dev: u64,
+    pub ino: u64,
+    pub name: String,
 }
 
 impl ProcessEvent {
@@ -58,6 +73,7 @@ impl ProcessEvent {
             Self::Exit { .. } => "exit",
             Self::Connect { .. } => "connect",
             Self::Blocked { .. } => "block",
+            Self::Fim(_) => "fim",
         }
     }
 }
@@ -111,6 +127,18 @@ pub fn parse(b: &[u8]) -> Option<ProcessEvent> {
                 addr,
                 port: e.dport,
             })
+        }
+        EVENT_FIM => {
+            let e = FimEvent::parse(b)?;
+            Some(ProcessEvent::Fim(Fim {
+                pid: pid(e.pid),
+                uid: e.uid,
+                comm: cstr(&e.comm),
+                op: e.op,
+                dev: e.dev,
+                ino: e.ino,
+                name: cstr(&e.name),
+            }))
         }
         EVENT_BLOCK => {
             let e = BlockEvent::parse(b)?;
@@ -203,6 +231,28 @@ pub(crate) mod tests {
                 ..
             })
         ));
+
+        let mut fim = vec![0u8; l::FIM_SIZE];
+        put(&mut fim, 0, &EVENT_FIM.to_ne_bytes());
+        put(&mut fim, l::FIM_PID, &11u32.to_ne_bytes());
+        put(&mut fim, l::FIM_UID, &1000u32.to_ne_bytes());
+        put(
+            &mut fim,
+            l::FIM_OP,
+            &ward_ebpf_common::FIM_CREATE.to_ne_bytes(),
+        );
+        put(&mut fim, l::FIM_DEV, &8u64.to_ne_bytes());
+        put(&mut fim, l::FIM_INO, &2u64.to_ne_bytes());
+        put(&mut fim, l::FIM_COMM, b"sh");
+        put(&mut fim, l::FIM_NAME, b"evil");
+        let ev = parse(&fim).unwrap();
+        assert_eq!(ev.kind(), "fim");
+        assert!(matches!(
+            ev,
+            ProcessEvent::Fim(ref f)
+                if f.pid == 11 && f.uid == 1000 && f.dev == 8 && f.ino == 2 && f.name == "evil" && f.comm == "sh"
+        ));
+        assert!(parse(&fim[..l::FIM_NAME]).is_none(), "truncated record");
 
         let mut bl = vec![0u8; l::BLOCK_SIZE];
         put(&mut bl, 0, &EVENT_BLOCK.to_ne_bytes());

@@ -69,6 +69,18 @@ pub struct IntegrityPolicy {
     pub enabled: bool,
     pub paths: Vec<String>,
     pub interval_secs: u64,
+    #[serde(default)]
+    pub realtime: bool,
+    #[serde(default)]
+    pub whodata: bool,
+    #[serde(default)]
+    pub report_changes: bool,
+    #[serde(default)]
+    pub no_diff: Vec<String>,
+    #[serde(default)]
+    pub recursion_level: u32,
+    #[serde(default)]
+    pub file_limit: u32,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
@@ -107,6 +119,12 @@ impl Policy {
                 enabled: spec.integrity.enabled,
                 paths: spec.integrity.paths.clone(),
                 interval_secs: secs(&spec.integrity.interval, Duration::from_mins(5)),
+                realtime: spec.integrity.realtime,
+                whodata: spec.integrity.whodata,
+                report_changes: spec.integrity.report_changes,
+                no_diff: spec.integrity.no_diff.clone(),
+                recursion_level: spec.integrity.recursion_level,
+                file_limit: spec.integrity.file_limit,
             },
             rootcheck: RootcheckPolicy {
                 enabled: spec.rootcheck.enabled,
@@ -274,6 +292,27 @@ pub struct FileInfo {
     pub size: Option<u64>,
 }
 
+/// What an integrity change altered, and how the process behind it reached
+/// the file.
+#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct FileChanges {
+    /// Attributes that differ from the baseline: `size`, `permission`,
+    /// `uid`, `gid`, `mtime`, `inode`, `sha256`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub attributes: Vec<String>,
+    /// Unified diff of a text file, absent for binaries and `noDiff` paths.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub diff: Option<String>,
+    /// The kernel operation whodata saw: `write`, `create`, `delete`,
+    /// `rename-from`, or `rename-to`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub operation: Option<String>,
+    /// `realtime` when inotify reported it, `scheduled` for the periodic
+    /// check.
+    pub mode: String,
+}
+
 #[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct Workload {
@@ -303,6 +342,8 @@ pub struct Detection {
     pub file: Option<FileInfo>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub workload: Option<Workload>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub changes: Option<FileChanges>,
     #[serde(default)]
     pub actions: Vec<Response>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -328,6 +369,7 @@ impl Detection {
             process: None,
             file: None,
             workload: None,
+            changes: None,
             actions: vec![Response::Alert],
             action_error: None,
         }

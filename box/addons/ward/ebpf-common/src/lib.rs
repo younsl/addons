@@ -10,11 +10,25 @@ pub const COMM_LEN: usize = 16;
 pub const PATH_LEN: usize = 256;
 pub const ARGS_LEN: usize = 512;
 pub const ADDR_LEN: usize = 16;
+/// Bytes of a file name the FIM hooks copy from a dentry.
+pub const NAME_LEN: usize = 256;
 
 pub const EVENT_EXEC: u32 = 1;
 pub const EVENT_EXIT: u32 = 2;
 pub const EVENT_CONNECT: u32 = 3;
 pub const EVENT_BLOCK: u32 = 4;
+pub const EVENT_FIM: u32 = 5;
+
+/// What a FIM hook saw happen to a watched inode.
+pub const FIM_WRITE: u32 = 1;
+pub const FIM_CREATE: u32 = 2;
+pub const FIM_DELETE: u32 = 3;
+pub const FIM_RENAME_FROM: u32 = 4;
+pub const FIM_RENAME_TO: u32 = 5;
+pub const FIM_ATTRIB: u32 = 6;
+/// `FMODE_WRITE` in `struct file`'s `f_mode`.
+pub const FMODE_WRITE: u32 = 0x2;
+pub const FIM_INODES_MAX: u32 = 131_072;
 
 /// Index of the enforce flag in the `CONFIG` array. Non-zero lets the LSM
 /// program deny execution of blocklisted inodes.
@@ -36,10 +50,17 @@ pub mod names {
     pub const CONFIG: &str = "CONFIG";
     pub const BLOCKLIST: &str = "BLOCKLIST";
     pub const PENDING: &str = "PENDING";
+    pub const FIM_INODES: &str = "FIM_INODES";
     pub const PROG_EXEC: &str = "ward_exec";
     pub const PROG_EXIT: &str = "ward_exit";
     pub const PROG_CONNECT: &str = "ward_connect";
     pub const PROG_BPRM_CHECK: &str = "ward_bprm_check";
+    pub const PROG_FILE_OPEN: &str = "ward_file_open";
+    pub const PROG_INODE_CREATE: &str = "ward_inode_create";
+    pub const PROG_INODE_UNLINK: &str = "ward_inode_unlink";
+    pub const PROG_INODE_RENAME: &str = "ward_inode_rename";
+    pub const PROG_PATH_CHMOD: &str = "ward_path_chmod";
+    pub const PROG_PATH_CHOWN: &str = "ward_path_chown";
 }
 
 /// Offsets the agent resolves at load time (tracefs formats and kernel BTF)
@@ -63,6 +84,11 @@ pub mod globals {
     pub const INODE_INO: &str = "INODE_INO";
     pub const INODE_SB: &str = "INODE_SB";
     pub const SB_DEV: &str = "SB_DEV";
+    pub const FILE_F_MODE: &str = "FILE_F_MODE";
+    pub const DENTRY_D_NAME: &str = "DENTRY_D_NAME";
+    pub const QSTR_NAME: &str = "QSTR_NAME";
+    pub const PATH_DENTRY: &str = "PATH_DENTRY";
+    pub const DENTRY_D_INODE: &str = "DENTRY_D_INODE";
 }
 
 #[repr(C)]
@@ -117,6 +143,25 @@ pub struct BlockEvent {
     pub dev: u64,
     pub ino: u64,
     pub comm: [u8; COMM_LEN],
+}
+
+/// A change to a watched file, or to an entry of a watched directory, with
+/// the process that made it.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct FimEvent {
+    pub kind: u32,
+    pub pid: u32,
+    pub uid: u32,
+    /// One of the `FIM_*` operations.
+    pub op: u32,
+    pub cgroup_id: u64,
+    /// The written file for `FIM_WRITE`, the directory otherwise.
+    pub dev: u64,
+    pub ino: u64,
+    pub comm: [u8; COMM_LEN],
+    /// The entry name inside the directory, empty for `FIM_WRITE`.
+    pub name: [u8; NAME_LEN],
 }
 
 /// The `BLOCKLIST` key: the kernel `dev_t` of the superblock, then the inode
@@ -217,11 +262,28 @@ impl BlockEvent {
     }
 }
 
+impl FimEvent {
+    #[must_use]
+    pub fn parse(b: &[u8]) -> Option<Self> {
+        Some(Self {
+            kind: u32_at(b, offset_of!(Self, kind))?,
+            pid: u32_at(b, offset_of!(Self, pid))?,
+            uid: u32_at(b, offset_of!(Self, uid))?,
+            op: u32_at(b, offset_of!(Self, op))?,
+            cgroup_id: u64_at(b, offset_of!(Self, cgroup_id))?,
+            dev: u64_at(b, offset_of!(Self, dev))?,
+            ino: u64_at(b, offset_of!(Self, ino))?,
+            comm: arr_at(b, offset_of!(Self, comm))?,
+            name: arr_at(b, offset_of!(Self, name))?,
+        })
+    }
+}
+
 /// Field offsets, so tests on the agent side can build records.
 pub mod layout {
     use core::mem::{offset_of, size_of};
 
-    use super::{BlockEvent, ConnectEvent, ExecEvent, ExitEvent};
+    use super::{BlockEvent, ConnectEvent, ExecEvent, ExitEvent, FimEvent};
 
     pub const EXEC_SIZE: usize = size_of::<ExecEvent>();
     pub const EXEC_PID: usize = offset_of!(ExecEvent, pid);
@@ -248,4 +310,12 @@ pub mod layout {
     pub const BLOCK_DEV: usize = offset_of!(BlockEvent, dev);
     pub const BLOCK_INO: usize = offset_of!(BlockEvent, ino);
     pub const BLOCK_COMM: usize = offset_of!(BlockEvent, comm);
+    pub const FIM_SIZE: usize = size_of::<FimEvent>();
+    pub const FIM_PID: usize = offset_of!(FimEvent, pid);
+    pub const FIM_UID: usize = offset_of!(FimEvent, uid);
+    pub const FIM_OP: usize = offset_of!(FimEvent, op);
+    pub const FIM_DEV: usize = offset_of!(FimEvent, dev);
+    pub const FIM_INO: usize = offset_of!(FimEvent, ino);
+    pub const FIM_COMM: usize = offset_of!(FimEvent, comm);
+    pub const FIM_NAME: usize = offset_of!(FimEvent, name);
 }

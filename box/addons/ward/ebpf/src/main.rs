@@ -4,6 +4,10 @@
 //! - `ward_connect`: outbound TCP from `sock:inet_sock_set_state`
 //! - `ward_bprm_check`: BPF LSM hook that records the executable's inode and
 //!   denies blocklisted inodes when enforcement is on
+//! - `ward_file_open`, `ward_inode_create`, `ward_inode_unlink`,
+//!   `ward_inode_rename`, `ward_path_chmod`, `ward_path_chown`: BPF LSM hooks
+//!   that report who writes a watched file, changes its mode or owner, or
+//!   changes an entry of a watched directory, never denying
 //!
 //! Struct offsets come from the running kernel's BTF and tracefs formats,
 //! written by the agent into the globals below before load.
@@ -26,8 +30,10 @@ use aya_ebpf::maps::{Array, HashMap, LruHashMap, RingBuf};
 use aya_ebpf::programs::{LsmContext, TracePointContext};
 use ward_ebpf_common::{
     ARGS_LEN, BLOCKLIST_MAX, BlockEvent, COMM_LEN, CONFIG_ENFORCE, CONFIG_LEN, CONFIG_SELF_TGID,
-    ConnectEvent, EVENT_BLOCK, EVENT_CONNECT, EVENT_EXEC, EVENT_EXIT, ExecEvent, ExitEvent,
-    InodeKey, PATH_LEN, PENDING_MAX, RINGBUF_BYTES, UNKNOWN_OFFSET, inode_key,
+    ConnectEvent, EVENT_BLOCK, EVENT_CONNECT, EVENT_EXEC, EVENT_EXIT, EVENT_FIM, ExecEvent,
+    ExitEvent, FIM_ATTRIB, FIM_CREATE, FIM_DELETE, FIM_INODES_MAX, FIM_RENAME_FROM, FIM_RENAME_TO,
+    FIM_WRITE, FMODE_WRITE, FimEvent, InodeKey, NAME_LEN, PATH_LEN, PENDING_MAX, RINGBUF_BYTES,
+    UNKNOWN_OFFSET, inode_key,
 };
 
 #[unsafe(link_section = "license")]
@@ -42,6 +48,8 @@ static CONFIG: Array<u64> = Array::with_max_entries(CONFIG_LEN, 0);
 static BLOCKLIST: HashMap<InodeKey, u32> = HashMap::with_max_entries(BLOCKLIST_MAX, 0);
 #[map]
 static PENDING: LruHashMap<u32, InodeKey> = LruHashMap::with_max_entries(PENDING_MAX, 0);
+#[map]
+static FIM_INODES: HashMap<InodeKey, u32> = HashMap::with_max_entries(FIM_INODES_MAX, 0);
 
 #[unsafe(no_mangle)]
 static TP_EXEC_FILENAME: u32 = 8;
@@ -77,6 +85,16 @@ static INODE_INO: u32 = UNKNOWN_OFFSET;
 static INODE_SB: u32 = UNKNOWN_OFFSET;
 #[unsafe(no_mangle)]
 static SB_DEV: u32 = UNKNOWN_OFFSET;
+#[unsafe(no_mangle)]
+static FILE_F_MODE: u32 = UNKNOWN_OFFSET;
+#[unsafe(no_mangle)]
+static DENTRY_D_NAME: u32 = UNKNOWN_OFFSET;
+#[unsafe(no_mangle)]
+static QSTR_NAME: u32 = UNKNOWN_OFFSET;
+#[unsafe(no_mangle)]
+static PATH_DENTRY: u32 = UNKNOWN_OFFSET;
+#[unsafe(no_mangle)]
+static DENTRY_D_INODE: u32 = UNKNOWN_OFFSET;
 
 const TCP_SYN_SENT: i32 = 2;
 const IPPROTO_TCP: u16 = 6;
@@ -337,6 +355,182 @@ unsafe fn try_bprm_check(ctx: &LsmContext) -> i32 {
         entry.submit(0);
     }
     if enforce { -EPERM } else { 0 }
+}
+
+/// The superblock `dev_t` and inode number of an inode.
+#[inline(always)]
+unsafe fn inode_ids(inode: u64) -> Option<(u64, u64)> {
+    // SAFETY: probe reads along inode->{i_ino, i_sb->s_dev}.
+    unsafe {
+        let ino = read_kernel::<u64>(inode, global(&INODE_INO))?;
+        let sb = read_kernel::<u64>(inode, global(&INODE_SB))?;
+        let dev = read_kernel::<u32>(sb, global(&SB_DEV))?;
+        Some((u64::from(dev), ino))
+    }
+}
+
+/// The ids of `inode` when the agent watches it.
+#[inline(always)]
+unsafe fn watched(inode: u64) -> Option<(u64, u64)> {
+    // SAFETY: probe reads of a hook argument.
+    let (dev, ino) = unsafe { inode_ids(inode)? };
+    // SAFETY: the value is only checked for presence.
+    unsafe { FIM_INODES.get(&inode_key(dev, ino)) }.map(|_| (dev, ino))
+}
+
+#[inline(always)]
+unsafe fn emit_fim(op: u32, dev: u64, ino: u64, dentry: u64) {
+    let tgid = current_tgid();
+    if is_self(tgid) {
+        return;
+    }
+    let Some(mut entry) = EVENTS.reserve::<FimEvent>(0) else {
+        return;
+    };
+    let ev = entry.as_mut_ptr();
+    let (d_name, q_name) = (global(&DENTRY_D_NAME), global(&QSTR_NAME));
+    // SAFETY: `ev` points at a reserved record of FimEvent size, and the
+    // name pointer comes from a probe read of the hook's dentry.
+    unsafe {
+        (*ev).kind = EVENT_FIM;
+        (*ev).pid = tgid;
+        (*ev).uid = bpf_get_current_uid_gid() as u32;
+        (*ev).op = op;
+        (*ev).cgroup_id = bpf_get_current_cgroup_id();
+        (*ev).dev = dev;
+        (*ev).ino = ino;
+        bpf_get_current_comm(addr_of_mut!((*ev).comm).cast(), COMM_LEN as u32);
+        let name = addr_of_mut!((*ev).name);
+        (*name)[0] = 0;
+        if dentry != 0
+            && d_name != UNKNOWN_OFFSET
+            && q_name != UNKNOWN_OFFSET
+            && let Some(ptr) = read_kernel::<u64>(dentry, d_name + q_name)
+        {
+            bpf_probe_read_kernel_str(name.cast(), NAME_LEN as u32, ptr as *const c_void);
+        }
+    }
+    entry.submit(0);
+}
+
+#[lsm(hook = "file_open")]
+pub fn ward_file_open(ctx: LsmContext) -> i32 {
+    // SAFETY: LSM context of file_open(struct file *).
+    unsafe { try_file_open(&ctx) }
+}
+
+unsafe fn try_file_open(ctx: &LsmContext) -> i32 {
+    let retval: i32 = ctx.arg(1);
+    if retval != 0 {
+        return retval;
+    }
+    let file: u64 = ctx.arg(0);
+    // SAFETY: probe reads along file->{f_mode, f_inode}. Only opens for
+    // writing go on to the map lookup.
+    unsafe {
+        let Some(mode) = read_kernel::<u32>(file, global(&FILE_F_MODE)) else {
+            return 0;
+        };
+        if mode & FMODE_WRITE == 0 {
+            return 0;
+        }
+        let Some(inode) = read_kernel::<u64>(file, global(&FILE_INODE)) else {
+            return 0;
+        };
+        if let Some((dev, ino)) = watched(inode) {
+            emit_fim(FIM_WRITE, dev, ino, 0);
+        }
+    }
+    0
+}
+
+#[lsm(hook = "inode_create")]
+pub fn ward_inode_create(ctx: LsmContext) -> i32 {
+    // SAFETY: LSM context of inode_create(struct inode *dir, struct dentry *, umode_t).
+    unsafe { try_dir_op(&ctx, 3, FIM_CREATE) }
+}
+
+#[lsm(hook = "inode_unlink")]
+pub fn ward_inode_unlink(ctx: LsmContext) -> i32 {
+    // SAFETY: LSM context of inode_unlink(struct inode *dir, struct dentry *).
+    unsafe { try_dir_op(&ctx, 2, FIM_DELETE) }
+}
+
+/// A create or unlink in a watched directory: `dir` is argument 0, the
+/// entry's dentry argument 1, the previous hook's verdict `retval_arg`.
+unsafe fn try_dir_op(ctx: &LsmContext, retval_arg: usize, op: u32) -> i32 {
+    let retval: i32 = ctx.arg(retval_arg);
+    if retval != 0 {
+        return retval;
+    }
+    let dir: u64 = ctx.arg(0);
+    let dentry: u64 = ctx.arg(1);
+    // SAFETY: probe reads of the hook's arguments.
+    unsafe {
+        if let Some((dev, ino)) = watched(dir) {
+            emit_fim(op, dev, ino, dentry);
+        }
+    }
+    0
+}
+
+#[lsm(hook = "inode_rename")]
+pub fn ward_inode_rename(ctx: LsmContext) -> i32 {
+    // SAFETY: LSM context of inode_rename(old_dir, old_dentry, new_dir, new_dentry).
+    unsafe { try_rename(&ctx) }
+}
+
+unsafe fn try_rename(ctx: &LsmContext) -> i32 {
+    let retval: i32 = ctx.arg(4);
+    if retval != 0 {
+        return retval;
+    }
+    let (old_dir, old_dentry): (u64, u64) = (ctx.arg(0), ctx.arg(1));
+    let (new_dir, new_dentry): (u64, u64) = (ctx.arg(2), ctx.arg(3));
+    // SAFETY: probe reads of the hook's arguments.
+    unsafe {
+        if let Some((dev, ino)) = watched(old_dir) {
+            emit_fim(FIM_RENAME_FROM, dev, ino, old_dentry);
+        }
+        if let Some((dev, ino)) = watched(new_dir) {
+            emit_fim(FIM_RENAME_TO, dev, ino, new_dentry);
+        }
+    }
+    0
+}
+
+#[lsm(hook = "path_chmod")]
+pub fn ward_path_chmod(ctx: LsmContext) -> i32 {
+    // SAFETY: LSM context of path_chmod(const struct path *, umode_t).
+    unsafe { try_attrib(&ctx, 2) }
+}
+
+#[lsm(hook = "path_chown")]
+pub fn ward_path_chown(ctx: LsmContext) -> i32 {
+    // SAFETY: LSM context of path_chown(const struct path *, kuid_t, kgid_t).
+    unsafe { try_attrib(&ctx, 3) }
+}
+
+/// A mode or owner change of a watched inode: the path is argument 0.
+unsafe fn try_attrib(ctx: &LsmContext, retval_arg: usize) -> i32 {
+    let retval: i32 = ctx.arg(retval_arg);
+    if retval != 0 {
+        return retval;
+    }
+    let path: u64 = ctx.arg(0);
+    // SAFETY: probe reads along path->dentry->d_inode.
+    unsafe {
+        let Some(dentry) = read_kernel::<u64>(path, global(&PATH_DENTRY)) else {
+            return 0;
+        };
+        let Some(inode) = read_kernel::<u64>(dentry, global(&DENTRY_D_INODE)) else {
+            return 0;
+        };
+        if let Some((dev, ino)) = watched(inode) {
+            emit_fim(FIM_ATTRIB, dev, ino, 0);
+        }
+    }
+    0
 }
 
 #[cfg(not(test))]

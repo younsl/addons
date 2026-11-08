@@ -45,7 +45,8 @@ prometheus-client = "0.25.2"
 sha2 = "0.10.9"
 memchr = "2.8.3"
 walkdir = "2.5.0"
-nix = { version = "0.31.3", default-features = false, features = ["signal", "fs"] }
+nix = { version = "0.31.3", default-features = false, features = ["signal", "fs", "inotify", "poll"] }
+similar = { version = "3.2.1", default-features = false, features = ["std", "text"] }
 getrandom = "0.3.4"
 subtle = "2.6.1"
 yara-x = { version = "1.23.0", default-features = false, features = ["constant-folding", "exact-atoms", "fast-regexp", "console-module", "dotnet-module", "elf-module", "hash-module", "macho-module", "math-module", "pe-module", "string-module", "time-module"] }
@@ -84,6 +85,8 @@ must_use_candidate = "allow"
 too_long_first_doc_paragraph = "allow"
 # pid/ppid, sig/sigs and similar pairs are the domain's own names
 similar_names = "allow"
+# Integrity settings mirror Wazuh syscheck's boolean options one to one
+struct_excessive_bools = "allow"
 # Tests assert that results are empty without restating the length
 assert_is_empty = "allow"
 # Two-way matches on Option read clearer than if let with else

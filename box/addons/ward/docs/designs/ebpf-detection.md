@@ -22,6 +22,9 @@ Kernel instrumentation solves both, but the usual approaches fit poorly here. A 
 | `ward_exit` | `tracepoint/sched/sched_process_exit` | Lets the agent drop exited processes, emitted only for thread group leaders |
 | `ward_connect` | `tracepoint/sock/inet_sock_set_state` | The transition to `SYN_SENT` runs in the connecting process's context, so pid and comm are the caller's. Stable fields, no kprobe on `tcp_connect` |
 | `ward_bprm_check` | `lsm/bprm_check_security` | Runs before the new program starts and can return `-EPERM` |
+| `ward_file_open` | `lsm/file_open` | Sees every open with its mode and inode in the caller's context. Reads `f_mode` first and stops unless the file is opened for writing, then looks the inode up in `FIM_INODES` |
+| `ward_inode_create`, `ward_inode_unlink`, `ward_inode_rename` | `lsm/inode_*` | Get the parent directory inode and the entry's dentry, so a change inside a watched directory is attributed by directory inode and name |
+| `ward_path_chmod`, `ward_path_chown` | `lsm/path_chmod`, `lsm/path_chown` | Stable signatures across kernels, unlike `inode_setattr`, whose first argument changed twice. Optional, since they need `CONFIG_SECURITY_PATH` |
 
 All events share one 1 MiB ring buffer. Each record starts with a `u32` kind so the agent dispatches before parsing.
 
@@ -58,6 +61,7 @@ The LRU bound (16384 entries) keeps the map from growing when an exec fails afte
 | `BLOCKLIST` | hash, 65536 entries, `[u8; 16]` key | Kernel `(dev, ino)` of blocked executables |
 | `PENDING` | LRU hash, 16384 entries | tgid to `(dev, ino)` from the LSM hook to the exec tracepoint |
 | `CONFIG` | array | Index 0 enforce flag, index 1 the agent's own tgid |
+| `FIM_INODES` | hash, 131072 entries, `[u8; 16]` key | Kernel `(dev, ino)` of the files and directories integrity monitoring watches, rewritten by the agent after each check because editors replace inodes |
 
 The enforce flag lives in a map rather than a global because `mode` can change at runtime. Without it the hook still reports blocklisted execs but does not deny them, which is how `Detect` mode observes. The agent's own tgid is filtered in the kernel so its scanning never feeds back into its own event stream.
 

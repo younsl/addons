@@ -48,6 +48,7 @@ pub struct AgentMetrics {
     pub content_info: Family<ContentLabels, Gauge>,
     pub content_swap: Family<ResultLabels, Counter>,
     pub blocklist_entries: Gauge,
+    pub whodata_inodes: Gauge,
 }
 
 impl AgentMetrics {
@@ -61,7 +62,13 @@ impl AgentMetrics {
             content_info: Family::default(),
             content_swap: Family::default(),
             blocklist_entries: Gauge::default(),
+            whodata_inodes: Gauge::default(),
         };
+        reg.register(
+            "ward_agent_whodata_inodes",
+            "Files and directories the whodata hooks watch",
+            m.whodata_inodes.clone(),
+        );
         reg.register(
             "ward_agent_detections",
             "Detections and the action taken",

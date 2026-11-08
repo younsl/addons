@@ -13,6 +13,8 @@ mod metrics;
 mod pods;
 mod process;
 mod procfs;
+#[cfg(target_os = "linux")]
+mod realtime;
 mod report;
 mod response;
 mod rootcheck;
@@ -20,8 +22,10 @@ mod scanner;
 mod store;
 #[cfg(any(target_os = "linux", test))]
 mod tracefs;
+mod whodata;
 
 use std::collections::{HashMap, HashSet};
+use std::fmt::Write as _;
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
@@ -49,6 +53,7 @@ use self::report::{Counters, Sinks};
 use self::response::Blocker;
 use self::scanner::{Finding, ScanCache, ScanRoot, kernel_dev};
 use self::store::{ContentStore, Fetch};
+use self::whodata::InodeWatch;
 
 #[derive(Clone, Debug)]
 pub struct AgentArgs {
@@ -89,6 +94,12 @@ struct Ctx {
     table: Mutex<ProcessTable>,
     pods: pods::PodIndex,
     blocker: Option<Arc<dyn Blocker>>,
+    /// The whodata hooks' inode set, when they are attached.
+    inodes: Option<Arc<dyn InodeWatch>>,
+    whodata: Mutex<whodata::Whodata>,
+    /// When the last integrity check started. Whodata actors from before
+    /// it are not attributed to the changes of the next one.
+    integrity_since: Mutex<Option<std::time::Instant>>,
     cache: Mutex<ScanCache>,
     own: Mutex<HashSet<i32>>,
     metrics: AgentMetrics,
@@ -390,6 +401,7 @@ impl Ctx {
             ProcessEvent::Blocked {
                 pid, comm, denied, ..
             } => self.on_blocked(pid, comm, denied).await,
+            ProcessEvent::Fim(f) => self.on_fim(&f),
         }
     }
 
@@ -463,46 +475,227 @@ impl Ctx {
         }
     }
 
-    async fn integrity(&self, baseline: &mut Option<integrity::Baseline>) {
+    /// Checks the watched files: every path on the periodic run, only the
+    /// `changed` ones on a real-time run. Reports each change with its
+    /// changed attributes, a diff of text files, and whodata's actor.
+    async fn integrity(
+        &self,
+        baseline: &mut Option<integrity::Baseline>,
+        changed: Option<Vec<String>>,
+    ) {
         let policy = self.policy();
-        if !policy.integrity.enabled {
+        let p = &policy.integrity;
+        if !p.enabled {
             return;
         }
         let host = self.proc.host_root();
-        let paths = policy.integrity.paths.clone();
-        let Ok(now) = tokio::task::spawn_blocking(move || integrity::snapshot(&host, &paths)).await
+        let roots = p.paths.clone();
+        let limits = integrity_limits(p);
+        let realtime = changed.is_some();
+        let old = baseline.clone();
+        let Ok(now) = tokio::task::spawn_blocking(move || match (&old, changed) {
+            (Some(b), Some(c)) => integrity::rescan(&host, &roots, limits, b, &c),
+            _ => integrity::snapshot(&host, &roots, limits),
+        })
+        .await
         else {
             return;
         };
+        let started = std::time::Instant::now();
+        let since = self
+            .integrity_since
+            .lock()
+            .ok()
+            .and_then(|mut s| s.replace(started))
+            .unwrap_or_else(|| {
+                started
+                    .checked_sub(Duration::from_mins(15))
+                    .unwrap_or(started)
+            });
+        let contents = integrity::Contents::new(&self.state);
+        let host = self.proc.host_root();
+        let keep = |path: &str| {
+            let text = (p.report_changes && !integrity::no_diff(&p.no_diff, path))
+                .then(|| integrity::Contents::text(&host.join(path.trim_start_matches('/'))))
+                .flatten();
+            contents.keep(path, text.as_deref());
+        };
         if let Some(old) = baseline.as_ref() {
-            for (path, change) in integrity::diff(old, &now) {
-                let severity = if ["shadow", "sudoers", "ld.so.preload", "authorized_keys"]
-                    .iter()
-                    .any(|s| path.contains(s))
-                {
-                    Severity::High
-                } else {
-                    Severity::Medium
-                };
-                let mut d = Detection::new(
-                    &self.node,
-                    Kind::Integrity,
-                    "file-integrity",
-                    severity,
-                    format!("host file {path} {}", change.as_str()),
-                );
-                d.file = Some(FileInfo {
-                    sha256: now.get(&path).cloned(),
-                    path,
-                    size: None,
-                });
-                self.emit(d).await;
+            let run = CheckRun {
+                old,
+                now: &now,
+                contents: &contents,
+                realtime,
+                since,
+            };
+            for d in integrity::diff(old, &now) {
+                let det = self.integrity_detection(&policy, &d, &run);
+                keep(&d.path);
+                self.emit(det).await;
+            }
+        } else {
+            for path in now.keys() {
+                keep(path);
             }
         }
         if let Err(e) = integrity::save(&self.state, &now) {
             tracing::warn!(error = %e, "save integrity baseline");
         }
+        self.watch_inodes(&policy, &now).await;
         *baseline = Some(now);
+    }
+
+    fn integrity_detection(
+        &self,
+        policy: &Policy,
+        d: &integrity::Diff,
+        run: &CheckRun<'_>,
+    ) -> Detection {
+        let CheckRun {
+            old,
+            now,
+            contents,
+            realtime,
+            since,
+        } = *run;
+        let p = &policy.integrity;
+        let path = &d.path;
+        let real = self.proc.host_root().join(path.trim_start_matches('/'));
+        let severity = if ["shadow", "sudoers", "ld.so.preload", "authorized_keys"]
+            .iter()
+            .any(|s| path.contains(s))
+        {
+            Severity::High
+        } else {
+            Severity::Medium
+        };
+        let entry = now.get(path).or_else(|| old.get(path));
+        let mut changes = crate::policy::FileChanges {
+            attributes: d.attributes.iter().map(|a| (*a).to_string()).collect(),
+            mode: if realtime { "realtime" } else { "scheduled" }.into(),
+            ..Default::default()
+        };
+        if p.report_changes
+            && d.change == integrity::Change::Modified
+            && !integrity::no_diff(&p.no_diff, path)
+            && let (Some(before), Some(after)) =
+                (contents.previous(path), integrity::Contents::text(&real))
+        {
+            changes.diff = integrity::unified_diff(path, &before, &after);
+        }
+        let mut description = format!("host file {path} {}", d.change.as_str());
+        let mut d_out = Detection::new(
+            &self.node,
+            Kind::Integrity,
+            "file-integrity",
+            severity,
+            String::new(),
+        );
+        if p.whodata
+            && let Ok(who) = self.whodata.lock()
+        {
+            let parent = real
+                .parent()
+                .and_then(|dir| std::fs::metadata(dir).ok())
+                .map(|m| {
+                    use std::os::unix::fs::MetadataExt as _;
+                    (scanner::kernel_dev(m.dev()), m.ino())
+                });
+            let name = real
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            let by_entry = || parent.and_then(|(dev, ino)| who.entry(dev, ino, &name, since));
+            let by_writer = || entry.and_then(|e| who.writer(e.dev, e.ino, since));
+            let content = d
+                .attributes
+                .iter()
+                .any(|a| matches!(*a, "sha256" | "size" | "inode"));
+            let actor = match d.change {
+                integrity::Change::Deleted => by_entry(),
+                integrity::Change::Created => by_entry().or_else(by_writer),
+                integrity::Change::Modified if content => by_writer().or_else(by_entry),
+                integrity::Change::Modified => entry.and_then(|e| who.attrib(e.dev, e.ino, since)),
+            };
+            if let Some(a) = actor {
+                changes.operation = Some(a.op.as_str().into());
+                let _ = write!(
+                    description,
+                    " by {} (pid {}, uid {})",
+                    a.process.comm,
+                    a.process.pid,
+                    a.process
+                        .uid
+                        .map_or_else(|| "unknown".into(), |u| u.to_string()),
+                );
+                d_out.process = Some(a.process.clone());
+                d_out.workload.clone_from(&a.workload);
+            }
+        }
+        d_out.description = description;
+        d_out.file = Some(FileInfo {
+            path: path.clone(),
+            sha256: now.get(path).and_then(|e| e.sha256.clone()),
+            size: now.get(path).map(|e| e.size),
+        });
+        d_out.changes = Some(changes);
+        d_out
+    }
+
+    /// Points the whodata hooks at the watched files and directories.
+    async fn watch_inodes(&self, policy: &Policy, now: &integrity::Baseline) {
+        let Some(inodes) = self.inodes.clone() else {
+            return;
+        };
+        let p = &policy.integrity;
+        let (host, roots, limits) = (self.proc.host_root(), p.paths.clone(), integrity_limits(p));
+        let (now, on) = (now.clone(), p.enabled && p.whodata);
+        let res = tokio::task::spawn_blocking(move || {
+            let set = if on {
+                integrity::watched_inodes(&host, &roots, limits, &now)
+            } else {
+                Vec::new()
+            };
+            inodes.watch(&set)
+        })
+        .await;
+        match res {
+            Ok(Ok(n)) => {
+                self.metrics
+                    .whodata_inodes
+                    .set(i64::try_from(n).unwrap_or(i64::MAX));
+            }
+            Ok(Err(e)) => tracing::warn!(error = %e, "update whodata inodes"),
+            Err(e) => tracing::warn!(error = %e, "whodata inode task"),
+        }
+    }
+
+    /// Records the process behind a write or entry change the FIM hooks saw.
+    fn on_fim(&self, f: &events::Fim) {
+        if !self.policy().integrity.whodata {
+            return;
+        }
+        let Some(op) = whodata::Op::from_raw(f.op) else {
+            return;
+        };
+        let pid = f.pid;
+        let mut process = self
+            .table
+            .lock()
+            .ok()
+            .and_then(|t| t.info(pid))
+            .unwrap_or_else(|| crate::policy::ProcessInfo {
+                pid,
+                comm: f.comm.clone(),
+                exe: self.proc.exe(pid),
+                cmdline: self.proc.cmdline(pid),
+                ..Default::default()
+            });
+        process.uid = Some(f.uid);
+        let workload = self.proc.container_id(pid).map(|id| self.workload(&id));
+        if let Ok(mut w) = self.whodata.lock() {
+            w.record(op, f.dev, f.ino, &f.name, process, workload);
+        }
     }
 
     /// Runs the rootkit anomaly checks and reports findings not reported
@@ -563,6 +756,85 @@ impl Ctx {
     }
 }
 
+/// One integrity check, as each of its changes is turned into a detection.
+#[derive(Clone, Copy)]
+struct CheckRun<'a> {
+    old: &'a integrity::Baseline,
+    now: &'a integrity::Baseline,
+    contents: &'a integrity::Contents,
+    realtime: bool,
+    since: std::time::Instant,
+}
+
+/// Changes that arrive within this window after the first are checked
+/// together, so an editor's write, rename, and chmod make one report.
+const REALTIME_SETTLE: Duration = Duration::from_millis(500);
+
+const fn integrity_limits(p: &crate::policy::IntegrityPolicy) -> integrity::Limits {
+    integrity::Limits {
+        recursion_level: p.recursion_level as usize,
+        file_limit: if p.file_limit == 0 {
+            100_000
+        } else {
+            p.file_limit as usize
+        },
+    }
+}
+
+/// The inotify thread of real-time integrity monitoring, restarted when
+/// the watched paths or limits change.
+#[derive(Default)]
+struct RealtimeWatcher {
+    running: Option<(Vec<String>, integrity::Limits, Arc<AtomicBool>)>,
+}
+
+impl RealtimeWatcher {
+    fn stop(&mut self) {
+        if let Some((_, _, stop)) = self.running.take() {
+            stop.store(true, std::sync::atomic::Ordering::Relaxed);
+        }
+    }
+
+    fn sync(
+        &mut self,
+        host_root: &Path,
+        p: &crate::policy::IntegrityPolicy,
+        tx: &mpsc::Sender<Vec<String>>,
+    ) {
+        let want = (p.enabled && p.realtime).then(|| (p.paths.clone(), integrity_limits(p)));
+        let same = match (&self.running, &want) {
+            (Some((paths, limits, _)), Some((wp, wl))) => paths == wp && limits == wl,
+            (None, None) => true,
+            _ => false,
+        };
+        if same {
+            return;
+        }
+        self.stop();
+        let Some((paths, limits)) = want else {
+            return;
+        };
+        let stop = Arc::new(AtomicBool::new(false));
+        #[cfg(target_os = "linux")]
+        {
+            let (host, roots, tx, stop) = (
+                host_root.to_path_buf(),
+                paths.clone(),
+                tx.clone(),
+                stop.clone(),
+            );
+            std::thread::spawn(move || {
+                if let Err(e) = realtime::watch(&host, &roots, limits, &tx, &stop) {
+                    tracing::warn!(error = %e, "real-time integrity monitoring stopped, the periodic check continues");
+                }
+            });
+        }
+        #[cfg(not(target_os = "linux"))]
+        let _ = (host_root, tx);
+        self.running = Some((paths, limits, stop));
+    }
+}
+
 /// Polls `/proc` for new and exited processes.
 async fn poll_procfs(
     proc: ProcFs,
@@ -603,15 +875,23 @@ async fn poll_procfs(
     }
 }
 
-/// Starts the event source the policy asks for. Returns the mode label and
-/// the exec blocker when the BPF LSM is attached.
+/// What the event source gives the agent.
+struct Source {
+    mode: String,
+    /// The exec blocker, when the BPF LSM is attached.
+    blocker: Option<Arc<dyn Blocker>>,
+    /// The whodata hooks, when they are attached.
+    inodes: Option<Arc<dyn InodeWatch>>,
+}
+
+/// Starts the event source the policy asks for.
 fn start_source(
     args: &AgentArgs,
     policy: &watch::Receiver<Policy>,
     tx: mpsc::Sender<ProcessEvent>,
     metrics: &AgentMetrics,
     shutdown: watch::Receiver<bool>,
-) -> (String, Option<Arc<dyn Blocker>>) {
+) -> Source {
     let want = policy.borrow().event_source;
     #[cfg(target_os = "linux")]
     if want != crate::crd::EventSource::Procfs {
@@ -621,8 +901,15 @@ fn start_source(
                 tracing::info!(mode, "eBPF probes attached");
                 let blocker: Option<Arc<dyn Blocker>> =
                     k.lsm.then(|| k.clone() as Arc<dyn Blocker>);
+                let inodes: Option<Arc<dyn InodeWatch>> =
+                    k.whodata().then(|| k.clone() as Arc<dyn InodeWatch>);
+                tracing::info!(whodata = inodes.is_some(), "integrity whodata hooks");
                 std::mem::forget(k);
-                return (mode, blocker);
+                return Source {
+                    mode,
+                    blocker,
+                    inodes,
+                };
             }
             Err(e) if want == crate::crd::EventSource::Ebpf => {
                 tracing::error!(error = %e, "eventSource is Ebpf and the probes failed to load, polling /proc instead");
@@ -638,7 +925,11 @@ fn start_source(
         policy.clone(),
         shutdown,
     ));
-    ("procfs".into(), None)
+    Source {
+        mode: "procfs".into(),
+        blocker: None,
+        inodes: None,
+    }
 }
 
 /// A manager client for other modules' tests.
@@ -700,8 +991,11 @@ pub async fn run(args: AgentArgs, shutdown: watch::Receiver<bool>) -> anyhow::Re
 
     let (ev_tx, mut ev_rx) = mpsc::channel::<ProcessEvent>(8192);
     let (det_tx, det_rx) = mpsc::channel::<(Detection, String)>(4096);
-    let (mode, blocker) =
-        start_source(&args, &policy_rx, ev_tx.clone(), &metrics, shutdown.clone());
+    let Source {
+        mode,
+        blocker,
+        inodes,
+    } = start_source(&args, &policy_rx, ev_tx.clone(), &metrics, shutdown.clone());
     let proc = ProcFs::new(&args.proc_root);
     let own = proc.descendants_of(i32::try_from(std::process::id()).unwrap_or(0));
     let counters = Arc::new(Counters::default());
@@ -714,6 +1008,9 @@ pub async fn run(args: AgentArgs, shutdown: watch::Receiver<bool>) -> anyhow::Re
         table: Mutex::new(ProcessTable::default()),
         pods,
         blocker: blocker.clone(),
+        inodes,
+        whodata: Mutex::new(whodata::Whodata::default()),
+        integrity_since: Mutex::new(None),
         cache: Mutex::new(ScanCache::default()),
         own: Mutex::new(own),
         metrics: metrics.clone(),
@@ -825,12 +1122,34 @@ pub async fn run(args: AgentArgs, shutdown: watch::Receiver<bool>) -> anyhow::Re
         let mut shutdown = shutdown.clone();
         tokio::spawn(async move {
             let mut baseline = integrity::load(&ctx.state);
+            let (rt_tx, mut rt_rx) = mpsc::channel::<Vec<String>>(64);
+            let mut watcher = RealtimeWatcher::default();
+            ctx.integrity(&mut baseline, None).await;
+            let mut next = tokio::time::Instant::now();
             loop {
-                ctx.integrity(&mut baseline).await;
-                let secs = ctx.policy().integrity.interval_secs.max(10);
+                let p = ctx.policy().integrity;
+                watcher.sync(&ctx.proc.host_root(), &p, &rt_tx);
+                if next <= tokio::time::Instant::now() {
+                    next =
+                        tokio::time::Instant::now() + Duration::from_secs(p.interval_secs.max(10));
+                }
                 tokio::select! {
-                    () = tokio::time::sleep(Duration::from_secs(secs)) => {}
-                    _ = shutdown.changed() => return,
+                    () = tokio::time::sleep_until(next) => {
+                        ctx.integrity(&mut baseline, None).await;
+                    }
+                    Some(mut paths) = rt_rx.recv() => {
+                        let settle = tokio::time::Instant::now() + REALTIME_SETTLE;
+                        while let Ok(Some(more)) = tokio::time::timeout_at(settle, rt_rx.recv()).await {
+                            paths.extend(more);
+                        }
+                        paths.sort();
+                        paths.dedup();
+                        ctx.integrity(&mut baseline, Some(paths)).await;
+                    }
+                    _ = shutdown.changed() => {
+                        watcher.stop();
+                        return;
+                    }
                 }
             }
         });
@@ -922,6 +1241,9 @@ mod tests {
             table: Mutex::new(ProcessTable::default()),
             pods: pods::PodIndex::empty(),
             blocker: Some(Arc::new(response::tests::FakeBlocker::default())),
+            inodes: None,
+            whodata: Mutex::new(whodata::Whodata::default()),
+            integrity_since: Mutex::new(None),
             cache: Mutex::new(ScanCache::default()),
             own: Mutex::new(HashSet::new()),
             metrics: AgentMetrics::register(&mut Registry::default()),
@@ -1114,14 +1436,122 @@ mod tests {
         assert_eq!(d[0].file.as_ref().unwrap().path, "/srv/eicar.com");
 
         let mut baseline = None;
-        ctx.integrity(&mut baseline).await;
+        ctx.integrity(&mut baseline, None).await;
         assert!(drain(&mut rx).is_empty());
         std::fs::write(host.join("shadow"), "root:x\nevil:x").unwrap();
-        ctx.integrity(&mut baseline).await;
+        ctx.integrity(&mut baseline, None).await;
         let d = drain(&mut rx);
         assert_eq!(d[0].rule, "file-integrity");
         assert_eq!(d[0].severity, Severity::High);
+        let changes = d[0].changes.as_ref().unwrap();
+        assert_eq!(changes.mode, "scheduled");
+        assert!(changes.diff.is_none(), "shadow is in noDiff");
         assert!(integrity::load(state.path()).is_some());
+    }
+
+    #[tokio::test]
+    async fn integrity_reports_diff_attributes_and_whodata() {
+        use std::os::unix::fs::MetadataExt as _;
+        let fake = FakeProc::new();
+        let state = tempfile::tempdir().unwrap();
+        fake.add(1, 0, "init", "elf", "init", "0::/");
+        fake.add(77, 1, "vi", "/usr/bin/vi", "vi /etc/sudoers", "0::/");
+        let etc = fake.dir.path().join("1/root/etc");
+        std::fs::create_dir_all(&etc).unwrap();
+        std::fs::write(etc.join("sudoers"), "root ALL=(ALL) ALL\n").unwrap();
+        let mut policy = Policy::default();
+        policy.integrity.enabled = true;
+        policy.integrity.paths = vec!["/etc/sudoers".into(), "/etc/dropped".into()];
+        policy.integrity.report_changes = true;
+        policy.integrity.whodata = true;
+        policy.integrity.recursion_level = 4;
+        let (ctx, mut rx) = ctx(&fake, state.path(), policy);
+        let mut baseline = None;
+        ctx.integrity(&mut baseline, None).await;
+        assert!(drain(&mut rx).is_empty());
+
+        let meta = std::fs::metadata(etc.join("sudoers")).unwrap();
+        ctx.handle(ProcessEvent::Fim(events::Fim {
+            pid: 77,
+            uid: 0,
+            comm: "vi".into(),
+            op: ward_ebpf_common::FIM_WRITE,
+            dev: scanner::kernel_dev(meta.dev()),
+            ino: meta.ino(),
+            name: String::new(),
+        }))
+        .await;
+        std::fs::write(
+            etc.join("sudoers"),
+            "root ALL=(ALL) ALL\nevil ALL=(ALL) NOPASSWD: ALL\n",
+        )
+        .unwrap();
+        let dir = std::fs::metadata(&etc).unwrap();
+        ctx.handle(ProcessEvent::Fim(events::Fim {
+            pid: 78,
+            uid: 1000,
+            comm: "sh".into(),
+            op: ward_ebpf_common::FIM_CREATE,
+            dev: scanner::kernel_dev(dir.dev()),
+            ino: dir.ino(),
+            name: "dropped".into(),
+        }))
+        .await;
+        std::fs::write(etc.join("dropped"), "x").unwrap();
+        ctx.integrity(
+            &mut baseline,
+            Some(vec!["/etc/sudoers".into(), "/etc/dropped".into()]),
+        )
+        .await;
+        let mut d = drain(&mut rx);
+        d.sort_by(|a, b| {
+            a.file
+                .as_ref()
+                .unwrap()
+                .path
+                .cmp(&b.file.as_ref().unwrap().path)
+        });
+        assert_eq!(d.len(), 2, "{d:?}");
+        let created = &d[0];
+        assert_eq!(created.process.as_ref().unwrap().comm, "sh");
+        assert_eq!(created.process.as_ref().unwrap().uid, Some(1000));
+        assert_eq!(
+            created.changes.as_ref().unwrap().operation.as_deref(),
+            Some("create")
+        );
+        let modified = &d[1];
+        assert_eq!(modified.severity, Severity::High);
+        assert!(
+            modified.description.contains("by vi (pid 77, uid 0)"),
+            "{}",
+            modified.description
+        );
+        let changes = modified.changes.as_ref().unwrap();
+        assert_eq!(changes.mode, "realtime");
+        assert_eq!(changes.operation.as_deref(), Some("write"));
+        assert!(changes.attributes.contains(&"sha256".to_string()));
+        assert!(
+            changes
+                .diff
+                .as_deref()
+                .unwrap()
+                .contains("+evil ALL=(ALL) NOPASSWD: ALL"),
+            "{changes:?}"
+        );
+
+        let mut off = ctx.policy();
+        off.integrity.whodata = false;
+        assert!(integrity_limits(&off.integrity).file_limit > 0);
+        let mut w = RealtimeWatcher::default();
+        let (tx, _rx) = mpsc::channel(1);
+        off.integrity.realtime = false;
+        w.sync(Path::new("/nonexistent"), &off.integrity, &tx);
+        assert!(w.running.is_none());
+        off.integrity.realtime = true;
+        w.sync(Path::new("/nonexistent"), &off.integrity, &tx);
+        assert!(w.running.is_some());
+        w.stop();
+        assert!(w.running.is_none());
     }
 
     #[tokio::test]
