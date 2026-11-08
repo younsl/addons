@@ -31,8 +31,8 @@ pub enum BuildError {
     Content(#[from] ContentError),
     #[error("{hits} corpus file(s) matched: {first}")]
     FalsePositive { hits: usize, first: String },
-    #[error("{count} rules matched the corpus, more than --max-disabled {max}: {first}")]
-    TooManyDisabled {
+    #[error("pruning {count} entries against the corpus, more than --max-pruned {max}: {first}")]
+    TooManyPruned {
         count: usize,
         max: usize,
         first: String,
@@ -52,8 +52,8 @@ pub struct BuildInput {
     /// Known-good file trees. Feed hashes found here are removed and rules
     /// that match here are disabled.
     pub corpus: Vec<PathBuf>,
-    /// The most YARA rules and signatures pruning may disable.
-    pub max_disabled: usize,
+    /// The most hashes, YARA rules, and signatures the corpus may prune.
+    pub max_pruned: usize,
 }
 
 #[derive(Debug, Default, PartialEq, Eq)]
@@ -62,10 +62,11 @@ pub struct BuildReport {
     pub signatures: usize,
     pub yara_files: usize,
     pub dropped_yara: Vec<String>,
-    /// Feed hashes removed because an allowlist or the corpus holds them.
-    pub known_good: usize,
-    /// Rules and signatures disabled, each with the corpus file it matched.
-    pub disabled: Vec<String>,
+    /// Feed hashes removed because an allowlist holds them.
+    pub allowlisted: usize,
+    /// Hashes removed, rules disabled, and signatures dropped because they
+    /// matched the corpus, each with the corpus file it matched.
+    pub pruned: Vec<String>,
 }
 
 fn read(path: &Path) -> Result<String, BuildError> {
@@ -206,33 +207,35 @@ fn prune(db: &mut FeedDb, input: &BuildInput, report: &mut BuildReport) -> Resul
             .filter_map(|(_, m)| decode_digest(&m.sha256))
             .collect();
         let removed = remove_hashes(db, &candidates)?;
-        report.known_good += removed.len();
         let mut progressed = !removed.is_empty();
         for (path, m) in &hits {
             if decode_digest(&m.sha256).is_some_and(|h| removed.contains(&h)) {
+                report
+                    .pruned
+                    .push(format!("hash {} {} ({})", m.sha256, m.name, path.display()));
                 continue;
             }
             if let Some(rule) = m.name.strip_prefix(YARA_PREFIX) {
                 if !db.yara_disabled.iter().any(|r| r == rule) {
                     db.yara_disabled.push(rule.to_string());
                     report
-                        .disabled
-                        .push(format!("{} ({})", m.name, path.display()));
+                        .pruned
+                        .push(format!("rule {} ({})", m.name, path.display()));
                     progressed = true;
                 }
             } else if db.signatures.iter().any(|s| s.name == m.name) {
                 db.signatures.retain(|s| s.name != m.name);
                 report
-                    .disabled
-                    .push(format!("{} ({})", m.name, path.display()));
+                    .pruned
+                    .push(format!("signature {} ({})", m.name, path.display()));
                 progressed = true;
             }
         }
-        if report.disabled.len() > input.max_disabled {
-            return Err(BuildError::TooManyDisabled {
-                count: report.disabled.len(),
-                max: input.max_disabled,
-                first: report.disabled[0].clone(),
+        if report.pruned.len() > input.max_pruned {
+            return Err(BuildError::TooManyPruned {
+                count: report.pruned.len(),
+                max: input.max_pruned,
+                first: report.pruned[0].clone(),
             });
         }
         if !progressed {
@@ -350,7 +353,7 @@ fn finish(db: &mut FeedDb, input: &BuildInput, report: &mut BuildReport) -> Resu
     for path in &input.allowlists {
         allow.extend(parse_hash_dump(&read(path)?));
     }
-    report.known_good += remove_hashes(db, &allow)?.len();
+    report.allowlisted += remove_hashes(db, &allow)?.len();
     if !input.corpus.is_empty() {
         prune(db, input, report)?;
     }
@@ -525,14 +528,15 @@ mod tests {
             signatures: vec![sigs],
             allowlists: vec![allow],
             corpus: vec![corpus.clone()],
-            max_disabled: 5,
+            max_pruned: 5,
         };
         let (db, report) = build(&input).unwrap();
         assert_eq!(report.hashes, 1, "only the unknown hash stays");
-        assert_eq!(report.known_good, 2);
+        assert_eq!(report.allowlisted, 1);
         assert_eq!(db.manifest.sources[0].count, 1);
         assert_eq!(db.yara_disabled, vec!["default.Noisy".to_string()]);
-        assert_eq!(report.disabled.len(), 2);
+        assert_eq!(report.pruned.len(), 3, "{:?}", report.pruned);
+        assert!(report.pruned.iter().any(|p| p.starts_with("hash ")));
         assert_eq!(report.signatures, 1);
         assert_eq!(db.signatures[0].name, "Feed.Hashes");
         assert_eq!(db.signatures[0].sha256, vec![evil]);
@@ -552,12 +556,12 @@ mod tests {
 
         assert!(matches!(
             build(&BuildInput {
-                max_disabled: 1,
+                max_pruned: 2,
                 ..input
             }),
-            Err(BuildError::TooManyDisabled {
-                count: 2,
-                max: 1,
+            Err(BuildError::TooManyPruned {
+                count: 3,
+                max: 2,
                 ..
             })
         ));
@@ -566,7 +570,7 @@ mod tests {
         assert!(matches!(
             build(&BuildInput {
                 corpus: vec![corpus],
-                max_disabled: 5,
+                max_pruned: 5,
                 ..BuildInput::default()
             }),
             Err(BuildError::Unprunable { .. })

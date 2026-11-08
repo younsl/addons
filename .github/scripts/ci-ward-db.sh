@@ -9,8 +9,8 @@
 #   check    run `ward feed check` against the corpus (EICAR self-test included)
 #   publish  sign with cosign and push with oras, then tag latest
 # Env: WORK_DIR, WARD_BIN, REPOSITORY (ghcr.io/<owner>/ward-db), GITHUB_OUTPUT,
-#   GITHUB_RUN_NUMBER, FORCE (true rebuilds identical inputs), ABUSE_CH_AUTH_KEY
-#   (optional), COSIGN_PRIVATE_KEY, COSIGN_PASSWORD, REGISTRY_USER,
+#   GITHUB_RUN_NUMBER, GITHUB_STEP_SUMMARY, FORCE (true rebuilds identical inputs),
+#   MAX_PRUNED, ABUSE_CH_AUTH_KEY (optional), COSIGN_PRIVATE_KEY, COSIGN_PASSWORD, REGISTRY_USER,
 #   REGISTRY_PASSWORD (publish).
 set -euo pipefail
 
@@ -21,7 +21,8 @@ DB="${WORK_DIR}/ward-db.json.gz"
 SIG="${DB}.sig"
 STATE="${WORK_DIR}/state.env"
 ALLOWLIST="box/addons/ward/feed/allowlist.txt"
-MAX_DISABLED="${MAX_DISABLED:-25}"
+MAX_PRUNED="${MAX_PRUNED:-25}"
+BUILD_LOG="${WORK_DIR}/build.log"
 CORPUS_PLATFORMS=(linux/amd64 linux/arm64)
 CORPUS_IMAGES=(
   debian:stable-slim
@@ -110,9 +111,31 @@ build() {
     --malwarebazaar "${SOURCES}/malwarebazaar.txt" \
     --yara-dir "${SOURCES}/yara" \
     --allowlist "${SOURCES}/allowlist.txt" \
-    --max-disabled "${MAX_DISABLED}" \
-    "${args[@]}"
+    --max-pruned "${MAX_PRUNED}" \
+    "${args[@]}" 2>&1 | tee "${BUILD_LOG}"
+  summary
   ls -lh "${DB}"
+}
+
+summary() {
+  local pruned
+  [[ -n "${GITHUB_STEP_SUMMARY:-}" ]] || return 0
+  pruned=$(sed -n 's/^pruned //p' "${BUILD_LOG}" | sed "s#${CORPUS}/##")
+  {
+    echo "## ward-db ${REVISION}"
+    echo
+    grep -E '^.* revision .*: ' "${BUILD_LOG}" | tail -1
+    echo
+    if [[ -z "${pruned}" ]]; then
+      echo "Nothing pruned against the corpus."
+    else
+      echo "Pruned against the corpus ($(wc -l <<<"${pruned}" | tr -d ' ') of at most ${MAX_PRUNED}):"
+      echo
+      echo '```'
+      echo "${pruned}"
+      echo '```'
+    fi
+  } >> "${GITHUB_STEP_SUMMARY}"
 }
 
 check() {

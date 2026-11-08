@@ -22,14 +22,14 @@ MalwareBazaar accepts submissions from anyone, so a benign binary can end up in 
 | Match | Action |
 | --- | --- |
 | Feed hash listed in an `--allowlist` file | Removed from the hash sets and signature hash lists |
-| Feed hash of a corpus file | Removed the same way, counted as known-good |
+| Feed hash of a corpus file | Removed the same way |
 | YARA rule that matches a corpus file | Added to the database's disabled rule list, which every engine skips |
 | Feed signature pattern that matches a corpus file | Signature removed |
 
 - Each distinct corpus file is scanned once, so identical files across images and architectures cost one scan.
-- The build fails when pruning would disable more YARA rules and signatures than `--max-disabled` (default 25). That many hits means a broken rule set, not a few noisy rules.
+- The build fails when the corpus would prune more hashes, YARA rules, and signatures combined than `--max-pruned` (default 25). That many hits means a broken rule set or a poisoned corpus image, not a few noisy entries. Allowlist removals do not count, since the allowlist is reviewed in the repository.
 - The build also fails when a corpus file matches content it cannot prune, such as a built-in signature.
-- The build log lists every disabled rule with the corpus file it matched.
+- The build log and the workflow run summary list every pruned entry with the corpus file it matched, so a reviewer sees what each published revision no longer detects.
 
 To exclude a hash the corpus does not cover, add it to [feed/allowlist.txt](../feed/allowlist.txt). It takes effect in the next daily build. Clusters that cannot wait use `spec.indicators.allow`.
 

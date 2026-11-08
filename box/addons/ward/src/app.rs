@@ -177,9 +177,9 @@ enum FeedCmd {
         /// rules that match here are disabled
         #[arg(long)]
         corpus: Vec<PathBuf>,
-        /// Fail when pruning would disable more rules and signatures than this
+        /// Fail when the corpus would prune more hashes, rules, and signatures than this
         #[arg(long, default_value_t = 25)]
-        max_disabled: usize,
+        max_pruned: usize,
     },
     /// Self-test a database and scan a false-positive corpus
     Check {
@@ -200,7 +200,7 @@ fn feed(cmd: FeedCmd) -> anyhow::Result<()> {
             signatures,
             allowlist,
             corpus,
-            max_disabled,
+            max_pruned,
         } => {
             let (db, report) = build(&BuildInput {
                 revision,
@@ -209,25 +209,25 @@ fn feed(cmd: FeedCmd) -> anyhow::Result<()> {
                 signatures,
                 allowlists: allowlist,
                 corpus,
-                max_disabled,
+                max_pruned,
             })?;
             std::fs::write(&out, db.encode())?;
             for d in &report.dropped_yara {
                 eprintln!("dropped {d}");
             }
-            for d in &report.disabled {
-                eprintln!("disabled {d}");
+            for d in &report.pruned {
+                eprintln!("pruned {d}");
             }
             println!(
-                "{} revision {}: {} hashes ({} known-good removed), {} signatures, {} YARA files ({} dropped, {} rules disabled)",
+                "{} revision {}: {} hashes ({} allowlisted), {} signatures, {} YARA files ({} dropped), {} pruned against the corpus",
                 out.display(),
                 db.manifest.revision,
                 report.hashes,
-                report.known_good,
+                report.allowlisted,
                 report.signatures,
                 report.yara_files,
                 report.dropped_yara.len(),
-                report.disabled.len()
+                report.pruned.len()
             );
         }
         FeedCmd::Check { db, corpus } => {
@@ -364,7 +364,7 @@ mod tests {
             signatures: vec![],
             allowlist: vec![],
             corpus: vec![],
-            max_disabled: 25,
+            max_pruned: 25,
         })
         .unwrap();
         let corpus = dir.path().join("corpus");
