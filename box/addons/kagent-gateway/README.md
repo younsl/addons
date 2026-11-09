@@ -135,7 +135,7 @@ spec:
 
 Weights apply to mentions only. The alert path keeps `KAGENT_AGENT_ROUTING_MAP`.
 
-With the chart, list the policies under `agentAccessPolicies`, keyed by agent name, and the chart renders them into `kagent.namespace`. Without `agentRefs` the key itself is the only Agent:
+With the chart, list the policies under `agentAccessPolicies`, keyed by agent name. Each entry's `spec` is the policy spec verbatim, and the chart renders it into `kagent.namespace`:
 
 ```yaml
 chat:
@@ -143,15 +143,15 @@ chat:
     enabled: true
 agentAccessPolicies:
   security-alert-triage-agent:
-    allowedUsers:
-      - U01234567
-  aws-alert-triage-agent:
-    allowAll: true
-    agentRefs:
-      - name: aws-alert-triage-agent
-        weight: 90
-      - name: aws-alert-triage-agent-v2
-        weight: 10
+    spec:
+      agentRefs:
+        - group: kagent.dev
+          kind: Agent
+          name: security-alert-triage-agent
+          namespace: kagent
+      chat:
+        allowedUsers:
+          - U01234567
 ```
 
 The check runs against the agent the channel routes to (`CHAT_AGENT_MAP`, then `CHAT_AGENT`), so one policy covers every channel that reaches the agent.
