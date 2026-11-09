@@ -7,6 +7,17 @@
 
 Receives Alertmanager webhooks, asks a [kagent](https://kagent.dev) agent to investigate each alert over A2A, and replies with the analysis in the alert's Slack thread. Mentioning the bot inside a thread runs the agent again and answers there. Built with Rust 1.99.1 as a static musl binary on a scratch image.
 
+## Features
+
+- **Threaded analysis**: Replies under the alert Alertmanager already posted, matched on the alert fingerprint. `post` mode publishes the alert itself.
+- **Multi-agent routing**: An alert label sends each category to its own specialised agent.
+- **Mention invocation**: `@bot` inside a thread runs the agent again, with the A2A session kept per thread.
+- **Per-agent access**: `AgentAccessPolicy` objects decide which Slack members may invoke each agent.
+- **Weighted rollout**: `agentRefs` weights split new threads across Agent versions, like Gateway API `backendRefs`.
+- **Cost bounds**: Severity filter, group deduplication, concurrency limits, and task cancellation on deadline.
+- **Observability**: Prometheus metrics for every stage, plus ServiceMonitor and PrometheusRule in the chart.
+- **Small footprint**: Static musl binary on scratch, with outbound Socket Mode only and no inbound Slack endpoint.
+
 Guides:
 
 - [How it works](docs/how-it-works.md)
