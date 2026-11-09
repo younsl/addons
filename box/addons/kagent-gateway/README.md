@@ -7,7 +7,22 @@
 
 Receives Alertmanager webhooks, asks a [kagent](https://kagent.dev) agent to investigate each alert over A2A, and replies with the analysis in the alert's Slack thread. Mentioning the bot inside a thread runs the agent again and answers there. Built with Rust 1.99.1 as a static musl binary on a scratch image.
 
-Guides: [How it works](docs/how-it-works.md), [Mention invocation](docs/mention-invocation.md), [Agent access policy](docs/access-policy.md), [Slack app](docs/slack-app.md), [Configuration](docs/configuration.md), [Alertmanager](docs/alertmanager.md), [Agent expectations](docs/agent-expectations.md), [Metrics](docs/metrics.md), [Usage](docs/usage.md). Designs: [Slack mention invocation](docs/designs/slack-mention-invocation.md), [Agent access policy](docs/designs/agent-access-policy.md).
+Guides:
+
+- [How it works](docs/how-it-works.md)
+- [Mention invocation](docs/mention-invocation.md)
+- [Agent access policy](docs/access-policy.md)
+- [Slack app](docs/slack-app.md)
+- [Configuration](docs/configuration.md)
+- [Alertmanager](docs/alertmanager.md)
+- [Agent expectations](docs/agent-expectations.md)
+- [Metrics](docs/metrics.md)
+- [Usage](docs/usage.md)
+
+Designs:
+
+- [Slack mention invocation](docs/designs/slack-mention-invocation.md)
+- [Agent access policy](docs/designs/agent-access-policy.md)
 
 ## How it works
 
