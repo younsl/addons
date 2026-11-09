@@ -135,7 +135,7 @@ spec:
 
 Weights apply to mentions only. The alert path keeps `KAGENT_AGENT_ROUTING_MAP`.
 
-With the chart, list the policies under `agentAccessPolicies`, keyed by agent name. Each entry's `spec` is the policy spec verbatim, and the chart renders it into `kagent.namespace` unless the entry sets `enabled: false`. The values schema requires `weight` on every `agentRefs` entry, so a split is always written out:
+With the chart, list the policies under `agentAccessPolicies`, keyed by agent name. Each entry's `spec` is the policy spec verbatim, and the chart renders it into `kagent.namespace` unless the entry sets `enabled: false`. `weight` may be omitted (the CRD defaults it to 1), but writing it out keeps the split readable:
 
 ```yaml
 chat:

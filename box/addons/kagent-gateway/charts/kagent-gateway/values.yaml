@@ -109,7 +109,7 @@ chat:
   # -- (int) Maximum mention turns running at once. Separate from `analysis.maxConcurrent` so a burst of questions cannot starve alert analysis of model concurrency.
   maxConcurrent: 2
 
-# -- (object) AgentAccessPolicy objects rendered into `kagent.namespace`, keyed by the agent name `chat.agent` and `chat.agentMap` route to. Each entry's `enabled` (default `true`) decides whether the object is rendered, and its `spec` is the object's spec verbatim: `agentRefs` (every identifying field and an explicit `weight`) and `chat` (exactly one of `allowedUsers` and `allowAll: true`). Rendered only when `chat.enabled` and `chat.accessPolicies.enabled` are both true. A name without an entry keeps `chat.allowedUsers`.
+# -- (object) AgentAccessPolicy objects rendered into `kagent.namespace`, keyed by the agent name `chat.agent` and `chat.agentMap` route to. Each entry's `enabled` (default `true`) decides whether the object is rendered, and its `spec` is the object's spec verbatim: `agentRefs` (every identifying field, plus `weight` defaulting to 1) and `chat` (exactly one of `allowedUsers` and `allowAll: true`). Rendered only when `chat.enabled` and `chat.accessPolicies.enabled` are both true. A name without an entry keeps `chat.allowedUsers`.
 agentAccessPolicies: {}
   # security-alert-triage-agent:
   #   enabled: true

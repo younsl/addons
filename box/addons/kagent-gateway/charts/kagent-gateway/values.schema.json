@@ -218,8 +218,7 @@
                     "group",
                     "kind",
                     "name",
-                    "namespace",
-                    "weight"
+                    "namespace"
                   ],
                   "properties": {
                     "group": {

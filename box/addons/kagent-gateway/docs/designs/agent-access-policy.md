@@ -167,7 +167,7 @@ Readiness is not tied to the policy cache. A broken cache must not make the pod 
 |----------|-------------|---------|--------|
 | `CHAT_ACCESS_POLICIES` | `chat.accessPolicies.enabled` | `false` | Starts the controller and reads policies from `KAGENT_NAMESPACE` |
 | `CHAT_ALLOWED_USERS` | `chat.allowedUsers` | empty | With the feature on, applies only to agents without a policy |
-| none | `agentAccessPolicies` | `{}` | Policies rendered into `kagent.namespace`, keyed by agent name. Each entry's `spec` is the policy spec verbatim, so the chart adds no defaults of its own and the CRD schema stays the single source of them. `enabled: false` (default `true`) skips one entry without deleting it from values. The values schema requires `weight` on every `agentRefs` entry, while the CRD still defaults it to 1 for objects applied directly. |
+| none | `agentAccessPolicies` | `{}` | Policies rendered into `kagent.namespace`, keyed by agent name. Each entry's `spec` is the policy spec verbatim, so the chart adds no defaults of its own and the CRD schema stays the single source of them. `enabled: false` (default `true`) skips one entry without deleting it from values. `weight` is optional and defaults to 1 in the CRD. |
 | none | `crds.install` | `true` | Installs and upgrades the CRD from `templates/crds/` |
 | none | `crds.keep` | `true` | Keeps the CRD, and every policy, on `helm uninstall` |
 
