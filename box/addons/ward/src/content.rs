@@ -20,6 +20,8 @@ pub use index::HashIndex;
 
 pub const MEDIA_TYPE_DB: &str = "application/vnd.ward.db.v1+gzip";
 pub const MEDIA_TYPE_SIG: &str = "application/vnd.ward.db.signature.v1";
+/// A cosign `sign-blob --bundle` document for keyless verification.
+pub const MEDIA_TYPE_BUNDLE: &str = "application/vnd.ward.db.sigstore-bundle.v1+json";
 /// The database format this binary reads. A feed that needs a newer engine
 /// is refused instead of half-loaded.
 pub const ENGINE_VERSION: u32 = 1;
@@ -208,7 +210,7 @@ fn pem_body(pem: &str) -> Result<Vec<u8>, ContentError> {
 }
 
 /// The uncompressed EC point of a P-256 `SubjectPublicKeyInfo`.
-fn p256_point(spki: &[u8]) -> Result<&[u8], ContentError> {
+pub(crate) fn p256_point(spki: &[u8]) -> Result<&[u8], ContentError> {
     const P256_SPKI_PREFIX: [u8; 26] = [
         0x30, 0x59, 0x30, 0x13, 0x06, 0x07, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x02, 0x01, 0x06, 0x08,
         0x2a, 0x86, 0x48, 0xce, 0x3d, 0x03, 0x01, 0x07, 0x03, 0x42, 0x00,

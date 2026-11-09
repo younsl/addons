@@ -732,7 +732,8 @@ pub struct Indicator {
 
 #[derive(KubeSchema, Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[x_kube(
-    validation = Rule::new("has(self.publicKey) || self.insecureSkipVerify").message("feed needs publicKey unless insecureSkipVerify is true")
+    validation = Rule::new("has(self.publicKey) || has(self.keyless) || (has(self.insecureSkipVerify) && self.insecureSkipVerify)").message("feed needs keyless or publicKey unless insecureSkipVerify is true"),
+    validation = Rule::new("!(has(self.publicKey) && has(self.keyless))").message("set feed.keyless or feed.publicKey, not both")
 )]
 #[serde(rename_all = "camelCase")]
 pub struct FeedSpec {
@@ -745,9 +746,13 @@ pub struct FeedSpec {
         )
     )]
     pub image: String,
-    /// PEM ECDSA P-256 public key the cosign signature must verify against.
+    /// PEM ECDSA P-256 public key the cosign signature must verify against,
+    /// for a feed signed with a key.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub public_key: Option<String>,
+    /// The CI identity that must have signed a keyless (Sigstore) feed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub keyless: Option<KeylessSpec>,
     /// Accept an unsigned database. For development only.
     #[serde(default)]
     pub insecure_skip_verify: bool,
@@ -761,6 +766,25 @@ pub struct FeedSpec {
     pub pull_secret_ref: Option<LocalObjectRef>,
     #[serde(default)]
     pub rollout: RolloutSpec,
+}
+
+/// The signer of a keyless feed: a Fulcio certificate with this OIDC issuer
+/// and subject, recorded in the Sigstore public good Rekor log.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct KeylessSpec {
+    /// OIDC issuer of the signing identity.
+    #[serde(default = "default_keyless_issuer")]
+    #[schemars(length(min = 1, max = 512))]
+    pub issuer: String,
+    /// Certificate subject, for GitHub Actions the workflow URL with its
+    /// ref, matched exactly.
+    #[schemars(length(min = 1, max = 1024))]
+    pub identity: String,
+}
+
+fn default_keyless_issuer() -> String {
+    "https://token.actions.githubusercontent.com".to_string()
 }
 
 #[derive(KubeSchema, Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -1105,7 +1129,8 @@ mod tests {
         assert_eq!(PullPolicy::Never.as_str(), "Never");
         assert_eq!(PullPolicy::Always.as_str(), "Always");
         assert_eq!(PullPolicy::IfNotPresent.as_str(), "IfNotPresent");
-        assert!(crd.contains("feed needs publicKey unless insecureSkipVerify is true"));
+        assert!(crd.contains("feed needs keyless or publicKey unless insecureSkipVerify is true"));
+        assert!(crd.contains("set feed.keyless or feed.publicKey, not both"));
         for msg in [
             "storage is immutable",
             "hostPaths must be absolute",

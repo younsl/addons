@@ -4552,6 +4552,7 @@ dependencies = [
  "rsa",
  "rustls",
  "rustls-pki-types",
+ "rustls-webpki",
  "schemars",
  "serde",
  "serde_json",
@@ -4570,6 +4571,7 @@ dependencies = [
  "tracing-subscriber",
  "walkdir",
  "ward-ebpf-common",
+ "x509-cert",
  "yara-x",
 ]
 

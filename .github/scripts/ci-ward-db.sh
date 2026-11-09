@@ -8,17 +8,19 @@
 #   corpus   export known-good images for both architectures
 #   build    run `ward feed build`, pruning what matches the allowlist and corpus
 #   check    run `ward feed check` against the corpus (EICAR self-test included)
-#   publish  sign with cosign and push with oras, then tag latest
+#   publish  sign keyless with cosign (GitHub OIDC, Rekor), verify the bundle with
+#            cosign and ward, push with oras, then tag latest
 # Env: WORK_DIR, WARD_BIN, REPOSITORY (ghcr.io/<owner>/ward-db), GITHUB_OUTPUT,
 #   GITHUB_RUN_NUMBER, GITHUB_STEP_SUMMARY, FORCE (true rebuilds identical inputs),
-#   MAX_PRUNED, COSIGN_PRIVATE_KEY, COSIGN_PASSWORD, REGISTRY_USER, REGISTRY_PASSWORD (publish).
+#   MAX_PRUNED, GITHUB_WORKFLOW_REF, REGISTRY_USER, REGISTRY_PASSWORD (publish).
 set -euo pipefail
 
 WORK_DIR="${WORK_DIR:?}"
 SOURCES="${WORK_DIR}/sources"
 CORPUS="${WORK_DIR}/corpus"
 DB="${WORK_DIR}/ward-db.json.gz"
-SIG="${DB}.sig"
+BUNDLE="${DB}.sigstore.json"
+OIDC_ISSUER="https://token.actions.githubusercontent.com"
 STATE="${WORK_DIR}/state.env"
 ALLOWLIST="box/addons/ward/feed/allowlist.txt"
 MAX_PRUNED="${MAX_PRUNED:-25}"
@@ -164,8 +166,12 @@ publish() {
   local REVISION INPUTS_DIGEST
   REVISION=$(sed -n 's/^REVISION=//p' "${STATE}")
   INPUTS_DIGEST=$(sed -n 's/^INPUTS_DIGEST=//p' "${STATE}")
-  cosign sign-blob --yes --key env://COSIGN_PRIVATE_KEY --tlog-upload=false \
-    --output-signature "${SIG}" "${DB}"
+  local identity="https://github.com/${GITHUB_WORKFLOW_REF:?}"
+  cosign sign-blob --yes --new-bundle-format=false --bundle "${BUNDLE}" "${DB}"
+  cosign verify-blob --bundle "${BUNDLE}" \
+    --certificate-identity "${identity}" --certificate-oidc-issuer "${OIDC_ISSUER}" "${DB}"
+  "${WARD_BIN}" feed verify --db "${DB}" --bundle "${BUNDLE}" \
+    --issuer "${OIDC_ISSUER}" --identity "${identity}"
 
   echo "${REGISTRY_PASSWORD}" | oras login "${REPOSITORY%%/*}" -u "${REGISTRY_USER}" --password-stdin
   (cd "$(dirname "${DB}")" && oras push "${REPOSITORY}:${REVISION}" \
@@ -174,7 +180,7 @@ publish() {
     --annotation "org.opencontainers.image.version=${REVISION}" \
     --annotation "org.opencontainers.image.source=https://github.com/younsl/addons" \
     "$(basename "${DB}"):application/vnd.ward.db.v1+gzip" \
-    "$(basename "${SIG}"):application/vnd.ward.db.signature.v1")
+    "$(basename "${BUNDLE}"):application/vnd.ward.db.sigstore-bundle.v1+json")
   oras tag "${REPOSITORY}:${REVISION}" latest
   echo "published ${REPOSITORY}:${REVISION} and latest"
 }

@@ -21,9 +21,9 @@ spec:
     enabled: false
   feed:
     image: ghcr.io/younsl/ward-db:latest
-    publicKey: |
-      -----BEGIN PUBLIC KEY-----
-      ${COSIGN_PUBLIC_KEY}
-      -----END PUBLIC KEY-----
+    # Signed keyless in CI: Fulcio certificate for this workflow, logged in Rekor.
+    keyless:
+      issuer: https://token.actions.githubusercontent.com
+      identity: https://github.com/younsl/addons/.github/workflows/ward-db.yml@refs/heads/main
     pullSecretRef:
       name: ward-db-pull

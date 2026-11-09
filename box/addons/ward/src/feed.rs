@@ -4,10 +4,42 @@
 pub mod build;
 pub mod oci;
 mod platform;
+pub mod sigstore;
 
 use crate::content::{ContentError, FeedDb, check_digest, verify_signature};
 use crate::crd::FeedSpec;
 use crate::rollout::ContentRef;
+
+/// How a feed revision proves where it came from.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Trust {
+    /// A cosign signature that verifies with this PEM public key.
+    Key(String),
+    /// A cosign keyless bundle signed by this OIDC identity.
+    Keyless(sigstore::Identity),
+    /// No check, for development only.
+    Insecure,
+    /// Nothing configured, so every revision is refused.
+    Missing,
+}
+
+impl Trust {
+    pub fn of(spec: Option<&FeedSpec>) -> Self {
+        let Some(s) = spec else {
+            return Self::Missing;
+        };
+        if s.insecure_skip_verify {
+            return Self::Insecure;
+        }
+        if let Some(k) = &s.keyless {
+            return Self::Keyless(sigstore::Identity {
+                issuer: k.issuer.clone(),
+                subject: k.identity.clone(),
+            });
+        }
+        s.public_key.clone().map_or(Self::Missing, Self::Key)
+    }
+}
 
 #[derive(Debug, thiserror::Error)]
 pub enum FeedError {
@@ -17,6 +49,8 @@ pub enum FeedError {
     Content(#[from] ContentError),
     #[error("feed has no signature layer and insecureSkipVerify is false")]
     Unsigned,
+    #[error("keyless signature: {0}")]
+    Keyless(#[from] sigstore::SigstoreError),
 }
 
 /// A database pulled and checked.
@@ -30,16 +64,18 @@ pub fn verify(
     content: &ContentRef,
     db_bytes: &[u8],
     sig_bytes: &[u8],
-    public_key: Option<&str>,
-    insecure: bool,
+    trust: &Trust,
 ) -> Result<FeedDb, FeedError> {
     check_digest(db_bytes, &content.digest)?;
-    if !insecure {
-        let key = public_key.ok_or(FeedError::Unsigned)?;
-        if sig_bytes.is_empty() {
-            return Err(FeedError::Unsigned);
+    match trust {
+        Trust::Insecure => {}
+        Trust::Missing => return Err(FeedError::Unsigned),
+        _ if sig_bytes.is_empty() => return Err(FeedError::Unsigned),
+        Trust::Key(key) => verify_signature(db_bytes, sig_bytes, key)?,
+        Trust::Keyless(id) => {
+            let v = sigstore::verify(db_bytes, sig_bytes, id)?;
+            tracing::debug!(subject = %v.subject, log_index = v.log_index, "keyless signature verified");
         }
-        verify_signature(db_bytes, sig_bytes, key)?;
     }
     Ok(FeedDb::decode(db_bytes)?)
 }
@@ -70,13 +106,7 @@ pub async fn pull(registry: &oci::Registry, spec: &FeedSpec) -> Result<Pulled, F
         repository: reference.repository_url(),
         size: resolved.db.size,
     };
-    let db = verify(
-        &content,
-        &db_bytes,
-        &sig_bytes,
-        spec.public_key.as_deref(),
-        spec.insecure_skip_verify,
-    )?;
+    let db = verify(&content, &db_bytes, &sig_bytes, &Trust::of(Some(spec)))?;
     content.revision.clone_from(&db.manifest.revision);
     Ok(Pulled { content, db })
 }
@@ -94,23 +124,47 @@ mod tests {
             digest: oci_digest(&bytes),
             ..ContentRef::default()
         };
-        assert!(verify(&content, &bytes, &[], None, true).is_ok());
+        assert!(verify(&content, &bytes, &[], &Trust::Insecure).is_ok());
         assert!(matches!(
-            verify(&content, &bytes, &[], None, false),
+            verify(&content, &bytes, &[], &Trust::Missing),
             Err(FeedError::Unsigned)
         ));
         assert!(matches!(
-            verify(&content, &bytes, &[], Some("k"), false),
+            verify(&content, &bytes, &[], &Trust::Key("k".into())),
             Err(FeedError::Unsigned)
         ));
         assert!(matches!(
-            verify(&content, &bytes, b"sig", Some("k"), false),
+            verify(&content, &bytes, b"sig", &Trust::Key("k".into())),
             Err(FeedError::Content(_))
+        ));
+        let keyless = Trust::Keyless(sigstore::Identity {
+            issuer: "https://token.actions.githubusercontent.com".into(),
+            subject:
+                "https://github.com/younsl/addons/.github/workflows/ward-db.yml@refs/heads/main"
+                    .into(),
+        });
+        assert!(matches!(
+            verify(&content, &bytes, b"{}", &keyless),
+            Err(FeedError::Keyless(_))
         ));
         let wrong = ContentRef {
             digest: "sha256:00".into(),
             ..ContentRef::default()
         };
-        assert!(verify(&wrong, &bytes, &[], None, true).is_err());
+        assert!(verify(&wrong, &bytes, &[], &Trust::Insecure).is_err());
+
+        let mut spec: FeedSpec = serde_json::from_value(serde_json::json!({
+            "image": "ghcr.io/younsl/ward-db:latest",
+            "keyless": {"identity": "https://github.com/younsl/addons/.github/workflows/ward-db.yml@refs/heads/main"},
+        }))
+        .unwrap();
+        assert_eq!(Trust::of(Some(&spec)), keyless);
+        spec.keyless = None;
+        assert_eq!(Trust::of(Some(&spec)), Trust::Missing);
+        spec.public_key = Some("pem".into());
+        assert_eq!(Trust::of(Some(&spec)), Trust::Key("pem".into()));
+        spec.insecure_skip_verify = true;
+        assert_eq!(Trust::of(Some(&spec)), Trust::Insecure);
+        assert_eq!(Trust::of(None), Trust::Missing);
     }
 }

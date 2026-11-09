@@ -39,10 +39,10 @@ spec:
   feed:
     # Pin a revision with ghcr.io/younsl/ward-db@sha256:<digest>
     image: ghcr.io/younsl/ward-db:latest
-    publicKey: |
-      -----BEGIN PUBLIC KEY-----
-      ${COSIGN_PUBLIC_KEY}
-      -----END PUBLIC KEY-----
+    # Signed keyless in CI: Fulcio certificate for this workflow, logged in Rekor.
+    keyless:
+      issuer: https://token.actions.githubusercontent.com
+      identity: https://github.com/younsl/addons/.github/workflows/ward-db.yml@refs/heads/main
     interval: 6h
     rollout:
       canaryPercent: 10

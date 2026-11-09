@@ -807,8 +807,26 @@ spec:
                     x-kubernetes-validations:
                     - message: feed interval must be at least 5m
                       rule: duration(self) >= duration('5m')
+                  keyless:
+                    description: The CI identity that must have signed a keyless (Sigstore) feed.
+                    nullable: true
+                    properties:
+                      identity:
+                        description: Certificate subject, for GitHub Actions the workflow URL with its ref, matched exactly.
+                        maxLength: 1024
+                        minLength: 1
+                        type: string
+                      issuer:
+                        default: https://token.actions.githubusercontent.com
+                        description: OIDC issuer of the signing identity.
+                        maxLength: 512
+                        minLength: 1
+                        type: string
+                    required:
+                    - identity
+                    type: object
                   publicKey:
-                    description: PEM ECDSA P-256 public key the cosign signature must verify against.
+                    description: PEM ECDSA P-256 public key the cosign signature must verify against, for a feed signed with a key.
                     nullable: true
                     type: string
                   pullSecretRef:
@@ -864,8 +882,10 @@ spec:
                 - image
                 type: object
                 x-kubernetes-validations:
-                - message: feed needs publicKey unless insecureSkipVerify is true
-                  rule: has(self.publicKey) || self.insecureSkipVerify
+                - message: feed needs keyless or publicKey unless insecureSkipVerify is true
+                  rule: has(self.publicKey) || has(self.keyless) || (has(self.insecureSkipVerify) && self.insecureSkipVerify)
+                - message: set feed.keyless or feed.publicKey, not both
+                  rule: '!(has(self.publicKey) && has(self.keyless))'
               image:
                 description: Image of the manager and agent. Empty means the operator's own image.
                 nullable: true

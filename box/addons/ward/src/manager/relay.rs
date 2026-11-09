@@ -47,9 +47,7 @@ impl Relay {
             .into_iter()
             .flatten()
             .collect();
-        let (key, insecure) = policy.feed.as_ref().map_or((None, false), |f| {
-            (f.public_key.as_deref(), f.insecure_skip_verify)
-        });
+        let trust = crate::feed::Trust::of(policy.feed.as_ref());
         let mut errors = Vec::new();
         for c in &wanted {
             if self.get(&c.digest).is_some() {
@@ -81,7 +79,7 @@ impl Relay {
                     }
                 }
             };
-            if let Err(e) = verify(c, &db, &sig, key, insecure) {
+            if let Err(e) = verify(c, &db, &sig, &trust) {
                 errors.push(format!("{}: {e}", c.revision));
                 continue;
             }
@@ -148,6 +146,7 @@ mod tests {
             feed: Some(FeedSpec {
                 image: "localhost:1/x/ward-db".into(),
                 public_key: None,
+                keyless: None,
                 insecure_skip_verify: true,
                 interval: "6h".into(),
                 pull_secret_ref: None,

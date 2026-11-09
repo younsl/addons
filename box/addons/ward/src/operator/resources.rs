@@ -790,6 +790,7 @@ pub(crate) mod tests {
         spec.feed = Some(FeedSpec {
             image: "ghcr.io/x/ward-db:latest".into(),
             public_key: None,
+            keyless: None,
             insecure_skip_verify: true,
             interval: "6h".into(),
             pull_secret_ref: Some(LocalObjectRef {
@@ -1025,6 +1026,7 @@ pub(crate) mod tests {
             feed: Some(FeedSpec {
                 image: "ghcr.io/x/ward-db:latest".into(),
                 public_key: None,
+                keyless: None,
                 insecure_skip_verify: true,
                 interval: "6h".into(),
                 pull_secret_ref: Some(LocalObjectRef {

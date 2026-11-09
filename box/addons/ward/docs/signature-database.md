@@ -10,7 +10,7 @@ The [ward-db workflow](../../../../.github/workflows/ward-db.yml) rebuilds the d
 2. Exports a known-good corpus from popular base and runtime images for both `linux/amd64` and `linux/arm64` (listed in [ci-ward-db.sh](../../../../.github/scripts/ci-ward-db.sh)).
 3. Packs everything with `ward feed build` into `ward-db.json.gz` (gzipped JSON: manifest, signatures, hash sets, YARA sources, disabled YARA rules), keeps only YARA rules that can match on Linux (see [Linux filter](#linux-filter)), and prunes it against the allowlist and the corpus (see [Pruning](#pruning)).
 4. Runs `ward feed check`: the database must match the EICAR self-test and produce zero hits on the corpus.
-5. Signs the file with `cosign sign-blob` (ECDSA P-256 over the gzipped bytes) in a separate job that alone holds the signing key.
+5. Signs the file keyless with `cosign sign-blob --bundle` in a separate job that alone holds `packages: write` and `id-token: write`. Fulcio issues a certificate for the workflow's GitHub OIDC identity, Rekor logs the signature, and no signing key exists to leak or rotate. Before pushing, the job verifies the bundle with `cosign verify-blob` and with `ward feed verify`, so every release also tests ward's own verifier against real Sigstore data.
 6. Pushes it with oras to `ghcr.io/younsl/ward-db:<revision>` and moves `latest`.
 
 A run whose inputs (feed sources and allowlist) match the published `latest` publishes nothing.
@@ -54,9 +54,24 @@ On YARA Forge core 20261108 the filter keeps 1,297 of 5,132 rules. The peak memo
 | --- | --- |
 | Artifact type | `application/vnd.ward.db.v1` |
 | Layer 1 | `ward-db.json.gz`, `application/vnd.ward.db.v1+gzip` |
-| Layer 2 | `ward-db.json.gz.sig`, `application/vnd.ward.db.signature.v1`, DER or base64 of DER |
+| Layer 2 | `ward-db.json.gz.sigstore.json`, `application/vnd.ward.db.sigstore-bundle.v1+json`, the cosign v2 `sign-blob --bundle` document |
 
-Build your own feed with the same layout and point `spec.feed.image` and `spec.feed.publicKey` at it.
+Build your own feed with the same layout and point `spec.feed.image` at it, with `spec.feed.keyless` set to your CI identity. A feed signed with a key instead (for a private or air-gapped setup) uses layer 2 `application/vnd.ward.db.signature.v1` (a DER or base64 ECDSA P-256 signature, as `cosign sign-blob --key` writes it) and `spec.feed.publicKey`.
+
+## Keyless verification
+
+With `spec.feed.keyless` a revision ships only when all of these hold, the checks Falco runs for its rules:
+
+| Check | Against |
+| --- | --- |
+| The certificate chains to a Fulcio CA and is a code signing certificate, at the time Rekor logged the entry | The Sigstore public good trusted root, built into the binary from `sigstore/root-signing` |
+| The certificate's OIDC issuer and subject equal `keyless.issuer` and `keyless.identity` | Exact match, so a fork or another workflow cannot sign a feed this cluster accepts |
+| The signature over the gzipped database verifies with the certificate's key | The database layer |
+| Rekor's signed entry timestamp verifies with a trusted log key, and the logged entry names this database's hash, signature, and certificate | The Rekor v1 log key in the trusted root |
+
+- The check runs offline from the bundle, so neither the operator nor the agents call Fulcio or Rekor.
+- The certificate's embedded SCT is not checked. The Rekor entry already ties the certificate to a public log.
+- `ward feed verify --db ward-db.json.gz --bundle ward-db.json.gz.sigstore.json --identity <workflow URL>` runs the same check by hand.
 
 ## Provenance
 
@@ -73,9 +88,9 @@ A rule that fails to compile is left out with its file and line in the build log
 
 ## Verification
 
-Before any agent sees a revision, the operator resolves the tag to a digest, downloads both layers, and checks the layer digest, the signature against `spec.feed.publicKey`, and that the database decodes with whole hash sets and signatures that compile. YARA rules compile on each agent, which leaves out a rule that fails and keeps the rest, so the operator never holds a compiled engine in memory. A revision that fails any check never ships. `insecureSkipVerify: true` skips only the signature check and is for development.
+Before any agent sees a revision, the operator resolves the tag to a digest, downloads both layers, and checks the layer digest, the keyless bundle against `spec.feed.keyless` (or the signature against `spec.feed.publicKey`), and that the database decodes with whole hash sets and signatures that compile. YARA rules compile on each agent, which leaves out a rule that fails and keeps the rest, so the operator never holds a compiled engine in memory. A revision that fails any check never ships. `insecureSkipVerify: true` skips only the signature check and is for development.
 
-Agents check the layer digest again on download, whether from the manager or the registry.
+With the manager on, the manager downloads each assigned revision from the registry, checks it again, caches it on its volume, and serves it to agents over mutual TLS, so only the manager needs registry egress. Agents check the digest and the signature again on download, whether from the manager or the registry.
 
 ## Ring rollout
 

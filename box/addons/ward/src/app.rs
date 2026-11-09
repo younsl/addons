@@ -221,6 +221,20 @@ enum FeedCmd {
         #[arg(long, default_value_t = 25)]
         max_pruned: usize,
     },
+    /// Verify a database against its keyless (Sigstore) cosign bundle
+    Verify {
+        #[arg(long)]
+        db: PathBuf,
+        /// cosign `sign-blob --bundle` output
+        #[arg(long)]
+        bundle: PathBuf,
+        /// OIDC issuer of the signer
+        #[arg(long, default_value = "https://token.actions.githubusercontent.com")]
+        issuer: String,
+        /// Certificate subject of the signer, for GitHub Actions the workflow URL with its ref
+        #[arg(long)]
+        identity: String,
+    },
     /// Self-test a database and scan a false-positive corpus
     Check {
         #[arg(long)]
@@ -272,6 +286,28 @@ fn feed(cmd: FeedCmd) -> anyhow::Result<()> {
                 report.dropped_yara.len(),
                 report.foreign_yara,
                 report.pruned.len()
+            );
+        }
+        FeedCmd::Verify {
+            db,
+            bundle,
+            issuer,
+            identity,
+        } => {
+            let v = crate::feed::sigstore::verify(
+                &std::fs::read(&db)?,
+                &std::fs::read(&bundle)?,
+                &crate::feed::sigstore::Identity {
+                    issuer,
+                    subject: identity,
+                },
+            )?;
+            println!(
+                "{}: signed by {}, Rekor log index {} at {}",
+                db.display(),
+                v.subject,
+                v.log_index,
+                v.integrated_time.to_rfc3339()
             );
         }
         FeedCmd::Check { db, corpus } => {
@@ -427,7 +463,7 @@ mod tests {
         let corpus = dir.path().join("corpus");
         std::fs::create_dir_all(&corpus).unwrap();
         feed(FeedCmd::Check {
-            db: out,
+            db: out.clone(),
             corpus: vec![corpus],
         })
         .unwrap();
@@ -437,6 +473,19 @@ mod tests {
                 corpus: vec![]
             })
             .is_err()
+        );
+        std::fs::write(dir.path().join("bundle.json"), "{}").unwrap();
+        assert!(
+            feed(FeedCmd::Verify {
+                db: out,
+                bundle: dir.path().join("bundle.json"),
+                issuer: "https://token.actions.githubusercontent.com".into(),
+                identity:
+                    "https://github.com/younsl/addons/.github/workflows/ward-db.yml@refs/heads/main"
+                        .into(),
+            })
+            .is_err(),
+            "an empty bundle never verifies"
         );
     }
 }

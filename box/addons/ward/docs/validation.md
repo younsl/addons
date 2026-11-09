@@ -21,7 +21,7 @@ ward validates its custom resources in the CRD schema and with [CEL rules](https
 | `spec.integrity.interval` | A duration of at least `10s` |
 | `spec.exclusions.paths` | Absolute paths |
 | `spec.indicators.allow`, `spec.indicators.block` | Lowercase 64-digit SHA-256, unique within each list, up to 10000 |
-| `spec.feed` | `publicKey` is required unless `insecureSkipVerify` is `true` |
+| `spec.feed` | `keyless` or `publicKey` is required unless `insecureSkipVerify` is `true`, and not both |
 | `spec.feed.image` | An OCI reference with a tag or an `@sha256:` digest |
 | `spec.feed.interval` | A duration of at least `5m` |
 | `spec.feed.rollout.canaryPercent` | 0 to 100 |
@@ -45,7 +45,7 @@ A rejected object returns the rule's message:
 
 ```console
 $ kubectl apply -f ward.yaml
-The Ward "ward" is invalid: spec.feed: Invalid value: "object": feed needs publicKey unless insecureSkipVerify is true
+The Ward "ward" is invalid: spec.feed: Invalid value: "object": feed needs keyless or publicKey unless insecureSkipVerify is true
 ```
 
 ## Reported as status conditions

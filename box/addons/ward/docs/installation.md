@@ -46,16 +46,15 @@ More examples:
 
 ## Enable the signature feed
 
-The feed is a signed OCI artifact. Set `spec.feed.image` and the cosign public key that signed it:
+The public feed is an OCI artifact signed keyless in CI, so there is no key to install. Set `spec.feed.image` and the workflow identity that must have signed it:
 
 ```yaml
 spec:
   feed:
     image: ghcr.io/younsl/ward-db:latest
-    publicKey: |
-      -----BEGIN PUBLIC KEY-----
-      ${COSIGN_PUBLIC_KEY}
-      -----END PUBLIC KEY-----
+    keyless:
+      issuer: https://token.actions.githubusercontent.com
+      identity: https://github.com/younsl/addons/.github/workflows/ward-db.yml@refs/heads/main
 ```
 
 See [Signature database](signature-database.md).

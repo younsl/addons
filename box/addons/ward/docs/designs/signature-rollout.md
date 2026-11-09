@@ -14,7 +14,7 @@ The operator owns verification, so no agent ever sees an unverified revision:
 
 1. Resolve `spec.feed.image` to a manifest digest every `spec.feed.interval`. A digest already seen is skipped.
 2. Download the database and signature layers and check the database layer against its digest.
-3. Verify the ECDSA P-256 signature over the gzipped bytes against `spec.feed.publicKey`. Both DER and the base64 form `cosign sign-blob` writes are accepted.
+3. Verify the signature. A keyless bundle must chain to Fulcio, carry the `spec.feed.keyless` identity, and be logged in Rekor. A key signed feed must verify against `spec.feed.publicKey`, in DER or the base64 form `cosign sign-blob` writes.
 4. Decode the database and check that its hash sets are whole digests and its signatures compile. YARA rules compile on the agents, which leave out a rule that fails, and a canary agent that cannot load the revision halts the rollout.
 
 Only then does the revision enter the rollout. Agents check the layer digest again when they download it from the manager or the registry, so a relay or registry that serves different bytes is caught.

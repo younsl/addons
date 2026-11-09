@@ -129,7 +129,9 @@ See [File integrity monitoring](detection-engines.md#file-integrity-monitoring).
 | Field | Default | Description |
 | --- | --- | --- |
 | `image` | required | OCI reference by tag, or by `@sha256:` digest to pin a revision |
-| `publicKey` | required | PEM ECDSA P-256 key the signature must verify against |
+| `keyless.identity` | none | Certificate subject that must have signed a keyless feed, for GitHub Actions the workflow URL with its ref. The public feed uses `https://github.com/younsl/addons/.github/workflows/ward-db.yml@refs/heads/main` |
+| `keyless.issuer` | `https://token.actions.githubusercontent.com` | OIDC issuer of that identity |
+| `publicKey` | none | PEM ECDSA P-256 key, for a feed signed with a key instead. Exclusive with `keyless`, and one of the two is required unless `insecureSkipVerify` is set |
 | `insecureSkipVerify` | `false` | Accept an unsigned database. For development only |
 | `interval` | `6h` | Registry check period, at least `5m` |
 | `pullSecretRef.name` | none | `kubernetes.io/dockerconfigjson` Secret for a private registry |

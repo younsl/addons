@@ -8,7 +8,7 @@ use base64::engine::general_purpose::STANDARD as B64;
 use futures::StreamExt as _;
 use serde::Deserialize;
 
-use crate::content::{MEDIA_TYPE_DB, MEDIA_TYPE_SIG, check_digest};
+use crate::content::{MEDIA_TYPE_BUNDLE, MEDIA_TYPE_DB, MEDIA_TYPE_SIG, check_digest};
 
 const MANIFEST_ACCEPT: &str = "application/vnd.oci.image.manifest.v1+json";
 
@@ -109,7 +109,8 @@ pub fn layers(manifest: &[u8]) -> Result<Resolved, OciError> {
     let signature = m
         .layers
         .iter()
-        .find(|l| l.media_type == MEDIA_TYPE_SIG)
+        .find(|l| l.media_type == MEDIA_TYPE_BUNDLE)
+        .or_else(|| m.layers.iter().find(|l| l.media_type == MEDIA_TYPE_SIG))
         .cloned();
     Ok(Resolved { db, signature })
 }

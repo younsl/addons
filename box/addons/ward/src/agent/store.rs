@@ -193,9 +193,7 @@ impl ContentStore {
         policy: &Policy,
         fetch: &Fetch,
     ) -> Result<(), String> {
-        let (public_key, insecure) = policy.feed.as_ref().map_or((None, false), |f| {
-            (f.public_key.clone(), f.insecure_skip_verify)
-        });
+        let trust = crate::feed::Trust::of(policy.feed.as_ref());
         let db: Option<FeedDb> = match assigned {
             None => None,
             Some(c) => {
@@ -203,20 +201,17 @@ impl ContentStore {
                     Some(hit) => hit,
                     None => {
                         let got = fetch.get(c).await?;
-                        verify(c, &got.0, &got.1, public_key.as_deref(), insecure)
-                            .map_err(|e| e.to_string())?;
+                        verify(c, &got.0, &got.1, &trust).map_err(|e| e.to_string())?;
                         self.persist(c, &got.0, &got.1).map_err(|e| e.to_string())?;
                         got
                     }
                 };
                 let c2 = c.clone();
-                let key = public_key.clone();
-                let db = tokio::task::spawn_blocking(move || {
-                    verify(&c2, &db_bytes, &sig, key.as_deref(), insecure)
-                })
-                .await
-                .map_err(|e| e.to_string())?
-                .map_err(|e| e.to_string())?;
+                let trust = trust.clone();
+                let db = tokio::task::spawn_blocking(move || verify(&c2, &db_bytes, &sig, &trust))
+                    .await
+                    .map_err(|e| e.to_string())?
+                    .map_err(|e| e.to_string())?;
                 Some(db)
             }
         };
@@ -288,6 +283,7 @@ mod tests {
         p.feed = Some(FeedSpec {
             image: "ghcr.io/x/ward-db:latest".into(),
             public_key: None,
+            keyless: None,
             insecure_skip_verify: true,
             interval: "6h".into(),
             pull_secret_ref: None,
