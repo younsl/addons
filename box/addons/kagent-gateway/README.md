@@ -5,427 +5,95 @@
 [![Rust](https://img.shields.io/badge/rust-1.99.1-black?style=flat-square&logo=rust&logoColor=white)](https://www.rust-lang.org/)
 [![GitHub license](https://img.shields.io/github/license/younsl/addons?style=flat-square&color=black)](https://github.com/younsl/addons/blob/main/LICENSE)
 
-Receives Alertmanager webhooks, posts each alert to Slack, asks a
-[kagent](https://kagent.dev) agent to investigate it over A2A, and replies with
-the analysis in the alert's own thread. Mentioning the bot inside a thread runs
-the agent again and answers there, so a follow-up question never leaves Slack.
-Built with Rust 1.98 and shipped as a statically linked musl binary on a scratch image, cross-compiled with cargo-zigbuild.
+Receives Alertmanager webhooks, asks a [kagent](https://kagent.dev) agent to investigate each alert over A2A, and replies with the analysis in the alert's Slack thread. Mentioning the bot inside a thread runs the agent again and answers there. Built with Rust 1.99.1 as a static musl binary on a scratch image.
+
+Guides: [How it works](docs/how-it-works.md), [Mention invocation](docs/mention-invocation.md), [Agent access policy](docs/access-policy.md), [Slack app](docs/slack-app.md), [Configuration](docs/configuration.md), [Alertmanager](docs/alertmanager.md), [Agent expectations](docs/agent-expectations.md), [Metrics](docs/metrics.md), [Usage](docs/usage.md). Designs: [Slack mention invocation](docs/designs/slack-mention-invocation.md), [Agent access policy](docs/designs/agent-access-policy.md).
 
 ## How it works
 
-Alertmanager keeps posting alerts through its own `slack_configs`. The gateway
-receives the same notification as a webhook, investigates it, and replies in
-that alert's thread.
+Alertmanager posts the alert to Slack and the same group to the webhook. The gateway analyses it, finds the notification by the fingerprint in its footer, and replies in that thread. See [How it works](docs/how-it-works.md).
 
 ![Architecture](docs/architecture.svg)
 
-1. Alertmanager posts the alert and, independently, POSTs the group to the
-   webhook.
-2. Alerts the filter rejects end there: the gateway makes no Slack call at all.
-3. Otherwise the gateway submits the alert to the agent as a non-blocking A2A
-   `message/send` and polls `tasks/get` until the task finishes. When the
-   analysis deadline expires first, the task is cancelled with `tasks/cancel`
-   so it stops consuming model tokens.
-4. The gateway searches recent channel history for the alert's marker to obtain
-   the parent timestamp, then replies in that thread.
-
-An incoming webhook does not return the timestamp that `thread_ts` requires,
-so the message Alertmanager posted has to be found again. The join key is the
-first alert's fingerprint, rendered into the Slack template's `footer` field:
-`slack_configs` has no access to `block_id`, so a visible field is the only
-carrier available. The search runs after the analysis rather than before it,
-which gives the notification the whole agent run to arrive and usually makes
-one call enough.
-
-If the search still fails, the analysis is posted at channel level with the
-alert title instead of being discarded.
-
-Setting `SLACK_PARENT_MODE=post` inverts the arrangement: the gateway publishes
-the alert itself, the timestamp is known without any search, and Alertmanager
-sends only the webhook. That mode needs `chat:write` alone, at the cost of
-moving the alert formatting out of the Alertmanager templates.
-
-Only the alert group's first analysis is paid for: a group stays deduplicated
-for `DEDUPE_TTL`, which should cover the Alertmanager `repeat_interval`. A run
-that fails is not suppressed, so the next resend retries it.
-
 ## Prompt assembly
 
-The gateway owns only the user half of the prompt: the rendered alert payload
-with `ANALYSIS_INSTRUCTIONS` appended, sent over A2A as a `role: user` message.
-The system half lives on the Agent CR as `spec.declarative.systemMessage`,
-which the kagent controller translates into the agent config's `Instruction`
-and the ADK runtime sends as the model's system prompt. Editing the CR
-therefore takes effect without touching the gateway, while changing
-`ANALYSIS_INSTRUCTIONS` requires a restart: it is read from the environment
-once at boot.
-
-![Prompt assembly](docs/prompt-assembly.svg)
+The gateway sends the alert plus `ANALYSIS_INSTRUCTIONS` as the user message. The system prompt lives on the Agent CR. See [Prompt assembly](docs/how-it-works.md#prompt-assembly).
 
 ## Mention invocation
 
-Setting `SLACK_APP_TOKEN` opens a Socket Mode connection and lets an engineer
-talk to the agent by mentioning the bot inside a thread. Everything else about
-the feature is optional, and leaving the token unset keeps the binary behaving
-exactly as the alert-only build does. The design is written up in
-[docs/designs/slack-mention-invocation.md](docs/designs/slack-mention-invocation.md).
-
-One turn works like this:
-
-1. The mention arrives as a Socket Mode envelope, which is acknowledged
-   immediately: Slack redelivers anything not acknowledged within 3 seconds, so
-   the acknowledgement never waits on the agent.
-2. A status message goes up in the thread before a concurrency slot is even
-   held, so the asker sees the question was taken.
-3. That one message is then rewritten in place every `CHAT_STATUS_INTERVAL`,
-   carrying the elapsed time and the task state the controller reports, and it
-   ends as the answer itself. The thread gets one message per turn rather than
-   one per state change.
-4. The alert the thread hangs from is quoted in front of the question, together
-   with the `channel_id` and `thread_ts` the mention arrived on. A question
-   asked under an alert is unanswerable without the alert, so the gateway always
-   sends it rather than leaving the agent to discover it.
-5. The thread keeps the A2A `contextId` for `CHAT_SESSION_TTL`, so a follow-up
-   mention continues the same agent session instead of starting cold.
-
-Only thread replies invoke the agent. A mention at channel level is answered
-with an ephemeral hint rather than a run, which keeps the bot attached to a
-thread that already has context. Mention traffic has its own concurrency limit
-and deadline, so a burst of questions cannot starve alert analysis of model
-concurrency.
-
-Socket Mode is an outbound WebSocket, so no inbound network path, request URL,
-or signing secret is involved. Sessions live in memory at one replica: a restart
-drops them and the next mention starts a fresh session.
-
-The kagent controller caps a turn at 3 minutes in the v0.9.x line
-([issue](https://github.com/kagent-dev/kagent/issues/2112)), so `CHAT_TIMEOUT`
-above `180s` has no effect until the deployment moves to a release carrying
-`KAGENT_A2A_CLIENT_TIMEOUT`.
+Setting `SLACK_APP_TOKEN` opens Socket Mode and lets an engineer ask the agent by mentioning the bot in a thread, with sessions kept per thread. See [Mention invocation](docs/mention-invocation.md).
 
 ### Per-agent access
 
-`CHAT_ALLOWED_USERS` applies to every agent. The chart does not expose it as a value: allow lists live in `agentAccessPolicies`, and a deployment that still wants a global list sets `CHAT_ALLOWED_USERS` through `extraEnv`. To give an agent name its own allow list, set `CHAT_ACCESS_POLICIES=true` (chart: `chat.accessPolicies.enabled`) and create an `AgentAccessPolicy` in `KAGENT_NAMESPACE`. The policy name is the agent name `CHAT_AGENT` and `CHAT_AGENT_MAP` route to, and `agentRefs` lists the Agents that answer it:
-
-```yaml
-apiVersion: access.kagent-gateway.sh/v1alpha1
-kind: AgentAccessPolicy
-metadata:
-  name: security-alert-triage-agent
-  namespace: kagent
-spec:
-  agentRefs:
-    - group: kagent.dev
-      kind: Agent
-      name: security-alert-triage-agent
-      namespace: kagent
-  chat:
-    allowedUsers:
-      - U01234567
-```
-
-Like Gateway API `backendRefs`, each `agentRefs` entry carries a `weight` (default `1`), and a new thread goes to one Agent drawn by weight. A thread stays on the Agent it started on while that Agent keeps a weight above `0`, because its A2A `contextId` belongs to that Agent. Setting a weight to `0` drains the Agent: open threads move to a fresh session on another Agent at their next mention. This is how a new Agent version takes a share of questions before it takes all of them:
-
-```yaml
-spec:
-  agentRefs:
-    - {group: kagent.dev, kind: Agent, name: aws-alert-triage-agent, namespace: kagent, weight: 90}
-    - {group: kagent.dev, kind: Agent, name: aws-alert-triage-agent-v2, namespace: kagent, weight: 10}
-```
-
-Weights apply to mentions only. The alert path keeps `KAGENT_AGENT_ROUTING_MAP`.
-
-With the chart, list the policies under `agentAccessPolicies`, keyed by agent name. Each entry's `spec` is the policy spec verbatim, and the chart renders it into `kagent.namespace` unless the entry sets `enabled: false`. `weight` may be omitted (the CRD defaults it to 1), but writing it out keeps the split readable:
-
-```yaml
-chat:
-  accessPolicies:
-    enabled: true
-agentAccessPolicies:
-  security-alert-triage-agent:
-    enabled: true
-    spec:
-      agentRefs:
-        - group: kagent.dev
-          kind: Agent
-          name: security-alert-triage-agent
-          namespace: kagent
-          weight: 1
-      chat:
-        allowedUsers:
-          - U01234567
-```
-
-The check runs against the agent the channel routes to (`CHAT_AGENT_MAP`, then `CHAT_AGENT`), so one policy covers every channel that reaches the agent.
-
-| Situation | Who may invoke the agent |
-|-----------|--------------------------|
-| Agent has no policy | `CHAT_ALLOWED_USERS` (empty, the chart default, allows everyone). Route a name only after its policy exists. |
-| `allowedUsers` set | Only those members. The global list does not apply. |
-| `allowAll: true` | Everyone in the allowed channels, even when `CHAT_ALLOWED_USERS` is restrictive |
-| An `agentRefs` namespace differs from `KAGENT_NAMESPACE` | Nobody (`Ready=False`, reason `NamespaceMismatch`) |
-| Every `agentRefs` weight is `0` | Nobody (`Ready=False`, reason `NoWeight`) |
-| Policy cache not synced yet, or no Kubernetes client | Nobody, every mention is dropped as `policy_unsynced` |
-
-The schema enforces the rest: every `agentRefs` entry names a `kagent.dev` `Agent` once (1 to 16 entries, weight 0 to 1,000,000), at least one weight is above `0`, and exactly one of a non-empty `allowedUsers` and `allowAll: true` is set, so an empty list is never read as "everyone". An agent name has at most one policy because the policy is named after it.
-
-The gateway watches policies, so a change applies without a restart. Each policy reports `Ready` (enforced as written) and `AgentResolved` (every referenced Agent exists, re-checked every 5 minutes) in its status. A refused mention gets no reply and no hint, and `kagent_gateway_chat_access_denials_total{agent,reason}` counts it.
-
-```bash
-kubectl get agentaccesspolicies -n kagent
-```
-
-Enabling the feature creates a Role and RoleBinding in `kagent.namespace` (read policies, patch their status, get Agents) and mounts the ServiceAccount token into the Pod. The CRD ships with the chart (`crds.install`) and is kept on uninstall (`crds.keep`). The design is written up in [docs/designs/agent-access-policy.md](docs/designs/agent-access-policy.md).
+`AgentAccessPolicy` objects decide who may invoke each agent name and split new threads across Agents by weight. See [Agent access policy](docs/access-policy.md).
 
 ## Slack app
 
-The gateway needs a bot token (`xoxb-...`). Mention invocation adds an app-level
-token (`xapp-...`), which is created under Basic Information with the
-`connections:write` scope and is not an OAuth scope. A signing secret and a
-request URL are never used: Slack never calls the gateway.
-
-Bot token scopes:
-
-| Scope | Needed when |
-|-------|-------------|
-| `chat:write` | Always. Also covers `chat.update` for the live status message and `chat.postEphemeral` for the mention hints. |
-| `channels:history` | `lookup` mode, public channels, and reading the alert a mention was asked under. |
-| `channels:read` | `lookup` mode, when channels are configured by name. Configuring conversation IDs instead skips the name lookup and this scope. Public channels are resolved with this scope alone; private channels are only listed when the name is not public. Mention invocation needs it too when `CHAT_CHANNELS` or `CHAT_AGENT_MAP` name channels rather than IDs. |
-| `groups:read` | Any private channel configured by name: `lookup` mode, the alert reactions, and `CHAT_CHANNELS` or `CHAT_AGENT_MAP` entries. Names are tried against public channels first, so without this scope a private name fails with `missing_scope` and never matches. Configuring the conversation ID (`G...` or `C...`) instead skips the name lookup and this scope. |
-| `groups:history` | `lookup` mode in private channels, and reading the alert a mention was asked under in a private channel. |
-| `reactions:write` | The investigating/completed reactions on the alert notification, and the `:eyes:` a mention carries while it is being answered. The alert reactions can be turned off by setting `SLACK_INVESTIGATING_REACTION` and `SLACK_COMPLETED_REACTION` to empty; the mention one is fixed, so enabling mentions requires this scope. |
-| `app_mentions:read` | Mention invocation. The only scope the feature adds. |
-
-Working in a private channel requires `groups:read`. The `channels:*` scopes
-cover public channels only, so a private channel named in the config fails to
-resolve without it.
-
-Mention invocation also needs Socket Mode switched on and the `app_mention`
-event subscribed, neither of which is a permission. Adding the scope means
-reinstalling the app; the existing bot token survives a reinstall, so the alert
-path keeps working through it.
-
-The handle people type is the bot user's display name, which the binary does not
-control. Reaching a mention that reads `@kagent` means renaming the app under
-Basic Information and the bot display name under App Home. The rename is
-retroactive: Slack renders every message the app already posted under the
-current name.
-
-The bot must be a member of every channel it reads or posts in.
+A bot token with `chat:write` and the history scopes, plus an app-level token, `app_mentions:read`, and Socket Mode for mentions. See [Slack app](docs/slack-app.md).
 
 ## Configuration
 
-All settings come from environment variables.
+Every setting is an environment variable. See [Configuration](docs/configuration.md).
 
 ### Slack
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `SLACK_BOT_TOKEN` | required | Bot token (`xoxb-...`). |
-| `SLACK_DEFAULT_CHANNEL` | required | Channel used when the routing label is absent. A bare name is prefixed with `#`; a conversation ID is used as-is. |
-| `SLACK_PARENT_MODE` | `lookup` | How the thread parent is obtained. `lookup` finds the message Alertmanager posted; `post` publishes the alert from the gateway. |
-| `SLACK_LOOKUP_WINDOW` | `15m` | How far back channel history is searched. `lookup` mode only. |
-| `SLACK_LOOKUP_ATTEMPTS` | `3` | How many times to re-search before giving up. `lookup` mode only. |
-| `SLACK_INVESTIGATING_REACTION` | `telescope` | Emoji (without colons) placed on the alert notification while the agent investigates. Empty disables it. |
-| `SLACK_COMPLETED_REACTION` | `white_check_mark` | Emoji (without colons) that replaces the investigating reaction once the analysis is posted. Empty disables it. When the reactions are enabled, a fixed thread note announcing the investigation is posted as well. |
-| `SLACK_CHANNEL_LABEL` | `slack_channel` | Alert label that selects the destination channel. |
-| `SLACK_CHANNEL_MAP` | empty | `label-value=channel` pairs, comma separated, for labels whose value is not the channel name. |
-| `SLACK_MAX_TEXT` | `8000` | Maximum characters per message; longer text is truncated. |
-| `SLACK_API_URL` | `https://slack.com/api` | Web API base URL. Override to route through an egress proxy. Socket Mode dials the URL Slack hands out, honouring the standard proxy environment variables. |
+`SLACK_BOT_TOKEN` and `SLACK_DEFAULT_CHANNEL` are required. Channel routing and `lookup` or `post` parent mode are set here.
 
 ### Mention invocation
 
-All optional except the app-level token, which is what enables the feature.
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `SLACK_APP_TOKEN` | empty | App-level token (`xapp-...`). Empty leaves Socket Mode off and the whole mention path inert. |
-| `CHAT_AGENT` | value of `KAGENT_AGENT` | Agent that answers mentions. |
-| `CHAT_AGENT_MAP` | empty | `channel=agent` pairs, comma separated, routing a channel to a specialised agent. A channel the table does not carry falls back to `CHAT_AGENT`. |
-| `CHAT_CHANNELS` | empty | Channel names or IDs allowed to invoke the bot. Empty allows every channel the bot is a member of. |
-| `CHAT_ALLOWED_USERS` | empty | Slack member IDs allowed to invoke the bot. Empty allows everyone in the allowed channels. With `CHAT_ACCESS_POLICIES` it applies only to agents without an `AgentAccessPolicy`. |
-| `CHAT_ACCESS_POLICIES` | `false` | Read per-agent allow lists from `AgentAccessPolicy` objects in `KAGENT_NAMESPACE`. See [Per-agent access](#per-agent-access). |
-| `CHAT_INSTRUCTIONS` | built-in English text | Instructions appended to every mention prompt. Separate from `ANALYSIS_INSTRUCTIONS`, because a question has no alert sections to fill. |
-| `CHAT_USER_ID` | value of `KAGENT_USER_ID` | Sent as `X-User-Id` for mention turns. Splitting it from `KAGENT_USER_ID` keeps a person's questions and the unattended alert path on separate kagent sessions, which matters once agents carry long-term memory: memory is keyed by agent and user. |
-| `CHAT_TIMEOUT` | `180s` | Deadline for one whole turn including queueing. Matches the controller's 3 minute cap; lower it to make the gateway's own expiry fire first and cancel the task. |
-| `CHAT_SESSION_TTL` | `2h` | How long a thread keeps its `contextId` after its last turn. `0s` makes every mention a cold turn. |
-| `CHAT_STATUS_INTERVAL` | `10s` | How often the in-thread status message is rewritten while the agent works. Each rewrite is one `chat.update` call. |
-| `CHAT_THREAD_HINT` | built-in text | Ephemeral hint sent when the bot is mentioned at channel level. Empty drops the mention silently. |
-| `CHAT_DENIED_HINT` | built-in text | Ephemeral hint sent when the bot is mentioned in a channel outside `CHAT_CHANNELS`. Empty drops the mention silently. |
-| `MAX_CONCURRENT_CHATS` | `2` | Maximum mention turns running at once. |
+`SLACK_APP_TOKEN` enables mentions. `CHAT_AGENT_MAP`, `CHAT_CHANNELS`, and `CHAT_ACCESS_POLICIES` scope them.
 
 ### kagent
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `KAGENT_URL` | `http://kagent-controller.kagent:8083` | Controller base URL. |
-| `KAGENT_NAMESPACE` | `kagent` | Namespace of the Agent resource. |
-| `KAGENT_AGENT` | `alert-triage-agent` | Agent used when the routing label is absent or names no mapped agent. |
-| `KAGENT_AGENT_ROUTING_LABEL` | value of `SLACK_CHANNEL_LABEL` | Alert label that routes an alert to an agent. |
-| `KAGENT_AGENT_ROUTING_MAP` | empty | `label-value=agent` routing table sending categories to specialised agents, e.g. `security-alerts=security-alert-triage-agent`. A value the table does not carry falls back to `KAGENT_AGENT` rather than being used as an agent name. |
-| `KAGENT_USER_ID` | `gateway@kagent.dev` | Sent as `X-User-Id`; owns the kagent sessions the gateway creates. |
-| `KAGENT_TIMEOUT` | `120s` | Deadline for one whole analysis. On expiry the task is cancelled on the controller. |
-| `KAGENT_REQUEST_TIMEOUT` | `30s` | Timeout for a single HTTP call to the controller (submit, poll, or cancel). |
-| `KAGENT_POLL_INTERVAL` | `5s` | Wait between two task status polls. |
+`KAGENT_URL`, `KAGENT_NAMESPACE`, and `KAGENT_AGENT`, plus `KAGENT_AGENT_ROUTING_MAP` for specialised agents.
 
 ### Analysis policy
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `ANALYZE_SEVERITIES` | `critical` | Comma-separated severities to analyse. Empty analyses everything. |
-| `ANALYZE_LABEL` | `analyze` | Alert label that opts a rule in (`"true"`) or out (`"false"`) regardless of severity. |
-| `ANALYZE_RESOLVED` | `false` | Analyse resolved notifications as well as firing ones. |
-| `DEDUPE_TTL` | `12h` | How long a group stays suppressed after being analysed. `0s` disables deduplication. |
-| `MAX_ALERTS_IN_PROMPT` | `5` | Maximum alerts rendered into one prompt. |
-| `MAX_CONCURRENT_ANALYSES` | `2` | Maximum analyses running at once, which bounds concurrent model spend. |
-| `ANALYSIS_INSTRUCTIONS` | built-in English text | Instructions appended to every prompt. Override to change the output language or sections. |
+`ANALYZE_SEVERITIES`, `DEDUPE_TTL`, and `MAX_CONCURRENT_ANALYSES` bound which alerts are analysed and at what spend.
 
 ### Serving
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `WEBHOOK_PATH` | `/alert` | Path Alertmanager posts to. |
-| `WEBHOOK_BEARER_TOKEN` | empty | Bearer token required on incoming webhooks. Empty disables authentication. |
-| `LISTEN_PORT` | `8080` | Port serving the webhook, `/healthz` and `/readyz`. |
-| `METRICS_PORT` | `8081` | Port serving `/metrics`. |
-| `LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error`. |
-| `LOG_FORMAT` | `json` | `json` or `text`. |
+The webhook listens on `8080` (`WEBHOOK_PATH`, `WEBHOOK_BEARER_TOKEN`) and metrics on `8081`.
 
 ## Metrics
 
-Metrics are served on `/metrics` (default port `8081`) and share the prefix
-`kagent_gateway_`. They cover the whole path an alert takes: webhook
-ingest and per-alert volume, the analysis queue and its concurrency limit, the
-kagent controller's own processing time per task state, and every Slack Web API
-call including throttling and truncation. Mention invocation adds the Socket
-Mode connection state, the reason every dropped mention was dropped, and the
-turn counters. See
-[docs/metrics.md](docs/metrics.md) for the full reference and example queries.
+Prometheus metrics on `/metrics` with the `kagent_gateway_` prefix. See [Metrics](docs/metrics.md).
 
 ## Alertmanager
 
-In `lookup` mode the existing `slack_configs` stays, a `webhook_configs` entry
-is added next to it, and the template gains a `footer` carrying the alert
-fingerprint so the gateway can recognise the message:
-
-```yaml
-receivers:
-- name: 'infra-alerts'
-  slack_configs:
-  - api_url: '<existing incoming webhook>'
-    channel: '#infra-alerts'
-    send_resolved: true
-    title: '{{ if eq .Status "firing" }}🚨{{ else }}✅{{ end }} [{{ .Status | toUpper }}] {{ .CommonLabels.alertname }}'
-    text: |-
-      {{ range .Alerts }}
-      *Severity:* {{ .Labels.severity }}
-      *Summary:* {{ .Annotations.summary }}
-      {{ end }}
-    footer: 'alert-id {{ (index .Alerts 0).Fingerprint }}'
-  webhook_configs:
-  - url: 'http://kagent-gateway.kagent:8080/alert'
-    send_resolved: false
-    http_config:
-      authorization:
-        type: Bearer
-        credentials_file: /etc/alertmanager/secrets/kagent-gateway/WEBHOOK_BEARER_TOKEN
-```
-
-Without the `footer` the gateway has nothing to match on and every analysis is
-posted at channel level instead of in a thread. The marker may live in the
-title, text, or fallback instead; the footer is simply the least intrusive
-place. Both deliveries must resolve to the same channel, so
-`SLACK_CHANNEL_MAP` has to agree with what `slack_configs` uses.
-
-In `post` mode the receiver carries `webhook_configs` alone. Leaving
-`slack_configs` in place there posts every alert to Slack twice.
-
-Set `send_resolved: true` on the webhook only together with
-`ANALYZE_RESOLVED`, otherwise the gateway is woken for notifications it will
-never analyse.
+Keep `slack_configs`, add a `webhook_configs` entry, and render the alert fingerprint into the footer. See [Alertmanager](docs/alertmanager.md).
 
 ## Agent expectations
 
-The gateway is agent-agnostic: it sends the alert plus `ANALYSIS_INSTRUCTIONS`
-and posts whatever text comes back. The agent should be read-only. The gateway
-cannot enforce that, so the tools bound to the agent decide what an
-automatically triggered analysis is able to touch.
-
-Reply text is posted as Slack mrkdwn, so the agent should use `*bold*` rather
-than markdown headings and stay inside `SLACK_MAX_TEXT`.
-
-A mention gets `CHAT_INSTRUCTIONS` instead, which ask for a direct answer rather
-than the analysis sections. The same agent can serve both paths: an alert run
-and a mention turn never share a session, and `CHAT_AGENT` points them at
-different agents when they should not share a tool list either.
+Agents stay read-only and reply in Slack mrkdwn. See [Agent expectations](docs/agent-expectations.md).
 
 ### Reading the rest of a thread
 
-The gateway sends the alert and the thread's identifiers, and stops there. An
-agent that needs the discussion under the alert reads it itself through a Slack
-MCP server bound as a tool, which is what keeps the gateway out of guessing how
-much of a conversation a question needs, and what makes a longer thread, another
-channel, or a search reachable without a gateway release.
-
-Bind read tools only. `slack_get_thread_replies` and `slack_get_channel_history`
-answer questions; `slack_post_message`, `slack_reply_to_thread`, and
-`slack_add_reaction` let an agent speak in the channel as the app, which is a
-capability an automatically triggered agent has no business holding. The gateway
-owns everything the bot says.
+An agent reads the thread through read-only Slack MCP tools, not through the gateway.
 
 ### Routing to several agents
 
-`KAGENT_AGENT_ROUTING_MAP` splits alert categories across specialised agents, keyed by
-the same label that already routes the Slack channel:
-
-```
-SLACK_CHANNEL_LABEL=slack_channel
-KAGENT_AGENT_ROUTING_MAP=infra-alerts=aws-alert-triage-agent,security-alerts=security-alert-triage-agent
-```
-
-Every agent still gets the same `ANALYSIS_INSTRUCTIONS`, because those describe
-the output contract the gateway posts to Slack: the sections, the length, and
-the mrkdwn. What each agent knows and which tools it may call belongs in its own
-system message and tool list, which the gateway never sees. Keeping the split
-there also keeps the instructions free of guidance that only one category needs.
+`KAGENT_AGENT_ROUTING_MAP` sends alert categories to specialised agents by label.
 
 ## Usage
 
 ```bash
-# Local run against a port-forwarded controller
 kubectl -n kagent port-forward svc/kagent-controller 8083:8083
-
 SLACK_BOT_TOKEN=xoxb-... SLACK_DEFAULT_CHANNEL=alerts-test \
 KAGENT_URL=http://localhost:8083 LOG_FORMAT=text make run
-
-# Replay an alert
-curl -X POST localhost:8080/alert -H 'Content-Type: application/json' -d '{
-  "groupKey": "test-1", "status": "firing", "receiver": "kagent-gateway",
-  "commonLabels": {"alertname": "KubePodCrashLooping", "severity": "critical", "cluster": "prd"},
-  "alerts": [{"status": "firing", "fingerprint": "fp-1",
-    "labels": {"alertname": "KubePodCrashLooping", "severity": "critical", "namespace": "demo", "pod": "demo-api-0"},
-    "annotations": {"summary": "pod is restarting", "description": "7 restarts in 10 minutes"}}]
-}'
 ```
+
+Replaying an alert by hand is in [Usage](docs/usage.md).
 
 ## Helm
 
 ```bash
-helm install kagent-gateway ./charts/kagent-gateway \
-  --namespace kagent \
-  --set slack.parentMode=lookup \
-  --set slack.defaultChannel=alerts-test \
-  --set slack.existingSecret=kagent-gateway-slack \
-  --set kagent.agent=alert-triage-agent \
-  --set serviceMonitor.enabled=true
+helm install kagent-gateway oci://ghcr.io/younsl/charts/kagent-gateway \
+  --namespace kagent --set slack.defaultChannel=alerts-test \
+  --set slack.existingSecret=kagent-gateway-slack
 ```
 
-The chart is also released to the OCI registry on Chart.yaml version bumps:
-
-```bash
-crane ls ghcr.io/younsl/charts/kagent-gateway
-helm install kagent-gateway oci://ghcr.io/younsl/charts/kagent-gateway --version 0.1.0
-```
+Chart values are in the [chart README](charts/kagent-gateway/README.md).
 
 ## AI Disclosure
 
