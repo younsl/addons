@@ -68,6 +68,8 @@ Setting `SLACK_APP_TOKEN` opens Socket Mode and lets an engineer ask the agent b
 
 `AgentAccessPolicy` objects decide who may invoke each agent name and split new threads across Agents by weight. See [Agent access policy](docs/access-policy.md).
 
+The [policy cache sync diagram](docs/designs/assets/policy-cache-sync.svg) shows how the gateway's routing cache syncs and what keeps it from stalling. A policy can read `Ready` while the cache is unsynced, so watch `kagent_gateway_access_policies_synced` (see [Readiness wakeup](docs/designs/agent-access-policy.md#readiness-wakeup)).
+
 ## Slack app
 
 A bot token with `chat:write` and the history scopes, plus an app-level token, `app_mentions:read`, and Socket Mode for mentions. See [Slack app](docs/slack-app.md).
