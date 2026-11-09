@@ -57,7 +57,7 @@ slack:
   defaultChannel: ""
   # -- (string) Alert label that selects the destination channel
   channelLabel: "slack_channel"
-  # -- (object) Mapping from routing label value to Slack channel, for labels whose value is not the channel name Ignored when `chat.accessPolicies.enabled` is true.
+  # -- (object) Mapping from routing label value to Slack channel, for labels whose value is not the channel name. Ignored when `chat.accessPolicies.enabled` is true.
   channelMap: {}
     # test-route: alerts-test
   # -- (int) Maximum characters posted in one message; longer text is truncated

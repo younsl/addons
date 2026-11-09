@@ -97,7 +97,7 @@ The following table lists the configurable parameters and their default values.
 | slack.completedReaction | string | `"white_check_mark"` | Emoji (without colons) that replaces the investigating reaction once the analysis has been posted. Needs `reactions:write`. Empty string disables it. |
 | slack.defaultChannel | string | `""` | Channel used when the routing label is absent. A bare name is prefixed with #; a conversation ID is used as-is and skips the `channels:read` lookup. |
 | slack.channelLabel | string | `"slack_channel"` | Alert label that selects the destination channel |
-| slack.channelMap | object | `{}` | Mapping from routing label value to Slack channel, for labels whose value is not the channel name Ignored when `chat.accessPolicies.enabled` is true. |
+| slack.channelMap | object | `{}` | Mapping from routing label value to Slack channel, for labels whose value is not the channel name. Ignored when `chat.accessPolicies.enabled` is true. |
 | slack.maxTextLength | int | `8000` | Maximum characters posted in one message; longer text is truncated |
 | slack.apiURL | string | `"https://slack.com/api"` | Slack Web API base URL; override to route through an egress proxy |
 | slack.existingSecret | string | `""` | Name of an existing Secret holding the bot token. Leave empty to create one from `slack.token`. |
