@@ -35,9 +35,6 @@ spec:
   scope: Namespaced
   versions:
   - additionalPrinterColumns:
-    - jsonPath: .spec.agentRef.name
-      name: Agent
-      type: string
     - jsonPath: .spec.chat.allowAll
       name: AllowAll
       type: boolean
@@ -53,45 +50,60 @@ spec:
     name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: Decides which Slack members may invoke one kagent agent through a mention. An agent without a policy falls back to the gateway's CHAT_ALLOWED_USERS.
+        description: Decides which Slack members may invoke an agent name through a mention, and splits new threads across the kagent Agents in agentRefs by weight. The policy name is the agent name CHAT_AGENT and CHAT_AGENT_MAP route to. A name without a policy falls back to the gateway's CHAT_ALLOWED_USERS.
         properties:
           spec:
-            description: Decides who may invoke one kagent agent through a Slack mention.
+            description: Decides who may invoke an agent name through a Slack mention, and which kagent Agents answer it.
             properties:
-              agentRef:
-                description: The kagent Agent this policy governs.
-                properties:
-                  group:
-                    description: API group of the referenced object. Always `kagent.dev`.
-                    maxLength: 253
-                    minLength: 1
-                    type: string
-                  kind:
-                    description: Kind of the referenced object. Always `Agent`.
-                    maxLength: 63
-                    minLength: 1
-                    type: string
-                  name:
-                    description: Name of the Agent.
-                    maxLength: 253
-                    minLength: 1
-                    type: string
-                  namespace:
-                    description: Namespace of the Agent. Must be the namespace the gateway submits to (`KAGENT_NAMESPACE`), which is also where it reads policies from.
-                    maxLength: 63
-                    minLength: 1
-                    type: string
-                required:
-                - group
-                - kind
-                - name
-                - namespace
-                type: object
+              agentRefs:
+                description: The kagent Agents a new thread is sent to, picked by weight like Gateway API `backendRefs`. A thread stays on the Agent it started on.
+                items:
+                  description: Identifies a kagent Agent by every field.
+                  properties:
+                    group:
+                      description: API group of the referenced object. Always `kagent.dev`.
+                      maxLength: 253
+                      minLength: 1
+                      type: string
+                    kind:
+                      description: Kind of the referenced object. Always `Agent`.
+                      maxLength: 63
+                      minLength: 1
+                      type: string
+                    name:
+                      description: Name of the Agent.
+                      maxLength: 253
+                      minLength: 1
+                      type: string
+                    namespace:
+                      description: Namespace of the Agent. Must be the namespace the gateway submits to (`KAGENT_NAMESPACE`), which is also where it reads policies from.
+                      maxLength: 63
+                      minLength: 1
+                      type: string
+                    weight:
+                      default: 1
+                      description: Share of new threads sent to this Agent, relative to the other refs. `0` sends none, which drains the Agent while its threads finish.
+                      format: int32
+                      maximum: 1000000.0
+                      minimum: 0.0
+                      type: integer
+                  required:
+                  - group
+                  - kind
+                  - name
+                  - namespace
+                  type: object
+                  x-kubernetes-validations:
+                  - message: agentRefs entries must name a kagent.dev Agent
+                    rule: self.group == 'kagent.dev' && self.kind == 'Agent'
+                maxItems: 16
+                minItems: 1
+                type: array
                 x-kubernetes-validations:
-                - message: agentRef must name a kagent.dev Agent
-                  rule: self.group == 'kagent.dev' && self.kind == 'Agent'
+                - message: agentRefs must name each Agent once and give at least one a weight above 0
+                  rule: self.all(a, self.exists_one(b, b.name == a.name)) && self.exists(a, !has(a.weight) || a.weight > 0)
               chat:
-                description: Who may invoke the agent through a Slack mention.
+                description: Who may invoke the agent name through a Slack mention.
                 properties:
                   allowAll:
                     description: Lets every member of the allowed channels invoke the agent, overriding a restrictive `CHAT_ALLOWED_USERS` for this agent alone.
@@ -112,7 +124,7 @@ spec:
                 - message: 'set exactly one of allowedUsers (non-empty) and allowAll: true'
                   rule: (has(self.allowAll) && self.allowAll) != (has(self.allowedUsers) && size(self.allowedUsers) > 0)
             required:
-            - agentRef
+            - agentRefs
             - chat
             type: object
           status:
@@ -162,9 +174,6 @@ spec:
         - spec
         title: AgentAccessPolicy
         type: object
-        x-kubernetes-validations:
-        - message: metadata.name must equal spec.agentRef.name, so each agent has at most one policy
-          rule: self.metadata.name == self.spec.agentRef.name
     served: true
     storage: true
     subresources:

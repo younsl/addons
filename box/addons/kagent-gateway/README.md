@@ -105,7 +105,7 @@ above `180s` has no effect until the deployment moves to a release carrying
 
 ### Per-agent access
 
-`CHAT_ALLOWED_USERS` applies to every agent. To give an agent its own allow list, set `CHAT_ACCESS_POLICIES=true` (chart: `chat.accessPolicies.enabled`) and create an `AgentAccessPolicy` next to the Agent in `KAGENT_NAMESPACE`:
+`CHAT_ALLOWED_USERS` applies to every agent. To give an agent name its own allow list, set `CHAT_ACCESS_POLICIES=true` (chart: `chat.accessPolicies.enabled`) and create an `AgentAccessPolicy` in `KAGENT_NAMESPACE`. The policy name is the agent name `CHAT_AGENT` and `CHAT_AGENT_MAP` route to, and `agentRefs` lists the Agents that answer it:
 
 ```yaml
 apiVersion: access.kagent-gateway.sh/v1alpha1
@@ -114,14 +114,44 @@ metadata:
   name: security-alert-triage-agent
   namespace: kagent
 spec:
-  agentRef:
-    group: kagent.dev
-    kind: Agent
-    name: security-alert-triage-agent
-    namespace: kagent
+  agentRefs:
+    - group: kagent.dev
+      kind: Agent
+      name: security-alert-triage-agent
+      namespace: kagent
   chat:
     allowedUsers:
       - U01234567
+```
+
+Like Gateway API `backendRefs`, each `agentRefs` entry carries a `weight` (default `1`), and a new thread goes to one Agent drawn by weight. A thread stays on the Agent it started on while that Agent keeps a weight above `0`, because its A2A `contextId` belongs to that Agent. Setting a weight to `0` drains the Agent: open threads move to a fresh session on another Agent at their next mention. This is how a new Agent version takes a share of questions before it takes all of them:
+
+```yaml
+spec:
+  agentRefs:
+    - {group: kagent.dev, kind: Agent, name: aws-alert-triage-agent, namespace: kagent, weight: 90}
+    - {group: kagent.dev, kind: Agent, name: aws-alert-triage-agent-v2, namespace: kagent, weight: 10}
+```
+
+Weights apply to mentions only. The alert path keeps `KAGENT_AGENT_ROUTING_MAP`.
+
+With the chart, list the policies under `agentAccessPolicies`, keyed by agent name, and the chart renders them into `kagent.namespace`. Without `agentRefs` the key itself is the only Agent:
+
+```yaml
+chat:
+  accessPolicies:
+    enabled: true
+agentAccessPolicies:
+  security-alert-triage-agent:
+    allowedUsers:
+      - U01234567
+  aws-alert-triage-agent:
+    allowAll: true
+    agentRefs:
+      - name: aws-alert-triage-agent
+        weight: 90
+      - name: aws-alert-triage-agent-v2
+        weight: 10
 ```
 
 The check runs against the agent the channel routes to (`CHAT_AGENT_MAP`, then `CHAT_AGENT`), so one policy covers every channel that reaches the agent.
@@ -131,12 +161,13 @@ The check runs against the agent the channel routes to (`CHAT_AGENT_MAP`, then `
 | Agent has no policy | `CHAT_ALLOWED_USERS` (empty allows everyone) |
 | `allowedUsers` set | Only those members. The global list does not apply. |
 | `allowAll: true` | Everyone in the allowed channels, even when `CHAT_ALLOWED_USERS` is restrictive |
-| `agentRef.namespace` differs from `KAGENT_NAMESPACE` | Nobody (`Ready=False`, reason `NamespaceMismatch`) |
+| An `agentRefs` namespace differs from `KAGENT_NAMESPACE` | Nobody (`Ready=False`, reason `NamespaceMismatch`) |
+| Every `agentRefs` weight is `0` | Nobody (`Ready=False`, reason `NoWeight`) |
 | Policy cache not synced yet, or no Kubernetes client | Nobody, every mention is dropped as `policy_unsynced` |
 
-The schema enforces the rest: `metadata.name` equals `spec.agentRef.name`, so an agent has at most one policy, `agentRef` names a `kagent.dev` `Agent`, and exactly one of a non-empty `allowedUsers` and `allowAll: true` is set, so an empty list is never read as "everyone".
+The schema enforces the rest: every `agentRefs` entry names a `kagent.dev` `Agent` once (1 to 16 entries, weight 0 to 1,000,000), at least one weight is above `0`, and exactly one of a non-empty `allowedUsers` and `allowAll: true` is set, so an empty list is never read as "everyone". An agent name has at most one policy because the policy is named after it.
 
-The gateway watches policies, so a change applies without a restart. Each policy reports `Ready` (enforced as written) and `AgentResolved` (the Agent exists, re-checked every 5 minutes) in its status. A refused mention gets no reply and no hint, and `kagent_gateway_chat_access_denials_total{agent,reason}` counts it.
+The gateway watches policies, so a change applies without a restart. Each policy reports `Ready` (enforced as written) and `AgentResolved` (every referenced Agent exists, re-checked every 5 minutes) in its status. A refused mention gets no reply and no hint, and `kagent_gateway_chat_access_denials_total{agent,reason}` counts it.
 
 ```bash
 kubectl get agentaccesspolicies -n kagent

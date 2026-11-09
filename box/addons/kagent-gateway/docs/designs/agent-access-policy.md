@@ -6,7 +6,7 @@
 
 ## Summary
 
-Let each kagent agent carry its own list of Slack members who may invoke it through a mention. The list lives in an `AgentAccessPolicy` custom resource next to the Agent, the gateway watches it, and the mention path checks the asker against the policy of the agent the channel routes to. An agent without a policy keeps the global `CHAT_ALLOWED_USERS`, so existing deployments behave exactly as before.
+Let each agent name carry its own list of Slack members who may invoke it through a mention, and the set of kagent Agents that answer it. Both live in an `AgentAccessPolicy` custom resource, the gateway watches it, and the mention path checks the asker against the policy of the agent name the channel routes to, then sends the turn to one of the policy's `agentRefs`, picked by weight like Gateway API `backendRefs`. A name without a policy keeps the global `CHAT_ALLOWED_USERS` and is answered by the Agent of that name, so existing deployments behave exactly as before.
 
 ## Goals
 
@@ -15,10 +15,11 @@ Let each kagent agent carry its own list of Slack members who may invoke it thro
 - Apply a change without restarting the pod, because a restart drops the Socket Mode connection and in-memory thread sessions.
 - Let the team that owns an agent edit its policy through namespace RBAC and GitOps, without access to the gateway's values.
 - Make the effective state visible on the object itself (`kubectl get aap`).
+- Let a new Agent version take a share of new threads before it takes all of them, and drain the old one without breaking threads in progress.
 
 ## Non-goals
 
-- Access control on the alert path. Alerts are not invoked by a person.
+- Access control and weights on the alert path. Alerts are not invoked by a person, and the alert path keeps `KAGENT_AGENT_ROUTING_MAP`.
 - Slack user groups (`S...`) as list entries. See [Open questions](#open-questions).
 - Moving channel routing (`CHAT_AGENT_MAP`) into the custom resource.
 - Policies for agents outside `KAGENT_NAMESPACE`. The gateway only submits there.
@@ -34,7 +35,7 @@ An env-only design (`CHAT_AGENT_ALLOWED_USERS=agent=U1|U2,...`) was considered f
 
 ![Agent access policy](agent-access-policy.svg)
 
-The gateway runs a controller over `AgentAccessPolicy` objects in `KAGENT_NAMESPACE`. It reads them from its reflector cache on every mention and writes back only their status. Each policy points at one kagent `Agent` through `agentRef`, and a mention reaches that Agent over A2A only when the asker passes the policy.
+The gateway runs a controller over `AgentAccessPolicy` objects in `KAGENT_NAMESPACE`. It reads them from its reflector cache on every mention and writes back only their status. Each policy points at one or more kagent `Agent`s through `agentRefs`, and a mention reaches one of them over A2A only when the asker passes the policy.
 
 Order of checks on one mention:
 
@@ -44,6 +45,7 @@ Slack app_mention
   -> resolve agent from channel (CHAT_AGENT_MAP, then CHAT_AGENT)
   -> access check against that agent's policy, or CHAT_ALLOWED_USERS
   -> thread, duplicate, channel, and empty checks
+  -> backend: the thread's Agent if it still has weight, else a weighted pick
   -> agent turn
 ```
 
@@ -53,7 +55,7 @@ Code layout:
 
 | Path | Responsibility |
 |------|----------------|
-| `src/access.rs` | The decision: `Rule`, `Lookup`, `PolicySource`, and `check()`. No Kubernetes types. |
+| `src/access.rs` | The decision: `Rule`, `Policy`, `Backend`, `Lookup`, `PolicySource`, `check()`, and the weighted `pick()`. No Kubernetes types. |
 | `src/crd.rs` | The `AgentAccessPolicy` type, its schema, and its CEL rules |
 | `src/crd/chart.rs` | Renders the CRD into the chart. `make crd` writes it, `tests/crd_drift.rs` fails when it is stale. |
 | `src/k8s/policy.rs` | `kube::runtime::Controller`, the reflector cache the mention path reads, and the status conditions |
@@ -70,11 +72,17 @@ metadata:
   name: security-alert-triage-agent
   namespace: kagent
 spec:
-  agentRef:
-    group: kagent.dev
-    kind: Agent
-    name: security-alert-triage-agent
-    namespace: kagent
+  agentRefs:
+    - group: kagent.dev
+      kind: Agent
+      name: security-alert-triage-agent
+      namespace: kagent
+      weight: 90
+    - group: kagent.dev
+      kind: Agent
+      name: security-alert-triage-agent-v2
+      namespace: kagent
+      weight: 10
   chat:
     allowedUsers:
       - U01234567
@@ -96,19 +104,22 @@ Every rule a single object can express is enforced by the API server through the
 
 | Rule | Why |
 |------|-----|
-| `metadata.name == spec.agentRef.name` | One policy per agent. Two policies for the same agent would be a cross-object conflict CEL cannot detect, and the naming rule makes it impossible instead. |
-| `agentRef` names `kagent.dev` / `Agent` | The reference sets every identifying field, and only Agents are governed. |
+| `agentRefs` entries name `kagent.dev` / `Agent` | Each reference sets every identifying field, and only Agents are governed. |
+| 1 to 16 `agentRefs`, each Agent named once | A duplicate would silently add up two weights for one Agent. |
+| `weight` 0 to 1,000,000, default 1, at least one above 0 | The same range and default as Gateway API `backendRefs`. A policy with no share anywhere has nowhere to send a turn. |
 | Exactly one of a non-empty `allowedUsers` and `allowAll: true` | An empty list can never be read as "everyone". Opening an agent is always explicit. |
 | `allowedUsers` entries match `^[UW][A-Z0-9]+$`, at most 1000, each at most 32 characters | Catches display names and emails pasted in place of member IDs. The bounds keep the CEL cost estimate inside the API server budget. |
 
-`agentRef.namespace` must equal `KAGENT_NAMESPACE`. CEL cannot read the object's own namespace, so the controller checks it and reports `Ready=False` with reason `NamespaceMismatch`.
+One policy per agent name needs no rule: the policy is named after the name it governs, and object names are unique in a namespace.
+
+Every `agentRefs` namespace must equal `KAGENT_NAMESPACE`. CEL cannot read the object's own namespace, so the controller checks it and reports `Ready=False` with reason `NamespaceMismatch`.
 
 ### Status
 
 | Condition | True | False | Unknown |
 |-----------|------|-------|---------|
-| `Ready` | `Enforced`: the policy applies as written | `NamespaceMismatch`: every mention to the agent is denied | not used |
-| `AgentResolved` | `Found` | `NotFound`: the policy applies once the Agent is created | `LookupFailed`: discovery or the get failed |
+| `Ready` | `Enforced`: the policy applies as written | `NamespaceMismatch` or `NoWeight`: every mention to the name is denied | not used |
+| `AgentResolved` | `Found`: every referenced Agent exists | `NotFound`: the message lists the missing Agents, and a thread picked for one fails until it is created | `LookupFailed`: discovery or a get failed |
 
 `lastTransitionTime` moves only when a condition's status changes. Every policy is requeued every 5 minutes, which is what flips `AgentResolved` when an Agent is created after its policy. The Agent API version comes from discovery, because kagent has served `Agent` under more than one version.
 
@@ -120,7 +131,7 @@ Every rule a single object can express is enforced by the API server through the
 | Agent has no policy | `CHAT_ALLOWED_USERS` (empty allows everyone) | `user_denied` |
 | `allowedUsers` set | Only those members. The global list does not apply. | `user_denied` |
 | `allowAll: true` | Everyone in the allowed channels | none |
-| `NamespaceMismatch` | Nobody | `policy_invalid` |
+| `NamespaceMismatch` or `NoWeight` | Nobody | `policy_invalid` |
 | Cache not synced, or no Kubernetes client | Nobody | `policy_unsynced` |
 
 A policy replaces the global list rather than intersecting with it. Replacement lets an agent be opened (`allowAll`) or narrowed independently of the default, which is the point of a per-agent rule. Intersection would make the global list a ceiling no agent could rise above.
@@ -128,6 +139,17 @@ A policy replaces the global list rather than intersecting with it. Replacement 
 An agent without a policy falls back to the global list rather than being denied. That keeps the feature safe to turn on in an existing deployment: nothing changes until the first policy is created.
 
 A user refused for the routed agent is never retried against the default agent. Falling through would turn a policy into a suggestion.
+
+## Weights
+
+A turn that passes the access check goes to one of the policy's `agentRefs`:
+
+- A thread that already holds a session stays on the Agent that session belongs to, as long as that Agent is still listed with a weight above `0`. A `contextId` means nothing to another Agent, so a split by turn would break every follow-up.
+- Otherwise the gateway draws an Agent in proportion to the weights and the turn starts a fresh session. A weight of `0` is never drawn.
+
+The session store therefore keeps the Agent next to the `contextId` for each thread. Lowering an Agent to `0` drains it: threads in progress move to a fresh session on another Agent at their next mention, and no new thread starts there. Removing an entry has the same effect.
+
+The split is per thread, not per mention, and it is random rather than hashed. A thread is the unit a person experiences, and with sessions in memory at one replica there is nothing a hash would buy. `chat_turns_total{agent}` carries the Agent that answered, so the split is visible per Agent.
 
 ## Failure modes
 
@@ -145,8 +167,11 @@ Readiness is not tied to the policy cache. A broken cache must not make the pod 
 |----------|-------------|---------|--------|
 | `CHAT_ACCESS_POLICIES` | `chat.accessPolicies.enabled` | `false` | Starts the controller and reads policies from `KAGENT_NAMESPACE` |
 | `CHAT_ALLOWED_USERS` | `chat.allowedUsers` | empty | With the feature on, applies only to agents without a policy |
+| none | `agentAccessPolicies` | `{}` | Policies rendered into `kagent.namespace`, keyed by Agent name. Each entry sets `allowedUsers` or `allowAll: true`. |
 | none | `crds.install` | `true` | Installs and upgrades the CRD from `templates/crds/` |
 | none | `crds.keep` | `true` | Keeps the CRD, and every policy, on `helm uninstall` |
+
+Rendered policies carry `argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true`, because on the first sync the CRD and the policies arrive together and the dry run cannot resolve the kind yet. With `crds.install: false` they render only when the API server already serves the kind. The values schema mirrors the CEL rules (member ID pattern, exactly one of the two fields), so a mistake fails `helm template` instead of the sync.
 
 The CRD sits in `templates/` rather than `crds/` because Helm never upgrades anything in `crds/`, so a schema change there would silently not apply.
 
@@ -186,10 +211,11 @@ Startup logs one line listing the policies once synced, and the existing allow l
 ## Open questions
 
 - Slack user groups as entries (`S...`) would remove the per-person churn. It needs the `usergroups:read` scope, a cached `usergroups.users.list`, and a rule for a group that cannot be resolved (deny is the only safe answer).
+- Weights on the alert path, which today routes by `KAGENT_AGENT_ROUTING_MAP` alone.
 - A `CHAT_REQUIRE_POLICY` switch that denies agents without a policy, for deployments that want every agent covered explicitly.
 - More than one replica needs leader election before status writes, or status writes moved to one replica.
 - A denied-user hint, opt-in, for teams that prefer telling people why the bot is silent over not revealing the rule.
 
 ## Conclusion
 
-Access is now decided per agent by a validated, watched custom resource, with the global allow list as the fallback. Turning the feature on changes nothing until a policy exists, every error path fails closed for mentions and leaves alerts alone, and the effective state of each policy is on the object itself.
+Access is now decided per agent name by a validated, watched custom resource, with the global allow list as the fallback, and the same object splits new threads across Agent versions by weight. Turning the feature on changes nothing until a policy exists, every error path fails closed for mentions and leaves alerts alone, and the effective state of each policy is on the object itself.

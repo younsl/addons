@@ -71,8 +71,16 @@ impl Store {
 /// costs one cold turn, not correctness, and a restart drops the whole map.
 #[derive(Debug)]
 pub struct SessionStore {
-    entries: HashMap<String, (String, Instant)>,
+    entries: HashMap<String, (Session, Instant)>,
     ttl: Duration,
+}
+
+/// What a thread carries between turns: the Agent it started on, and that
+/// Agent's A2A `contextId`. A `contextId` means nothing to another Agent.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Session {
+    pub agent: String,
+    pub context_id: String,
 }
 
 impl SessionStore {
@@ -84,25 +92,28 @@ impl SessionStore {
         }
     }
 
-    /// The `contextId` a thread carries between turns, `None` when it has
+    /// The session a thread carries between turns, `None` when it has
     /// nothing or has been idle for longer than the TTL.
-    pub fn get(&mut self, key: &str, now: Instant) -> Option<String> {
+    pub fn get(&mut self, key: &str, now: Instant) -> Option<Session> {
         if self.ttl.is_zero() {
             return None;
         }
         self.gc(now);
-        self.entries.get(key).map(|(id, _)| id.clone())
+        self.entries.get(key).map(|(session, _)| session.clone())
     }
 
     /// Records what a turn produced and refreshes the idle timer, so a thread
     /// that keeps being used keeps its session.
-    pub fn put(&mut self, key: &str, context_id: &str, now: Instant) {
+    pub fn put(&mut self, key: &str, agent: &str, context_id: &str, now: Instant) {
         if self.ttl.is_zero() || context_id.is_empty() {
             return;
         }
         self.gc(now);
-        self.entries
-            .insert(key.to_string(), (context_id.to_string(), now));
+        let session = Session {
+            agent: agent.to_string(),
+            context_id: context_id.to_string(),
+        };
+        self.entries.insert(key.to_string(), (session, now));
     }
 
     /// How many threads currently hold a session, which is what the session
@@ -153,15 +164,21 @@ mod tests {
         let mut s = SessionStore::new(Duration::from_secs(100));
         let t0 = Instant::now();
         assert_eq!(s.get("t", t0), None);
-        s.put("t", "", t0);
+        s.put("t", "a", "", t0);
         assert_eq!(s.len(), 0);
-        s.put("t", "ctx", t0);
-        assert_eq!(s.get("t", t0 + Duration::from_secs(50)), Some("ctx".into()));
+        s.put("t", "a", "ctx", t0);
+        assert_eq!(
+            s.get("t", t0 + Duration::from_secs(50)),
+            Some(Session {
+                agent: "a".into(),
+                context_id: "ctx".into()
+            })
+        );
         assert_eq!(s.get("t", t0 + Duration::from_secs(100)), None);
         assert_eq!(s.len(), 0);
 
         let mut off = SessionStore::new(Duration::ZERO);
-        off.put("t", "ctx", t0);
+        off.put("t", "a", "ctx", t0);
         assert_eq!(off.get("t", t0), None);
     }
 }

@@ -12,7 +12,7 @@ use tracing::{Instrument, debug, error, info, info_span, warn};
 
 use super::{Gateway, GaugeGuard, korean_duration};
 use crate::a2a::{Progress, Request};
-use crate::access::{self, Lookup};
+use crate::access::{self, Backend, Lookup};
 use crate::observability::Metrics;
 use crate::slack::socket::{Event, Handler};
 use crate::slack::{self, Message, SlackClient};
@@ -67,7 +67,7 @@ impl Handler for Arc<Gateway> {
             "socket event received"
         );
 
-        let (text, agent) = match self.mention_text(&ev).await {
+        let (text, agent, backends) = match self.mention_text(&ev).await {
             Ok(accepted) => accepted,
             Err(reason) => {
                 self.metrics.chat_event(reason);
@@ -91,8 +91,9 @@ impl Handler for Arc<Gateway> {
             agent
         );
         let g = self.clone();
-        self.tracker
-            .spawn(async move { g.handle_mention(ev, text, agent).await }.instrument(span));
+        self.tracker.spawn(
+            async move { g.handle_mention(ev, text, agent, backends).await }.instrument(span),
+        );
     }
 }
 
@@ -105,7 +106,10 @@ impl Gateway {
     /// mention stripped, together with the agent that answers it. The error
     /// is the drop reason, and doubles as the metric label so every drop is
     /// visible without a log line.
-    async fn mention_text(&self, ev: &Event) -> Result<(String, String), &'static str> {
+    async fn mention_text(
+        &self,
+        ev: &Event,
+    ) -> Result<(String, String, Vec<Backend>), &'static str> {
         let bot_user_id = self.bot_user_id();
         if ev.kind != "app_mention" {
             return Err("subtype");
@@ -132,10 +136,13 @@ impl Gateway {
         // The agent is resolved ahead of the thread check so a refused user
         // gets no thread hint either, exactly as before access was per agent.
         let agent = self.resolve_chat_agent(&ev.channel_id).await;
-        if let Err(reason) = self.user_allowed(&agent, &ev.user) {
-            self.metrics.chat_access_denied(&agent, reason);
-            return Err(reason);
-        }
+        let backends = match self.user_allowed(&agent, &ev.user) {
+            Ok(backends) => backends,
+            Err(reason) => {
+                self.metrics.chat_access_denied(&agent, reason);
+                return Err(reason);
+            }
+        };
         if ev.thread_ts.is_empty() {
             return Err("not_in_thread");
         }
@@ -154,12 +161,12 @@ impl Gateway {
         if text.is_empty() {
             return Err("empty");
         }
-        Ok((text, agent))
+        Ok((text, agent, backends))
     }
 
     /// Checks `user` against the agent's `AgentAccessPolicy`, or against
     /// `chat_allowed_users` when the agent has none or policies are off.
-    fn user_allowed(&self, agent: &str, user: &str) -> Result<(), &'static str> {
+    fn user_allowed(&self, agent: &str, user: &str) -> Result<Vec<Backend>, &'static str> {
         let lookup = self
             .access
             .get()
@@ -170,7 +177,37 @@ impl Gateway {
                 "access policies not synced yet; refusing the mention"
             );
         }
-        access::check(&self.cfg.chat_allowed_users, lookup, user)
+        access::check(&self.cfg.chat_allowed_users, agent, lookup, user)
+    }
+
+    /// Picks the Agent that answers a turn routed to `route`. A thread stays
+    /// on the Agent it started on, with its session, while that Agent keeps a
+    /// share. Otherwise a new Agent is drawn by weight and the turn starts a
+    /// fresh session, because a `contextId` belongs to one Agent.
+    fn choose_agent(
+        &self,
+        session_key: &str,
+        route: &str,
+        backends: &[Backend],
+    ) -> (String, Option<String>) {
+        let session = self
+            .sessions
+            .lock()
+            .expect("session store lock")
+            .get(session_key, Instant::now());
+        if let Some(session) = session
+            && access::keeps(backends, &session.agent)
+        {
+            return (session.agent, Some(session.context_id));
+        }
+        let total = access::total_weight(backends);
+        let roll = if total == 0 {
+            0
+        } else {
+            rand::random_range(0..total)
+        };
+        let agent = access::pick(backends, roll).unwrap_or(route);
+        (agent.to_string(), None)
     }
 
     /// Turns the mention text into the prompt: the handle that addressed the
@@ -222,9 +259,17 @@ impl Gateway {
     /// against the thread's session, and the status message is rewritten with
     /// the answer.
     #[allow(clippy::too_many_lines, clippy::significant_drop_tightening)]
-    async fn handle_mention(self: Arc<Self>, ev: Event, text: String, agent: String) {
+    async fn handle_mention(
+        self: Arc<Self>,
+        ev: Event,
+        text: String,
+        route: String,
+        backends: Vec<Backend>,
+    ) {
         let deadline = Instant::now() + self.cfg.chat_timeout;
         let started = Instant::now();
+        let session_key = format!("{}/{}", ev.channel_id, ev.thread_ts);
+        let (agent, context_id) = self.choose_agent(&session_key, &route, &backends);
 
         // The status message is posted before the slot is taken, so a mention
         // is acknowledged in the thread even while every slot is busy. It is
@@ -265,13 +310,6 @@ impl Gateway {
             warn!(error = %err, "failed to add working reaction");
         }
 
-        let session_key = format!("{}/{}", ev.channel_id, ev.thread_ts);
-        let context_id = self
-            .sessions
-            .lock()
-            .expect("session store lock")
-            .get(&session_key, Instant::now());
-
         // The alert is sent on every turn, not just the first: it is a few
         // hundred characters, and a session that has it already loses nothing
         // by seeing it again, while a session that lost it would answer about
@@ -295,6 +333,7 @@ impl Gateway {
             Arc::new(move |p: Progress| *hook_state.lock().expect("progress state lock") = p.state);
 
         info!(
+            backend = agent,
             context_id = context_id.as_deref().unwrap_or(""),
             chars = text.chars().count(),
             "requesting chat turn"
@@ -313,7 +352,7 @@ impl Gateway {
             Ok(reply) => {
                 {
                     let mut sessions = self.sessions.lock().expect("session store lock");
-                    sessions.put(&session_key, &reply.context_id, Instant::now());
+                    sessions.put(&session_key, &agent, &reply.context_id, Instant::now());
                     self.metrics
                         .chat_sessions
                         .set(i64::try_from(sessions.len()).unwrap_or(i64::MAX));
@@ -1041,9 +1080,16 @@ mod tests {
         }
     }
 
+    fn backend(agent: &str, weight: u32) -> Backend {
+        Backend {
+            agent: agent.into(),
+            weight,
+        }
+    }
+
     #[tokio::test]
     async fn access_policy_is_checked_against_the_routed_agent() {
-        use crate::access::Rule;
+        use crate::access::{Policy, Rule};
         use crate::observability::metrics::AgentReasonLabels;
 
         let mut cfg = chat_config();
@@ -1058,7 +1104,10 @@ mod tests {
         g.set_access_policies(Arc::new(StaticPolicies(
             [(
                 "ops-agent".to_string(),
-                Lookup::Found(Rule::Users(["U2".to_string()].into())),
+                Lookup::Found(Policy {
+                    rule: Rule::Users(["U2".to_string()].into()),
+                    backends: vec![backend("ops-agent", 1)],
+                }),
             )]
             .into(),
         )));
@@ -1089,6 +1138,54 @@ mod tests {
                 count
             );
         }
+    }
+
+    #[tokio::test]
+    async fn weighted_backends_answer_and_a_thread_stays_on_its_agent() {
+        use crate::access::{Policy, Rule};
+
+        let (g, _, agent, _) = gateway(chat_config());
+        g.set_access_policies(Arc::new(StaticPolicies(
+            [(
+                "alert-triage-agent".to_string(),
+                Lookup::Found(Policy {
+                    rule: Rule::AllowAll,
+                    backends: vec![backend("triage-v1", 0), backend("triage-v2", 1)],
+                }),
+            )]
+            .into(),
+        )));
+        run(&g, mention("<@UBOT> first")).await;
+        run(&g, mention("<@UBOT> second")).await;
+        let reqs = agent.requests();
+        assert_eq!(reqs[0].agent, "triage-v2");
+        assert_eq!(reqs[0].context_id, None);
+        assert_eq!(reqs[1].agent, "triage-v2");
+        assert_eq!(reqs[1].context_id, Some("ctx-1".into()));
+    }
+
+    #[test]
+    fn a_drained_agent_sends_its_thread_to_a_fresh_session() {
+        let (g, _, _, _) = gateway(chat_config());
+        g.sessions
+            .lock()
+            .unwrap()
+            .put("C1/1.0", "old", "ctx-old", Instant::now());
+
+        let both = [backend("old", 1), backend("new", 1)];
+        assert_eq!(
+            g.choose_agent("C1/1.0", "route", &both),
+            ("old".to_string(), Some("ctx-old".to_string()))
+        );
+        let drained = [backend("old", 0), backend("new", 1)];
+        assert_eq!(
+            g.choose_agent("C1/1.0", "route", &drained),
+            ("new".to_string(), None)
+        );
+        assert_eq!(
+            g.choose_agent("C1/9.0", "route", &[]),
+            ("route".to_string(), None)
+        );
     }
 
     #[tokio::test]

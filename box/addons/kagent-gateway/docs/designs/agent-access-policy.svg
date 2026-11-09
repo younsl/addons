@@ -42,7 +42,7 @@
     <text x="150" y="110">mention</text>
     <text x="280" y="196" text-anchor="middle">watch</text>
     <text x="280" y="254" text-anchor="middle">status</text>
-    <text x="600" y="210" text-anchor="middle">agentRef</text>
+    <text x="600" y="210" text-anchor="middle">agentRefs</text>
     <text x="440" y="342" text-anchor="middle">A2A turn, allowed users only</text>
   </g>
 </svg>

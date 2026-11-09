@@ -13,11 +13,12 @@ pub const GROUP: &str = "access.kagent-gateway.sh";
 pub const KIND: &str = "AgentAccessPolicy";
 pub const PLURAL: &str = "agentaccesspolicies";
 
-/// The API group and kind `spec.agentRef` must name.
+/// The API group and kind every `spec.agentRefs` entry must name.
 pub const AGENT_GROUP: &str = "kagent.dev";
 pub const AGENT_KIND: &str = "Agent";
 
-/// Decides who may invoke one kagent agent through a Slack mention.
+/// Decides who may invoke an agent name through a Slack mention, and which
+/// kagent Agents answer it.
 #[derive(CustomResource, KubeSchema, Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[kube(
     group = "access.kagent-gateway.sh",
@@ -29,26 +30,27 @@ pub const AGENT_KIND: &str = "Agent";
     namespaced,
     status = "AgentAccessPolicyStatus",
     derive = "PartialEq",
-    doc = "Decides which Slack members may invoke one kagent agent through a mention. An agent without a policy falls back to the gateway's CHAT_ALLOWED_USERS.",
-    printcolumn = r#"{"name":"Agent","type":"string","jsonPath":".spec.agentRef.name"}"#,
+    doc = "Decides which Slack members may invoke an agent name through a mention, and splits new threads across the kagent Agents in agentRefs by weight. The policy name is the agent name CHAT_AGENT and CHAT_AGENT_MAP route to. A name without a policy falls back to the gateway's CHAT_ALLOWED_USERS.",
     printcolumn = r#"{"name":"AllowAll","type":"boolean","jsonPath":".spec.chat.allowAll"}"#,
     printcolumn = r#"{"name":"Ready","type":"string","jsonPath":".status.conditions[?(@.type==\"Ready\")].status"}"#,
     printcolumn = r#"{"name":"AgentResolved","type":"string","jsonPath":".status.conditions[?(@.type==\"AgentResolved\")].status"}"#,
-    printcolumn = r#"{"name":"Age","type":"date","jsonPath":".metadata.creationTimestamp"}"#,
-    validation = Rule::new("self.metadata.name == self.spec.agentRef.name").message("metadata.name must equal spec.agentRef.name, so each agent has at most one policy")
+    printcolumn = r#"{"name":"Age","type":"date","jsonPath":".metadata.creationTimestamp"}"#
 )]
 #[serde(rename_all = "camelCase")]
 pub struct AgentAccessPolicySpec {
-    /// The kagent Agent this policy governs.
-    pub agent_ref: AgentRef,
-    /// Who may invoke the agent through a Slack mention.
+    /// The kagent Agents a new thread is sent to, picked by weight like
+    /// Gateway API `backendRefs`. A thread stays on the Agent it started on.
+    #[schemars(length(min = 1, max = 16))]
+    #[x_kube(validation = Rule::new("self.all(a, self.exists_one(b, b.name == a.name)) && self.exists(a, !has(a.weight) || a.weight > 0)").message("agentRefs must name each Agent once and give at least one a weight above 0"))]
+    pub agent_refs: Vec<AgentRef>,
+    /// Who may invoke the agent name through a Slack mention.
     pub chat: ChatAccess,
 }
 
 /// Identifies a kagent Agent by every field.
 #[derive(KubeSchema, Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[x_kube(
-    validation = Rule::new("self.group == 'kagent.dev' && self.kind == 'Agent'").message("agentRef must name a kagent.dev Agent")
+    validation = Rule::new("self.group == 'kagent.dev' && self.kind == 'Agent'").message("agentRefs entries must name a kagent.dev Agent")
 )]
 #[serde(rename_all = "camelCase")]
 pub struct AgentRef {
@@ -65,6 +67,15 @@ pub struct AgentRef {
     /// (`KAGENT_NAMESPACE`), which is also where it reads policies from.
     #[schemars(length(min = 1, max = 63))]
     pub namespace: String,
+    /// Share of new threads sent to this Agent, relative to the other refs.
+    /// `0` sends none, which drains the Agent while its threads finish.
+    #[serde(default = "default_weight")]
+    #[schemars(range(min = 0, max = 1_000_000))]
+    pub weight: i32,
+}
+
+const fn default_weight() -> i32 {
+    1
 }
 
 /// Mention access to the agent. Exactly one of `allowedUsers` and `allowAll`

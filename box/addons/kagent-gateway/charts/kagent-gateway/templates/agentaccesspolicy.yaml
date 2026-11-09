@@ -1,0 +1,30 @@
+{{- if and (include "kagent-gateway.accessPoliciesEnabled" .) (or .Values.crds.install (.Capabilities.APIVersions.Has "access.kagent-gateway.sh/v1alpha1/AgentAccessPolicy")) }}
+{{- range $agent, $policy := .Values.agentAccessPolicies }}
+---
+apiVersion: access.kagent-gateway.sh/v1alpha1
+kind: AgentAccessPolicy
+metadata:
+  name: {{ $agent }}
+  namespace: {{ $.Values.kagent.namespace }}
+  labels:
+    {{- include "kagent-gateway.labels" $ | nindent 4 }}
+  annotations:
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+spec:
+  agentRefs:
+    {{- range ($policy.agentRefs | default (list (dict "name" $agent))) }}
+    - group: kagent.dev
+      kind: Agent
+      name: {{ .name }}
+      namespace: {{ $.Values.kagent.namespace }}
+      weight: {{ hasKey . "weight" | ternary .weight 1 }}
+    {{- end }}
+  chat:
+    {{- if $policy.allowAll }}
+    allowAll: true
+    {{- else }}
+    allowedUsers:
+      {{- toYaml $policy.allowedUsers | nindent 6 }}
+    {{- end }}
+{{- end }}
+{{- end }}

@@ -95,7 +95,7 @@ mod tests {
             "{out}"
         );
         assert!(out.contains("\nspec:\n  group: access.kagent-gateway.sh\n"));
-        assert!(out.contains("self.metadata.name == self.spec.agentRef.name"));
+        assert!(out.contains("self.all(a, self.exists_one(b, b.name == a.name))"));
         assert!(CHART_PATH.ends_with("agentaccesspolicies.access.kagent-gateway.sh.yaml"));
     }
 

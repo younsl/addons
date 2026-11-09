@@ -18,7 +18,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
 
 use super::Error;
-use crate::access::{Lookup, PolicySource, Rule};
+use crate::access::{Backend, Lookup, Policy, PolicySource, Rule};
 use crate::crd::{AGENT_GROUP, AGENT_KIND, AgentAccessPolicy, AgentAccessPolicyStatus};
 use crate::observability::Metrics;
 
@@ -47,29 +47,68 @@ impl PolicySource for PolicyStore {
         self.store
             .get(&ObjectRef::new(agent).within(&self.namespace))
             .map_or(Lookup::Missing, |p| {
-                Lookup::Found(rule_of(&p, &self.namespace))
+                Lookup::Found(policy_of(&p, &self.namespace))
             })
     }
 }
 
-/// The rule a policy sets. A policy whose `agentRef` points outside the
-/// gateway's namespace is invalid: the gateway would be enforcing a rule
-/// written for some other agent.
-pub fn rule_of(policy: &AgentAccessPolicy, namespace: &str) -> Rule {
-    if policy.spec.agent_ref.namespace != namespace {
-        return Rule::Invalid;
+/// Why a policy cannot be enforced as written, as a condition reason and
+/// message. An `agentRef` outside the gateway's namespace would send a turn
+/// to an Agent the gateway cannot reach, and a policy with no positive weight
+/// has nowhere to send one.
+fn invalid(policy: &AgentAccessPolicy, namespace: &str) -> Option<(&'static str, String)> {
+    let name = policy.name_any();
+    if let Some(r) = policy
+        .spec
+        .agent_refs
+        .iter()
+        .find(|r| r.namespace != namespace)
+    {
+        return Some((
+            "NamespaceMismatch",
+            format!(
+                "agentRefs entry {}/{} is outside {namespace}, the namespace the gateway submits to, so every mention to {name} is denied",
+                r.namespace, r.name
+            ),
+        ));
     }
-    if policy.spec.chat.allow_all {
-        return Rule::AllowAll;
+    if policy.spec.agent_refs.iter().all(|r| r.weight <= 0) {
+        return Some((
+            "NoWeight",
+            format!(
+                "no agentRefs entry has a weight above 0, so every mention to {name} is denied"
+            ),
+        ));
     }
-    Rule::Users(policy.spec.chat.allowed_users.iter().cloned().collect())
+    None
 }
 
-/// Whether the referenced Agent exists.
+/// The rule and the backends a policy sets.
+pub fn policy_of(policy: &AgentAccessPolicy, namespace: &str) -> Policy {
+    let backends = policy
+        .spec
+        .agent_refs
+        .iter()
+        .map(|r| Backend {
+            agent: r.name.clone(),
+            weight: u32::try_from(r.weight).unwrap_or(0),
+        })
+        .collect();
+    let rule = if invalid(policy, namespace).is_some() {
+        Rule::Invalid
+    } else if policy.spec.chat.allow_all {
+        Rule::AllowAll
+    } else {
+        Rule::Users(policy.spec.chat.allowed_users.iter().cloned().collect())
+    };
+    Policy { rule, backends }
+}
+
+/// Whether every referenced Agent exists.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum AgentPresence {
     Found,
-    Missing,
+    Missing(Vec<String>),
     Unknown(String),
 }
 
@@ -78,32 +117,30 @@ pub enum AgentPresence {
 pub fn desired_status(
     policy: &AgentAccessPolicy,
     namespace: &str,
-    agent: &AgentPresence,
+    agents: &AgentPresence,
     previous: &[Condition],
     now: &Time,
 ) -> AgentAccessPolicyStatus {
-    let r = &policy.spec.agent_ref;
     let generation = policy.metadata.generation;
     let mut conditions = previous.to_vec();
+    let refs = policy.spec.agent_refs.len();
 
-    let (status, reason, message) = match rule_of(policy, namespace) {
-        Rule::Invalid => (
-            "False",
-            "NamespaceMismatch",
+    let (status, reason, message) = match invalid(policy, namespace) {
+        Some((reason, message)) => ("False", reason, message),
+        None if policy.spec.chat.allow_all => (
+            "True",
+            "Enforced",
             format!(
-                "agentRef.namespace {} is not {namespace}, the namespace the gateway submits to; every mention to agent {} is denied",
-                r.namespace, r.name
+                "every member of the allowed channels may invoke it, split across {refs} Agents"
             ),
         ),
-        Rule::AllowAll => (
+        None => (
             "True",
             "Enforced",
-            "every member of the allowed channels may invoke the agent".to_string(),
-        ),
-        Rule::Users(users) => (
-            "True",
-            "Enforced",
-            format!("{} Slack members may invoke the agent", users.len()),
+            format!(
+                "{} Slack members may invoke it, split across {refs} Agents",
+                policy.spec.chat.allowed_users.len()
+            ),
         ),
     };
     set_condition(
@@ -116,18 +153,18 @@ pub fn desired_status(
         now,
     );
 
-    let (status, reason, message) = match agent {
+    let (status, reason, message) = match agents {
         AgentPresence::Found => (
             "True",
             "Found",
-            format!("Agent {}/{} exists", r.namespace, r.name),
+            format!("all {refs} referenced Agents exist"),
         ),
-        AgentPresence::Missing => (
+        AgentPresence::Missing(names) => (
             "False",
             "NotFound",
             format!(
-                "Agent {}/{} does not exist; the policy applies once it is created",
-                r.namespace, r.name
+                "Agents {} do not exist, and a thread picked for one fails until it is created",
+                names.join(", ")
             ),
         ),
         AgentPresence::Unknown(why) => ("Unknown", "LookupFailed", why.clone()),
@@ -183,20 +220,38 @@ struct Ctx {
 
 impl Ctx {
     async fn agent_presence(&self, policy: &AgentAccessPolicy) -> AgentPresence {
-        let r = &policy.spec.agent_ref;
-        if r.namespace != self.namespace {
+        if policy
+            .spec
+            .agent_refs
+            .iter()
+            .any(|r| r.namespace != self.namespace)
+        {
             return AgentPresence::Unknown(format!(
                 "not looked up: the gateway reads Agents in {} only",
                 self.namespace
             ));
         }
-        match &self.agents {
-            Err(why) => AgentPresence::Unknown(why.clone()),
-            Ok(api) => match api.get_opt(&r.name).await {
-                Ok(Some(_)) => AgentPresence::Found,
-                Ok(None) => AgentPresence::Missing,
-                Err(err) => AgentPresence::Unknown(format!("Agent lookup failed: {err}")),
-            },
+        let api = match &self.agents {
+            Err(why) => return AgentPresence::Unknown(why.clone()),
+            Ok(api) => api,
+        };
+        let mut missing = Vec::new();
+        for r in &policy.spec.agent_refs {
+            match api.get_opt(&r.name).await {
+                Ok(Some(_)) => {}
+                Ok(None) => missing.push(format!("{}/{}", r.namespace, r.name)),
+                Err(err) => {
+                    return AgentPresence::Unknown(format!(
+                        "Agent {} lookup failed: {err}",
+                        r.name
+                    ));
+                }
+            }
+        }
+        if missing.is_empty() {
+            AgentPresence::Found
+        } else {
+            AgentPresence::Missing(missing)
         }
     }
 }
@@ -343,16 +398,21 @@ mod tests {
     use kube::runtime::reflector::store::Writer;
     use kube::runtime::watcher::Event;
 
+    fn agent_ref(name: &str, namespace: &str, weight: i32) -> AgentRef {
+        AgentRef {
+            group: AGENT_GROUP.into(),
+            kind: AGENT_KIND.into(),
+            name: name.into(),
+            namespace: namespace.into(),
+            weight,
+        }
+    }
+
     fn policy(name: &str, namespace: &str, users: &[&str], allow_all: bool) -> AgentAccessPolicy {
         let mut p = AgentAccessPolicy::new(
             name,
             AgentAccessPolicySpec {
-                agent_ref: AgentRef {
-                    group: AGENT_GROUP.into(),
-                    kind: AGENT_KIND.into(),
-                    name: name.into(),
-                    namespace: namespace.into(),
-                },
+                agent_refs: vec![agent_ref(name, namespace, 1)],
                 chat: ChatAccess {
                     allowed_users: users.iter().map(|u| (*u).to_string()).collect(),
                     allow_all,
@@ -369,19 +429,38 @@ mod tests {
     }
 
     #[test]
-    fn rule_follows_the_spec() {
+    fn policy_follows_the_spec() {
+        let p = policy_of(&policy("a", "kagent", &["U1"], false), "kagent");
+        assert_eq!(p.rule, Rule::Users(["U1".to_string()].into()));
         assert_eq!(
-            rule_of(&policy("a", "kagent", &["U1"], false), "kagent"),
-            Rule::Users(["U1".to_string()].into())
+            p.backends,
+            vec![Backend {
+                agent: "a".into(),
+                weight: 1
+            }]
         );
         assert_eq!(
-            rule_of(&policy("a", "kagent", &[], true), "kagent"),
+            policy_of(&policy("a", "kagent", &[], true), "kagent").rule,
             Rule::AllowAll
         );
         assert_eq!(
-            rule_of(&policy("a", "other", &["U1"], false), "kagent"),
+            policy_of(&policy("a", "other", &["U1"], false), "kagent").rule,
             Rule::Invalid
         );
+
+        let mut split = policy("a", "kagent", &["U1"], false);
+        split.spec.agent_refs = vec![
+            agent_ref("a-v1", "kagent", 90),
+            agent_ref("a-v2", "kagent", 10),
+        ];
+        let p = policy_of(&split, "kagent");
+        assert_eq!(p.backends[1].weight, 10);
+        assert!(matches!(p.rule, Rule::Users(_)));
+
+        split.spec.agent_refs = vec![agent_ref("a-v1", "kagent", 0)];
+        assert_eq!(policy_of(&split, "kagent").rule, Rule::Invalid);
+        let s = desired_status(&split, "kagent", &AgentPresence::Found, &[], &time(1));
+        assert_eq!(s.conditions[1].reason, "NoWeight");
     }
 
     #[test]
@@ -394,13 +473,24 @@ mod tests {
             (ready.type_.as_str(), ready.status.as_str()),
             (READY, "True")
         );
-        assert!(ready.message.starts_with("2 Slack members"));
+        assert!(
+            ready.message.starts_with("2 Slack members"),
+            "{}",
+            ready.message
+        );
         let resolved = &s.conditions[0];
         assert_eq!(resolved.type_, AGENT_RESOLVED);
         assert_eq!(resolved.status, "True");
 
-        let s = desired_status(&p, "kagent", &AgentPresence::Missing, &[], &time(1));
+        let s = desired_status(
+            &p,
+            "kagent",
+            &AgentPresence::Missing(vec!["kagent/a".into()]),
+            &[],
+            &time(1),
+        );
         assert_eq!(s.conditions[0].reason, "NotFound");
+        assert!(s.conditions[0].message.contains("kagent/a"));
         let s = desired_status(
             &p,
             "kagent",
@@ -429,14 +519,9 @@ mod tests {
     #[test]
     fn transition_time_moves_only_when_status_changes() {
         let p = policy("a", "kagent", &["U1"], false);
-        let first = desired_status(&p, "kagent", &AgentPresence::Missing, &[], &time(1));
-        let same = desired_status(
-            &p,
-            "kagent",
-            &AgentPresence::Missing,
-            &first.conditions,
-            &time(2),
-        );
+        let missing = AgentPresence::Missing(vec!["kagent/a".into()]);
+        let first = desired_status(&p, "kagent", &missing, &[], &time(1));
+        let same = desired_status(&p, "kagent", &missing, &first.conditions, &time(2));
         assert_eq!(first, same);
         let flipped = desired_status(
             &p,
@@ -462,7 +547,13 @@ mod tests {
         ps.synced.store(true, Ordering::Release);
         assert_eq!(
             ps.lookup("a"),
-            Lookup::Found(Rule::Users(["U1".to_string()].into()))
+            Lookup::Found(Policy {
+                rule: Rule::Users(["U1".to_string()].into()),
+                backends: vec![Backend {
+                    agent: "a".into(),
+                    weight: 1
+                }],
+            })
         );
         assert_eq!(ps.lookup("b"), Lookup::Missing);
     }

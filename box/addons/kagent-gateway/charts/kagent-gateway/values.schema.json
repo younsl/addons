@@ -183,6 +183,87 @@
         }
       }
     },
+    "agentAccessPolicies": {
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+        "maxLength": 63
+      },
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "allowedUsers": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 1000,
+            "items": {
+              "type": "string",
+              "pattern": "^[UW][A-Z0-9]+$"
+            }
+          },
+          "allowAll": {
+            "type": "boolean"
+          },
+          "agentRefs": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 16,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "name"
+              ],
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+                  "maxLength": 253
+                },
+                "weight": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 1000000
+                }
+              }
+            }
+          }
+        },
+        "oneOf": [
+          {
+            "required": [
+              "allowedUsers"
+            ],
+            "not": {
+              "required": [
+                "allowAll"
+              ],
+              "properties": {
+                "allowAll": {
+                  "const": true
+                }
+              }
+            }
+          },
+          {
+            "required": [
+              "allowAll"
+            ],
+            "properties": {
+              "allowAll": {
+                "const": true
+              }
+            },
+            "not": {
+              "required": [
+                "allowedUsers"
+              ]
+            }
+          }
+        ]
+      }
+    },
     "kagent": {
       "type": "object",
       "additionalProperties": false,

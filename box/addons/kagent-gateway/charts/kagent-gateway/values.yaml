@@ -109,6 +109,19 @@ chat:
   # -- (int) Maximum mention turns running at once. Separate from `analysis.maxConcurrent` so a burst of questions cannot starve alert analysis of model concurrency.
   maxConcurrent: 2
 
+# -- (object) AgentAccessPolicy objects rendered into `kagent.namespace`, keyed by the agent name `chat.agent` and `chat.agentMap` route to. Each entry sets exactly one of `allowedUsers` (Slack member IDs) and `allowAll: true`, and optionally `agentRefs` (`name`, `weight` defaulting to 1) to split new threads across Agents like Gateway API `backendRefs`. Without `agentRefs` the key itself is the only Agent. Rendered only when `chat.enabled` and `chat.accessPolicies.enabled` are both true. A name without an entry keeps `chat.allowedUsers`.
+agentAccessPolicies: {}
+  # security-alert-triage-agent:
+  #   allowedUsers:
+  #     - U01234567
+  # aws-alert-triage-agent:
+  #   allowAll: true
+  #   agentRefs:
+  #     - name: aws-alert-triage-agent
+  #       weight: 90
+  #     - name: aws-alert-triage-agent-canary
+  #       weight: 10
+
 kagent:
   # -- (string) Base URL of the kagent controller; the A2A path is appended to it
   url: "http://kagent-controller.kagent:8083"
