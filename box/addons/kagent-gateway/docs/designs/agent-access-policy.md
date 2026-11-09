@@ -172,6 +172,14 @@ Before this design one decision, which agent owns a channel, was written in up t
 - **CRD not installed:** same as missing RBAC. The watch fails and mentions fail closed.
 - **Alerts:** an unsynced cache, no matching policy, or a matched policy that cannot be enforced skips the analysis (`policy_unsynced`, `unrouted`, `policy_invalid`). The skip takes no deduplication slot, so Alertmanager's next resend is analysed once the cause is gone.
 
+### Readiness wakeup
+
+![Policy cache sync](assets/policy-cache-sync.svg)
+
+The Controller and `track_sync` both wait on the same store's readiness signal. kube-runtime backs that signal with a single oneshot channel that keeps one waker, so when the initial list finishes only the waiter that registered last is woken. In the first rollout the Controller won: reconciles ran and every policy read `Ready`, while `track_sync` slept, `access_policies_synced` stayed 0, and every alert and mention failed closed as `policy_unsynced`. Restarts repeated the same order.
+
+`track_sync` now waits through `wait_ready`, which polls the signal again every second. A signal that already fired returns at once, so a lost wakeup costs at most a second. `Ready` on a policy comes from the reconciler and says nothing about the routing cache, so `access_policies_synced` is the signal to watch.
+
 Readiness is not tied to the policy cache. A broken cache must not make the pod unready and stop alert analysis, the same reasoning that keeps the Socket Mode connection out of readiness.
 
 ## Configuration
@@ -203,13 +211,15 @@ With the feature on, the chart adds:
 
 `chat_events_total` gains the drop reasons `policy_unsynced` and `policy_invalid`. A refused mention still gets no reply and no hint, so `chat_access_denials_total` is what turns "the bot ignored me" into a config answer.
 
-Startup logs one line listing the policies once synced, and the existing allow list line now says whether it applies to every agent or only to agents without a policy.
+Startup logs one line listing the policies once synced, with `elapsed_ms` from the controller start, and the existing allow list line now says whether it applies to every agent or only to agents without a policy.
 
 ## Testing
 
 - `access.rs`: fallback to the global list, replacement by a policy, `allowAll`, and both fail-closed cases.
 - `k8s/policy.rs`: rule derivation, every condition and reason, `lastTransitionTime` held while the status holds, and the store answering `Unsynced` until ready.
 - `gateway/chat.rs`: a policy on the routed agent replaces the global list while an unmapped channel keeps it, and an unsynced source refuses every mention.
+- `k8s/policy.rs`: `start()` against a fake API server syncs the cache while the Controller waits on the same store and still reconciles. The single-wait `track_sync` fails it. A second waiter that steals the wakeup no longer strands `wait_ready`, and shutdown stops it.
+- `gateway.rs`: alert routing under policies (unsynced, matched, unrouted, catch-all, matched policy gone), and an alert during an unsynced cache is skipped and counted as `policy_unsynced`.
 - `tests/crd_drift.rs`: the chart CRD equals what the Rust types generate.
 - API server: 26 cases (3 valid objects, 23 violations) applied with server-side dry run against a kind cluster on Kubernetes 1.37 accept and reject as expected. The same run caught a rule over the CEL cost budget that no unit test can see.
 

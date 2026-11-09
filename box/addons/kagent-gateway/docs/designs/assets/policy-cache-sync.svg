@@ -1,0 +1,93 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 640" font-family="Geist, Inter, ui-sans-serif, system-ui, -apple-system, sans-serif">
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0 0L10 5L0 10z" fill="#666"/>
+    </marker>
+    <marker id="g" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0 0L10 5L0 10z" fill="#50e3c2"/>
+    </marker>
+    <marker id="r" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0 0L10 5L0 10z" fill="#ff6166"/>
+    </marker>
+  </defs>
+
+  <rect width="1000" height="640" fill="#000"/>
+  <text x="40" y="44" fill="#888" font-size="11" letter-spacing="1.2" font-family="ui-monospace, SFMono-Regular, Menlo, monospace">POLICY CACHE SYNC</text>
+
+  <rect x="40" y="76" width="180" height="64" rx="6" fill="#0a0a0a" stroke="#333"/>
+  <text x="58" y="102" fill="#ededed" font-size="14" font-weight="600">API server</text>
+  <text x="58" y="122" fill="#888" font-size="11" font-family="ui-monospace, SFMono-Regular, Menlo, monospace">list + watch policies</text>
+
+  <rect x="260" y="60" width="700" height="324" rx="10" fill="none" stroke="#262626" stroke-dasharray="4 4"/>
+  <text x="280" y="84" fill="#666" font-size="11" font-family="ui-monospace, SFMono-Regular, Menlo, monospace">kagent-gateway pod</text>
+
+  <rect x="280" y="100" width="200" height="64" rx="6" fill="#0a0a0a" stroke="#333"/>
+  <text x="298" y="126" fill="#ededed" font-size="14" font-weight="600">Reflector</text>
+  <text x="298" y="146" fill="#888" font-size="11" font-family="ui-monospace, SFMono-Regular, Menlo, monospace">Writer, InitDone</text>
+
+  <rect x="520" y="100" width="220" height="64" rx="6" fill="#0a0a0a" stroke="#ededed"/>
+  <text x="538" y="126" fill="#ededed" font-size="14" font-weight="600">Readiness signal</text>
+  <text x="538" y="146" fill="#888" font-size="11" font-family="ui-monospace, SFMono-Regular, Menlo, monospace">one oneshot, one waker</text>
+
+  <rect x="280" y="220" width="200" height="72" rx="6" fill="#0a0a0a" stroke="#333"/>
+  <text x="298" y="246" fill="#ededed" font-size="14" font-weight="600">Controller</text>
+  <text x="298" y="266" fill="#888" font-size="11" font-family="ui-monospace, SFMono-Regular, Menlo, monospace">delay_tasks_until(ready)</text>
+  <text x="298" y="282" fill="#888" font-size="11" font-family="ui-monospace, SFMono-Regular, Menlo, monospace">reconcile, status Ready</text>
+
+  <rect x="520" y="220" width="220" height="72" rx="6" fill="#0a0a0a" stroke="#333"/>
+  <text x="538" y="246" fill="#ededed" font-size="14" font-weight="600">track_sync</text>
+  <text x="538" y="266" fill="#888" font-size="11" font-family="ui-monospace, SFMono-Regular, Menlo, monospace">wait_ready()</text>
+  <text x="538" y="282" fill="#50e3c2" font-size="11" font-family="ui-monospace, SFMono-Regular, Menlo, monospace">re-poll every 1s</text>
+
+  <rect x="780" y="220" width="160" height="72" rx="6" fill="#0a0a0a" stroke="#333"/>
+  <text x="798" y="246" fill="#ededed" font-size="14" font-weight="600">Routing</text>
+  <text x="798" y="266" fill="#888" font-size="11" font-family="ui-monospace, SFMono-Regular, Menlo, monospace">synced flag</text>
+  <text x="798" y="282" fill="#888" font-size="11" font-family="ui-monospace, SFMono-Regular, Menlo, monospace">alerts, mentions</text>
+
+  <g stroke="#666" stroke-width="1.2" fill="none" marker-end="url(#a)">
+    <path d="M222 108H278"/>
+    <path d="M482 132H518"/>
+    <path d="M590 166V196H380V218"/>
+  </g>
+  <g stroke="#ff6166" stroke-width="1.2" fill="none" stroke-dasharray="4 4" marker-end="url(#r)">
+    <path d="M670 166V218"/>
+  </g>
+  <g stroke="#50e3c2" stroke-width="1.2" fill="none" marker-end="url(#g)">
+    <path d="M742 256H778"/>
+  </g>
+  <text x="682" y="198" fill="#ff6166" font-size="10.5" font-family="ui-monospace, SFMono-Regular, Menlo, monospace">wakeup lost</text>
+
+  <text x="280" y="324" fill="#ff6166" font-size="12" font-weight="600">Before</text>
+  <text x="340" y="324" fill="#a1a1a1" font-size="12">Two tasks wait on one signal and only the last registered waker fires. The Controller wins, so</text>
+  <text x="340" y="342" fill="#a1a1a1" font-size="12">policies read Ready while track_sync sleeps, synced stays false, and every alert and mention fails closed.</text>
+  <text x="280" y="368" fill="#50e3c2" font-size="12" font-weight="600">After</text>
+  <text x="340" y="368" fill="#a1a1a1" font-size="12">track_sync polls the signal again every second, which returns at once after it fired.</text>
+
+  <text x="40" y="424" fill="#888" font-size="11" letter-spacing="1.2" font-family="ui-monospace, SFMono-Regular, Menlo, monospace">GUARDS</text>
+
+  <rect x="40" y="440" width="300" height="168" rx="6" fill="#0a0a0a" stroke="#333"/>
+  <text x="58" y="466" fill="#ededed" font-size="14" font-weight="600">Prevent: tests</text>
+  <text x="58" y="490" fill="#a1a1a1" font-size="11.5">start() against a fake API server:</text>
+  <text x="58" y="507" fill="#a1a1a1" font-size="11.5">cache syncs while the Controller waits</text>
+  <text x="58" y="531" fill="#a1a1a1" font-size="11.5">A second waiter steals the wakeup</text>
+  <text x="58" y="555" fill="#a1a1a1" font-size="11.5">Alert routing: unsynced, matched,</text>
+  <text x="58" y="572" fill="#a1a1a1" font-size="11.5">unrouted, catch-all, policy gone</text>
+  <text x="58" y="596" fill="#666" font-size="10.5" font-family="ui-monospace, SFMono-Regular, Menlo, monospace">old single wait fails the first test</text>
+
+  <rect x="350" y="440" width="300" height="168" rx="6" fill="#0a0a0a" stroke="#333"/>
+  <text x="368" y="466" fill="#ededed" font-size="14" font-weight="600">Detect: metrics and logs</text>
+  <text x="368" y="490" fill="#a1a1a1" font-size="11" font-family="ui-monospace, SFMono-Regular, Menlo, monospace">access_policies_synced == 0</text>
+  <text x="368" y="510" fill="#a1a1a1" font-size="11" font-family="ui-monospace, SFMono-Regular, Menlo, monospace">chat_events_total</text>
+  <text x="368" y="526" fill="#666" font-size="11" font-family="ui-monospace, SFMono-Regular, Menlo, monospace">  {result="policy_unsynced"}</text>
+  <text x="368" y="546" fill="#a1a1a1" font-size="11" font-family="ui-monospace, SFMono-Regular, Menlo, monospace">analyses_skipped_total</text>
+  <text x="368" y="562" fill="#666" font-size="11" font-family="ui-monospace, SFMono-Regular, Menlo, monospace">  {reason="policy_unsynced"}</text>
+  <text x="368" y="590" fill="#a1a1a1" font-size="11.5">"access policies synced" with elapsed_ms</text>
+
+  <rect x="660" y="440" width="300" height="168" rx="6" fill="#0a0a0a" stroke="#333"/>
+  <text x="678" y="466" fill="#ededed" font-size="14" font-weight="600">Inspect: kubectl</text>
+  <text x="678" y="490" fill="#a1a1a1" font-size="11" font-family="ui-monospace, SFMono-Regular, Menlo, monospace">kubectl get aap</text>
+  <text x="678" y="510" fill="#a1a1a1" font-size="11.5">AGENTS shows who answers each policy</text>
+  <text x="678" y="534" fill="#a1a1a1" font-size="11.5">Ready comes from the reconciler, not</text>
+  <text x="678" y="551" fill="#a1a1a1" font-size="11.5">from the routing cache: a Ready policy</text>
+  <text x="678" y="568" fill="#a1a1a1" font-size="11.5">with synced == 0 still drops traffic</text>
+</svg>
