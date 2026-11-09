@@ -18,6 +18,8 @@ Receives Alertmanager webhooks, asks a [kagent](https://kagent.dev) agent to inv
 - **Observability**: Prometheus metrics for every stage, plus ServiceMonitor and PrometheusRule in the chart.
 - **Small footprint**: Static musl binary on scratch, with outbound Socket Mode only and no inbound Slack endpoint.
 
+## Documentation
+
 Guides:
 
 - [How it works](docs/how-it-works.md)

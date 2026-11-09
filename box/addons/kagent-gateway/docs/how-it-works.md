@@ -8,6 +8,8 @@ Alertmanager keeps posting alerts through its own `slack_configs`. The gateway r
 
 ![Architecture](assets/architecture.svg)
 
+The gateway runs in the kagent namespace next to the controller and the custom resources it works with. Agent objects (`kagent.dev`) define what the controller runs, and AgentAccessPolicy objects (`access.kagent-gateway.sh`) decide who may invoke each agent name and which Agents answer it. The gateway watches the policies and patches only their status. Alertmanager usually lives in a monitoring namespace and reaches the gateway through its Service.
+
 1. Alertmanager posts the alert and, independently, POSTs the group to the webhook.
 2. Alerts the filter rejects end there: the gateway makes no Slack call at all.
 3. Otherwise the gateway submits the alert to the agent as a non-blocking A2A `message/send` and polls `tasks/get` until the task finishes. When the analysis deadline expires first, the task is cancelled with `tasks/cancel` so it stops consuming model tokens.

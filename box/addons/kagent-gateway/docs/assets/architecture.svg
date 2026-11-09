@@ -1,58 +1,86 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 420" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 500" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">
   <defs>
     <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
       <path d="M 0 0 L 10 5 L 0 10 z" fill="#6e6e6e"/>
     </marker>
   </defs>
 
-  <rect width="880" height="420" fill="#0a0a0a"/>
+  <rect width="880" height="500" fill="#0a0a0a"/>
 
   <!-- kubernetes cluster boundary -->
   <g>
-    <rect x="24" y="148" width="832" height="264" rx="8" fill="#0e0e0e" stroke="#3a3a3a" stroke-width="1" stroke-dasharray="5 4"/>
-    <text x="40" y="168" fill="#6e6e6e" font-size="11">Kubernetes cluster</text>
+    <rect x="24" y="120" width="832" height="364" rx="8" fill="#0e0e0e" stroke="#3a3a3a" stroke-width="1" stroke-dasharray="5 4"/>
+    <text x="40" y="140" fill="#6e6e6e" font-size="11">Kubernetes cluster</text>
+  </g>
+
+  <!-- namespaces -->
+  <g fill="none" stroke="#2e2e2e" stroke-width="1" stroke-dasharray="3 3">
+    <rect x="36" y="152" width="180" height="160" rx="6"/>
+    <rect x="260" y="152" width="584" height="320" rx="6"/>
+  </g>
+  <g fill="#5e5e5e" font-size="11">
+    <text x="48" y="170">namespace/monitoring</text>
+    <text x="272" y="170">namespace/kagent</text>
   </g>
 
   <!-- flows -->
   <g stroke="#6e6e6e" stroke-width="1.2" fill="none" marker-end="url(#arrow)">
-    <path d="M 185 180 V 88 H 656"/>
-    <path d="M 220 208 H 326"/>
-    <path d="M 550 192 H 750 V 120"/>
-    <path d="M 550 224 H 750 V 236"/>
-    <path d="M 750 296 V 336"/>
+    <path d="M 194 196 V 68 H 656"/>
+    <path d="M 206 222 H 288"/>
+    <path d="M 440 194 V 108 H 750 V 98"/>
+    <path d="M 490 222 H 618"/>
+    <path d="M 715 250 V 368"/>
+    <path d="M 462 370 V 252"/>
+    <path d="M 492 396 H 618"/>
+  </g>
+  <g stroke="#4a4a4a" stroke-width="1.2" fill="none" stroke-dasharray="4 4" marker-end="url(#arrow)">
+    <path d="M 482 252 V 368"/>
   </g>
 
   <g fill="#8b8b8b" font-size="11">
-    <text x="205" y="80">slack_configs (alert message)</text>
-    <text x="273" y="200" text-anchor="middle">webhook</text>
-    <text x="558" y="184">find parent, thread reply</text>
-    <text x="558" y="216">A2A send, poll, cancel</text>
-    <text x="762" y="322">runs task</text>
+    <text x="250" y="60">slack_configs (alert message)</text>
+    <text x="238" y="214" text-anchor="middle" font-size="10">webhook</text>
+    <text x="450" y="102">thread reply, Socket Mode</text>
+    <text x="554" y="214" text-anchor="middle">A2A send,</text>
+    <text x="554" y="240" text-anchor="middle">poll, cancel</text>
+    <text x="727" y="304">reconciles,</text>
+    <text x="727" y="320">runs task</text>
+    <text x="494" y="300">watch</text>
+    <text x="494" y="316">patch status</text>
+    <text x="555" y="388" text-anchor="middle">agentRefs</text>
+    <text x="555" y="414" text-anchor="middle">weight</text>
   </g>
 
   <!-- nodes -->
   <g>
-    <rect x="40" y="180" width="180" height="56" rx="6" fill="#141414" stroke="#3a3a3a"/>
-    <text x="130" y="212" text-anchor="middle" fill="#e8e8e8" font-size="14">Alertmanager</text>
-    <text x="130" y="256" text-anchor="middle" fill="#7a7a7a" font-size="11">Prometheus or Mimir</text>
+    <rect x="46" y="196" width="160" height="52" rx="6" fill="#141414" stroke="#3a3a3a"/>
+    <text x="126" y="227" text-anchor="middle" fill="#e8e8e8" font-size="14">Alertmanager</text>
+    <text x="126" y="274" text-anchor="middle" fill="#7a7a7a" font-size="11">Prometheus or Mimir</text>
 
-    <rect x="330" y="180" width="220" height="56" rx="6" fill="#0d1b2a" stroke="#58a6ff" stroke-width="1.6"/>
-    <text x="440" y="212" text-anchor="middle" fill="#cfe6ff" font-size="14">kagent-gateway</text>
+    <rect x="290" y="196" width="200" height="52" rx="6" fill="#0d1b2a" stroke="#58a6ff" stroke-width="1.6"/>
+    <text x="390" y="227" text-anchor="middle" fill="#cfe6ff" font-size="14">kagent-gateway</text>
 
-    <g fill="#6e8ba6" font-size="11" text-anchor="middle">
-      <text x="440" y="256">filter by severity and label</text>
-      <text x="440" y="272">dedupe per alert group</text>
-      <text x="440" y="288">bound concurrent analyses</text>
-      <text x="440" y="304">render prompt, post analysis</text>
+    <g fill="#6e8ba6" font-size="11">
+      <text x="292" y="274">filter and dedupe</text>
+      <text x="292" y="290">bound concurrency</text>
+      <text x="292" y="306">check access policy</text>
+      <text x="292" y="322">post thread reply</text>
     </g>
 
-    <rect x="660" y="64" width="180" height="56" rx="6" fill="#141414" stroke="#3a3a3a"/>
-    <text x="750" y="96" text-anchor="middle" fill="#e8e8e8" font-size="14">Slack</text>
+    <rect x="660" y="40" width="180" height="56" rx="6" fill="#141414" stroke="#3a3a3a"/>
+    <text x="750" y="72" text-anchor="middle" fill="#e8e8e8" font-size="14">Slack</text>
 
-    <rect x="660" y="240" width="180" height="56" rx="6" fill="#141414" stroke="#3a3a3a"/>
-    <text x="750" y="272" text-anchor="middle" fill="#e8e8e8" font-size="14">kagent controller</text>
+    <rect x="620" y="196" width="190" height="52" rx="6" fill="#141414" stroke="#3a3a3a"/>
+    <text x="715" y="227" text-anchor="middle" fill="#e8e8e8" font-size="14">kagent controller</text>
 
-    <rect x="660" y="340" width="180" height="48" rx="6" fill="#101010" stroke="#2e2e2e"/>
-    <text x="750" y="369" text-anchor="middle" fill="#bdbdbd" font-size="13">alert-triage-agent</text>
+    <rect x="290" y="370" width="200" height="56" rx="6" fill="#101010" stroke="#58a6ff" stroke-opacity="0.55" stroke-dasharray="4 3"/>
+    <text x="390" y="395" text-anchor="middle" fill="#cfe6ff" font-size="13">AgentAccessPolicy</text>
+    <text x="390" y="413" text-anchor="middle" fill="#6e8ba6" font-size="10">access.kagent-gateway.sh</text>
+    <text x="484" y="385" text-anchor="end" fill="#5e5e5e" font-size="9">CR</text>
+
+    <rect x="620" y="370" width="190" height="56" rx="6" fill="#101010" stroke="#3a3a3a" stroke-dasharray="4 3"/>
+    <text x="715" y="395" text-anchor="middle" fill="#bdbdbd" font-size="13">Agent</text>
+    <text x="715" y="413" text-anchor="middle" fill="#7a7a7a" font-size="10">kagent.dev</text>
+    <text x="804" y="385" text-anchor="end" fill="#5e5e5e" font-size="9">CR</text>
   </g>
 </svg>
