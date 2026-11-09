@@ -183,6 +183,13 @@ impl Gateway {
             .access
             .get()
             .map_or(Lookup::Missing, |source| source.lookup(agent));
+        // The route came from an earlier read of the cache. A policy deleted
+        // in between must not fall through to CHAT_ALLOWED_USERS, which is
+        // empty under policy routing and would allow everyone.
+        if self.cfg.policy_routing() && lookup == Lookup::Missing {
+            warn!(agent, "matched policy is gone; refusing the mention");
+            return Err("channel_denied");
+        }
         if lookup == Lookup::Unsynced {
             warn!(
                 agent,
@@ -1397,6 +1404,33 @@ mod tests {
         let (g, _, _) = routed_gateway(None);
         assert_eq!(g.resolve_agent(&payload("dba")), Err("policy_unsynced"));
         assert_eq!(g.resolve_channel(&payload("dba")), "#dba");
+    }
+
+    #[tokio::test]
+    async fn a_route_whose_policy_vanished_fails_closed() {
+        let mut cfg = chat_config();
+        cfg.chat_access_policies = true;
+        cfg.chat_allowed_users.clear();
+        let (g, _, agent, metrics) = gateway(cfg);
+        g.set_access_policies(Arc::new(RoutedPolicies {
+            policies: std::collections::HashMap::new(),
+            routes: Some(vec![crate::access::Route {
+                name: "deleted".into(),
+                slack_channels: vec!["*".into()],
+                ..Default::default()
+            }]),
+        }));
+        run(&g, mention("<@UBOT> q")).await;
+        assert!(agent.requests().is_empty());
+        assert_eq!(
+            Metrics::counter(
+                &metrics.chat_events,
+                &ResultLabels {
+                    result: "channel_denied".into()
+                }
+            ),
+            1
+        );
     }
 
     #[tokio::test]
