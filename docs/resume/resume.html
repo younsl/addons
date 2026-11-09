@@ -28,13 +28,13 @@
 /* ===== BASE STYLES ===== */
 body {
   font-family: var(--font-family);
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 400;
   line-height: var(--line-height-normal);
   color: black;
   max-width: 800px;
   margin: 0 auto;
-  padding: 2em;
+  padding: 2em calc(2em + 5%);
   background-color: white;
 }
 
@@ -76,7 +76,7 @@ h3 {
 /* ===== PRINT STYLES ===== */
 @media print {
   @page {
-    margin: 0.8in;
+    margin: 0.8in 1.225in;
   }
   
   
@@ -130,7 +130,7 @@ h3 {
     max-width: 100%;
     padding: 0;
     font-family: var(--font-family);
-    font-size: 16px;
+    font-size: 15px;
     color: black;
     line-height: var(--line-height-normal) !important;
   }
@@ -374,7 +374,7 @@ h3 + .job-header {
 @media screen and (max-width: 768px) {
   /* Adjust base font size for mobile */
   body {
-    font-size: 15px;
+    font-size: 14px;
   }
   
   /* Stack job header lines vertically on mobile */
