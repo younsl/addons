@@ -1,3 +1,10 @@
++++
+updated = 2026-10-31
+
+[taxonomies]
+tags = ["sre", "ai", "automation", "incident-response", "rebuttal"]
++++
+
 # AI does not deskill SREs, unverified delegation does
 
 English | [한국어](ai-isnt-deskilling-sres-rebuttal.ko.md)

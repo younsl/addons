@@ -1,3 +1,10 @@
++++
+updated = 2026-10-31
+
+[taxonomies]
+tags = ["ai", "software-craft", "rails", "translation"]
++++
+
 # DHH Rails World 2026 키노트 반론 (번역)
 
 > 원문: Sergio Visinoni, Sudo Make Me a CTO 뉴스레터. 한국어 번역본이며 뉴스레터 구독 안내와 관련 글 카드는 생략했다.

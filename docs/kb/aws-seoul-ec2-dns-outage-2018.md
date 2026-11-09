@@ -1,3 +1,10 @@
++++
+updated = 2026-11-10
+
+[taxonomies]
+tags = ["postmortem", "aws", "ec2", "dns", "configuration"]
++++
+
 # AWS Seoul Region DNS outage
 
 English | [한국어](aws-seoul-ec2-dns-outage-2018.ko.md)

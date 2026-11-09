@@ -1,3 +1,10 @@
++++
+updated = 2026-10-31
+
+[taxonomies]
+tags = ["sre", "ai", "automation", "incident-response", "rebuttal"]
++++
+
 # AI는 SRE의 숙련도를 떨어뜨리지 않는다, 검증 없는 위임이 떨어뜨린다
 
 [English](ai-isnt-deskilling-sres-rebuttal.md) | 한국어

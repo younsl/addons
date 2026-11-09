@@ -1,3 +1,10 @@
++++
+updated = 2026-11-10
+
+[taxonomies]
+tags = ["postmortem", "kubernetes", "calico", "bgp", "networking"]
++++
+
 # Reddit Pi-Day outage
 
 English | [한국어](reddit-pi-day-outage-2023.ko.md)
