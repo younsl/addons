@@ -30,6 +30,7 @@ use crate::observability::Metrics;
 const RECHECK: Duration = Duration::from_mins(5);
 const RETRY: Duration = Duration::from_secs(30);
 const GAUGE_INTERVAL: Duration = Duration::from_secs(30);
+const READY_POLL: Duration = Duration::from_secs(1);
 
 pub const ACCEPTED: &str = "Accepted";
 pub const READY: &str = "Ready";
@@ -464,6 +465,23 @@ pub async fn start(
     }
 }
 
+/// Waits for the initial list. kube-runtime's readiness signal wakes only the
+/// last of several concurrent waiters, and the Controller waits on the same
+/// store, so a single wait can sleep forever; polling again every
+/// `READY_POLL` picks up a signal that already fired.
+async fn wait_ready(store: &Store<AgentAccessPolicy>, shutdown: &CancellationToken) -> bool {
+    loop {
+        tokio::select! {
+            ready = tokio::time::timeout(READY_POLL, store.wait_until_ready()) => match ready {
+                Ok(Ok(())) => return true,
+                Ok(Err(_)) => return false,
+                Err(_) => {}
+            },
+            () = shutdown.cancelled() => return false,
+        }
+    }
+}
+
 /// Flips the cache to synced after the initial list, then keeps the policy
 /// count gauge current. Deletions never reach the reconciler, so the count
 /// is read from the cache rather than tallied there.
@@ -474,13 +492,8 @@ async fn track_sync(
     namespace: String,
     shutdown: CancellationToken,
 ) {
-    tokio::select! {
-        ready = store.wait_until_ready() => {
-            if ready.is_err() {
-                return;
-            }
-        }
-        () = shutdown.cancelled() => return,
+    if !wait_ready(&store, &shutdown).await {
+        return;
     }
     synced.store(true, Ordering::Release);
     metrics.access_policies_synced.set(1);
@@ -511,6 +524,42 @@ mod tests {
     use crate::crd::{AgentAccessPolicySpec, AgentRef, ChatAccess, LabelMatch, RouteMatch};
     use kube::runtime::reflector::store::Writer;
     use kube::runtime::watcher::Event;
+
+    #[tokio::test]
+    async fn wait_ready_survives_a_second_waiter_stealing_the_wakeup() {
+        use std::future::Future as _;
+        use std::task::{Context, Waker};
+
+        let mut writer: Writer<AgentAccessPolicy> = Writer::default();
+        let store = writer.as_reader();
+        let shutdown = CancellationToken::new();
+        let ours = tokio::spawn({
+            let store = store.clone();
+            async move { wait_ready(&store, &shutdown).await }
+        });
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        let mut other = Box::pin(store.wait_until_ready());
+        assert!(
+            other
+                .as_mut()
+                .poll(&mut Context::from_waker(Waker::noop()))
+                .is_pending()
+        );
+
+        writer.apply_watcher_event(&Event::InitDone);
+
+        let ready = tokio::time::timeout(READY_POLL * 3, ours).await;
+        assert!(matches!(ready, Ok(Ok(true))));
+    }
+
+    #[tokio::test]
+    async fn wait_ready_stops_on_shutdown() {
+        let writer: Writer<AgentAccessPolicy> = Writer::default();
+        let store = writer.as_reader();
+        let shutdown = CancellationToken::new();
+        shutdown.cancel();
+        assert!(!wait_ready(&store, &shutdown).await);
+    }
 
     fn agent_ref(name: &str, namespace: &str, weight: i32) -> AgentRef {
         AgentRef {
