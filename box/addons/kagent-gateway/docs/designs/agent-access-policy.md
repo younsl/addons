@@ -33,7 +33,7 @@ An env-only design (`CHAT_AGENT_ALLOWED_USERS=agent=U1|U2,...`) was considered f
 
 ## Architecture
 
-![Agent access policy](agent-access-policy.svg)
+![Agent access policy](assets/agent-access-policy.svg)
 
 The gateway runs a controller over `AgentAccessPolicy` objects in `KAGENT_NAMESPACE`. It reads them from its reflector cache on every mention and writes back only their status. Each policy points at one or more kagent `Agent`s through `agentRefs`, and a mention reaches one of them over A2A only when the asker passes the policy.
 

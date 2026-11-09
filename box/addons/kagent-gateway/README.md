@@ -28,7 +28,7 @@ Designs:
 
 Alertmanager posts the alert to Slack and the same group to the webhook. The gateway analyses it, finds the notification by the fingerprint in its footer, and replies in that thread. See [How it works](docs/how-it-works.md).
 
-![Architecture](docs/architecture.svg)
+![Architecture](docs/assets/architecture.svg)
 
 ## Prompt assembly
 

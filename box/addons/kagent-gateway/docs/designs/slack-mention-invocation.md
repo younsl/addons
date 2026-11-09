@@ -91,7 +91,7 @@ that the value becomes a real knob rather than a formality.
 
 ## Architecture
 
-![Architecture](slack-mention-invocation.svg)
+![Architecture](assets/slack-mention-invocation.svg)
 
 The alert path stays exactly where it is, and the same Slack client, A2A
 client, and metrics registry serve both paths.

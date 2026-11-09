@@ -6,7 +6,7 @@ This guide explains how an Alertmanager notification becomes an analysis in the 
 
 Alertmanager keeps posting alerts through its own `slack_configs`. The gateway receives the same notification as a webhook, investigates it, and replies in that alert's thread.
 
-![Architecture](architecture.svg)
+![Architecture](assets/architecture.svg)
 
 1. Alertmanager posts the alert and, independently, POSTs the group to the webhook.
 2. Alerts the filter rejects end there: the gateway makes no Slack call at all.
@@ -25,7 +25,7 @@ Only the alert group's first analysis is paid for: a group stays deduplicated fo
 
 The gateway owns only the user half of the prompt: the rendered alert payload with `ANALYSIS_INSTRUCTIONS` appended, sent over A2A as a `role: user` message. The system half lives on the Agent CR as `spec.declarative.systemMessage`, which the kagent controller translates into the agent config's `Instruction` and the ADK runtime sends as the model's system prompt. Editing the CR therefore takes effect without touching the gateway, while changing `ANALYSIS_INSTRUCTIONS` requires a restart: it is read from the environment once at boot.
 
-![Prompt assembly](prompt-assembly.svg)
+![Prompt assembly](assets/prompt-assembly.svg)
 
 ## Conclusion
 
