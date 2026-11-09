@@ -52,9 +52,9 @@ List published versions with `crane ls ghcr.io/younsl/charts/kagent-gateway`. Ch
 
 ## How it works
 
-Alertmanager posts the alert to Slack and the same group to the webhook. The gateway analyses it, finds the notification by the fingerprint in its footer, and replies in that thread. See [How it works](docs/how-it-works.md).
+A mention in a thread is routed by channel to an agent name, checked against that name's AgentAccessPolicy, and answered over A2A by an Agent picked by weight, in the same thread. An Alertmanager webhook takes the same A2A path and replies under the alert notification. See [How it works](docs/how-it-works.md).
 
-![Architecture](docs/assets/architecture.svg)
+![Mention flow](docs/assets/mention-flow.svg)
 
 ## Prompt assembly
 

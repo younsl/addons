@@ -1,0 +1,96 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 540" font-family="Geist, Inter, 'Helvetica Neue', Arial, sans-serif">
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0 0L10 5L0 10z" fill="#666"/>
+    </marker>
+  </defs>
+
+  <rect width="960" height="540" fill="#000"/>
+
+  <rect x="60" y="28" width="220" height="64" rx="6" fill="#0a0a0a" stroke="#333"/>
+  <text x="80" y="54" fill="#ededed" font-size="15" font-weight="600">Slack</text>
+  <text x="80" y="76" fill="#888" font-size="11" font-family="'SF Mono', Menlo, monospace">@kagent in a thread</text>
+
+  <rect x="20" y="128" width="920" height="392" rx="10" fill="none" stroke="#262626" stroke-dasharray="4 4"/>
+  <text x="36" y="150" fill="#666" font-size="11" font-family="'SF Mono', Menlo, monospace">Kubernetes cluster</text>
+  <rect x="36" y="164" width="888" height="340" rx="8" fill="none" stroke="#1f1f1f" stroke-dasharray="4 4"/>
+  <text x="52" y="186" fill="#666" font-size="11" font-family="'SF Mono', Menlo, monospace">namespace/kagent</text>
+
+  <rect x="60" y="208" width="220" height="272" rx="6" fill="#0a0a0a" stroke="#ededed"/>
+  <text x="80" y="236" fill="#ededed" font-size="15" font-weight="600">kagent-gateway</text>
+  <text x="80" y="256" fill="#888" font-size="11" font-family="'SF Mono', Menlo, monospace">Deployment</text>
+  <g fill="#888" font-size="11" font-family="'SF Mono', Menlo, monospace">
+    <text x="80" y="300">route by channel</text>
+    <text x="80" y="318">chat.agentMap</text>
+    <text x="80" y="354">check member</text>
+    <text x="80" y="372">policy cache</text>
+    <text x="80" y="408">pick Agent by weight</text>
+    <text x="80" y="426">thread stays on it</text>
+  </g>
+
+  <rect x="380" y="208" width="260" height="120" rx="6" fill="#0a0a0a" stroke="#ededed" stroke-dasharray="4 3"/>
+  <text x="400" y="236" fill="#ededed" font-size="15" font-weight="600">AgentAccessPolicy</text>
+  <text x="620" y="232" text-anchor="end" fill="#666" font-size="10" font-family="'SF Mono', Menlo, monospace">CR</text>
+  <text x="400" y="256" fill="#888" font-size="11" font-family="'SF Mono', Menlo, monospace">access.kagent-gateway.sh</text>
+  <g fill="#a1a1a1" font-size="11" font-family="'SF Mono', Menlo, monospace">
+    <text x="400" y="286">one per routed agent name</text>
+    <text x="400" y="302">allowedUsers or allowAll</text>
+    <text x="400" y="318">agentRefs with weight</text>
+  </g>
+
+  <rect x="380" y="380" width="260" height="100" rx="6" fill="#0a0a0a" stroke="#333"/>
+  <text x="400" y="408" fill="#ededed" font-size="15" font-weight="600">kagent controller</text>
+  <text x="400" y="428" fill="#888" font-size="11" font-family="'SF Mono', Menlo, monospace">A2A endpoint</text>
+
+  <rect x="724" y="208" width="184" height="272" rx="6" fill="#0a0a0a" stroke="#333" stroke-dasharray="4 3"/>
+  <text x="740" y="236" fill="#ededed" font-size="15" font-weight="600">Agent</text>
+  <text x="896" y="232" text-anchor="end" fill="#666" font-size="10" font-family="'SF Mono', Menlo, monospace">CR</text>
+  <text x="740" y="256" fill="#888" font-size="11" font-family="'SF Mono', Menlo, monospace">kagent.dev</text>
+  <g fill="#a1a1a1" font-size="11" font-family="'SF Mono', Menlo, monospace">
+    <text x="740" y="300">aws-alert-triage</text>
+    <text x="740" y="320">aws-alert-triage-v2</text>
+    <text x="740" y="340">security-alert-triage</text>
+    <text x="740" y="360">database-alert-triage</text>
+  </g>
+
+  <g stroke="#666" stroke-width="1.2" fill="none" marker-end="url(#a)">
+    <path d="M200 92V206"/>
+    <path d="M282 252H378"/>
+    <path d="M642 268H722"/>
+    <path d="M282 430H378"/>
+    <path d="M642 430H722"/>
+  </g>
+  <g stroke="#444" stroke-width="1.2" fill="none" stroke-dasharray="4 4" marker-end="url(#a)">
+    <path d="M250 206V94"/>
+    <path d="M378 296H282"/>
+  </g>
+
+  <g font-size="11" font-family="'SF Mono', Menlo, monospace">
+    <g fill="#ededed">
+      <circle cx="184" cy="110" r="9" fill="#ededed"/>
+      <circle cx="330" cy="236" r="9" fill="#ededed"/>
+      <circle cx="682" cy="252" r="9" fill="#ededed"/>
+      <circle cx="330" cy="414" r="9" fill="#ededed"/>
+      <circle cx="682" cy="414" r="9" fill="#ededed"/>
+      <circle cx="266" cy="110" r="9" fill="#ededed"/>
+    </g>
+    <g fill="#000" font-weight="700" text-anchor="middle">
+      <text x="184" y="114">1</text>
+      <text x="330" y="240">2</text>
+      <text x="682" y="256">3</text>
+      <text x="330" y="418">4</text>
+      <text x="682" y="418">5</text>
+      <text x="266" y="114">6</text>
+    </g>
+    <g fill="#888">
+      <text x="168" y="114" text-anchor="end">mention</text>
+      <text x="282" y="114">thread reply</text>
+      <text x="330" y="270" text-anchor="middle">watch</text>
+      <text x="330" y="314" text-anchor="middle">status</text>
+      <text x="682" y="286" text-anchor="middle">agentRefs</text>
+      <text x="682" y="300" text-anchor="middle">weight</text>
+      <text x="330" y="448" text-anchor="middle">A2A turn</text>
+      <text x="682" y="448" text-anchor="middle">runs task</text>
+    </g>
+  </g>
+</svg>
