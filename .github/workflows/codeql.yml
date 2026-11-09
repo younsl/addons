@@ -25,7 +25,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        language: [actions, javascript-typescript, python, rust]
+        language: [actions, javascript-typescript, rust]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
