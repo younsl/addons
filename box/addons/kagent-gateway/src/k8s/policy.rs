@@ -553,6 +553,79 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn start_syncs_the_cache_while_the_controller_waits_on_it_too() {
+        use wiremock::matchers::{method, path, query_param, query_param_is_missing};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let base = "/apis/access.kagent-gateway.sh/v1alpha1/namespaces/kagent/agentaccesspolicies";
+        let mut p = policy("ops-policy", "kagent", &["U1"], false);
+        p.metadata.resource_version = Some("1".into());
+        p.metadata.creation_timestamp = Some(time(1));
+        p.spec.route_match.slack_channels = vec!["ops".into()];
+        let obj = serde_json::to_value(&p).unwrap();
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path(base))
+            .and(query_param_is_missing("watch"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "apiVersion": "access.kagent-gateway.sh/v1alpha1",
+                "kind": "AgentAccessPolicyList",
+                "metadata": {"resourceVersion": "1"},
+                "items": [obj],
+            })))
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path(base))
+            .and(query_param("watch", "true"))
+            .respond_with(ResponseTemplate::new(200).set_delay(Duration::from_secs(60)))
+            .mount(&server)
+            .await;
+        Mock::given(method("PATCH"))
+            .and(path(format!("{base}/ops-policy/status")))
+            .respond_with(ResponseTemplate::new(200).set_body_json(&obj))
+            .mount(&server)
+            .await;
+
+        let client = Client::try_from(kube::Config::new(server.uri().parse().unwrap())).unwrap();
+        let metrics = Arc::new(Metrics::new());
+        let shutdown = CancellationToken::new();
+        let store = start(client, "kagent", metrics.clone(), shutdown.clone()).await;
+
+        let synced = tokio::time::timeout(READY_POLL * 5, async {
+            while store.routes().is_none() {
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+        })
+        .await;
+        assert!(synced.is_ok(), "policy cache never synced");
+        assert_eq!(metrics.access_policies_synced.get(), 1);
+        assert!(matches!(store.lookup("ops-policy"), Lookup::Found(_)));
+        assert_eq!(store.routes().unwrap()[0].name, "ops-policy");
+
+        let reconciled = tokio::time::timeout(READY_POLL * 5, async {
+            loop {
+                let patched = server
+                    .received_requests()
+                    .await
+                    .unwrap_or_default()
+                    .iter()
+                    .any(|r| {
+                        r.method == wiremock::http::Method::PATCH
+                            && r.url.path().ends_with("/status")
+                    });
+                if patched {
+                    return;
+                }
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+        })
+        .await;
+        assert!(reconciled.is_ok(), "controller never reconciled");
+        shutdown.cancel();
+    }
+
+    #[tokio::test]
     async fn wait_ready_stops_on_shutdown() {
         let writer: Writer<AgentAccessPolicy> = Writer::default();
         let store = writer.as_reader();

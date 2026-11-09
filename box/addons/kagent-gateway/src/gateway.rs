@@ -1097,7 +1097,7 @@ mod tests {
     use serde_json::json;
     use tower::ServiceExt;
 
-    use super::testing::{Call, config, gateway, payload};
+    use super::testing::{Call, FakeAgent, config, gateway, payload};
     use super::*;
     use crate::observability::metrics::{
         AgentResultLabels, KindResultLabels, ReasonLabels, ResultLabels,
@@ -1286,6 +1286,153 @@ mod tests {
         post(&g, payload("A", "critical"), None).await;
         drain(&g).await;
         assert_eq!(agent.requests().len(), 2);
+    }
+
+    struct FakePolicies {
+        routes: Option<Vec<access::Route>>,
+        policies: std::collections::HashMap<String, access::Policy>,
+    }
+
+    impl PolicySource for FakePolicies {
+        fn lookup(&self, agent: &str) -> Lookup {
+            if self.routes.is_none() {
+                return Lookup::Unsynced;
+            }
+            self.policies
+                .get(agent)
+                .cloned()
+                .map_or(Lookup::Missing, Lookup::Found)
+        }
+
+        fn routes(&self) -> Option<Vec<access::Route>> {
+            self.routes.clone()
+        }
+    }
+
+    fn label_route(name: &str, values: &[&str]) -> access::Route {
+        access::Route {
+            name: name.into(),
+            alert_label: Some((
+                "slack_channel".into(),
+                values.iter().map(|v| (*v).to_string()).collect(),
+            )),
+            ..access::Route::default()
+        }
+    }
+
+    fn backed_by(agent: &str) -> access::Policy {
+        access::Policy {
+            rule: access::Rule::AllowAll,
+            backends: vec![access::Backend {
+                agent: agent.into(),
+                weight: 1,
+            }],
+        }
+    }
+
+    fn policy_gateway(
+        source: Option<FakePolicies>,
+    ) -> (Arc<Gateway>, Arc<FakeAgent>, Arc<Metrics>) {
+        let mut cfg = config();
+        cfg.slack_app_token = "xapp-test".into();
+        cfg.chat_access_policies = true;
+        let (g, _, agent, metrics) = gateway(cfg);
+        if let Some(source) = source {
+            g.set_access_policies(Arc::new(source));
+        }
+        (g, agent, metrics)
+    }
+
+    fn alert_in(channel: &str) -> Payload {
+        let mut v = payload("A", "critical");
+        v["commonLabels"]["slack_channel"] = json!(channel);
+        serde_json::from_value(v).unwrap()
+    }
+
+    fn synced(routes: Vec<access::Route>, policies: &[(&str, access::Policy)]) -> FakePolicies {
+        FakePolicies {
+            routes: Some(routes),
+            policies: policies
+                .iter()
+                .map(|(n, p)| ((*n).to_string(), p.clone()))
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn policy_routing_refuses_until_the_cache_syncs() {
+        let (g, _, _) = policy_gateway(None);
+        assert_eq!(g.resolve_agent(&alert_in("ops")), Err("policy_unsynced"));
+        let (g, _, _) = policy_gateway(Some(FakePolicies {
+            routes: None,
+            policies: std::collections::HashMap::new(),
+        }));
+        assert_eq!(g.resolve_agent(&alert_in("ops")), Err("policy_unsynced"));
+    }
+
+    #[test]
+    fn policy_routing_sends_a_matched_alert_to_the_policy_backend() {
+        let (g, _, _) = policy_gateway(Some(synced(
+            vec![label_route("ops-policy", &["ops"])],
+            &[("ops-policy", backed_by("ops-agent"))],
+        )));
+        assert_eq!(g.resolve_agent(&alert_in("ops")), Ok("ops-agent".into()));
+    }
+
+    #[test]
+    fn policy_routing_drops_an_alert_no_policy_takes() {
+        let (g, _, _) = policy_gateway(Some(synced(
+            vec![label_route("ops-policy", &["ops"])],
+            &[("ops-policy", backed_by("ops-agent"))],
+        )));
+        assert_eq!(g.resolve_agent(&alert_in("billing")), Err("unrouted"));
+    }
+
+    #[test]
+    fn policy_routing_falls_back_to_a_catch_all_policy() {
+        let (g, _, _) = policy_gateway(Some(synced(
+            vec![
+                label_route("ops-policy", &["ops"]),
+                label_route("default-policy", &[access::ANY_CHANNEL]),
+            ],
+            &[
+                ("ops-policy", backed_by("ops-agent")),
+                ("default-policy", backed_by("default-agent")),
+            ],
+        )));
+        assert_eq!(
+            g.resolve_agent(&alert_in("billing")),
+            Ok("default-agent".into())
+        );
+    }
+
+    #[test]
+    fn policy_routing_fails_closed_when_the_matched_policy_is_gone() {
+        let (g, _, _) =
+            policy_gateway(Some(synced(vec![label_route("ops-policy", &["ops"])], &[])));
+        assert_eq!(g.resolve_agent(&alert_in("ops")), Err("policy_invalid"));
+    }
+
+    #[tokio::test]
+    async fn unsynced_policies_skip_the_analysis_and_count_it() {
+        let (g, agent, metrics) = policy_gateway(Some(FakePolicies {
+            routes: None,
+            policies: std::collections::HashMap::new(),
+        }));
+        let mut body = payload("A", "critical");
+        body["commonLabels"]["slack_channel"] = json!("ops");
+        post(&g, body, None).await;
+        drain(&g).await;
+        assert!(agent.requests().is_empty());
+        assert_eq!(
+            Metrics::counter(
+                &metrics.analyses_skipped,
+                &ReasonLabels {
+                    reason: "policy_unsynced".into()
+                }
+            ),
+            1
+        );
     }
 
     #[tokio::test]
