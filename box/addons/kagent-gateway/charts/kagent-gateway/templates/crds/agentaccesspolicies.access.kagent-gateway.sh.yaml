@@ -38,6 +38,9 @@ spec:
     - jsonPath: .spec.chat.allowAll
       name: AllowAll
       type: boolean
+    - jsonPath: .status.conditions[?(@.type=="Accepted")].status
+      name: Accepted
+      type: string
     - jsonPath: .status.conditions[?(@.type=="Ready")].status
       name: Ready
       type: string
@@ -50,7 +53,7 @@ spec:
     name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: Decides which Slack members may invoke an agent name through a mention, and splits new threads across the kagent Agents in agentRefs by weight. The policy name is the agent name CHAT_AGENT and CHAT_AGENT_MAP route to. A name without a policy falls back to the gateway's CHAT_ALLOWED_USERS.
+        description: Routes Slack mentions and alerts to kagent Agents, like a Gateway API route, and decides which Slack members may invoke them. spec.match picks the mentions and alerts the policy takes, agentRefs the Agents that answer by weight. Anything no policy matches is dropped.
         properties:
           spec:
             description: Decides who may invoke an agent name through a Slack mention, and which kagent Agents answer it.
@@ -100,8 +103,17 @@ spec:
                 minItems: 1
                 type: array
                 x-kubernetes-validations:
-                - message: agentRefs must name each Agent once and give at least one a weight above 0
-                  rule: self.all(a, self.exists_one(b, b.name == a.name)) && self.exists(a, !has(a.weight) || a.weight > 0)
+                - message: agentRefs must name each Agent once, give at least one a weight above 0, and share one namespace
+                  rule: self.all(a, self.exists_one(b, b.name == a.name)) && self.exists(a, !has(a.weight) || a.weight > 0) && self.map(a, a.namespace).all(n, n == self[0].namespace)
+              alertChannel:
+                description: Slack channel, by name or conversation ID, that the alerts this policy matches thread in. Unset uses the matched label value as the channel name.
+                maxLength: 80
+                minLength: 1
+                nullable: true
+                type: string
+                x-kubernetes-validations:
+                - message: alertChannel must be one channel name or ID
+                  rule: '!self.contains('' '') && !self.contains(''*'')'
               chat:
                 description: Who may invoke the agent name through a Slack mention.
                 properties:
@@ -123,10 +135,58 @@ spec:
                 x-kubernetes-validations:
                 - message: 'set exactly one of allowedUsers (non-empty) and allowAll: true'
                   rule: (has(self.allowAll) && self.allowAll) != (has(self.allowedUsers) && size(self.allowedUsers) > 0)
+              match:
+                description: The mentions and alerts this policy takes, like a Gateway API route match.
+                properties:
+                  alertLabel:
+                    description: The alert label whose value routes an alert to this policy.
+                    nullable: true
+                    properties:
+                      name:
+                        description: Label name, read from the labels every alert in the group shares, then from the group labels.
+                        maxLength: 63
+                        minLength: 1
+                        pattern: ^[a-zA-Z_][a-zA-Z0-9_]*$
+                        type: string
+                      values:
+                        description: Label values that route to this policy. `*` alone takes every alert no other policy matches, whatever its labels.
+                        items:
+                          maxLength: 128
+                          minLength: 1
+                          type: string
+                        maxItems: 64
+                        minItems: 1
+                        type: array
+                        x-kubernetes-validations:
+                        - message: values must be unique, carry no surrounding spaces, and use * only as the single catch-all value
+                          rule: self.all(v, self.exists_one(w, w == v) && v.trim() == v && (v == '*' || !v.contains('*'))) && (!self.exists(v, v == '*') || size(self) == 1)
+                    required:
+                    - name
+                    - values
+                    type: object
+                  slackChannels:
+                    description: Slack channels, by name or conversation ID, whose mentions this policy answers. `*` takes every channel no other policy names.
+                    items:
+                      maxLength: 80
+                      minLength: 1
+                      type: string
+                    maxItems: 64
+                    type: array
+                    x-kubernetes-validations:
+                    - message: slackChannels entries must be unique channel names or IDs without spaces, or the single catch-all *
+                      rule: self.all(c, self.exists_one(d, d == c) && !c.contains(' ') && (c == '*' || !c.contains('*')))
+                type: object
+                x-kubernetes-validations:
+                - message: match needs slackChannels or alertLabel
+                  rule: (has(self.slackChannels) && size(self.slackChannels) > 0) || has(self.alertLabel)
             required:
             - agentRefs
             - chat
+            - match
             type: object
+            x-kubernetes-validations:
+            - message: alertChannel needs match.alertLabel, the alerts it applies to
+              rule: '!has(self.alertChannel) || has(self.match.alertLabel)'
           status:
             description: What the gateway last observed about the policy.
             nullable: true

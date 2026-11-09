@@ -20,8 +20,8 @@
   <text x="80" y="236" fill="#ededed" font-size="15" font-weight="600">kagent-gateway</text>
   <text x="80" y="256" fill="#888" font-size="11" font-family="'SF Mono', Menlo, monospace">Deployment</text>
   <g fill="#888" font-size="11" font-family="'SF Mono', Menlo, monospace">
-    <text x="80" y="300">route by channel</text>
-    <text x="80" y="318">chat.agentMap</text>
+    <text x="80" y="300">match channel or label</text>
+    <text x="80" y="318">spec.match</text>
     <text x="80" y="354">check member</text>
     <text x="80" y="372">policy cache</text>
     <text x="80" y="408">pick Agent by weight</text>
@@ -33,7 +33,7 @@
   <text x="620" y="232" text-anchor="end" fill="#666" font-size="10" font-family="'SF Mono', Menlo, monospace">CR</text>
   <text x="400" y="256" fill="#888" font-size="11" font-family="'SF Mono', Menlo, monospace">access.kagent-gateway.sh</text>
   <g fill="#a1a1a1" font-size="11" font-family="'SF Mono', Menlo, monospace">
-    <text x="400" y="286">one per routed agent name</text>
+    <text x="400" y="286">one object per route</text>
     <text x="400" y="302">allowedUsers or allowAll</text>
     <text x="400" y="318">agentRefs with weight</text>
   </g>

@@ -1,31 +1,52 @@
 # Agent access policy
 
-This guide shows how to decide, per agent name, who may invoke it through a mention and which kagent Agents answer, using the `AgentAccessPolicy` custom resource. It is for operators writing policies by hand or through the chart. The design rationale is in [designs/agent-access-policy.md](designs/agent-access-policy.md).
+This guide shows how to route Slack mentions and alerts to kagent Agents and decide who may invoke them, all in `AgentAccessPolicy` objects. It is for operators writing policies by hand or through the chart. The design rationale is in [designs/agent-access-policy.md](designs/agent-access-policy.md).
 
 ## Policy
 
-`CHAT_ALLOWED_USERS` applies to every agent. The chart does not expose it as a value: allow lists live in `agentAccessPolicies`, and a deployment that still wants a global list sets `CHAT_ALLOWED_USERS` through `extraEnv`. To give an agent name its own allow list, set `CHAT_ACCESS_POLICIES=true` (chart: `chat.accessPolicies.enabled`) and create an `AgentAccessPolicy` in `KAGENT_NAMESPACE`. The policy name is the agent name `CHAT_AGENT` and `CHAT_AGENT_MAP` route to, and `agentRefs` lists the Agents that answer it:
+Set `CHAT_ACCESS_POLICIES=true` (chart: `chat.accessPolicies.enabled`) and every routing decision moves into `AgentAccessPolicy` objects in `KAGENT_NAMESPACE`, the way Gateway API keeps matches and backends in routes. One policy is one route:
 
 ```yaml
 apiVersion: access.kagent-gateway.sh/v1alpha1
 kind: AgentAccessPolicy
 metadata:
-  name: security-alert-triage-agent
+  name: database
   namespace: kagent
 spec:
+  match:
+    slackChannels: [prod-slowquery-alarm, devops-dba-alarm]
+    alertLabel:
+      name: slack_channel
+      values: [prod-slowquery-alarm, devops-dba-alarm]
+  alertChannel: devops-dba-alarm
   agentRefs:
     - group: kagent.dev
       kind: Agent
-      name: security-alert-triage-agent
+      name: database-alert-triage-agent
       namespace: kagent
+      weight: 1
   chat:
     allowedUsers:
       - U01234567
 ```
 
+- `match.slackChannels` takes mentions in these channels (names or conversation IDs).
+- `match.alertLabel` takes alerts whose label carries one of these values.
+- `alertChannel` is where those alerts thread. Without it, the matched label value names the channel.
+- `agentRefs` are the Agents that answer.
+- `chat` says who may mention: `allowedUsers` (Slack member IDs) or `allowAll: true`.
+
+`CHAT_AGENT_MAP`, `CHAT_CHANNELS`, `KAGENT_AGENT_ROUTING_MAP`, `SLACK_CHANNEL_MAP`, and `CHAT_ALLOWED_USERS` are ignored while policies route. The gateway logs a warning at startup when any of them is still set.
+
+## Matching
+
+- A named channel or label value beats the `*` catch-all. `slackChannels: ["*"]` takes every channel no other policy names, and `alertLabel.values: ["*"]` every alert no other policy matches.
+- Anything no policy matches is dropped, like a request no route matches: a mention as `channel_denied` (the asker gets the denied hint), an alert as the skip reason `unrouted`. A default is an explicit catch-all policy.
+- When two policies claim the same channel or label value, the older one keeps it (then the name in alphabetical order). The newer one reports `Accepted=False` with reason `Conflicted`, and its other matches still apply.
+
 ## Weights
 
-Like Gateway API `backendRefs`, each `agentRefs` entry carries a `weight` (default `1`), and a new thread goes to one Agent drawn by weight. A thread stays on the Agent it started on while that Agent keeps a weight above `0`, because its A2A `contextId` belongs to that Agent. Setting a weight to `0` drains the Agent: open threads move to a fresh session on another Agent at their next mention. This is how a new Agent version takes a share of questions before it takes all of them:
+Like Gateway API `backendRefs`, each `agentRefs` entry carries a `weight` (default `1`). A new thread goes to one Agent drawn by weight, and stays on it while that Agent keeps a weight above `0`, because its A2A `contextId` belongs to that Agent. Setting a weight to `0` drains the Agent: open threads move to a fresh session on another Agent at their next mention. Alerts draw an Agent on every analysis, since each analysis is a new task. This is how a new Agent version takes a share before it takes everything:
 
 ```yaml
 spec:
@@ -34,24 +55,28 @@ spec:
     - {group: kagent.dev, kind: Agent, name: aws-alert-triage-agent-v2, namespace: kagent, weight: 10}
 ```
 
-Weights apply to mentions only. The alert path keeps `KAGENT_AGENT_ROUTING_MAP`.
-
 ## Chart values
 
-With the chart, list the policies under `agentAccessPolicies`, keyed by agent name. Each entry's `spec` is the policy spec verbatim, and the chart renders it into `kagent.namespace` unless the entry sets `enabled: false`. `weight` may be omitted (the CRD defaults it to 1), but writing it out keeps the split readable:
+With the chart, list the policies under `agentAccessPolicies`, keyed by name. Each entry's `spec` is the policy spec verbatim, and the chart renders it into `kagent.namespace` unless the entry sets `enabled: false`:
 
 ```yaml
 chat:
+  enabled: true
   accessPolicies:
     enabled: true
 agentAccessPolicies:
-  security-alert-triage-agent:
+  database:
     enabled: true
     spec:
+      match:
+        slackChannels: [devops-dba-alarm]
+        alertLabel:
+          name: slack_channel
+          values: [devops-dba-alarm]
       agentRefs:
         - group: kagent.dev
           kind: Agent
-          name: security-alert-triage-agent
+          name: database-alert-triage-agent
           namespace: kagent
           weight: 1
       chat:
@@ -59,31 +84,40 @@ agentAccessPolicies:
           - U01234567
 ```
 
+`weight` may be omitted (the CRD defaults it to 1), but writing it out keeps the split readable. An entry with `enabled: false` is not rendered, so its channels and alerts are dropped unless another policy matches them.
+
 ## Decision rules
 
-The check runs against the agent the channel routes to (`CHAT_AGENT_MAP`, then `CHAT_AGENT`), so one policy covers every channel that reaches the agent.
+| Situation | Outcome |
+|-----------|---------|
+| Matched, user in `allowedUsers` or `allowAll: true` | Answered by an Agent from `agentRefs` |
+| Matched, user not in `allowedUsers` | Refused as `user_denied`, no reply and no hint |
+| No policy matches the channel | Refused as `channel_denied`, with the denied hint |
+| No policy matches the alert | Not analysed, skip reason `unrouted` |
+| An `agentRefs` namespace differs from `KAGENT_NAMESPACE`, or every weight is `0` | Refused (`policy_invalid`), `Ready=False` with reason `NamespaceMismatch` or `NoWeight` |
+| Policy cache not synced yet, or no Kubernetes client | Mentions refused and alerts skipped as `policy_unsynced`. Alertmanager's next resend is analysed. |
 
-| Situation | Who may invoke the agent |
-|-----------|--------------------------|
-| Agent has no policy | `CHAT_ALLOWED_USERS` (empty, the chart default, allows everyone). Route a name only after its policy exists. |
-| `allowedUsers` set | Only those members. The global list does not apply. |
-| `allowAll: true` | Everyone in the allowed channels, even when `CHAT_ALLOWED_USERS` is restrictive |
-| An `agentRefs` namespace differs from `KAGENT_NAMESPACE` | Nobody (`Ready=False`, reason `NamespaceMismatch`) |
-| Every `agentRefs` weight is `0` | Nobody (`Ready=False`, reason `NoWeight`) |
-| Policy cache not synced yet, or no Kubernetes client | Nobody, every mention is dropped as `policy_unsynced` |
+## Validation
 
-The schema enforces the rest: every `agentRefs` entry names a `kagent.dev` `Agent` once (1 to 16 entries, weight 0 to 1,000,000), at least one weight is above `0`, and exactly one of a non-empty `allowedUsers` and `allowAll: true` is set, so an empty list is never read as "everyone". An agent name has at most one policy because the policy is named after it.
+The API server validates every policy through the CRD schema and CEL rules, with no admission webhook. A mistake fails at `kubectl apply` or Argo CD sync:
+
+- `match` names at least one channel or an `alertLabel`, entries do not repeat, carry no spaces, and `*` stands alone.
+- `alertChannel` is one channel and needs `match.alertLabel`.
+- `agentRefs` has 1 to 16 entries naming `kagent.dev` `Agent`s once, in one namespace, with weights 0 to 1,000,000 and at least one above `0`.
+- `chat` sets exactly one of a non-empty `allowedUsers` (Slack member IDs only) and `allowAll: true`, so an empty list is never read as "everyone".
+
+What one object cannot tell, such as two policies claiming one channel or an `agentRefs` namespace other than `KAGENT_NAMESPACE`, surfaces as a status condition instead. The chart values schema mirrors the same rules, so a mistake in values fails `helm template` first.
 
 ## Status and permissions
 
-The gateway watches policies, so a change applies without a restart. Each policy reports `Ready` (enforced as written) and `AgentResolved` (every referenced Agent exists, re-checked every 5 minutes) in its status. A refused mention gets no reply and no hint, and `kagent_gateway_chat_access_denials_total{agent,reason}` counts it.
+The gateway watches policies, so a change applies without a restart. Each policy reports `Accepted` (it holds every match it claims), `Ready` (enforced as written), and `AgentResolved` (every referenced Agent exists, re-checked every 5 minutes) in its status. `kagent_gateway_chat_access_denials_total{agent,reason}` counts refused mentions by policy, and `kagent_gateway_analyses_skipped_total{reason}` counts dropped alerts.
 
 ```bash
 kubectl get agentaccesspolicies -n kagent
 ```
 
-Enabling the feature creates a Role and RoleBinding in `kagent.namespace` (read policies, patch their status, get Agents) and mounts the ServiceAccount token into the Pod. The CRD ships with the chart (`crds.install`) and is kept on uninstall (`crds.keep`). The design is written up in [docs/designs/agent-access-policy.md](designs/agent-access-policy.md).
+Enabling the feature creates a Role and RoleBinding in `kagent.namespace` (read policies, patch their status, get Agents) and mounts the ServiceAccount token into the Pod. The CRD ships with the chart (`crds.install`) and is kept on uninstall (`crds.keep`).
 
 ## Conclusion
 
-Each routed agent name gets one validated, watched policy that names its Slack members and splits new threads across Agents by weight. Changes apply without a restart, mistakes are rejected by the API server or the chart schema, and every failure path refuses mentions while alert analysis keeps running. Create a policy for every routed name before routing to it, because a name without one falls back to `CHAT_ALLOWED_USERS`.
+With access policies on, each `AgentAccessPolicy` is one route: what it matches, where alerts thread, which Agents answer by weight, and who may ask. Routing lives in one validated, watched place instead of several env tables, single-object mistakes are rejected by CEL at apply time, conflicts show as `Accepted=False`, and anything no policy matches is dropped. Add a `*` catch-all policy when a default is wanted.

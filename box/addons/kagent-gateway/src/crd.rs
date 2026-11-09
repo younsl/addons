@@ -30,21 +30,74 @@ pub const AGENT_KIND: &str = "Agent";
     namespaced,
     status = "AgentAccessPolicyStatus",
     derive = "PartialEq",
-    doc = "Decides which Slack members may invoke an agent name through a mention, and splits new threads across the kagent Agents in agentRefs by weight. The policy name is the agent name CHAT_AGENT and CHAT_AGENT_MAP route to. A name without a policy falls back to the gateway's CHAT_ALLOWED_USERS.",
+    doc = "Routes Slack mentions and alerts to kagent Agents, like a Gateway API route, and decides which Slack members may invoke them. spec.match picks the mentions and alerts the policy takes, agentRefs the Agents that answer by weight. Anything no policy matches is dropped.",
     printcolumn = r#"{"name":"AllowAll","type":"boolean","jsonPath":".spec.chat.allowAll"}"#,
+    printcolumn = r#"{"name":"Accepted","type":"string","jsonPath":".status.conditions[?(@.type==\"Accepted\")].status"}"#,
     printcolumn = r#"{"name":"Ready","type":"string","jsonPath":".status.conditions[?(@.type==\"Ready\")].status"}"#,
     printcolumn = r#"{"name":"AgentResolved","type":"string","jsonPath":".status.conditions[?(@.type==\"AgentResolved\")].status"}"#,
     printcolumn = r#"{"name":"Age","type":"date","jsonPath":".metadata.creationTimestamp"}"#
 )]
+#[x_kube(
+    validation = Rule::new("!has(self.alertChannel) || has(self.match.alertLabel)").message("alertChannel needs match.alertLabel, the alerts it applies to")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentAccessPolicySpec {
+    /// The mentions and alerts this policy takes, like a Gateway API route
+    /// match.
+    #[serde(rename = "match")]
+    pub route_match: RouteMatch,
+    /// Slack channel, by name or conversation ID, that the alerts this policy
+    /// matches thread in. Unset uses the matched label value as the channel
+    /// name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(length(min = 1, max = 80))]
+    #[x_kube(validation = Rule::new("!self.contains(' ') && !self.contains('*')").message("alertChannel must be one channel name or ID"))]
+    pub alert_channel: Option<String>,
     /// The kagent Agents a new thread is sent to, picked by weight like
     /// Gateway API `backendRefs`. A thread stays on the Agent it started on.
     #[schemars(length(min = 1, max = 16))]
-    #[x_kube(validation = Rule::new("self.all(a, self.exists_one(b, b.name == a.name)) && self.exists(a, !has(a.weight) || a.weight > 0)").message("agentRefs must name each Agent once and give at least one a weight above 0"))]
+    #[x_kube(validation = Rule::new("self.all(a, self.exists_one(b, b.name == a.name)) && self.exists(a, !has(a.weight) || a.weight > 0) && self.map(a, a.namespace).all(n, n == self[0].namespace)").message("agentRefs must name each Agent once, give at least one a weight above 0, and share one namespace"))]
     pub agent_refs: Vec<AgentRef>,
     /// Who may invoke the agent name through a Slack mention.
     pub chat: ChatAccess,
+}
+
+/// Which mentions and alerts a policy takes. When two policies claim the
+/// same channel or label value, the older one keeps it and the newer one
+/// reports `Accepted=False`.
+#[derive(KubeSchema, Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[x_kube(
+    validation = Rule::new("(has(self.slackChannels) && size(self.slackChannels) > 0) || has(self.alertLabel)").message("match needs slackChannels or alertLabel")
+)]
+#[serde(rename_all = "camelCase")]
+pub struct RouteMatch {
+    /// Slack channels, by name or conversation ID, whose mentions this
+    /// policy answers. `*` takes every channel no other policy names.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[schemars(length(max = 64), inner(length(min = 1, max = 80)))]
+    #[x_kube(validation = Rule::new("self.all(c, self.exists_one(d, d == c) && !c.contains(' ') && (c == '*' || !c.contains('*')))").message("slackChannels entries must be unique channel names or IDs without spaces, or the single catch-all *"))]
+    pub slack_channels: Vec<String>,
+    /// The alert label whose value routes an alert to this policy.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub alert_label: Option<LabelMatch>,
+}
+
+/// Matches an alert when its label `name` holds one of `values`.
+#[derive(KubeSchema, Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct LabelMatch {
+    /// Label name, read from the labels every alert in the group shares,
+    /// then from the group labels.
+    #[schemars(
+        length(min = 1, max = 63),
+        regex(pattern = r"^[a-zA-Z_][a-zA-Z0-9_]*$")
+    )]
+    pub name: String,
+    /// Label values that route to this policy. `*` alone takes every alert
+    /// no other policy matches, whatever its labels.
+    #[schemars(length(min = 1, max = 64), inner(length(min = 1, max = 128)))]
+    #[x_kube(validation = Rule::new("self.all(v, self.exists_one(w, w == v) && v.trim() == v && (v == '*' || !v.contains('*'))) && (!self.exists(v, v == '*') || size(self) == 1)").message("values must be unique, carry no surrounding spaces, and use * only as the single catch-all value"))]
+    pub values: Vec<String>,
 }
 
 /// Identifies a kagent Agent by every field.

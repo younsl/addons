@@ -12,7 +12,7 @@ Receives Alertmanager webhooks, asks a [kagent](https://kagent.dev) agent to inv
 - **Threaded analysis**: Replies under the alert Alertmanager already posted, matched on the alert fingerprint. `post` mode publishes the alert itself.
 - **Multi-agent routing**: An alert label sends each category to its own specialised agent.
 - **Mention invocation**: `@bot` inside a thread runs the agent again, with the A2A session kept per thread.
-- **Per-agent access**: `AgentAccessPolicy` objects decide which Slack members may invoke each agent.
+- **Policy routing**: `AgentAccessPolicy` objects route channels and alert labels to agents, like Gateway API routes, and decide who may invoke them.
 - **Weighted rollout**: `agentRefs` weights split new threads across Agent versions, like Gateway API `backendRefs`.
 - **Cost bounds**: Severity filter, group deduplication, concurrency limits, and task cancellation on deadline.
 - **Observability**: Prometheus metrics for every stage, plus ServiceMonitor and PrometheusRule in the chart.
@@ -52,7 +52,7 @@ List published versions with `crane ls ghcr.io/younsl/charts/kagent-gateway`. Ch
 
 ## How it works
 
-A mention in a thread is routed by channel to an agent name, checked against that name's AgentAccessPolicy, and answered over A2A by an Agent picked by weight, in the same thread. An Alertmanager webhook takes the same A2A path and replies under the alert notification. See [How it works](docs/how-it-works.md).
+An AgentAccessPolicy matches a mention by its channel or an alert by its label, checks who asked, and an Agent picked by weight answers over A2A in the same thread. Anything no policy matches is dropped. See [How it works](docs/how-it-works.md).
 
 ![Mention flow](docs/assets/mention-flow.svg)
 

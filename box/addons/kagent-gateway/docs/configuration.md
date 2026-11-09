@@ -30,8 +30,8 @@ All optional except the app-level token, which is what enables the feature.
 | `CHAT_AGENT` | value of `KAGENT_AGENT` | Agent that answers mentions. |
 | `CHAT_AGENT_MAP` | empty | `channel=agent` pairs, comma separated, routing a channel to a specialised agent. A channel the table does not carry falls back to `CHAT_AGENT`. |
 | `CHAT_CHANNELS` | empty | Channel names or IDs allowed to invoke the bot. Empty allows every channel the bot is a member of. |
-| `CHAT_ALLOWED_USERS` | empty | Slack member IDs allowed to invoke the bot. Empty allows everyone in the allowed channels. With `CHAT_ACCESS_POLICIES` it applies only to agents without an `AgentAccessPolicy`. |
-| `CHAT_ACCESS_POLICIES` | `false` | Read per-agent allow lists from `AgentAccessPolicy` objects in `KAGENT_NAMESPACE`. See [Agent access policy](access-policy.md). |
+| `CHAT_ALLOWED_USERS` | empty | Slack member IDs allowed to invoke the bot. Empty allows everyone in the allowed channels. Ignored with `CHAT_ACCESS_POLICIES`. |
+| `CHAT_ACCESS_POLICIES` | `false` | Route every mention and alert through `AgentAccessPolicy` objects in `KAGENT_NAMESPACE`. `CHAT_AGENT_MAP`, `CHAT_CHANNELS`, `KAGENT_AGENT_ROUTING_MAP`, `SLACK_CHANNEL_MAP`, and `CHAT_ALLOWED_USERS` are then ignored, and anything no policy matches is dropped. See [Agent access policy](access-policy.md). |
 | `CHAT_INSTRUCTIONS` | built-in English text | Instructions appended to every mention prompt. Separate from `ANALYSIS_INSTRUCTIONS`, because a question has no alert sections to fill. |
 | `CHAT_USER_ID` | value of `KAGENT_USER_ID` | Sent as `X-User-Id` for mention turns. Splitting it from `KAGENT_USER_ID` keeps a person's questions and the unattended alert path on separate kagent sessions, which matters once agents carry long-term memory: memory is keyed by agent and user. |
 | `CHAT_TIMEOUT` | `180s` | Deadline for one whole turn including queueing. Matches the controller's 3 minute cap. Lower it to make the gateway's own expiry fire first and cancel the task. |
@@ -80,4 +80,4 @@ All optional except the app-level token, which is what enables the feature.
 
 ## Conclusion
 
-Only `SLACK_BOT_TOKEN` and `SLACK_DEFAULT_CHANNEL` are required. `SLACK_APP_TOKEN` turns mention invocation on, `CHAT_ACCESS_POLICIES` moves mention access into `AgentAccessPolicy` objects, and the analysis policy variables bound which alerts are analysed and how much model concurrency they may use.
+Only `SLACK_BOT_TOKEN` and `SLACK_DEFAULT_CHANNEL` are required. `SLACK_APP_TOKEN` turns mention invocation on, `CHAT_ACCESS_POLICIES` moves all routing and mention access into `AgentAccessPolicy` objects, and the analysis policy variables bound which alerts are analysed and how much model concurrency they may use.

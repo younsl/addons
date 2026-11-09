@@ -18,7 +18,7 @@ use tokio_util::task::TaskTracker;
 use tracing::{Instrument, error, info, info_span, warn};
 
 use crate::a2a::{AgentClient, Request};
-use crate::access::PolicySource;
+use crate::access::{self, Lookup, Policy, PolicySource, Route, Rule};
 use crate::alert::Payload;
 use crate::config::{Config, ParentMode};
 use crate::observability::Metrics;
@@ -231,7 +231,7 @@ impl Gateway {
         self.count_alerts(&payload);
 
         let channel = self.resolve_channel(&payload);
-        let agent = self.resolve_agent(&payload);
+        let routed = self.resolve_agent(&payload);
         let span = info_span!(
             "alert",
             alertname = payload.name(),
@@ -241,7 +241,7 @@ impl Gateway {
             group_key = payload.group_key,
             alert_count = payload.alerts.len(),
             channel,
-            agent,
+            agent = routed.as_deref().unwrap_or(""),
         );
         let _enter = span.enter();
 
@@ -274,7 +274,12 @@ impl Gateway {
             }
         }
 
-        let verdict = self.should_analyze(&payload);
+        // Routing goes first so an alert that is dropped for having no
+        // route never takes a deduplication slot.
+        let verdict = match &routed {
+            Ok(_) => self.should_analyze(&payload),
+            Err(reason) => Err(*reason),
+        };
         self.publish_dedupe_size();
         if let Err(reason) = verdict {
             self.metrics
@@ -288,6 +293,7 @@ impl Gateway {
             return StatusCode::ACCEPTED;
         }
 
+        let agent = routed.unwrap_or_default();
         self.metrics.webhook("analyzing");
         let g = self.clone();
         let span = span.clone();
@@ -633,6 +639,9 @@ impl Gateway {
     /// Picks the destination channel from the routing label that Alertmanager
     /// already uses, falling back to the configured default.
     fn resolve_channel(&self, p: &Payload) -> String {
+        if self.cfg.policy_routing() {
+            return self.policy_channel(p);
+        }
         let value = routing_value(p, &self.cfg.channel_label);
         if value.is_empty() {
             return slack::normalize_channel(&self.cfg.slack_channel);
@@ -647,14 +656,71 @@ impl Gateway {
     /// unmapped label value falls back to the default agent instead of being
     /// used as a name: an agent that does not exist on the controller would
     /// turn every alert in that category into a failed analysis.
-    fn resolve_agent(&self, p: &Payload) -> String {
+    fn resolve_agent(&self, p: &Payload) -> Result<String, &'static str> {
+        if self.cfg.policy_routing() {
+            return self.policy_agent(p);
+        }
         let value = routing_value(p, &self.cfg.kagent_agent_routing_label);
         if !value.is_empty()
             && let Some(mapped) = self.cfg.kagent_agent_routing_map.get(value)
         {
-            return mapped.clone();
+            return Ok(mapped.clone());
         }
-        self.cfg.kagent_agent.clone()
+        Ok(self.cfg.kagent_agent.clone())
+    }
+
+    /// The policy an alert matches and the label value it matched on.
+    /// `None` when the cache has not synced or no policy takes the alert.
+    fn policy_alert(&self, p: &Payload) -> Option<(Route, String)> {
+        let routes = self.access.get()?.routes();
+        let Some(routes) = routes else {
+            warn!(
+                "access policies not synced yet; routing the alert by its labels and the defaults"
+            );
+            return None;
+        };
+        let label = |name: &str| routing_value(p, name).to_string();
+        access::alert_route(&routes, &label).map(|(r, v)| (r.clone(), v))
+    }
+
+    /// Routes an alert through `spec.match`. Like a request no Gateway API
+    /// route matches, an alert no policy takes is dropped: it is not
+    /// analysed, and a `*` catch-all policy is how a deployment asks for a
+    /// default. The error is the skip reason.
+    fn policy_agent(&self, p: &Payload) -> Result<String, &'static str> {
+        let source = self.access.get().ok_or("policy_unsynced")?;
+        let routes = source.routes().ok_or("policy_unsynced")?;
+        let label = |name: &str| routing_value(p, name).to_string();
+        let (route, _) = access::alert_route(&routes, &label).ok_or("unrouted")?;
+        match source.lookup(&route.name) {
+            Lookup::Found(Policy { rule, backends }) if rule != Rule::Invalid => {
+                access::pick_random(&backends)
+                    .map(str::to_string)
+                    .ok_or("policy_invalid")
+            }
+            Lookup::Unsynced => Err("policy_unsynced"),
+            _ => Err("policy_invalid"),
+        }
+    }
+
+    /// Picks the channel an alert threads in under `spec.match`: the
+    /// policy's `alertChannel`, else the label value it matched on, else the
+    /// channel label, else the default channel. `SLACK_CHANNEL_MAP` is not
+    /// read, so the policy stays the one place routing is written down.
+    fn policy_channel(&self, p: &Payload) -> String {
+        if let Some((route, value)) = self.policy_alert(p) {
+            if let Some(channel) = route.alert_channel {
+                return slack::normalize_channel(&channel);
+            }
+            if !value.is_empty() {
+                return slack::normalize_channel(&value);
+            }
+        }
+        let value = routing_value(p, &self.cfg.channel_label);
+        if value.is_empty() {
+            return slack::normalize_channel(&self.cfg.slack_channel);
+        }
+        slack::normalize_channel(value)
     }
 
     fn authorized(&self, headers: &HeaderMap) -> bool {

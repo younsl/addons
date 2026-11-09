@@ -130,8 +130,8 @@ pub struct Config {
     /// Slack member ID allow list. Empty allows everyone in the allowed
     /// channels.
     pub chat_allowed_users: HashSet<String>,
-    /// Reads per-agent allow lists from `AgentAccessPolicy` objects in
-    /// `kagent_namespace`. An agent without one keeps `chat_allowed_users`.
+    /// Routes every mention and alert through `AgentAccessPolicy` objects
+    /// in `kagent_namespace`. Needs the mention path, which starts the cache.
     pub chat_access_policies: bool,
     pub chat_instructions: String,
     /// Identity the mention path submits as. Defaults to `kagent_user_id`, so
@@ -324,6 +324,13 @@ impl Config {
     #[must_use]
     pub const fn chat_enabled(&self) -> bool {
         !self.slack_app_token.is_empty()
+    }
+
+    /// Reports whether `AgentAccessPolicy` objects carry all routing. The
+    /// env routing tables are then ignored and unmatched traffic is dropped.
+    #[must_use]
+    pub const fn policy_routing(&self) -> bool {
+        self.chat_enabled() && self.chat_access_policies
     }
 
     /// Every agent the gateway may route to, the default first and the mapped
@@ -641,6 +648,7 @@ mod tests {
         assert_eq!(cfg.chat_channels, vec!["C1", "dev-chat"]);
         assert_eq!(cfg.chat_allowed_users.len(), 2);
         assert!(cfg.chat_access_policies);
+        assert!(cfg.policy_routing());
         assert_eq!(cfg.webhook_token, "secret");
         assert_eq!(cfg.listen_port, 9000);
         assert_eq!(

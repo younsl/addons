@@ -23,7 +23,7 @@ Labels are bounded by configuration or by a fixed set of outcomes. Alert identit
 | Metric | Type | Description |
 |--------|------|-------------|
 | `kagent_gateway_analyses_total{agent,result}` | Counter | Agent runs, by the agent that handled the alert. `result` is `ok`, `error`, or `queue_timeout` when no analysis slot became free in time. |
-| `kagent_gateway_analyses_skipped_total{reason}` | Counter | Alert groups posted but not analysed. `reason` is `resolved`, `severity`, or `deduplicated`. |
+| `kagent_gateway_analyses_skipped_total{reason}` | Counter | Alert groups posted but not analysed. `reason` is `resolved`, `severity`, or `deduplicated`, and with `CHAT_ACCESS_POLICIES` also `unrouted` (no policy matched), `policy_unsynced`, or `policy_invalid`. |
 | `kagent_gateway_analysis_duration_seconds` | Histogram | Wall-clock duration of one agent run as the gateway sees it, around the whole A2A exchange. Buckets from 1s to 300s. |
 | `kagent_gateway_analysis_queue_wait_seconds` | Histogram | Time an accepted alert group waited for a free slot before its run started. |
 | `kagent_gateway_analyses_inflight` | Gauge | Agent runs currently executing. |

@@ -247,6 +247,29 @@ async fn start_chat(
     if cfg.chat_access_policies {
         start_access_policies(cfg, gateway, metrics, shutdown.clone()).await;
     }
+    if cfg.policy_routing() {
+        let ignored: Vec<&str> = [
+            ("CHAT_AGENT_MAP", cfg.chat_agent_map.is_empty()),
+            ("CHAT_CHANNELS", cfg.chat_channels.is_empty()),
+            (
+                "KAGENT_AGENT_ROUTING_MAP",
+                cfg.kagent_agent_routing_map.is_empty(),
+            ),
+            ("SLACK_CHANNEL_MAP", cfg.slack_channel_map.is_empty()),
+        ]
+        .into_iter()
+        .filter_map(|(name, empty)| (!empty).then_some(name))
+        .collect();
+        info!(
+            "mentions and alerts route through AgentAccessPolicy spec.match, and anything no policy matches is dropped"
+        );
+        if !ignored.is_empty() {
+            warn!(
+                ignored = ignored.join(","),
+                "env routing tables are set but ignored while AgentAccessPolicy objects route"
+            );
+        }
+    }
 
     match tokio::time::timeout(Duration::from_secs(30), slack_client.auth_test()).await {
         Ok(Ok(id)) => {

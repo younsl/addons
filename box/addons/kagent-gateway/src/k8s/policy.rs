@@ -18,7 +18,10 @@ use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
 
 use super::Error;
-use crate::access::{Backend, Lookup, Policy, PolicySource, Rule};
+use std::collections::BTreeMap;
+use std::collections::hash_map::{Entry, HashMap};
+
+use crate::access::{Backend, Lookup, Policy, PolicySource, Route, Rule, channel_key};
 use crate::crd::{AGENT_GROUP, AGENT_KIND, AgentAccessPolicy, AgentAccessPolicyStatus};
 use crate::observability::Metrics;
 
@@ -28,6 +31,7 @@ const RECHECK: Duration = Duration::from_mins(5);
 const RETRY: Duration = Duration::from_secs(30);
 const GAUGE_INTERVAL: Duration = Duration::from_secs(30);
 
+pub const ACCEPTED: &str = "Accepted";
 pub const READY: &str = "Ready";
 pub const AGENT_RESOLVED: &str = "AgentResolved";
 
@@ -50,6 +54,82 @@ impl PolicySource for PolicyStore {
                 Lookup::Found(policy_of(&p, &self.namespace))
             })
     }
+
+    fn routes(&self) -> Option<Vec<Route>> {
+        if !self.synced.load(Ordering::Acquire) {
+            return None;
+        }
+        Some(claims(&self.store.state()).routes)
+    }
+}
+
+/// The routing table and the matches each policy lost.
+#[derive(Debug, Default, PartialEq, Eq)]
+pub struct Claims {
+    pub routes: Vec<Route>,
+    pub lost: BTreeMap<String, Vec<String>>,
+}
+
+/// Settles which policy owns each channel and label value. Like Gateway API
+/// route conflicts, the oldest policy wins, then the name in alphabetical
+/// order, so the outcome never depends on the order the cache returns.
+pub fn claims(policies: &[Arc<AgentAccessPolicy>]) -> Claims {
+    let mut sorted: Vec<&AgentAccessPolicy> = policies.iter().map(AsRef::as_ref).collect();
+    sorted.sort_by_key(|p| {
+        (
+            p.metadata.creation_timestamp.as_ref().map(|t| t.0),
+            p.name_any(),
+        )
+    });
+    let mut channels: HashMap<String, String> = HashMap::new();
+    let mut labels: HashMap<(String, String), String> = HashMap::new();
+    let mut out = Claims::default();
+    for p in sorted {
+        let m = &p.spec.route_match;
+        let name = p.name_any();
+        let mut route = Route {
+            name: name.clone(),
+            alert_channel: p.spec.alert_channel.clone(),
+            ..Route::default()
+        };
+        let mut lost = Vec::new();
+        for c in &m.slack_channels {
+            match channels.entry(channel_key(c)) {
+                Entry::Occupied(o) => lost.push(format!("slack channel {c} (held by {})", o.get())),
+                Entry::Vacant(v) => {
+                    v.insert(name.clone());
+                    route.slack_channels.push(c.clone());
+                }
+            }
+        }
+        if let Some(l) = &m.alert_label {
+            let mut won = Vec::new();
+            for v in &l.values {
+                let key = if v == crate::access::ANY_CHANNEL {
+                    (crate::access::ANY_CHANNEL.to_string(), v.clone())
+                } else {
+                    (l.name.clone(), v.clone())
+                };
+                match labels.entry(key) {
+                    Entry::Occupied(o) => {
+                        lost.push(format!("alert label {}={v} (held by {})", l.name, o.get()));
+                    }
+                    Entry::Vacant(e) => {
+                        e.insert(name.clone());
+                        won.push(v.clone());
+                    }
+                }
+            }
+            if !won.is_empty() {
+                route.alert_label = Some((l.name.clone(), won));
+            }
+        }
+        if !lost.is_empty() {
+            out.lost.insert(name, lost);
+        }
+        out.routes.push(route);
+    }
+    out
 }
 
 /// Why a policy cannot be enforced as written, as a condition reason and
@@ -118,6 +198,7 @@ pub fn desired_status(
     policy: &AgentAccessPolicy,
     namespace: &str,
     agents: &AgentPresence,
+    lost: &[String],
     previous: &[Condition],
     now: &Time,
 ) -> AgentAccessPolicyStatus {
@@ -146,6 +227,32 @@ pub fn desired_status(
     set_condition(
         &mut conditions,
         READY,
+        status,
+        reason,
+        message,
+        generation,
+        now,
+    );
+
+    let (status, reason, message) = if lost.is_empty() {
+        (
+            "True",
+            "Accepted",
+            "every match is held by this policy".to_string(),
+        )
+    } else {
+        (
+            "False",
+            "Conflicted",
+            format!(
+                "older policies hold {}. The other matches still apply",
+                lost.join(", ")
+            ),
+        )
+    };
+    set_condition(
+        &mut conditions,
+        ACCEPTED,
         status,
         reason,
         message,
@@ -213,6 +320,7 @@ fn set_condition(
 
 struct Ctx {
     api: Api<AgentAccessPolicy>,
+    store: Store<AgentAccessPolicy>,
     agents: Result<Api<DynamicObject>, String>,
     namespace: String,
     metrics: Arc<Metrics>,
@@ -260,10 +368,15 @@ async fn reconcile(policy: Arc<AgentAccessPolicy>, ctx: Arc<Ctx>) -> Result<Acti
     let name = policy.name_any();
     let agent = ctx.agent_presence(&policy).await;
     let current = policy.status.clone().unwrap_or_default();
+    let lost = claims(&ctx.store.state())
+        .lost
+        .remove(&name)
+        .unwrap_or_default();
     let desired = desired_status(
         &policy,
         &ctx.namespace,
         &agent,
+        &lost,
         &current.conditions,
         &Time(Timestamp::now()),
     );
@@ -320,6 +433,7 @@ pub async fn start(
     }
     let ctx = Arc::new(Ctx {
         api,
+        store: store.clone(),
         agents,
         namespace: namespace.to_string(),
         metrics: metrics.clone(),
@@ -394,7 +508,7 @@ async fn track_sync(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::crd::{AgentAccessPolicySpec, AgentRef, ChatAccess};
+    use crate::crd::{AgentAccessPolicySpec, AgentRef, ChatAccess, LabelMatch, RouteMatch};
     use kube::runtime::reflector::store::Writer;
     use kube::runtime::watcher::Event;
 
@@ -412,6 +526,8 @@ mod tests {
         let mut p = AgentAccessPolicy::new(
             name,
             AgentAccessPolicySpec {
+                route_match: RouteMatch::default(),
+                alert_channel: None,
                 agent_refs: vec![agent_ref(name, namespace, 1)],
                 chat: ChatAccess {
                     allowed_users: users.iter().map(|u| (*u).to_string()).collect(),
@@ -424,8 +540,30 @@ mod tests {
         p
     }
 
+    fn routed(
+        name: &str,
+        created: i64,
+        channels: &[&str],
+        label: Option<(&str, &[&str])>,
+    ) -> Arc<AgentAccessPolicy> {
+        let mut p = policy(name, "kagent", &["U1"], false);
+        p.metadata.creation_timestamp = Some(time(created));
+        p.spec.route_match = RouteMatch {
+            slack_channels: channels.iter().map(|c| (*c).to_string()).collect(),
+            alert_label: label.map(|(n, vs)| LabelMatch {
+                name: n.into(),
+                values: vs.iter().map(|v| (*v).to_string()).collect(),
+            }),
+        };
+        Arc::new(p)
+    }
+
     fn time(secs: i64) -> Time {
         Time(Timestamp::from_second(secs).unwrap())
+    }
+
+    fn cond<'a>(s: &'a AgentAccessPolicyStatus, type_: &str) -> &'a Condition {
+        s.conditions.iter().find(|c| c.type_ == type_).unwrap()
     }
 
     #[test]
@@ -459,79 +597,136 @@ mod tests {
 
         split.spec.agent_refs = vec![agent_ref("a-v1", "kagent", 0)];
         assert_eq!(policy_of(&split, "kagent").rule, Rule::Invalid);
-        let s = desired_status(&split, "kagent", &AgentPresence::Found, &[], &time(1));
-        assert_eq!(s.conditions[1].reason, "NoWeight");
+        let s = desired_status(&split, "kagent", &AgentPresence::Found, &[], &[], &time(1));
+        assert_eq!(cond(&s, READY).reason, "NoWeight");
     }
 
     #[test]
-    fn status_reports_enforcement_and_agent() {
+    fn status_reports_enforcement_agents_and_acceptance() {
         let p = policy("a", "kagent", &["U1", "U2"], false);
-        let s = desired_status(&p, "kagent", &AgentPresence::Found, &[], &time(1));
+        let s = desired_status(&p, "kagent", &AgentPresence::Found, &[], &[], &time(1));
         assert_eq!(s.observed_generation, Some(3));
-        let ready = &s.conditions[1];
-        assert_eq!(
-            (ready.type_.as_str(), ready.status.as_str()),
-            (READY, "True")
-        );
-        assert!(
-            ready.message.starts_with("2 Slack members"),
-            "{}",
-            ready.message
-        );
-        let resolved = &s.conditions[0];
-        assert_eq!(resolved.type_, AGENT_RESOLVED);
-        assert_eq!(resolved.status, "True");
+        assert_eq!(s.conditions.len(), 3);
+        assert_eq!(cond(&s, READY).status, "True");
+        assert!(cond(&s, READY).message.starts_with("2 Slack members"));
+        assert_eq!(cond(&s, AGENT_RESOLVED).status, "True");
+        assert_eq!(cond(&s, ACCEPTED).status, "True");
 
         let s = desired_status(
             &p,
             "kagent",
             &AgentPresence::Missing(vec!["kagent/a".into()]),
             &[],
+            &[],
             &time(1),
         );
-        assert_eq!(s.conditions[0].reason, "NotFound");
-        assert!(s.conditions[0].message.contains("kagent/a"));
+        assert_eq!(cond(&s, AGENT_RESOLVED).reason, "NotFound");
+        assert!(cond(&s, AGENT_RESOLVED).message.contains("kagent/a"));
         let s = desired_status(
             &p,
             "kagent",
             &AgentPresence::Unknown("boom".into()),
             &[],
+            &[],
             &time(1),
         );
         assert_eq!(
             (
-                s.conditions[0].status.as_str(),
-                s.conditions[0].message.as_str()
+                cond(&s, AGENT_RESOLVED).status.as_str(),
+                cond(&s, AGENT_RESOLVED).message.as_str()
             ),
             ("Unknown", "boom")
         );
 
         let open = policy("a", "kagent", &[], true);
-        let s = desired_status(&open, "kagent", &AgentPresence::Found, &[], &time(1));
-        assert!(s.conditions[1].message.starts_with("every member"));
+        let s = desired_status(&open, "kagent", &AgentPresence::Found, &[], &[], &time(1));
+        assert!(cond(&s, READY).message.starts_with("every member"));
 
         let wrong = policy("a", "other", &["U1"], false);
-        let s = desired_status(&wrong, "kagent", &AgentPresence::Found, &[], &time(1));
-        assert_eq!(s.conditions[1].status, "False");
-        assert_eq!(s.conditions[1].reason, "NamespaceMismatch");
+        let s = desired_status(&wrong, "kagent", &AgentPresence::Found, &[], &[], &time(1));
+        assert_eq!(cond(&s, READY).status, "False");
+        assert_eq!(cond(&s, READY).reason, "NamespaceMismatch");
+
+        let matched = routed("a", 1, &["ops"], None);
+        let s = desired_status(
+            &matched,
+            "kagent",
+            &AgentPresence::Found,
+            &[],
+            &[],
+            &time(1),
+        );
+        assert_eq!(cond(&s, ACCEPTED).status, "True");
+        let lost = vec!["slack channel ops (held by b)".to_string()];
+        let s = desired_status(
+            &matched,
+            "kagent",
+            &AgentPresence::Found,
+            &lost,
+            &[],
+            &time(1),
+        );
+        assert_eq!(cond(&s, ACCEPTED).reason, "Conflicted");
+        assert!(cond(&s, ACCEPTED).message.contains("held by b"));
     }
 
     #[test]
     fn transition_time_moves_only_when_status_changes() {
         let p = policy("a", "kagent", &["U1"], false);
         let missing = AgentPresence::Missing(vec!["kagent/a".into()]);
-        let first = desired_status(&p, "kagent", &missing, &[], &time(1));
-        let same = desired_status(&p, "kagent", &missing, &first.conditions, &time(2));
+        let first = desired_status(&p, "kagent", &missing, &[], &[], &time(1));
+        let same = desired_status(&p, "kagent", &missing, &[], &first.conditions, &time(2));
         assert_eq!(first, same);
         let flipped = desired_status(
             &p,
             "kagent",
             &AgentPresence::Found,
+            &[],
             &first.conditions,
             &time(3),
         );
-        assert_eq!(flipped.conditions[0].last_transition_time, time(3));
-        assert_eq!(flipped.conditions[1].last_transition_time, time(1));
+        assert_eq!(cond(&flipped, AGENT_RESOLVED).last_transition_time, time(3));
+        assert_eq!(cond(&flipped, READY).last_transition_time, time(1));
+    }
+
+    #[test]
+    fn claims_give_each_match_to_the_oldest_policy() {
+        let newer = routed(
+            "newer",
+            20,
+            &["#OPS", "dba", "*"],
+            Some(("slack_channel", &["dba", "infra"])),
+        );
+        let older = routed(
+            "older",
+            10,
+            &["ops", "*"],
+            Some(("slack_channel", &["dba"])),
+        );
+        let c = claims(&[newer, older]);
+        assert_eq!(c.routes.len(), 2);
+        assert_eq!(c.routes[0].name, "older");
+        assert_eq!(c.routes[0].slack_channels, vec!["ops", "*"]);
+        assert_eq!(c.routes[1].name, "newer");
+        assert_eq!(c.routes[1].slack_channels, vec!["dba"]);
+        assert_eq!(
+            c.routes[1].alert_label,
+            Some(("slack_channel".to_string(), vec!["infra".to_string()]))
+        );
+        let lost = &c.lost["newer"];
+        assert_eq!(lost.len(), 3);
+        assert!(lost[0].contains("#OPS") && lost[0].contains("older"));
+        assert!(lost.iter().any(|l| l.contains("slack_channel=dba")));
+        assert!(!c.lost.contains_key("older"));
+    }
+
+    #[test]
+    fn claims_break_age_ties_by_name() {
+        let b = routed("b", 5, &["ops"], None);
+        let a = routed("a", 5, &["ops"], None);
+        let c = claims(&[b, a]);
+        assert_eq!(c.routes[0].name, "a");
+        assert!(c.lost["b"][0].contains("held by a"));
     }
 
     #[test]
@@ -543,7 +738,9 @@ mod tests {
             synced: Arc::new(AtomicBool::new(false)),
         };
         assert_eq!(ps.lookup("a"), Lookup::Unsynced);
+        assert_eq!(ps.routes(), None);
         writer.apply_watcher_event(&Event::Apply(policy("a", "kagent", &["U1"], false)));
+        writer.apply_watcher_event(&Event::Apply((*routed("b", 1, &["ops"], None)).clone()));
         ps.synced.store(true, Ordering::Release);
         assert_eq!(
             ps.lookup("a"),
@@ -555,6 +752,8 @@ mod tests {
                 }],
             })
         );
-        assert_eq!(ps.lookup("b"), Lookup::Missing);
+        assert_eq!(ps.lookup("z"), Lookup::Missing);
+        let names: Vec<String> = ps.routes().unwrap().into_iter().map(|r| r.name).collect();
+        assert_eq!(names, vec!["a", "b"]);
     }
 }

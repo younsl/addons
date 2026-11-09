@@ -135,13 +135,20 @@ impl Gateway {
         }
         // The agent is resolved ahead of the thread check so a refused user
         // gets no thread hint either, exactly as before access was per agent.
-        let agent = self.resolve_chat_agent(&ev.channel_id).await;
-        let backends = match self.user_allowed(&agent, &ev.user) {
-            Ok(backends) => backends,
-            Err(reason) => {
-                self.metrics.chat_access_denied(&agent, reason);
-                return Err(reason);
-            }
+        let route = if self.cfg.policy_routing() {
+            self.policy_route(&ev.channel_id).await?
+        } else {
+            Some(self.resolve_chat_agent(&ev.channel_id).await)
+        };
+        let backends = match &route {
+            Some(agent) => match self.user_allowed(agent, &ev.user) {
+                Ok(backends) => backends,
+                Err(reason) => {
+                    self.metrics.chat_access_denied(agent, reason);
+                    return Err(reason);
+                }
+            },
+            None => Vec::new(),
         };
         if ev.thread_ts.is_empty() {
             return Err("not_in_thread");
@@ -154,9 +161,14 @@ impl Gateway {
         {
             return Err("duplicate");
         }
-        if !self.chat_channel_allowed(&ev.channel_id).await {
+        let channel_allowed = if self.cfg.policy_routing() {
+            route.is_some()
+        } else {
+            self.chat_channel_allowed(&ev.channel_id).await
+        };
+        let Some(agent) = route.filter(|_| channel_allowed) else {
             return Err("channel_denied");
-        }
+        };
         let text = Self::question(&ev.text, &bot_user_id);
         if text.is_empty() {
             return Err("empty");
@@ -464,6 +476,30 @@ impl Gateway {
         false
     }
 
+    /// Finds the policy whose `spec.match` names this channel. A named
+    /// channel beats the `*` catch-all, and among equals the oldest policy
+    /// wins, which is the order the routing table already comes in. `None`
+    /// means no policy takes the channel, which the caller turns into a
+    /// `channel_denied` drop.
+    async fn policy_route(&self, channel_id: &str) -> Result<Option<String>, &'static str> {
+        let routes = self
+            .access
+            .get()
+            .and_then(|source| source.routes())
+            .ok_or("policy_unsynced")?;
+        let mut catch_all = None;
+        for route in &routes {
+            for entry in &route.slack_channels {
+                if entry.trim() == access::ANY_CHANNEL {
+                    catch_all.get_or_insert_with(|| route.name.clone());
+                } else if self.chat_channel_id(entry).await.as_deref() == Some(channel_id) {
+                    return Ok(Some(route.name.clone()));
+                }
+            }
+        }
+        Ok(catch_all)
+    }
+
     /// Picks the agent that answers in a channel. Unlike the alert path's
     /// routing there is no label to read, so the table is keyed by channel.
     async fn resolve_chat_agent(&self, channel_id: &str) -> String {
@@ -680,7 +716,7 @@ fn state_phrase(state: &str, with_alert: bool) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::super::testing::{Call, FakeSlack, config, gateway, gateway_split};
+    use super::super::testing::{Call, FakeAgent, FakeSlack, config, gateway, gateway_split};
     use super::*;
     use crate::config::Config;
     use crate::observability::metrics::{AgentResultLabels, KindResultLabels, ResultLabels};
@@ -1072,12 +1108,26 @@ mod tests {
         assert_eq!(agents, vec!["ops-agent", "alert-triage-agent"]);
     }
 
-    struct StaticPolicies(std::collections::HashMap<String, Lookup>);
-
-    impl crate::access::PolicySource for StaticPolicies {
-        fn lookup(&self, agent: &str) -> Lookup {
-            self.0.get(agent).cloned().unwrap_or(Lookup::Missing)
-        }
+    fn policy_source(
+        policies: &[(&str, crate::access::Policy)],
+        routes: &[(&str, &[&str])],
+    ) -> Arc<RoutedPolicies> {
+        Arc::new(RoutedPolicies {
+            policies: policies
+                .iter()
+                .map(|(name, p)| ((*name).to_string(), Lookup::Found(p.clone())))
+                .collect(),
+            routes: Some(
+                routes
+                    .iter()
+                    .map(|(name, channels)| crate::access::Route {
+                        name: (*name).to_string(),
+                        slack_channels: channels.iter().map(|c| (*c).to_string()).collect(),
+                        ..Default::default()
+                    })
+                    .collect(),
+            ),
+        })
     }
 
     fn backend(agent: &str, weight: u32) -> Backend {
@@ -1088,54 +1138,65 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn access_policy_is_checked_against_the_routed_agent() {
+    async fn access_policy_is_checked_against_the_matched_policy() {
         use crate::access::{Policy, Rule};
         use crate::observability::metrics::AgentReasonLabels;
 
         let mut cfg = chat_config();
-        cfg.chat_allowed_users.insert("U1".into());
-        cfg.chat_agent_map.insert("ops".into(), "ops-agent".into());
+        cfg.chat_access_policies = true;
         let (g, slack, agent, metrics) = gateway(cfg);
         slack
             .channel_ids
             .lock()
             .unwrap()
             .insert("ops".into(), "C1".into());
-        g.set_access_policies(Arc::new(StaticPolicies(
-            [(
-                "ops-agent".to_string(),
-                Lookup::Found(Policy {
-                    rule: Rule::Users(["U2".to_string()].into()),
-                    backends: vec![backend("ops-agent", 1)],
-                }),
-            )]
-            .into(),
-        )));
+        let users = |u: &str| Policy {
+            rule: Rule::Users([u.to_string()].into()),
+            backends: Vec::new(),
+        };
+        g.set_access_policies(policy_source(
+            &[
+                (
+                    "ops",
+                    Policy {
+                        backends: vec![backend("ops-agent", 1)],
+                        ..users("U2")
+                    },
+                ),
+                (
+                    "default",
+                    Policy {
+                        backends: vec![backend("alert-triage-agent", 1)],
+                        ..users("U1")
+                    },
+                ),
+            ],
+            &[("ops", &["ops"]), ("default", &["*"])],
+        ));
 
         let from = |user: &str, channel: &str| Event {
             user: user.into(),
             channel_id: channel.into(),
             ..mention("<@UBOT> q")
         };
-        // C1 routes to ops-agent, whose policy replaces the global list.
+        // C1 matches the ops policy, C7 only the catch-all.
         run(&g, from("U1", "C1")).await;
         run(&g, from("U2", "C1")).await;
-        // C7 routes to the default agent, which has no policy.
         run(&g, from("U1", "C7")).await;
         run(&g, from("U2", "C7")).await;
 
         let served: Vec<String> = agent.requests().into_iter().map(|r| r.agent).collect();
         assert_eq!(served, vec!["ops-agent", "alert-triage-agent"]);
-        for (agent, count) in [("ops-agent", 1), ("alert-triage-agent", 1)] {
+        for name in ["ops", "default"] {
             assert_eq!(
                 Metrics::counter(
                     &metrics.chat_access_denials,
                     &AgentReasonLabels {
-                        agent: agent.into(),
+                        agent: name.into(),
                         reason: "user_denied".into()
                     }
                 ),
-                count
+                1
             );
         }
     }
@@ -1144,17 +1205,19 @@ mod tests {
     async fn weighted_backends_answer_and_a_thread_stays_on_its_agent() {
         use crate::access::{Policy, Rule};
 
-        let (g, _, agent, _) = gateway(chat_config());
-        g.set_access_policies(Arc::new(StaticPolicies(
-            [(
-                "alert-triage-agent".to_string(),
-                Lookup::Found(Policy {
+        let mut cfg = chat_config();
+        cfg.chat_access_policies = true;
+        let (g, _, agent, _) = gateway(cfg);
+        g.set_access_policies(policy_source(
+            &[(
+                "triage",
+                Policy {
                     rule: Rule::AllowAll,
                     backends: vec![backend("triage-v1", 0), backend("triage-v2", 1)],
-                }),
-            )]
-            .into(),
-        )));
+                },
+            )],
+            &[("triage", &["*"])],
+        ));
         run(&g, mention("<@UBOT> first")).await;
         run(&g, mention("<@UBOT> second")).await;
         let reqs = agent.requests();
@@ -1188,9 +1251,159 @@ mod tests {
         );
     }
 
+    struct RoutedPolicies {
+        policies: std::collections::HashMap<String, Lookup>,
+        routes: Option<Vec<crate::access::Route>>,
+    }
+
+    impl crate::access::PolicySource for RoutedPolicies {
+        fn lookup(&self, agent: &str) -> Lookup {
+            self.policies.get(agent).cloned().unwrap_or(Lookup::Missing)
+        }
+
+        fn routes(&self) -> Option<Vec<crate::access::Route>> {
+            self.routes.clone()
+        }
+    }
+
+    fn routed_gateway(
+        routes: Option<Vec<crate::access::Route>>,
+    ) -> (Arc<Gateway>, Arc<FakeAgent>, Arc<Metrics>) {
+        use crate::access::{Policy, Rule};
+        let mut cfg = chat_config();
+        cfg.chat_access_policies = true;
+        cfg.chat_agent_map
+            .insert("C1".into(), "ignored-agent".into());
+        let (g, slack, agent, metrics) = gateway(cfg);
+        slack
+            .channel_ids
+            .lock()
+            .unwrap()
+            .insert("dba".into(), "C1".into());
+        let policy = |name: &str| {
+            Lookup::Found(Policy {
+                rule: Rule::AllowAll,
+                backends: vec![backend(name, 1)],
+            })
+        };
+        g.set_access_policies(Arc::new(RoutedPolicies {
+            policies: [
+                ("db".to_string(), policy("db-agent")),
+                ("default".to_string(), policy("default-agent")),
+            ]
+            .into(),
+            routes,
+        }));
+        (g, agent, metrics)
+    }
+
+    fn routes() -> Vec<crate::access::Route> {
+        vec![
+            crate::access::Route {
+                name: "default".into(),
+                slack_channels: vec!["*".into()],
+                ..Default::default()
+            },
+            crate::access::Route {
+                name: "db".into(),
+                slack_channels: vec!["dba".into()],
+                alert_label: Some(("slack_channel".into(), vec!["dba".into()])),
+                alert_channel: Some("dba-alerts".into()),
+            },
+        ]
+    }
+
+    #[tokio::test]
+    async fn policies_route_mentions_by_match_with_catch_all_last() {
+        let (g, agent, _) = routed_gateway(Some(routes()));
+        run(&g, mention("<@UBOT> in dba")).await;
+        run(
+            &g,
+            Event {
+                channel_id: "C9".into(),
+                ..mention("<@UBOT> elsewhere")
+            },
+        )
+        .await;
+        let served: Vec<String> = agent.requests().into_iter().map(|r| r.agent).collect();
+        assert_eq!(served, vec!["db-agent", "default-agent"]);
+    }
+
+    #[tokio::test]
+    async fn policies_refuse_unmatched_and_unsynced_mentions() {
+        let only_db = routes().into_iter().skip(1).collect();
+        let (g, agent, metrics) = routed_gateway(Some(only_db));
+        run(
+            &g,
+            Event {
+                channel_id: "C9".into(),
+                ..mention("<@UBOT> q")
+            },
+        )
+        .await;
+        assert!(agent.requests().is_empty());
+        assert_eq!(
+            Metrics::counter(
+                &metrics.chat_events,
+                &ResultLabels {
+                    result: "channel_denied".into()
+                }
+            ),
+            1
+        );
+
+        let (g, agent, metrics) = routed_gateway(None);
+        run(&g, mention("<@UBOT> q")).await;
+        assert!(agent.requests().is_empty());
+        assert_eq!(
+            Metrics::counter(
+                &metrics.chat_events,
+                &ResultLabels {
+                    result: "policy_unsynced".into()
+                }
+            ),
+            1
+        );
+    }
+
+    #[test]
+    fn policies_route_alerts_by_label_and_drop_the_rest() {
+        let payload = |channel: &str| {
+            let mut p: crate::alert::Payload =
+                serde_json::from_value(crate::gateway::testing::payload("A", "critical")).unwrap();
+            p.common_labels
+                .insert("slack_channel".into(), channel.into());
+            p
+        };
+        let (g, _, _) = routed_gateway(Some(routes()));
+        assert_eq!(g.resolve_agent(&payload("dba")), Ok("db-agent".into()));
+        assert_eq!(g.resolve_agent(&payload("infra")), Err("unrouted"));
+        assert_eq!(g.resolve_channel(&payload("dba")), "#dba-alerts");
+        assert_eq!(g.resolve_channel(&payload("infra")), "#infra");
+
+        let mut with_default = routes();
+        with_default.push(crate::access::Route {
+            name: "default".into(),
+            alert_label: Some(("any".into(), vec!["*".into()])),
+            ..Default::default()
+        });
+        let (g, _, _) = routed_gateway(Some(with_default));
+        assert_eq!(
+            g.resolve_agent(&payload("infra")),
+            Ok("default-agent".into())
+        );
+        assert_eq!(g.resolve_channel(&payload("infra")), "#infra");
+
+        let (g, _, _) = routed_gateway(None);
+        assert_eq!(g.resolve_agent(&payload("dba")), Err("policy_unsynced"));
+        assert_eq!(g.resolve_channel(&payload("dba")), "#dba");
+    }
+
     #[tokio::test]
     async fn unsynced_policies_refuse_every_mention() {
-        let (g, _, agent, metrics) = gateway(chat_config());
+        let mut cfg = chat_config();
+        cfg.chat_access_policies = true;
+        let (g, _, agent, metrics) = gateway(cfg);
         g.set_access_policies(Arc::new(crate::access::Unavailable));
         run(&g, mention("<@UBOT> q")).await;
         assert!(agent.requests().is_empty());
