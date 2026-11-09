@@ -17,6 +17,16 @@ nameOverride: ""
 # -- (string) Override the fully qualified release name
 fullnameOverride: ""
 
+crds:
+  # -- (bool) Install and upgrade the AgentAccessPolicy CRD
+  install: true
+  # -- (bool) Keep the CRD on `helm uninstall`, so deleting the release does not delete every policy
+  keep: true
+  # -- (object) Extra CRD annotations
+  annotations: {}
+  # -- (object) Extra CRD labels
+  additionalLabels: {}
+
 # -- (int) Number of replicas. Each replica keeps its own in-memory deduplication state, so more than one replica can analyse the same alert group twice.
 replicaCount: 1
 
@@ -76,9 +86,12 @@ chat:
   # -- (list) Channel names or IDs allowed to invoke the bot. Empty allows every channel the bot is a member of.
   channels: []
     # - alerts-test
-  # -- (list) Slack member IDs allowed to invoke the bot. Empty allows everyone in the allowed channels.
+  # -- (list) Slack member IDs allowed to invoke the bot. Empty allows everyone in the allowed channels. With `chat.accessPolicies.enabled` it applies only to agents that have no AgentAccessPolicy.
   allowedUsers: []
     # - U01234567
+  accessPolicies:
+    # -- (bool) Read per-agent allow lists from AgentAccessPolicy objects in `kagent.namespace`. A policy replaces `chat.allowedUsers` for its agent, and an agent without one keeps `chat.allowedUsers`. Mentions are refused until the policy cache has synced. Creates a Role and RoleBinding in `kagent.namespace` and mounts the ServiceAccount token into the Pod.
+    enabled: false
   # -- (string) Instructions appended to every mention prompt. Empty uses the built-in English instructions, which are separate from `analysis.instructions` because a question has no alert sections to fill.
   instructions: ""
   # -- (string) Identity sent as X-User-Id for mention turns, which owns the kagent sessions a person's questions create. Empty falls back to `kagent.userID`. Set it to split the two paths once agents carry long-term memory, which is keyed by agent and user: sharing one identity lets the unattended alert path write into the pool the questions read from.

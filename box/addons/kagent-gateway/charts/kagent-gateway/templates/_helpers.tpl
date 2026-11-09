@@ -93,3 +93,11 @@ true
 @{{ . }}
 {{- end -}}
 {{- end -}}
+
+{{/*
+Non-empty when the mention path reads AgentAccessPolicy objects, which is
+what needs the Role and the mounted ServiceAccount token.
+*/}}
+{{- define "kagent-gateway.accessPoliciesEnabled" -}}
+{{- if and .Values.chat.enabled .Values.chat.accessPolicies.enabled -}}true{{- end -}}
+{{- end }}

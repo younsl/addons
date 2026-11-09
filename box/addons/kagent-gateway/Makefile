@@ -1,4 +1,4 @@
-.PHONY: build release run dev test coverage fmt lint check clean deps \
+.PHONY: build release run dev crd test coverage fmt lint check clean deps \
         zigbuild-amd64 zigbuild-arm64 zigbuild docker-build docker-buildx \
         helm-lint helm-template help
 
@@ -18,7 +18,7 @@ build:
 
 ## Build optimized release binary
 release:
-	@PATH="$(TOOLCHAIN_PATH):$$PATH" cargo build --release
+	@PATH="$(TOOLCHAIN_PATH):$$PATH" cargo build --release --bin $(BINARY_NAME)
 
 ## Run against a port-forwarded kagent controller
 run:
@@ -31,6 +31,10 @@ dev:
 	@SLACK_BOT_TOKEN=$(SLACK_BOT_TOKEN) SLACK_DEFAULT_CHANNEL=alerts-test \
 	 KAGENT_URL=http://localhost:8083 LOG_FORMAT=text LOG_LEVEL=debug \
 	 PATH="$(TOOLCHAIN_PATH):$$PATH" cargo run
+
+## Regenerate the chart CRD from the Rust types
+crd:
+	@PATH="$(TOOLCHAIN_PATH):$$PATH" cargo run --quiet --bin crdgen
 
 ## Run tests
 test:
@@ -63,11 +67,11 @@ clean:
 
 ## Cross-compile to linux/amd64 musl using zig
 zigbuild-amd64:
-	@PATH="$(TOOLCHAIN_PATH):$$PATH" cargo zigbuild --release --target x86_64-unknown-linux-musl
+	@PATH="$(TOOLCHAIN_PATH):$$PATH" cargo zigbuild --release --target x86_64-unknown-linux-musl --bin $(BINARY_NAME)
 
 ## Cross-compile to linux/arm64 musl using zig
 zigbuild-arm64:
-	@PATH="$(TOOLCHAIN_PATH):$$PATH" cargo zigbuild --release --target aarch64-unknown-linux-musl
+	@PATH="$(TOOLCHAIN_PATH):$$PATH" cargo zigbuild --release --target aarch64-unknown-linux-musl --bin $(BINARY_NAME)
 
 ## Cross-compile to both linux/amd64 and linux/arm64 musl
 zigbuild: zigbuild-amd64 zigbuild-arm64

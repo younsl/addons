@@ -1,0 +1,19 @@
+{{- if include "kagent-gateway.accessPoliciesEnabled" . }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "kagent-gateway.fullname" . }}
+  namespace: {{ .Values.kagent.namespace }}
+  labels:
+    {{- include "kagent-gateway.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["access.kagent-gateway.sh"]
+    resources: ["agentaccesspolicies"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["access.kagent-gateway.sh"]
+    resources: ["agentaccesspolicies/status"]
+    verbs: ["patch"]
+  - apiGroups: ["kagent.dev"]
+    resources: ["agents"]
+    verbs: ["get"]
+{{- end }}

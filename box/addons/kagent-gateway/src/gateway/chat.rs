@@ -12,6 +12,7 @@ use tracing::{Instrument, debug, error, info, info_span, warn};
 
 use super::{Gateway, GaugeGuard, korean_duration};
 use crate::a2a::{Progress, Request};
+use crate::access::{self, Lookup};
 use crate::observability::Metrics;
 use crate::slack::socket::{Event, Handler};
 use crate::slack::{self, Message, SlackClient};
@@ -66,8 +67,8 @@ impl Handler for Arc<Gateway> {
             "socket event received"
         );
 
-        let text = match self.mention_text(&ev).await {
-            Ok(text) => text,
+        let (text, agent) = match self.mention_text(&ev).await {
+            Ok(accepted) => accepted,
             Err(reason) => {
                 self.metrics.chat_event(reason);
                 self.hint(&ev, reason).await;
@@ -81,7 +82,6 @@ impl Handler for Arc<Gateway> {
             }
         };
 
-        let agent = self.resolve_chat_agent(&ev.channel_id).await;
         self.metrics.chat_event("accepted");
         let span = info_span!(
             "mention",
@@ -102,9 +102,10 @@ type ProgressState = Arc<Mutex<String>>;
 
 impl Gateway {
     /// Applies the drop rules and returns the question with the leading
-    /// mention stripped. The error is the drop reason, and doubles as the
-    /// metric label so every drop is visible without a log line.
-    async fn mention_text(&self, ev: &Event) -> Result<String, &'static str> {
+    /// mention stripped, together with the agent that answers it. The error
+    /// is the drop reason, and doubles as the metric label so every drop is
+    /// visible without a log line.
+    async fn mention_text(&self, ev: &Event) -> Result<(String, String), &'static str> {
         let bot_user_id = self.bot_user_id();
         if ev.kind != "app_mention" {
             return Err("subtype");
@@ -128,10 +129,12 @@ impl Gateway {
         if ev.channel_type == "im" || ev.channel_type == "mpim" || ev.channel_id.starts_with('D') {
             return Err("dm");
         }
-        if !self.cfg.chat_allowed_users.is_empty()
-            && !self.cfg.chat_allowed_users.contains(&ev.user)
-        {
-            return Err("user_denied");
+        // The agent is resolved ahead of the thread check so a refused user
+        // gets no thread hint either, exactly as before access was per agent.
+        let agent = self.resolve_chat_agent(&ev.channel_id).await;
+        if let Err(reason) = self.user_allowed(&agent, &ev.user) {
+            self.metrics.chat_access_denied(&agent, reason);
+            return Err(reason);
         }
         if ev.thread_ts.is_empty() {
             return Err("not_in_thread");
@@ -151,7 +154,23 @@ impl Gateway {
         if text.is_empty() {
             return Err("empty");
         }
-        Ok(text)
+        Ok((text, agent))
+    }
+
+    /// Checks `user` against the agent's `AgentAccessPolicy`, or against
+    /// `chat_allowed_users` when the agent has none or policies are off.
+    fn user_allowed(&self, agent: &str, user: &str) -> Result<(), &'static str> {
+        let lookup = self
+            .access
+            .get()
+            .map_or(Lookup::Missing, |source| source.lookup(agent));
+        if lookup == Lookup::Unsynced {
+            warn!(
+                agent,
+                "access policies not synced yet; refusing the mention"
+            );
+        }
+        access::check(&self.cfg.chat_allowed_users, lookup, user)
     }
 
     /// Turns the mention text into the prompt: the handle that addressed the
@@ -1012,6 +1031,81 @@ mod tests {
         .await;
         let agents: Vec<String> = agent.requests().into_iter().map(|r| r.agent).collect();
         assert_eq!(agents, vec!["ops-agent", "alert-triage-agent"]);
+    }
+
+    struct StaticPolicies(std::collections::HashMap<String, Lookup>);
+
+    impl crate::access::PolicySource for StaticPolicies {
+        fn lookup(&self, agent: &str) -> Lookup {
+            self.0.get(agent).cloned().unwrap_or(Lookup::Missing)
+        }
+    }
+
+    #[tokio::test]
+    async fn access_policy_is_checked_against_the_routed_agent() {
+        use crate::access::Rule;
+        use crate::observability::metrics::AgentReasonLabels;
+
+        let mut cfg = chat_config();
+        cfg.chat_allowed_users.insert("U1".into());
+        cfg.chat_agent_map.insert("ops".into(), "ops-agent".into());
+        let (g, slack, agent, metrics) = gateway(cfg);
+        slack
+            .channel_ids
+            .lock()
+            .unwrap()
+            .insert("ops".into(), "C1".into());
+        g.set_access_policies(Arc::new(StaticPolicies(
+            [(
+                "ops-agent".to_string(),
+                Lookup::Found(Rule::Users(["U2".to_string()].into())),
+            )]
+            .into(),
+        )));
+
+        let from = |user: &str, channel: &str| Event {
+            user: user.into(),
+            channel_id: channel.into(),
+            ..mention("<@UBOT> q")
+        };
+        // C1 routes to ops-agent, whose policy replaces the global list.
+        run(&g, from("U1", "C1")).await;
+        run(&g, from("U2", "C1")).await;
+        // C7 routes to the default agent, which has no policy.
+        run(&g, from("U1", "C7")).await;
+        run(&g, from("U2", "C7")).await;
+
+        let served: Vec<String> = agent.requests().into_iter().map(|r| r.agent).collect();
+        assert_eq!(served, vec!["ops-agent", "alert-triage-agent"]);
+        for (agent, count) in [("ops-agent", 1), ("alert-triage-agent", 1)] {
+            assert_eq!(
+                Metrics::counter(
+                    &metrics.chat_access_denials,
+                    &AgentReasonLabels {
+                        agent: agent.into(),
+                        reason: "user_denied".into()
+                    }
+                ),
+                count
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn unsynced_policies_refuse_every_mention() {
+        let (g, _, agent, metrics) = gateway(chat_config());
+        g.set_access_policies(Arc::new(crate::access::Unavailable));
+        run(&g, mention("<@UBOT> q")).await;
+        assert!(agent.requests().is_empty());
+        assert_eq!(
+            Metrics::counter(
+                &metrics.chat_events,
+                &ResultLabels {
+                    result: "policy_unsynced".into()
+                }
+            ),
+            1
+        );
     }
 
     #[tokio::test]

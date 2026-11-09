@@ -1,6 +1,6 @@
 # kagent-gateway
 
-![Version: 0.3.0](https://img.shields.io/badge/Version-0.3.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.2.1](https://img.shields.io/badge/AppVersion-0.2.1-informational?style=flat-square)
+![Version: 0.4.0](https://img.shields.io/badge/Version-0.4.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.3.0](https://img.shields.io/badge/AppVersion-0.3.0-informational?style=flat-square)
 
 Posts Alertmanager alerts to Slack and replies in-thread with an analysis from a kagent agent over A2A
 
@@ -39,7 +39,7 @@ helm install kagent-gateway oci://ghcr.io/younsl/charts/kagent-gateway -f values
 Install a specific version:
 
 ```console
-helm install kagent-gateway oci://ghcr.io/younsl/charts/kagent-gateway --version 0.3.0
+helm install kagent-gateway oci://ghcr.io/younsl/charts/kagent-gateway --version 0.4.0
 ```
 
 ### Install from local chart
@@ -47,7 +47,7 @@ helm install kagent-gateway oci://ghcr.io/younsl/charts/kagent-gateway --version
 Download kagent-gateway chart and install from local directory:
 
 ```console
-helm pull oci://ghcr.io/younsl/charts/kagent-gateway --untar --version 0.3.0
+helm pull oci://ghcr.io/younsl/charts/kagent-gateway --untar --version 0.4.0
 helm install kagent-gateway ./kagent-gateway
 ```
 
@@ -81,6 +81,10 @@ The following table lists the configurable parameters and their default values.
 | imagePullSecrets | list | `[]` | Image pull secrets for private registries |
 | nameOverride | string | `""` | Override the chart name |
 | fullnameOverride | string | `""` | Override the fully qualified release name |
+| crds.install | bool | `true` | Install and upgrade the AgentAccessPolicy CRD |
+| crds.keep | bool | `true` | Keep the CRD on `helm uninstall`, so deleting the release does not delete every policy |
+| crds.annotations | object | `{}` | Extra CRD annotations |
+| crds.additionalLabels | object | `{}` | Extra CRD labels |
 | replicaCount | int | `1` | Number of replicas. Each replica keeps its own in-memory deduplication state, so more than one replica can analyse the same alert group twice. |
 | revisionHistoryLimit | int | `3` | Number of old ReplicaSets to retain for rollback |
 | strategy | object | `{"rollingUpdate":{"maxSurge":"25%","maxUnavailable":"25%"},"type":"RollingUpdate"}` | Deployment update strategy |
@@ -105,7 +109,8 @@ The following table lists the configurable parameters and their default values.
 | chat.agent | string | `""` | Agent that answers mentions. Empty falls back to `kagent.agent`. |
 | chat.agentMap | object | `{}` | Routing table from channel (name or ID) to the Agent resource answering there. A channel the table does not carry falls back to `chat.agent`. |
 | chat.channels | list | `[]` | Channel names or IDs allowed to invoke the bot. Empty allows every channel the bot is a member of. |
-| chat.allowedUsers | list | `[]` | Slack member IDs allowed to invoke the bot. Empty allows everyone in the allowed channels. |
+| chat.allowedUsers | list | `[]` | Slack member IDs allowed to invoke the bot. Empty allows everyone in the allowed channels. With `chat.accessPolicies.enabled` it applies only to agents that have no AgentAccessPolicy. |
+| chat.accessPolicies.enabled | bool | `false` | Read per-agent allow lists from AgentAccessPolicy objects in `kagent.namespace`. A policy replaces `chat.allowedUsers` for its agent, and an agent without one keeps `chat.allowedUsers`. Mentions are refused until the policy cache has synced. Creates a Role and RoleBinding in `kagent.namespace` and mounts the ServiceAccount token into the Pod. |
 | chat.instructions | string | `""` | Instructions appended to every mention prompt. Empty uses the built-in English instructions, which are separate from `analysis.instructions` because a question has no alert sections to fill. |
 | chat.userID | string | `""` | Identity sent as X-User-Id for mention turns, which owns the kagent sessions a person's questions create. Empty falls back to `kagent.userID`. Set it to split the two paths once agents carry long-term memory, which is keyed by agent and user: sharing one identity lets the unattended alert path write into the pool the questions read from. |
 | chat.timeout | string | `"180s"` | Deadline for one whole turn including queueing, as a duration (30s, 5m, 1h). The kagent controller caps a turn at 3 minutes in the v0.9.x line, so raising this above `180s` buys nothing; lowering it makes the gateway's own expiry fire first and cancel the task. |

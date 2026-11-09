@@ -57,12 +57,16 @@ runs and these series stay at zero.
 | `kagent_gateway_socket_connected` | Gauge | 1 while a Socket Mode connection is established. Readiness is tied to the HTTP listener instead, because a dropped WebSocket must not restart a pod whose alert path is healthy, so this gauge is the only signal that mentions are going unanswered. |
 | `kagent_gateway_socket_last_frame_timestamp_seconds` | Gauge | Unix time of the last frame read off the connection. A socket dropped upstream without a FIN leaves `socket_connected` at 1, so staleness here is what separates a live connection from a wedged one. |
 | `kagent_gateway_socket_connections_total{result}` | Counter | Connection attempts. `result` is `ok`, `error`, `disconnect_requested` when Slack asked for a reconnect, which it does roughly hourly as a matter of course, or `idle_timeout` when a silent connection was given up on. |
-| `kagent_gateway_chat_events_total{result}` | Counter | Mention events, by outcome. `result` is `accepted` or the drop reason: `bot`, `subtype`, `dm`, `channel_denied`, `user_denied`, `not_in_thread`, `duplicate`, or `empty`. |
+| `kagent_gateway_chat_events_total{result}` | Counter | Mention events, by outcome. `result` is `accepted` or the drop reason: `bot`, `subtype`, `dm`, `channel_denied`, `user_denied`, `policy_unsynced`, `policy_invalid`, `not_in_thread`, `duplicate`, or `empty`. |
 | `kagent_gateway_chat_turns_total{agent,result}` | Counter | Agent turns answering a mention, by the agent that handled it. `result` is `ok`, `error`, or `queue_timeout`. |
 | `kagent_gateway_chat_turn_duration_seconds` | Histogram | Wall-clock duration of one turn, from the accepted event to the posted answer. |
 | `kagent_gateway_chat_inflight` | Gauge | Turns currently executing. |
 | `kagent_gateway_chat_slots` | Gauge | Configured `MAX_CONCURRENT_CHATS`, so saturation reads as a ratio the same way `analysis_slots` allows. |
 | `kagent_gateway_chat_sessions` | Gauge | Threads currently holding an A2A `contextId`. Entries fall out after `CHAT_SESSION_TTL`. |
+| `kagent_gateway_chat_access_denials_total{agent,reason}` | Counter | Mentions refused by the access check, by the agent the channel routes to. `reason` is `user_denied`, `policy_unsynced`, or `policy_invalid`. |
+| `kagent_gateway_access_policies` | Gauge | `AgentAccessPolicy` objects in the cache. Present only with `CHAT_ACCESS_POLICIES`. |
+| `kagent_gateway_access_policies_synced` | Gauge | 1 once the policy cache finished its initial list. While 0 every mention is refused as `policy_unsynced`. |
+| `kagent_gateway_access_policy_reconciles_total{result}` | Counter | Policy reconciles. `result` is `ok` or `error` (status patch or watch failures, usually missing RBAC). |
 
 ### Slack
 

@@ -38,6 +38,7 @@ data:
   CHAT_AGENT_MAP: {{ include "kagent-gateway.chatAgentMap" . | quote }}
   CHAT_CHANNELS: {{ join "," .Values.chat.channels | quote }}
   CHAT_ALLOWED_USERS: {{ join "," .Values.chat.allowedUsers | quote }}
+  CHAT_ACCESS_POLICIES: {{ .Values.chat.accessPolicies.enabled | quote }}
   CHAT_TIMEOUT: {{ .Values.chat.timeout | quote }}
   CHAT_SESSION_TTL: {{ .Values.chat.sessionTTL | quote }}
   CHAT_STATUS_INTERVAL: {{ .Values.chat.statusInterval | quote }}

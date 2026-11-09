@@ -175,7 +175,7 @@ following holds, each with its own metric label so the reason is visible:
   an empty channel allow list means "every channel".
 - the channel is not in the allow list, when one is configured. The asker gets
   an ephemeral hint, see below.
-- the author is not in the user allow list, when one is configured.
+- the author is not allowed to invoke the agent the channel routes to: the agent's `AgentAccessPolicy` when one exists, otherwise the user allow list, when one is configured. See [Agent access policy](agent-access-policy.md).
 - the event carries no `thread_ts`, which means the mention was posted at
   channel level rather than in a thread.
 - the envelope id was already handled, which absorbs Slack redelivery of an
@@ -413,7 +413,8 @@ feature:
 | `CHAT_AGENT` | value of `KAGENT_AGENT` | Agent that answers mentions. |
 | `CHAT_AGENT_MAP` | empty | `channel=agent` pairs, comma separated, routing a channel to a specialised agent. A channel the table does not carry falls back to `CHAT_AGENT`. |
 | `CHAT_CHANNELS` | empty | Channel names or IDs allowed to invoke the bot. Empty allows every channel the bot is a member of. |
-| `CHAT_ALLOWED_USERS` | empty | Slack member IDs allowed to invoke the bot. Empty allows everyone in the allowed channels. |
+| `CHAT_ALLOWED_USERS` | empty | Slack member IDs allowed to invoke the bot. Empty allows everyone in the allowed channels. With `CHAT_ACCESS_POLICIES` it applies only to agents without an `AgentAccessPolicy`. |
+| `CHAT_ACCESS_POLICIES` | `false` | Read per-agent allow lists from `AgentAccessPolicy` objects. Added later, see [Agent access policy](agent-access-policy.md). |
 | `CHAT_INSTRUCTIONS` | built-in English text | Instructions appended to every mention prompt. Separate from `ANALYSIS_INSTRUCTIONS`, because a question has no alert sections to fill. |
 | `CHAT_TIMEOUT` | `180s` | Deadline for one whole turn, including queueing. Same as the controller's 3 minute cap. Lower it to make the gateway's own expiry fire first and cancel the task. |
 | `CHAT_SESSION_TTL` | `2h` | How long a thread keeps its `contextId` after its last turn. |
@@ -488,7 +489,7 @@ New metrics, keeping the existing prefix and label conventions:
 |--------|------|-------------|
 | `kagent_gateway_socket_connected` | Gauge | 1 while a Socket Mode connection is established. |
 | `kagent_gateway_socket_connections_total{result}` | Counter | Connection attempts, by `ok`, `error`, or `disconnect_requested`. |
-| `kagent_gateway_chat_events_total{result}` | Counter | Mention events, by `accepted` or the drop reason (`bot`, `subtype`, `dm`, `channel_denied`, `user_denied`, `not_in_thread`, `duplicate`, `empty`). |
+| `kagent_gateway_chat_events_total{result}` | Counter | Mention events, by `accepted` or the drop reason (`bot`, `subtype`, `dm`, `channel_denied`, `user_denied`, `policy_unsynced`, `policy_invalid`, `not_in_thread`, `duplicate`, `empty`). |
 | `kagent_gateway_chat_turns_total{agent,result}` | Counter | Agent turns, by `ok`, `error`, or `queue_timeout`. |
 | `kagent_gateway_chat_turn_duration_seconds` | Histogram | Wall clock duration of one turn. |
 | `kagent_gateway_chat_inflight` | Gauge | Turns currently executing. |

@@ -4,7 +4,7 @@
 pub mod chat;
 pub mod store;
 
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, Mutex, OnceLock, RwLock};
 use std::time::{Duration, SystemTime};
 
 use axum::Router;
@@ -18,6 +18,7 @@ use tokio_util::task::TaskTracker;
 use tracing::{Instrument, error, info, info_span, warn};
 
 use crate::a2a::{AgentClient, Request};
+use crate::access::PolicySource;
 use crate::alert::Payload;
 use crate::config::{Config, ParentMode};
 use crate::observability::Metrics;
@@ -91,6 +92,9 @@ pub struct Gateway {
     /// The bot's own user id, resolved once at startup. It is the loop guard:
     /// the gateway posts into the channels it listens to.
     bot_user_id: RwLock<String>,
+    /// Per-agent mention rules. Unset leaves every agent on
+    /// `chat_allowed_users`.
+    access: OnceLock<Arc<dyn PolicySource>>,
 }
 
 /// Decrements a gauge when a run ends, however it ends.
@@ -130,6 +134,7 @@ impl Gateway {
             sessions: Mutex::new(SessionStore::new(cfg.chat_session_ttl)),
             envelopes: Mutex::new(Store::new(ENVELOPE_TTL)),
             bot_user_id: RwLock::new(String::new()),
+            access: OnceLock::new(),
             cfg,
             slack,
             agent,
@@ -152,6 +157,12 @@ impl Gateway {
     /// app posted still carries a bot id.
     pub fn set_bot_user_id(&self, id: &str) {
         *self.bot_user_id.write().expect("bot user id lock") = id.to_string();
+    }
+
+    /// Installs the per-agent mention rules. Only the first call takes
+    /// effect: the source is wired once at startup.
+    pub fn set_access_policies(&self, source: Arc<dyn PolicySource>) {
+        let _ = self.access.set(source);
     }
 
     fn bot_user_id(&self) -> String {

@@ -68,6 +68,12 @@ pub struct ReasonLabels {
 }
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq, EncodeLabelSet)]
+pub struct AgentReasonLabels {
+    pub agent: String,
+    pub reason: String,
+}
+
+#[derive(Clone, Debug, Hash, PartialEq, Eq, EncodeLabelSet)]
 pub struct BuildInfoLabels {
     pub version: String,
     pub commit: String,
@@ -110,6 +116,11 @@ pub struct Metrics {
     pub chat_inflight: Gauge,
     pub chat_slots: Gauge,
     pub chat_sessions: Gauge,
+    pub chat_access_denials: Family<AgentReasonLabels, Counter>,
+
+    pub access_policies: Gauge,
+    pub access_policies_synced: Gauge,
+    pub access_policy_reconciles: Family<ResultLabels, Counter>,
 }
 
 const TASK_BUCKETS: [f64; 10] = [1.0, 5.0, 10.0, 20.0, 30.0, 60.0, 90.0, 120.0, 180.0, 300.0];
@@ -175,6 +186,10 @@ impl Metrics {
             chat_inflight: Gauge::default(),
             chat_slots: Gauge::default(),
             chat_sessions: Gauge::default(),
+            chat_access_denials: Family::default(),
+            access_policies: Gauge::default(),
+            access_policies_synced: Gauge::default(),
+            access_policy_reconciles: Family::default(),
         };
 
         // Counters get the _total suffix from the encoder, so they are
@@ -329,6 +344,26 @@ impl Metrics {
             "Slack threads currently holding an A2A contextId",
             m.chat_sessions.clone(),
         );
+        registry.register(
+            "chat_access_denials",
+            "Mentions refused by the access check, by the agent the channel routes to and the reason: user_denied, policy_unsynced, or policy_invalid",
+            m.chat_access_denials.clone(),
+        );
+        registry.register(
+            "access_policies",
+            "AgentAccessPolicy objects in the gateway's cache",
+            m.access_policies.clone(),
+        );
+        registry.register(
+            "access_policies_synced",
+            "1 once the AgentAccessPolicy cache finished its initial list, 0 while mentions are still refused as policy_unsynced",
+            m.access_policies_synced.clone(),
+        );
+        registry.register(
+            "access_policy_reconciles",
+            "AgentAccessPolicy reconciles, by outcome: ok or error",
+            m.access_policy_reconciles.clone(),
+        );
 
         *m.registry.lock().expect("metrics registry lock poisoned") = registry;
         m
@@ -471,6 +506,25 @@ impl Metrics {
         self.chat_turns
             .get_or_create(&AgentResultLabels {
                 agent: agent.to_string(),
+                result: result.to_string(),
+            })
+            .inc();
+    }
+
+    /// Counts one mention refused by the access check.
+    pub fn chat_access_denied(&self, agent: &str, reason: &str) {
+        self.chat_access_denials
+            .get_or_create(&AgentReasonLabels {
+                agent: agent.to_string(),
+                reason: reason.to_string(),
+            })
+            .inc();
+    }
+
+    /// Counts one `AgentAccessPolicy` reconcile by outcome.
+    pub fn access_policy_reconcile(&self, result: &str) {
+        self.access_policy_reconciles
+            .get_or_create(&ResultLabels {
                 result: result.to_string(),
             })
             .inc();

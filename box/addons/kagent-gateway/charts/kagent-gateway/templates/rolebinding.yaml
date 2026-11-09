@@ -1,0 +1,17 @@
+{{- if include "kagent-gateway.accessPoliciesEnabled" . }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "kagent-gateway.fullname" . }}
+  namespace: {{ .Values.kagent.namespace }}
+  labels:
+    {{- include "kagent-gateway.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "kagent-gateway.fullname" . }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "kagent-gateway.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+{{- end }}

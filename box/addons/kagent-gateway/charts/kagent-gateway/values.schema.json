@@ -28,6 +28,24 @@
         "null"
       ]
     },
+    "crds": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "install": {
+          "type": "boolean"
+        },
+        "keep": {
+          "type": "boolean"
+        },
+        "annotations": {
+          "$ref": "#/definitions/stringMap"
+        },
+        "additionalLabels": {
+          "$ref": "#/definitions/stringMap"
+        }
+      }
+    },
     "replicaCount": {
       "type": "integer",
       "minimum": 0
@@ -122,6 +140,15 @@
           "type": "array",
           "items": {
             "type": "string"
+          }
+        },
+        "accessPolicies": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            }
           }
         },
         "instructions": {

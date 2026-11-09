@@ -103,6 +103,47 @@ The kagent controller caps a turn at 3 minutes in the v0.9.x line
 above `180s` has no effect until the deployment moves to a release carrying
 `KAGENT_A2A_CLIENT_TIMEOUT`.
 
+### Per-agent access
+
+`CHAT_ALLOWED_USERS` applies to every agent. To give an agent its own allow list, set `CHAT_ACCESS_POLICIES=true` (chart: `chat.accessPolicies.enabled`) and create an `AgentAccessPolicy` next to the Agent in `KAGENT_NAMESPACE`:
+
+```yaml
+apiVersion: access.kagent-gateway.sh/v1alpha1
+kind: AgentAccessPolicy
+metadata:
+  name: security-alert-triage-agent
+  namespace: kagent
+spec:
+  agentRef:
+    group: kagent.dev
+    kind: Agent
+    name: security-alert-triage-agent
+    namespace: kagent
+  chat:
+    allowedUsers:
+      - U01234567
+```
+
+The check runs against the agent the channel routes to (`CHAT_AGENT_MAP`, then `CHAT_AGENT`), so one policy covers every channel that reaches the agent.
+
+| Situation | Who may invoke the agent |
+|-----------|--------------------------|
+| Agent has no policy | `CHAT_ALLOWED_USERS` (empty allows everyone) |
+| `allowedUsers` set | Only those members. The global list does not apply. |
+| `allowAll: true` | Everyone in the allowed channels, even when `CHAT_ALLOWED_USERS` is restrictive |
+| `agentRef.namespace` differs from `KAGENT_NAMESPACE` | Nobody (`Ready=False`, reason `NamespaceMismatch`) |
+| Policy cache not synced yet, or no Kubernetes client | Nobody, every mention is dropped as `policy_unsynced` |
+
+The schema enforces the rest: `metadata.name` equals `spec.agentRef.name`, so an agent has at most one policy, `agentRef` names a `kagent.dev` `Agent`, and exactly one of a non-empty `allowedUsers` and `allowAll: true` is set, so an empty list is never read as "everyone".
+
+The gateway watches policies, so a change applies without a restart. Each policy reports `Ready` (enforced as written) and `AgentResolved` (the Agent exists, re-checked every 5 minutes) in its status. A refused mention gets no reply and no hint, and `kagent_gateway_chat_access_denials_total{agent,reason}` counts it.
+
+```bash
+kubectl get agentaccesspolicies -n kagent
+```
+
+Enabling the feature creates a Role and RoleBinding in `kagent.namespace` (read policies, patch their status, get Agents) and mounts the ServiceAccount token into the Pod. The CRD ships with the chart (`crds.install`) and is kept on uninstall (`crds.keep`). The design is written up in [docs/designs/agent-access-policy.md](docs/designs/agent-access-policy.md).
+
 ## Slack app
 
 The gateway needs a bot token (`xoxb-...`). Mention invocation adds an app-level
@@ -169,7 +210,8 @@ All optional except the app-level token, which is what enables the feature.
 | `CHAT_AGENT` | value of `KAGENT_AGENT` | Agent that answers mentions. |
 | `CHAT_AGENT_MAP` | empty | `channel=agent` pairs, comma separated, routing a channel to a specialised agent. A channel the table does not carry falls back to `CHAT_AGENT`. |
 | `CHAT_CHANNELS` | empty | Channel names or IDs allowed to invoke the bot. Empty allows every channel the bot is a member of. |
-| `CHAT_ALLOWED_USERS` | empty | Slack member IDs allowed to invoke the bot. Empty allows everyone in the allowed channels. |
+| `CHAT_ALLOWED_USERS` | empty | Slack member IDs allowed to invoke the bot. Empty allows everyone in the allowed channels. With `CHAT_ACCESS_POLICIES` it applies only to agents without an `AgentAccessPolicy`. |
+| `CHAT_ACCESS_POLICIES` | `false` | Read per-agent allow lists from `AgentAccessPolicy` objects in `KAGENT_NAMESPACE`. See [Per-agent access](#per-agent-access). |
 | `CHAT_INSTRUCTIONS` | built-in English text | Instructions appended to every mention prompt. Separate from `ANALYSIS_INSTRUCTIONS`, because a question has no alert sections to fill. |
 | `CHAT_USER_ID` | value of `KAGENT_USER_ID` | Sent as `X-User-Id` for mention turns. Splitting it from `KAGENT_USER_ID` keeps a person's questions and the unattended alert path on separate kagent sessions, which matters once agents carry long-term memory: memory is keyed by agent and user. |
 | `CHAT_TIMEOUT` | `180s` | Deadline for one whole turn including queueing. Matches the controller's 3 minute cap; lower it to make the gateway's own expiry fire first and cancel the task. |

@@ -130,6 +130,9 @@ pub struct Config {
     /// Slack member ID allow list. Empty allows everyone in the allowed
     /// channels.
     pub chat_allowed_users: HashSet<String>,
+    /// Reads per-agent allow lists from `AgentAccessPolicy` objects in
+    /// `kagent_namespace`. An agent without one keeps `chat_allowed_users`.
+    pub chat_access_policies: bool,
     pub chat_instructions: String,
     /// Identity the mention path submits as. Defaults to `kagent_user_id`, so
     /// a deployment that does not set it keeps both paths under one owner.
@@ -276,6 +279,7 @@ impl Config {
             chat_agent_map: env.pairs("CHAT_AGENT_MAP")?,
             chat_channels: env.list("CHAT_CHANNELS"),
             chat_allowed_users: env.set("CHAT_ALLOWED_USERS", ""),
+            chat_access_policies: env.bool("CHAT_ACCESS_POLICIES", false)?,
             chat_instructions: env.string("CHAT_INSTRUCTIONS", DEFAULT_CHAT_INSTRUCTIONS),
             chat_user_id: env.string("CHAT_USER_ID", &kagent_user_id),
             chat_timeout: env.duration(
@@ -614,6 +618,7 @@ mod tests {
             ("CHAT_AGENT", "chat-agent"),
             ("CHAT_CHANNELS", "C1, dev-chat"),
             ("CHAT_ALLOWED_USERS", "U1,U2"),
+            ("CHAT_ACCESS_POLICIES", "true"),
             ("CHAT_AGENT_MAP", "C1=c1-agent"),
             ("WEBHOOK_BEARER_TOKEN", "secret"),
             ("LISTEN_PORT", "9000"),
@@ -635,6 +640,7 @@ mod tests {
         assert!(cfg.chat_enabled());
         assert_eq!(cfg.chat_channels, vec!["C1", "dev-chat"]);
         assert_eq!(cfg.chat_allowed_users.len(), 2);
+        assert!(cfg.chat_access_policies);
         assert_eq!(cfg.webhook_token, "secret");
         assert_eq!(cfg.listen_port, 9000);
         assert_eq!(
