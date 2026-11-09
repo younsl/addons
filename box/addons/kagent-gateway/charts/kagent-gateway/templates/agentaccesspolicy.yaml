@@ -1,5 +1,6 @@
 {{- if and (include "kagent-gateway.accessPoliciesEnabled" .) (or .Values.crds.install (.Capabilities.APIVersions.Has "access.kagent-gateway.sh/v1alpha1/AgentAccessPolicy")) }}
 {{- range $name, $policy := .Values.agentAccessPolicies }}
+{{- if or (not (hasKey $policy "enabled")) $policy.enabled }}
 ---
 apiVersion: access.kagent-gateway.sh/v1alpha1
 kind: AgentAccessPolicy
@@ -12,5 +13,6 @@ metadata:
     argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
 spec:
   {{- toYaml $policy.spec | nindent 2 }}
+{{- end }}
 {{- end }}
 {{- end }}

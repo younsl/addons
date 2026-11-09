@@ -196,6 +196,9 @@
           "spec"
         ],
         "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
           "spec": {
             "type": "object",
             "additionalProperties": false,
@@ -215,7 +218,8 @@
                     "group",
                     "kind",
                     "name",
-                    "namespace"
+                    "namespace",
+                    "weight"
                   ],
                   "properties": {
                     "group": {

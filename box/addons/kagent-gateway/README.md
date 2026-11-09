@@ -135,7 +135,7 @@ spec:
 
 Weights apply to mentions only. The alert path keeps `KAGENT_AGENT_ROUTING_MAP`.
 
-With the chart, list the policies under `agentAccessPolicies`, keyed by agent name. Each entry's `spec` is the policy spec verbatim, and the chart renders it into `kagent.namespace`:
+With the chart, list the policies under `agentAccessPolicies`, keyed by agent name. Each entry's `spec` is the policy spec verbatim, and the chart renders it into `kagent.namespace` unless the entry sets `enabled: false`. The values schema requires `weight` on every `agentRefs` entry, so a split is always written out:
 
 ```yaml
 chat:
@@ -143,12 +143,14 @@ chat:
     enabled: true
 agentAccessPolicies:
   security-alert-triage-agent:
+    enabled: true
     spec:
       agentRefs:
         - group: kagent.dev
           kind: Agent
           name: security-alert-triage-agent
           namespace: kagent
+          weight: 1
       chat:
         allowedUsers:
           - U01234567
