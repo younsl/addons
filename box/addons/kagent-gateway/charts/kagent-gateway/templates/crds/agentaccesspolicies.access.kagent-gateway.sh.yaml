@@ -38,6 +38,9 @@ spec:
     - jsonPath: .spec.chat.allowAll
       name: AllowAll
       type: boolean
+    - jsonPath: .spec.agentRefs[*].name
+      name: Agents
+      type: string
     - jsonPath: .status.conditions[?(@.type=="Accepted")].status
       name: Accepted
       type: string

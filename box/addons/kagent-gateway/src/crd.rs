@@ -32,6 +32,7 @@ pub const AGENT_KIND: &str = "Agent";
     derive = "PartialEq",
     doc = "Routes Slack mentions and alerts to kagent Agents, like a Gateway API route, and decides which Slack members may invoke them. spec.match picks the mentions and alerts the policy takes, agentRefs the Agents that answer by weight. Anything no policy matches is dropped.",
     printcolumn = r#"{"name":"AllowAll","type":"boolean","jsonPath":".spec.chat.allowAll"}"#,
+    printcolumn = r#"{"name":"Agents","type":"string","jsonPath":".spec.agentRefs[*].name"}"#,
     printcolumn = r#"{"name":"Accepted","type":"string","jsonPath":".status.conditions[?(@.type==\"Accepted\")].status"}"#,
     printcolumn = r#"{"name":"Ready","type":"string","jsonPath":".status.conditions[?(@.type==\"Ready\")].status"}"#,
     printcolumn = r#"{"name":"AgentResolved","type":"string","jsonPath":".status.conditions[?(@.type==\"AgentResolved\")].status"}"#,
