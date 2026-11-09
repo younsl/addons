@@ -1,9 +1,8 @@
-+++
-updated = 2026-10-31
-
-[taxonomies]
-tags = ["ai", "software-craft", "rails", "translation"]
-+++
+---
+updated: 2026-10-31
+taxonomies:
+  tags: [ai, software-craft, rails, translation]
+---
 
 # DHH Rails World 2026 키노트 반론 (번역)
 

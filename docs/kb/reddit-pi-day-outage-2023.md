@@ -1,9 +1,8 @@
-+++
-updated = 2026-11-10
-
-[taxonomies]
-tags = ["postmortem", "kubernetes", "calico", "bgp", "networking"]
-+++
+---
+updated: 2026-11-10
+taxonomies:
+  tags: [postmortem, kubernetes, calico, bgp, networking]
+---
 
 # Reddit Pi-Day outage
 

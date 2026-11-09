@@ -1,9 +1,8 @@
-+++
-updated = 2026-10-31
-
-[taxonomies]
-tags = ["sre", "ai", "automation", "incident-response", "rebuttal"]
-+++
+---
+updated: 2026-10-31
+taxonomies:
+  tags: [sre, ai, automation, incident-response, rebuttal]
+---
 
 # AI does not deskill SREs, unverified delegation does
 
