@@ -105,7 +105,7 @@ above `180s` has no effect until the deployment moves to a release carrying
 
 ### Per-agent access
 
-`CHAT_ALLOWED_USERS` applies to every agent. To give an agent name its own allow list, set `CHAT_ACCESS_POLICIES=true` (chart: `chat.accessPolicies.enabled`) and create an `AgentAccessPolicy` in `KAGENT_NAMESPACE`. The policy name is the agent name `CHAT_AGENT` and `CHAT_AGENT_MAP` route to, and `agentRefs` lists the Agents that answer it:
+`CHAT_ALLOWED_USERS` applies to every agent. The chart does not expose it as a value: allow lists live in `agentAccessPolicies`, and a deployment that still wants a global list sets `CHAT_ALLOWED_USERS` through `extraEnv`. To give an agent name its own allow list, set `CHAT_ACCESS_POLICIES=true` (chart: `chat.accessPolicies.enabled`) and create an `AgentAccessPolicy` in `KAGENT_NAMESPACE`. The policy name is the agent name `CHAT_AGENT` and `CHAT_AGENT_MAP` route to, and `agentRefs` lists the Agents that answer it:
 
 ```yaml
 apiVersion: access.kagent-gateway.sh/v1alpha1
@@ -160,7 +160,7 @@ The check runs against the agent the channel routes to (`CHAT_AGENT_MAP`, then `
 
 | Situation | Who may invoke the agent |
 |-----------|--------------------------|
-| Agent has no policy | `CHAT_ALLOWED_USERS` (empty allows everyone) |
+| Agent has no policy | `CHAT_ALLOWED_USERS` (empty, the chart default, allows everyone). Route a name only after its policy exists. |
 | `allowedUsers` set | Only those members. The global list does not apply. |
 | `allowAll: true` | Everyone in the allowed channels, even when `CHAT_ALLOWED_USERS` is restrictive |
 | An `agentRefs` namespace differs from `KAGENT_NAMESPACE` | Nobody (`Ready=False`, reason `NamespaceMismatch`) |

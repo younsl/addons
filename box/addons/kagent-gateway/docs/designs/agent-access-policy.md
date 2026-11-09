@@ -166,7 +166,7 @@ Readiness is not tied to the policy cache. A broken cache must not make the pod 
 | Variable | Chart value | Default | Effect |
 |----------|-------------|---------|--------|
 | `CHAT_ACCESS_POLICIES` | `chat.accessPolicies.enabled` | `false` | Starts the controller and reads policies from `KAGENT_NAMESPACE` |
-| `CHAT_ALLOWED_USERS` | `chat.allowedUsers` | empty | With the feature on, applies only to agents without a policy |
+| `CHAT_ALLOWED_USERS` | none (`extraEnv`) | empty | With the feature on, applies only to agents without a policy. The chart dropped `chat.allowedUsers` so allow lists live in one place, the policies. |
 | none | `agentAccessPolicies` | `{}` | Policies rendered into `kagent.namespace`, keyed by agent name. Each entry's `spec` is the policy spec verbatim, so the chart adds no defaults of its own and the CRD schema stays the single source of them. `enabled: false` (default `true`) skips one entry without deleting it from values. `weight` is optional and defaults to 1 in the CRD. |
 | none | `crds.install` | `true` | Installs and upgrades the CRD from `templates/crds/` |
 | none | `crds.keep` | `true` | Keeps the CRD, and every policy, on `helm uninstall` |
@@ -204,9 +204,9 @@ Startup logs one line listing the policies once synced, and the existing allow l
 ## Rollout
 
 1. Release with `chat.accessPolicies.enabled: false`. The CRD installs, nothing else changes.
-2. Enable it. With no policies every agent stays on `chat.allowedUsers`. Confirm `access_policies_synced` is 1.
-3. Create a policy for the most sensitive agent and confirm `Ready=True` and `AgentResolved=True`.
-4. Move per-agent restrictions out of `chat.allowedUsers` into policies. Keep the global list as the default for agents without one.
+2. Create a policy for every name `chat.agent` and `chat.agentMap` route to in the same change that enables the feature, because a name without one falls back to an empty `CHAT_ALLOWED_USERS` and is open to everyone. Confirm `access_policies_synced` is 1.
+3. Confirm every policy shows `Ready=True` and `AgentResolved=True`.
+4. Remove `chat.allowedUsers` from values, which the chart schema now rejects.
 
 ## Open questions
 

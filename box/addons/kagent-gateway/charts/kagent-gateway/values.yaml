@@ -86,11 +86,8 @@ chat:
   # -- (list) Channel names or IDs allowed to invoke the bot. Empty allows every channel the bot is a member of.
   channels: []
     # - alerts-test
-  # -- (list) Slack member IDs allowed to invoke the bot. Empty allows everyone in the allowed channels. With `chat.accessPolicies.enabled` it applies only to agents that have no AgentAccessPolicy.
-  allowedUsers: []
-    # - U01234567
   accessPolicies:
-    # -- (bool) Read per-agent allow lists from AgentAccessPolicy objects in `kagent.namespace`. A policy replaces `chat.allowedUsers` for its agent, and an agent without one keeps `chat.allowedUsers`. Mentions are refused until the policy cache has synced. Creates a Role and RoleBinding in `kagent.namespace` and mounts the ServiceAccount token into the Pod.
+    # -- (bool) Read per-agent allow lists from AgentAccessPolicy objects in `kagent.namespace`. An agent name without a policy is open to every member of the allowed channels, unless `CHAT_ALLOWED_USERS` is set through `extraEnv`. Mentions are refused until the policy cache has synced. Creates a Role and RoleBinding in `kagent.namespace` and mounts the ServiceAccount token into the Pod.
     enabled: false
   # -- (string) Instructions appended to every mention prompt. Empty uses the built-in English instructions, which are separate from `analysis.instructions` because a question has no alert sections to fill.
   instructions: ""
