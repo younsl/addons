@@ -35,6 +35,19 @@ Designs:
 - [Slack mention invocation](docs/designs/slack-mention-invocation.md)
 - [Agent access policy](docs/designs/agent-access-policy.md)
 
+## Installation
+
+The recommended way to install is the Helm chart published as an OCI artifact. Create a Secret holding `SLACK_BOT_TOKEN` (and `SLACK_APP_TOKEN` for mentions) first, then install:
+
+```bash
+helm install kagent-gateway oci://ghcr.io/younsl/charts/kagent-gateway \
+  --namespace kagent \
+  --set slack.defaultChannel=alerts-test \
+  --set slack.existingSecret=kagent-gateway-slack
+```
+
+List published versions with `crane ls ghcr.io/younsl/charts/kagent-gateway`. Chart values are in the [chart README](charts/kagent-gateway/README.md).
+
 ## How it works
 
 Alertmanager posts the alert to Slack and the same group to the webhook. The gateway analyses it, finds the notification by the fingerprint in its footer, and replies in that thread. See [How it works](docs/how-it-works.md).
@@ -110,16 +123,6 @@ KAGENT_URL=http://localhost:8083 LOG_FORMAT=text make run
 ```
 
 Replaying an alert by hand is in [Usage](docs/usage.md).
-
-## Helm
-
-```bash
-helm install kagent-gateway oci://ghcr.io/younsl/charts/kagent-gateway \
-  --namespace kagent --set slack.defaultChannel=alerts-test \
-  --set slack.existingSecret=kagent-gateway-slack
-```
-
-Chart values are in the [chart README](charts/kagent-gateway/README.md).
 
 ## AI Disclosure
 
