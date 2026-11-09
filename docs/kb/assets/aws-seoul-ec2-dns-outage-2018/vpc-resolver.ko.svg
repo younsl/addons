@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="300" viewBox="0 0 960 300" role="img" aria-labelledby="t d">
+  <title id="t">EC2 인스턴스가 DNS를 묻는 곳</title>
+  <desc id="d">VPC 안의 EC2 인스턴스들이 10.0.0.2로 DNS를 묻고, 그 뒤의 서울 리전 EC2 DNS 리졸버 서버군이 재귀 질의를 처리한다</desc>
+  <style>
+    :root { --bg: #000; --bg-1: transparent; --bg-2: #000; --line: #1f1f1f; --line-2: #333; --fg: #ededed; --fg-2: #a1a1a1; --fg-3: #666; --ok: #45dec5; --err: #ff6166; --warn: #f5a524; --sans: "Geist", "Pretendard Variable", Pretendard, ui-sans-serif, system-ui, -apple-system, sans-serif; --mono: "Geist Mono", "Pretendard Variable", Pretendard, ui-monospace, SFMono-Regular, Menlo, monospace; color-scheme: dark; }
+    svg text { font-family: var(--mono); }
+    svg text.ko { font-family: var(--sans); }
+    .t-lg { font: 600 14px var(--sans); fill: var(--fg); }
+    .t-sm { font-size: 10.5px; fill: var(--fg-3); }
+    .t-md { font-size: 11.5px; fill: var(--fg-2); }
+    .zone { fill: none; stroke: var(--line-2); stroke-dasharray: 3 4; }
+    .box { fill: var(--bg-2); stroke: var(--line-2); }
+    .box-ok { fill: rgba(69,222,197,.06); stroke: rgba(69,222,197,.45); }
+    .ln { stroke: var(--fg-3); fill: none; }
+  </style>
+  <rect width="960" height="300" fill="#000"/>
+  <defs><marker id="ac" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10z" fill="#666"/></marker></defs>
+  <rect class="zone" x="30" y="30" width="430" height="240" rx="12"/><text class="t-sm" x="48" y="52" letter-spacing="1">VPC 10.0.0.0/16</text>
+  <rect class="box" x="56" y="70" width="170" height="48" rx="8"/><text class="t-lg ko" x="72" y="92">EC2 인스턴스</text><text class="t-sm" x="72" y="109">nameserver 10.0.0.2</text>
+  <rect class="box" x="56" y="132" width="170" height="48" rx="8"/><text class="t-lg ko" x="72" y="154">EC2 인스턴스</text><text class="t-sm" x="72" y="171">nameserver 10.0.0.2</text>
+  <rect class="box" x="56" y="194" width="170" height="48" rx="8"/><text class="t-lg ko" x="72" y="216">EC2 인스턴스</text><text class="t-sm" x="72" y="233">nameserver 10.0.0.2</text>
+  <path class="ln" d="M226 94H256V146H286" marker-end="url(#ac)"/><path class="ln" d="M226 156H286" marker-end="url(#ac)"/><path class="ln" d="M226 218H256V166H286" marker-end="url(#ac)"/>
+  <rect class="box" x="288" y="121" width="150" height="70" rx="10"/><text class="t-lg ko" x="304" y="148">리졸버 주소</text><text class="t-sm" x="304" y="166">10.0.0.2</text><text class="t-sm" x="304" y="181">169.254.169.253</text>
+  <path class="ln" d="M438 156H496" marker-end="url(#ac)"/>
+  <rect class="zone" x="500" y="30" width="430" height="240" rx="12"/><text class="ko t-sm" x="518" y="52" letter-spacing="1">EC2 DNS 리졸버 서버군, 서울 리전</text>
+  <g>
+    <rect class="box-ok" x="530" y="72" width="76" height="34" rx="6"/><rect class="box-ok" x="626" y="72" width="76" height="34" rx="6"/><rect class="box-ok" x="722" y="72" width="76" height="34" rx="6"/><rect class="box-ok" x="818" y="72" width="76" height="34" rx="6"/>
+    <rect class="box-ok" x="530" y="118" width="76" height="34" rx="6"/><rect class="box-ok" x="626" y="118" width="76" height="34" rx="6"/><rect class="box-ok" x="722" y="118" width="76" height="34" rx="6"/><rect class="box-ok" x="818" y="118" width="76" height="34" rx="6"/>
+    <rect class="box-ok" x="530" y="164" width="76" height="34" rx="6"/><rect class="box-ok" x="626" y="164" width="76" height="34" rx="6"/><rect class="box-ok" x="722" y="164" width="76" height="34" rx="6"/><rect class="box-ok" x="818" y="164" width="76" height="34" rx="6"/>
+  </g>
+  <g class="t-sm" text-anchor="middle" style="fill:var(--ok)">
+    <text x="568" y="93">host</text><text x="664" y="93">host</text><text x="760" y="93">host</text><text x="856" y="93">host</text>
+    <text x="568" y="139">host</text><text x="664" y="139">host</text><text x="760" y="139">host</text><text x="856" y="139">host</text>
+    <text x="568" y="185">host</text><text x="664" y="185">host</text><text x="760" y="185">host</text><text x="856" y="185">host</text>
+  </g>
+  <text x="530" y="232" class="ko t-md">정상 호스트가 리전 전체의 재귀 질의를 나눠 받는다</text>
+  <text x="530" y="252" class="ko t-sm">답은 Route 53과 외부 권한 DNS에서 받아 온다</text>
+</svg>

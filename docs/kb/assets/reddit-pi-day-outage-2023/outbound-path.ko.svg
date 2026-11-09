@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="360" viewBox="0 0 960 360" role="img" aria-labelledby="t d">
+  <title id="t">클러스터 외부 구간</title>
+  <desc id="d">클러스터 외부 구간: 노드 안에서 SNAT로 출발지가 노드 IP로 바뀌고 기본 라우트로 클러스터 밖 example.com에 도달한다</desc>
+  <style>
+    :root { --bg: #000; --bg-1: transparent; --bg-2: #000; --line: #1f1f1f; --line-2: #333; --fg: #ededed; --fg-2: #a1a1a1; --fg-3: #666; --ok: #45dec5; --err: #ff6166; --warn: #f5a524; --sans: "Geist", "Pretendard Variable", Pretendard, ui-sans-serif, system-ui, -apple-system, sans-serif; --mono: "Geist Mono", "Pretendard Variable", Pretendard, ui-monospace, SFMono-Regular, Menlo, monospace; color-scheme: dark; }
+    svg text { font-family: var(--mono); }
+    svg text.ko { font-family: var(--sans); }
+    .t-lg { font: 600 14px var(--sans); fill: var(--fg); }
+    .t-sm { font-size: 10.5px; fill: var(--fg-3); }
+    .box { fill: var(--bg-2); stroke: var(--line-2); }
+    .box-ok { fill: rgba(69,222,197,.06); stroke: rgba(69,222,197,.45); }
+  </style>
+  <rect width="960" height="360" fill="#000"/>
+  <defs><marker id="ae" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10z" fill="#45dec5"/></marker></defs>
+  <rect x="20" y="30" width="680" height="280" rx="14" fill="none" stroke="#555" stroke-dasharray="6 5"/><rect x="44" y="19" width="76" height="22" rx="11" fill="#000" stroke="#555"/><text x="82.0" y="34" text-anchor="middle" class="ko" style="fill:#a1a1a1;font-size:11.5px">클러스터</text>
+  <rect x="40" y="76" width="640" height="212" rx="10" fill="#050505" stroke="#444"/><rect x="60" y="65" width="50" height="22" rx="11" fill="#000" stroke="#555"/><text x="85.0" y="80" text-anchor="middle" class="ko" style="fill:#a1a1a1;font-size:11.5px">노드</text>
+  <text class="t-lg" x="62" y="112">worker-a</text><text class="t-sm" x="660" y="112" text-anchor="end">10.0.100.11</text>
+  <rect class="box-ok" x="58" y="138" width="180" height="80" rx="10"/><text class="t-lg ko" x="76" y="170">debug 파드</text><text class="t-sm" x="76" y="194">src 10.0.1.7</text><path d="M238 178H264" stroke="var(--ok)" stroke-width="1.5" fill="none" marker-end="url(#ae)"/>
+  <rect class="box" x="266" y="138" width="180" height="80" rx="10"/><text class="t-lg ko" x="284" y="170">SNAT</text><text class="t-sm" x="284" y="194">src 10.0.100.11</text><path d="M446 178H472" stroke="var(--ok)" stroke-width="1.5" fill="none" marker-end="url(#ae)"/>
+  <rect class="box" x="474" y="138" width="180" height="80" rx="10"/><text class="t-lg ko" x="492" y="170">기본 라우트</text><text class="t-sm" x="492" y="194">via 10.0.100.1</text>
+  <text x="356" y="250" text-anchor="middle" class="ko" style="fill:var(--fg-3);font-size:11px">출발지를 파드 IP에서 노드 IP로 변경</text>
+  <rect x="720" y="30" width="220" height="280" rx="14" fill="none" stroke="#555" stroke-dasharray="6 5"/><rect x="744" y="19" width="96" height="22" rx="11" fill="#000" stroke="#555"/><text x="792.0" y="34" text-anchor="middle" class="ko" style="fill:#a1a1a1;font-size:11.5px">클러스터 밖</text>
+  <path d="M654 178H770" stroke="var(--ok)" stroke-width="1.5" fill="none" marker-end="url(#ae)"/>
+  <rect class="box-ok" x="772" y="138" width="152" height="80" rx="10"/><text class="t-lg" x="790" y="170">example.com</text><text class="t-sm" x="790" y="194">HTTP 200</text>
+  <path d="M896 158l6 7 11-14" stroke="var(--ok)" stroke-width="2" fill="none"/>
+  <text x="830" y="250" text-anchor="middle" class="t-sm ko">인터넷</text>
+  <text x="480" y="340" text-anchor="middle" class="ko" style="fill:var(--fg-2);font-size:12.5px">응답은 노드 IP로 돌아오고, 노드가 다시 파드로 넘긴다. BGP 라우트는 한 번도 쓰지 않는다.</text>
+</svg>

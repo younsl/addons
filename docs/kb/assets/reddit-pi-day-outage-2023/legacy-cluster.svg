@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="330" viewBox="0 0 960 330" role="img" aria-labelledby="t d">
+  <title id="t">Reddit cluster layout</title>
+  <desc id="d">Reddit cluster layout: apart from the standard-build clusters, the oldest and largest legacy core cluster carried a hand-applied Calico configuration</desc>
+  <style>
+    :root { --bg: #000; --bg-1: transparent; --bg-2: #000; --line: #1f1f1f; --line-2: #333; --fg: #ededed; --fg-2: #a1a1a1; --fg-3: #666; --ok: #45dec5; --err: #ff6166; --warn: #f5a524; --sans: "Geist", "Pretendard Variable", Pretendard, ui-sans-serif, system-ui, -apple-system, sans-serif; --mono: "Geist Mono", "Pretendard Variable", Pretendard, ui-monospace, SFMono-Regular, Menlo, monospace; color-scheme: dark; }
+    svg text { font-family: var(--mono); }
+    svg text.ko { font-family: var(--sans); }
+    .t-lg { font: 600 14px var(--sans); fill: var(--fg); }
+    .t-sm { font-size: 10.5px; fill: var(--fg-3); }
+    .t-md { font-size: 11.5px; fill: var(--fg-2); }
+    .zone { fill: none; stroke: var(--line-2); stroke-dasharray: 3 4; }
+    .chip { fill: var(--bg); stroke: var(--line-2); }
+    .box { fill: var(--bg-2); stroke: var(--line-2); }
+    .ln { stroke: var(--fg-3); fill: none; }
+  </style>
+  <rect width="960" height="330" fill="#000"/>
+  <defs><marker id="af" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10z" fill="#666"/></marker></defs>
+  <rect class="box" x="380" y="24" width="200" height="44" rx="22"/><text class="t-lg ko" x="480" y="51" text-anchor="middle">reddit.com traffic</text>
+  <path class="ln" d="M440 68V96H210V120" marker-end="url(#af)"/><path class="ln" d="M520 68V96H730V120" marker-end="url(#af)"/>
+  <rect x="40" y="122" width="400" height="184" rx="12" fill="rgba(255,97,102,.04)" stroke="rgba(255,97,102,.5)"/>
+  <text class="t-lg ko" x="62" y="152">Legacy core cluster</text><text class="t-sm ko" x="418" y="152" text-anchor="end">Oldest and largest</text>
+  <g class="t-md ko">
+    <rect class="chip" x="62" y="172" width="356" height="30" rx="6"/><text x="78" y="192" class="ko t-md">Built before standard tooling existed</text>
+    <rect class="chip" x="62" y="210" width="356" height="30" rx="6"/><text x="78" y="230" class="ko t-md">Calico BGP reflector config applied by hand</text>
+    <rect class="chip" x="62" y="248" width="356" height="30" rx="6"/><text x="78" y="268" class="ko t-md">Engineers who wrote it had moved on</text>
+  </g>
+  <text x="400" y="296" text-anchor="end" class="ko" style="fill:var(--err);font-size:11px">Snowflake</text>
+  <rect class="zone" x="520" y="122" width="400" height="184" rx="12"/>
+  <text class="t-lg ko" x="542" y="152">Standard-build clusters</text><text class="t-sm ko" x="898" y="152" text-anchor="end">Shared tooling, shared config</text>
+  <g>
+    <rect class="box" x="542" y="176" width="110" height="100" rx="8"/><rect class="box" x="665" y="176" width="110" height="100" rx="8"/><rect class="box" x="788" y="176" width="110" height="100" rx="8"/>
+    <text class="t-sm" x="597" y="232" text-anchor="middle">cluster</text><text class="t-sm" x="720" y="232" text-anchor="middle">cluster</text><text class="t-sm" x="843" y="232" text-anchor="middle">cluster</text>
+  </g>
+  <text x="898" y="296" text-anchor="end" class="t-sm ko">Identical configs</text>
+</svg>

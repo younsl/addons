@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="330" viewBox="0 0 960 330" role="img" aria-labelledby="t d">
+  <title id="t">사이트가 멈춘 이유</title>
+  <desc id="d">사용자 요청은 로드 밸런서를 거쳐 앱 서버까지 도달했지만, 앱 서버가 DB, 캐시, 외부 API의 이름을 풀지 못해 오류를 반환했다</desc>
+  <style>
+    :root { --bg: #000; --bg-1: transparent; --bg-2: #000; --line: #1f1f1f; --line-2: #333; --fg: #ededed; --fg-2: #a1a1a1; --fg-3: #666; --ok: #45dec5; --err: #ff6166; --warn: #f5a524; --sans: "Geist", "Pretendard Variable", Pretendard, ui-sans-serif, system-ui, -apple-system, sans-serif; --mono: "Geist Mono", "Pretendard Variable", Pretendard, ui-monospace, SFMono-Regular, Menlo, monospace; color-scheme: dark; }
+    svg text { font-family: var(--mono); }
+    svg text.ko { font-family: var(--sans); }
+    .t-lg { font: 600 14px var(--sans); fill: var(--fg); }
+    .t-sm { font-size: 10.5px; fill: var(--fg-3); }
+    .box { fill: var(--bg-2); stroke: var(--line-2); }
+    .box-ok { fill: rgba(69,222,197,.06); stroke: rgba(69,222,197,.45); }
+    .box-err { fill: rgba(255,97,102,.06); stroke: rgba(255,97,102,.5); }
+  </style>
+  <rect width="960" height="330" fill="#000"/>
+  <defs><marker id="ad" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10z" fill="#45dec5"/></marker><marker id="ae" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10z" fill="#ff6166"/></marker></defs>
+  <rect class="box" x="30" y="125" width="140" height="70" rx="10"/><text class="t-lg ko" x="48" y="155">사용자</text><text class="t-sm ko" x="48" y="175">DNS 정상</text>
+  <path d="M170 150H226" stroke="var(--ok)" stroke-width="1.5" fill="none" marker-end="url(#ad)"/>
+  <rect class="box-ok" x="228" y="125" width="160" height="70" rx="10"/><text class="t-lg ko" x="246" y="155">로드 밸런서</text><text class="t-sm ko" x="246" y="175">요청 도착</text>
+  <path d="M388 150H436" stroke="var(--ok)" stroke-width="1.5" fill="none" marker-end="url(#ad)"/>
+  <rect class="box" x="438" y="110" width="180" height="100" rx="10"/><text class="t-lg ko" x="456" y="140">앱 서버</text><text class="t-sm ko" x="456" y="160">EC2, 서울 리전</text><text class="t-sm" x="456" y="190" style="fill:var(--err)">getaddrinfo() 실패</text>
+  <path d="M618 140C660 140 660 70 698 70" stroke="var(--err)" stroke-width="1.5" stroke-dasharray="5 5" fill="none"/>
+  <path d="M618 160H698" stroke="var(--err)" stroke-width="1.5" stroke-dasharray="5 5" fill="none"/>
+  <path d="M618 180C660 180 660 250 698 250" stroke="var(--err)" stroke-width="1.5" stroke-dasharray="5 5" fill="none"/>
+  <rect class="box-err" x="700" y="40" width="230" height="60" rx="10"/><text class="t-lg ko" x="718" y="66">DB 엔드포인트</text><text class="t-sm" x="718" y="86">*.rds.amazonaws.com</text>
+  <rect class="box-err" x="700" y="130" width="230" height="60" rx="10"/><text class="t-lg ko" x="718" y="156">캐시 엔드포인트</text><text class="t-sm" x="718" y="176">*.cache.amazonaws.com</text>
+  <rect class="box-err" x="700" y="220" width="230" height="60" rx="10"/><text class="t-lg ko" x="718" y="246">외부 결제 API</text><text class="t-sm" x="718" y="266">api.example.com</text>
+  <path d="M650 152l16 16M666 152l-16 16" stroke="var(--err)" stroke-width="2"/>
+  <path d="M438 196H180" stroke="var(--err)" stroke-width="1.5" fill="none" marker-end="url(#ae)"/>
+  <text x="309" y="222" text-anchor="middle" class="ko" style="fill:var(--err);font-size:11.5px">오류 페이지, 타임아웃</text>
+  <text x="480" y="312" text-anchor="middle" class="ko" style="fill:var(--fg-2);font-size:12.5px">네트워크는 연결돼 있었다. 연결할 주소를 몰랐을 뿐이다.</text>
+</svg>

@@ -1,0 +1,130 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="560" viewBox="0 0 960 560" role="img" aria-labelledby="t d" class="arch" data-v="123">
+  <title id="t">Calico BGP 토폴로지, 1.23</title>
+  <desc id="d">Calico BGP 토폴로지: 워커 노드는 node-role.kubernetes.io/master 라벨로 선택된 컨트롤 플레인 노드의 라우트 리플렉터와 피어링한다</desc>
+  <style>
+    :root { --bg: #000; --bg-1: transparent; --bg-2: #000; --line: #1f1f1f; --line-2: #333; --fg: #ededed; --fg-2: #a1a1a1; --fg-3: #666; --ok: #45dec5; --err: #ff6166; --warn: #f5a524; --sans: "Geist", "Pretendard Variable", Pretendard, ui-sans-serif, system-ui, -apple-system, sans-serif; --mono: "Geist Mono", "Pretendard Variable", Pretendard, ui-monospace, SFMono-Regular, Menlo, monospace; color-scheme: dark; }
+    svg text { font-family: var(--mono); }
+    svg text.ko { font-family: var(--sans); }
+    .t-lg { font: 600 14px var(--sans); fill: var(--fg); }
+    .t-sm { font-size: 10.5px; fill: var(--fg-3); }
+    .t-md { font-size: 11.5px; fill: var(--fg-2); }
+    .zone { fill: none; stroke: var(--line-2); stroke-dasharray: 3 4; }
+    .node { fill: var(--bg-2); stroke: var(--line-2); }
+    .chip { fill: var(--bg); stroke: var(--line-2); }
+    .bgp { stroke: var(--fg-2); stroke-width: 1; fill: none; stroke-dasharray: 4 6; animation: flow 1.2s linear infinite; opacity: .55; transition: stroke .4s, opacity .4s; }
+    .rr { transition: opacity .4s; }
+    .lbl-new, .x-mark, .err-only { opacity: 0; transition: opacity .4s; }
+    .lbl-old, .ok-only { transition: opacity .4s; }
+    .ok { fill: var(--ok); }
+    .pod { fill: var(--fg-3); transition: fill .4s; }
+    .p2p { stroke: var(--ok); stroke-width: 1.5; fill: none; transition: stroke .4s; }
+    .arch[data-v="124"] .bgp { stroke: var(--err); opacity: .18; animation: none; stroke-dasharray: 2 6; }
+    .arch[data-v="124"] .rr { opacity: 0; }
+    .arch[data-v="124"] .lbl-old, .arch[data-v="124"] .ok-only { opacity: 0; }
+    .arch[data-v="124"] .lbl-new, .arch[data-v="124"] .x-mark, .arch[data-v="124"] .err-only { opacity: 1; }
+    .arch[data-v="124"] .pod { fill: var(--err); }
+    .arch[data-v="124"] .p2p { stroke: var(--err); stroke-dasharray: 5 5; }
+    .arch[data-v="124"] .sel-box { stroke: var(--err); }
+    @media (prefers-reduced-motion: reduce) {
+  .bgp { animation: none; }
+}
+    @keyframes flow { to { stroke-dashoffset: -20; } }
+  </style>
+  <rect width="960" height="560" fill="#000"/>
+  <defs>
+    <marker id="ah" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#a1a1a1"/></marker>
+  </defs>
+
+  <rect class="zone" x="30" y="28" width="900" height="186" rx="12"/>
+  <text class="ko t-sm" x="48" y="50" letter-spacing="1.5">컨트롤 플레인</text>
+  <text class="t-sm" x="912" y="50" text-anchor="end">kube-apiserver, etcd, scheduler</text>
+
+  <g id="cps">
+    <g transform="translate(110,68)">
+      <rect class="node" width="200" height="124" rx="8"/>
+      <circle class="ok" cx="18" cy="20" r="3.5"/><text class="t-lg" x="30" y="25">cp-1</text>
+      <text class="t-sm" x="186" y="25" text-anchor="end">Ready</text>
+      <rect class="chip sel-box" x="12" y="40" width="176" height="24" rx="5"/>
+      <text class="t-md lbl-old" x="22" y="56">role/master</text>
+      <text class="t-md lbl-new" x="22" y="56" style="fill:var(--warn)">role/control-plane</text>
+      <g class="rr"><rect x="12" y="76" width="176" height="34" rx="6" fill="rgba(69,222,197,.08)" stroke="rgba(69,222,197,.4)"/><text x="100" y="98" text-anchor="middle" style="fill:var(--ok);font-size:12px" class="ko">BGP 라우트 리플렉터</text></g>
+      <g class="err-only"><rect x="12" y="76" width="176" height="34" rx="6" fill="none" stroke="var(--line-2)" stroke-dasharray="3 3"/><text x="100" y="98" text-anchor="middle" class="ko t-sm">선택 안 됨</text></g>
+    </g>
+    <g transform="translate(380,68)">
+      <rect class="node" width="200" height="124" rx="8"/>
+      <circle class="ok" cx="18" cy="20" r="3.5"/><text class="t-lg" x="30" y="25">cp-2</text>
+      <text class="t-sm" x="186" y="25" text-anchor="end">Ready</text>
+      <rect class="chip sel-box" x="12" y="40" width="176" height="24" rx="5"/>
+      <text class="t-md lbl-old" x="22" y="56">role/master</text>
+      <text class="t-md lbl-new" x="22" y="56" style="fill:var(--warn)">role/control-plane</text>
+      <g class="rr"><rect x="12" y="76" width="176" height="34" rx="6" fill="rgba(69,222,197,.08)" stroke="rgba(69,222,197,.4)"/><text x="100" y="98" text-anchor="middle" style="fill:var(--ok);font-size:12px" class="ko">BGP 라우트 리플렉터</text></g>
+      <g class="err-only"><rect x="12" y="76" width="176" height="34" rx="6" fill="none" stroke="var(--line-2)" stroke-dasharray="3 3"/><text x="100" y="98" text-anchor="middle" class="ko t-sm">선택 안 됨</text></g>
+    </g>
+    <g transform="translate(650,68)">
+      <rect class="node" width="200" height="124" rx="8"/>
+      <circle class="ok" cx="18" cy="20" r="3.5"/><text class="t-lg" x="30" y="25">cp-3</text>
+      <text class="t-sm" x="186" y="25" text-anchor="end">Ready</text>
+      <rect class="chip sel-box" x="12" y="40" width="176" height="24" rx="5"/>
+      <text class="t-md lbl-old" x="22" y="56">role/master</text>
+      <text class="t-md lbl-new" x="22" y="56" style="fill:var(--warn)">role/control-plane</text>
+      <g class="rr"><rect x="12" y="76" width="176" height="34" rx="6" fill="rgba(69,222,197,.08)" stroke="rgba(69,222,197,.4)"/><text x="100" y="98" text-anchor="middle" style="fill:var(--ok);font-size:12px" class="ko">BGP 라우트 리플렉터</text></g>
+      <g class="err-only"><rect x="12" y="76" width="176" height="34" rx="6" fill="none" stroke="var(--line-2)" stroke-dasharray="3 3"/><text x="100" y="98" text-anchor="middle" class="ko t-sm">선택 안 됨</text></g>
+    </g>
+  </g>
+
+  <g id="bgp">
+    <path class="bgp" d="M210 192 L135 330"/><path class="bgp" d="M210 192 L355 330"/><path class="bgp" d="M210 192 L575 330"/><path class="bgp" d="M210 192 L795 330"/>
+    <path class="bgp" d="M480 192 L165 330"/><path class="bgp" d="M480 192 L385 330"/><path class="bgp" d="M480 192 L605 330"/><path class="bgp" d="M480 192 L825 330"/>
+    <path class="bgp" d="M750 192 L195 330"/><path class="bgp" d="M750 192 L415 330"/><path class="bgp" d="M750 192 L635 330"/><path class="bgp" d="M750 192 L855 330"/>
+  </g>
+  <g class="x-mark">
+    <rect x="390" y="244" width="180" height="30" rx="15" fill="#000" stroke="var(--err)"/>
+    <text x="480" y="263" text-anchor="middle" style="fill:var(--err);font-size:11.5px" class="ko">피어 0, 라우트 없음</text>
+  </g>
+  <g class="ok-only">
+    <rect x="400" y="244" width="160" height="30" rx="15" fill="#000" stroke="var(--line-2)"/>
+    <text x="480" y="263" text-anchor="middle" class="ko t-md">라우트 반사 중</text>
+  </g>
+
+  <rect class="zone" x="30" y="310" width="900" height="222" rx="12"/>
+  <text class="ko t-sm" x="48" y="304" letter-spacing="1.5" dy="-6">데이터 플레인</text>
+
+  <g id="workers">
+    <g transform="translate(60,330)">
+      <rect class="node" width="190" height="130" rx="8"/>
+      <circle class="ok" cx="18" cy="20" r="3.5"/><text class="t-lg" x="30" y="25">worker-a</text><text class="t-sm" x="176" y="25" text-anchor="end">Ready</text>
+      <text class="t-sm" x="14" y="50">pod CIDR 10.0.1.0/24</text>
+      <circle class="pod" cx="26" cy="76" r="7"/><circle class="pod" cx="48" cy="76" r="7"/><circle class="pod" cx="70" cy="76" r="7"/>
+      <text class="ko t-md ok-only" x="14" y="112">라우트: 3 / 3</text>
+      <text class="ko t-md err-only" x="14" y="112" style="fill:var(--err)">라우트: 0 / 3</text>
+    </g>
+    <g transform="translate(280,330)">
+      <rect class="node" width="190" height="130" rx="8"/>
+      <circle class="ok" cx="18" cy="20" r="3.5"/><text class="t-lg" x="30" y="25">worker-b</text><text class="t-sm" x="176" y="25" text-anchor="end">Ready</text>
+      <text class="t-sm" x="14" y="50">pod CIDR 10.0.2.0/24</text>
+      <circle class="pod" cx="26" cy="76" r="7"/><circle class="pod" cx="48" cy="76" r="7"/>
+      <text class="ko t-md ok-only" x="14" y="112">라우트: 3 / 3</text>
+      <text class="ko t-md err-only" x="14" y="112" style="fill:var(--err)">라우트: 0 / 3</text>
+    </g>
+    <g transform="translate(500,330)">
+      <rect class="node" width="190" height="130" rx="8"/>
+      <circle class="ok" cx="18" cy="20" r="3.5"/><text class="t-lg" x="30" y="25">worker-c</text><text class="t-sm" x="176" y="25" text-anchor="end">Ready</text>
+      <text class="t-sm" x="14" y="50">pod CIDR 10.0.3.0/24</text>
+      <circle class="pod" cx="26" cy="76" r="7"/><circle class="pod" cx="48" cy="76" r="7"/><circle class="pod" cx="70" cy="76" r="7"/><circle class="pod" cx="92" cy="76" r="7"/>
+      <text class="ko t-md ok-only" x="14" y="112">라우트: 3 / 3</text>
+      <text class="ko t-md err-only" x="14" y="112" style="fill:var(--err)">라우트: 0 / 3</text>
+    </g>
+    <g transform="translate(720,330)">
+      <rect class="node" width="190" height="130" rx="8"/>
+      <circle class="ok" cx="18" cy="20" r="3.5"/><text class="t-lg" x="30" y="25">worker-d</text><text class="t-sm" x="176" y="25" text-anchor="end">Ready</text>
+      <text class="t-sm" x="14" y="50">pod CIDR 10.0.4.0/24</text>
+      <circle class="pod" cx="26" cy="76" r="7"/><circle class="pod" cx="48" cy="76" r="7"/>
+      <text class="ko t-md ok-only" x="14" y="112">라우트: 3 / 3</text>
+      <text class="ko t-md err-only" x="14" y="112" style="fill:var(--err)">라우트: 0 / 3</text>
+    </g>
+  </g>
+
+  <path class="p2p" d="M86 460 V500 H766 V460" marker-end="url(#ah)"/>
+  <g class="ok-only"><rect x="376" y="488" width="208" height="24" rx="12" fill="#000" stroke="rgba(69,222,197,.4)"/><text x="480" y="504" text-anchor="middle" style="fill:var(--ok);font-size:11.5px" class="ko">10.0.1.7에서 10.0.4.3 정상</text></g>
+  <g class="err-only"><rect x="356" y="488" width="248" height="24" rx="12" fill="#000" stroke="var(--err)"/><text x="480" y="504" text-anchor="middle" style="fill:var(--err);font-size:11.5px" class="ko">10.0.1.7에서 10.0.4.3 도달 불가</text></g>
+</svg>

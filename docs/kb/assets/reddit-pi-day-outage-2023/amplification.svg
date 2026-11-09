@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="280" viewBox="0 0 960 280" role="img" aria-labelledby="t d">
+  <title id="t">One missing control plane label amplified into a 314-minute full Reddit outage</title>
+  <desc id="d">One missing control plane label amplified into a 314-minute full Reddit outage</desc>
+  <style>
+    :root { --bg: #000; --bg-1: transparent; --bg-2: #000; --line: #1f1f1f; --line-2: #333; --fg: #ededed; --fg-2: #a1a1a1; --fg-3: #666; --ok: #45dec5; --err: #ff6166; --warn: #f5a524; --sans: "Geist", "Pretendard Variable", Pretendard, ui-sans-serif, system-ui, -apple-system, sans-serif; --mono: "Geist Mono", "Pretendard Variable", Pretendard, ui-monospace, SFMono-Regular, Menlo, monospace; color-scheme: dark; }
+    svg text { font-family: var(--mono); }
+    svg text.ko { font-family: var(--sans); }
+  </style>
+  <rect width="960" height="280" fill="#000"/>
+  <defs><linearGradient id="amp" x1="0" x2="1" y1="0" y2="0"><stop offset="0" stop-color="#ff6166" stop-opacity=".05"/><stop offset="1" stop-color="#ff6166" stop-opacity=".28"/></linearGradient></defs>
+  <text x="50" y="104" class="ko" style="fill:var(--fg-3);font-size:13px">Cause</text>
+  <rect x="40" y="116" width="290" height="48" rx="8" fill="#000" stroke="var(--line-2)"/>
+  <text x="185" y="145" text-anchor="middle" style="fill:var(--err);font-size:12.5px">node-role.kubernetes.io/master</text>
+  <line x1="62" y1="140" x2="308" y2="140" stroke="var(--err)" stroke-width="1.5"/>
+  <text x="185" y="190" text-anchor="middle" class="ko" style="fill:var(--fg-2);font-size:13px">1 control plane label</text>
+  <polygon points="340,132 620,36 620,244 340,148" fill="url(#amp)"/>
+  <g class="ko" style="font-size:12px;fill:var(--fg-3)">
+    <text x="420" y="122">Selector: 0 nodes</text><text x="470" y="146">Reflectors: 0</text><text x="520" y="170">Pod routes: 0</text>
+  </g>
+  <rect x="630" y="36" width="290" height="208" rx="14" fill="rgba(255,97,102,.06)" stroke="var(--err)"/>
+  <text x="775" y="84" text-anchor="middle" class="ko" style="fill:var(--err);font-size:14px">Result</text>
+  <text x="775" y="150" text-anchor="middle" class="ko" style="fill:var(--fg);font:600 34px var(--sans);letter-spacing:-1px">Full Reddit outage</text>
+  <text x="775" y="206" text-anchor="middle" style="fill:var(--err);font:600 40px var(--sans);letter-spacing:-1px">314<tspan class="ko" style="font-size:20px;fill:var(--fg-2)"> min</tspan></text>
+</svg>

@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="290" viewBox="0 0 960 290" role="img" aria-labelledby="t d">
+  <title id="t">설정 업데이트 전후의 리졸버 서버군</title>
+  <desc id="d">설정 업데이트 전에는 정상 호스트 12대가 쿼리를 처리하고, 업데이트 후에는 몇 대만 남아 리전 전체 쿼리를 감당하지 못한다</desc>
+  <style>
+    :root { --bg: #000; --bg-1: transparent; --bg-2: #000; --line: #1f1f1f; --line-2: #333; --fg: #ededed; --fg-2: #a1a1a1; --fg-3: #666; --ok: #45dec5; --err: #ff6166; --warn: #f5a524; --sans: "Geist", "Pretendard Variable", Pretendard, ui-sans-serif, system-ui, -apple-system, sans-serif; --mono: "Geist Mono", "Pretendard Variable", Pretendard, ui-monospace, SFMono-Regular, Menlo, monospace; color-scheme: dark; }
+    svg text { font-family: var(--mono); }
+    svg text.ko { font-family: var(--sans); }
+    .t-sm { font-size: 10.5px; fill: var(--fg-3); }
+    .box-ok { fill: rgba(69,222,197,.06); stroke: rgba(69,222,197,.45); }
+    .box-err { fill: rgba(255,97,102,.06); stroke: rgba(255,97,102,.5); }
+    .box-off { fill: none; stroke: var(--line-2); stroke-dasharray: 3 3; }
+  </style>
+  <rect width="960" height="290" fill="#000"/>
+  <text x="30" y="44" class="ko" style="fill:var(--ok);font-size:12px">설정 업데이트 전</text>
+  <g>
+    <rect class="box-ok" x="30" y="60" width="54" height="44" rx="6"/><rect class="box-ok" x="94" y="60" width="54" height="44" rx="6"/><rect class="box-ok" x="158" y="60" width="54" height="44" rx="6"/><rect class="box-ok" x="222" y="60" width="54" height="44" rx="6"/><rect class="box-ok" x="286" y="60" width="54" height="44" rx="6"/><rect class="box-ok" x="350" y="60" width="54" height="44" rx="6"/><rect class="box-ok" x="414" y="60" width="54" height="44" rx="6"/><rect class="box-ok" x="478" y="60" width="54" height="44" rx="6"/><rect class="box-ok" x="542" y="60" width="54" height="44" rx="6"/><rect class="box-ok" x="606" y="60" width="54" height="44" rx="6"/><rect class="box-ok" x="670" y="60" width="54" height="44" rx="6"/><rect class="box-ok" x="734" y="60" width="54" height="44" rx="6"/>
+  </g>
+  <path d="M24 116H794" stroke="var(--ok)" stroke-dasharray="4 4"/><text x="794" y="132" text-anchor="end" class="ko t-sm" style="fill:var(--ok)">최소 정상 호스트 하한</text>
+  <rect class="box-ok" x="820" y="62" width="110" height="40" rx="20"/><text x="875" y="87" text-anchor="middle" class="ko" style="fill:var(--ok);font-size:12px">쿼리 성공</text>
+  <line x1="30" y1="158" x2="930" y2="158" stroke="var(--line)"/>
+  <text x="30" y="186" class="ko" style="fill:var(--err);font-size:12px">설정 업데이트 후</text>
+  <g>
+    <rect class="box-err" x="30" y="202" width="54" height="44" rx="6"/><rect class="box-err" x="94" y="202" width="54" height="44" rx="6"/><rect class="box-err" x="158" y="202" width="54" height="44" rx="6"/>
+    <g opacity=".5"><rect class="box-off" x="222" y="202" width="54" height="44" rx="6"/><rect class="box-off" x="286" y="202" width="54" height="44" rx="6"/><rect class="box-off" x="350" y="202" width="54" height="44" rx="6"/><rect class="box-off" x="414" y="202" width="54" height="44" rx="6"/><rect class="box-off" x="478" y="202" width="54" height="44" rx="6"/><rect class="box-off" x="542" y="202" width="54" height="44" rx="6"/><rect class="box-off" x="606" y="202" width="54" height="44" rx="6"/><rect class="box-off" x="670" y="202" width="54" height="44" rx="6"/><rect class="box-off" x="734" y="202" width="54" height="44" rx="6"/></g>
+  </g>
+  <text x="121" y="266" text-anchor="middle" class="ko t-sm" style="fill:var(--err)">남은 호스트에 쿼리 집중</text>
+  <text x="505" y="266" text-anchor="middle" class="ko t-sm">서비스에서 빠진 호스트</text>
+  <rect class="box-err" x="820" y="204" width="110" height="40" rx="20"/><text x="875" y="229" text-anchor="middle" class="ko" style="fill:var(--err);font-size:12px">쿼리 실패</text>
+</svg>

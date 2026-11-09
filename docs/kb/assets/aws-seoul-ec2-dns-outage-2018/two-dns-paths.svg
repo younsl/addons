@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="340" viewBox="0 0 960 340" role="img" aria-labelledby="t d">
+  <title id="t">Two DNS paths</title>
+  <desc id="d">Two DNS paths: users outside EC2 got normal answers from Route 53 authoritative DNS through their ISP resolver, while app servers inside EC2 instances were blocked at the EC2 DNS resolver</desc>
+  <style>
+    :root { --bg: #000; --bg-1: transparent; --bg-2: #000; --line: #1f1f1f; --line-2: #333; --fg: #ededed; --fg-2: #a1a1a1; --fg-3: #666; --ok: #45dec5; --err: #ff6166; --warn: #f5a524; --sans: "Geist", "Pretendard Variable", Pretendard, ui-sans-serif, system-ui, -apple-system, sans-serif; --mono: "Geist Mono", "Pretendard Variable", Pretendard, ui-monospace, SFMono-Regular, Menlo, monospace; color-scheme: dark; }
+    svg text { font-family: var(--mono); }
+    svg text.ko { font-family: var(--sans); }
+    .t-lg { font: 600 14px var(--sans); fill: var(--fg); }
+    .t-sm { font-size: 10.5px; fill: var(--fg-3); }
+    .box { fill: var(--bg-2); stroke: var(--line-2); }
+    .box-ok { fill: rgba(69,222,197,.06); stroke: rgba(69,222,197,.45); }
+    .box-err { fill: rgba(255,97,102,.06); stroke: rgba(255,97,102,.5); }
+    .ln { stroke: var(--fg-3); fill: none; }
+  </style>
+  <rect width="960" height="340" fill="#000"/>
+  <defs><marker id="aa" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10z" fill="#45dec5"/></marker><marker id="ab" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10z" fill="#666"/></marker></defs>
+  <text x="30" y="44" class="ko" style="fill:var(--ok);font-size:12px">Asked from outside EC2</text>
+  <rect class="box" x="30" y="60" width="190" height="70" rx="10"/><text class="t-lg ko" x="48" y="90">User browser</text><text class="t-sm ko" x="48" y="110">Phone, PC</text>
+  <path d="M220 95H258" stroke="var(--ok)" stroke-width="1.5" fill="none" marker-end="url(#aa)"/>
+  <rect class="box" x="260" y="60" width="200" height="70" rx="10"/><text class="t-lg ko" x="278" y="90">ISP resolver</text><text class="t-sm ko" x="278" y="110">Recursive resolver</text>
+  <path d="M460 95H498" stroke="var(--ok)" stroke-width="1.5" fill="none" marker-end="url(#aa)"/>
+  <rect class="box-ok" x="500" y="60" width="220" height="70" rx="10"/><text class="t-lg" x="518" y="90">Route 53</text><text class="t-sm ko" x="518" y="110">Authoritative DNS, hosted zone</text>
+  <path d="M700 82l6 7 11-14" stroke="var(--ok)" stroke-width="2" fill="none"/>
+  <path d="M720 95H758" stroke="var(--ok)" stroke-width="1.5" fill="none" marker-end="url(#aa)"/>
+  <rect class="box" x="760" y="60" width="170" height="70" rx="10"/><text class="t-lg ko" x="778" y="90">Answer OK</text><text class="t-sm ko" x="778" y="110">Load balancer IP</text>
+  <line x1="30" y1="166" x2="930" y2="166" stroke="var(--line)"/>
+  <text x="30" y="200" class="ko" style="fill:var(--err);font-size:12px">Asked from inside an EC2 instance</text>
+  <rect class="box" x="30" y="216" width="190" height="70" rx="10"/><text class="t-lg ko" x="48" y="246">App server</text><text class="t-sm ko" x="48" y="266">EC2 instance</text>
+  <path d="M220 251H258" class="ln" marker-end="url(#ab)"/>
+  <rect class="box-err" x="260" y="216" width="200" height="70" rx="10"/><text class="t-lg ko" x="278" y="246">EC2 DNS resolver</text><text class="t-sm ko" x="278" y="266">VPC +2, recursive</text>
+  <path d="M460 251H610V130" stroke="var(--err)" stroke-width="1.5" stroke-dasharray="5 5" fill="none"/>
+  <path d="M527 243l16 16M543 243l-16 16" stroke="var(--err)" stroke-width="2"/>
+  <rect x="680" y="234" width="250" height="34" rx="17" fill="#000" stroke="var(--err)"/><text x="805" y="256" text-anchor="middle" class="ko" style="fill:var(--err);font-size:12px">Low resolver capacity, queries fail</text>
+  <text x="480" y="322" text-anchor="middle" class="ko" style="fill:var(--fg-2);font-size:12.5px">Both paths end at the same Route 53, but a different resolver stands in front. Authoritative DNS kept answering throughout.</text>
+</svg>

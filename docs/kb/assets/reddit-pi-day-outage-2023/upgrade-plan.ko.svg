@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="210" viewBox="0 0 960 210" role="img" aria-labelledby="t d">
+  <title id="t">계획된 업그레이드 절차</title>
+  <desc id="d">계획된 업그레이드 절차: etcd 백업, 컨트롤 플레인 한 대씩, 워커, 검증. 두 번째 단계에서 장애 발생</desc>
+  <style>
+    :root { --bg: #000; --bg-1: transparent; --bg-2: #000; --line: #1f1f1f; --line-2: #333; --fg: #ededed; --fg-2: #a1a1a1; --fg-3: #666; --ok: #45dec5; --err: #ff6166; --warn: #f5a524; --sans: "Geist", "Pretendard Variable", Pretendard, ui-sans-serif, system-ui, -apple-system, sans-serif; --mono: "Geist Mono", "Pretendard Variable", Pretendard, ui-monospace, SFMono-Regular, Menlo, monospace; color-scheme: dark; }
+    svg text { font-family: var(--mono); }
+    svg text.ko { font-family: var(--sans); }
+    .t-lg { font: 600 14px var(--sans); fill: var(--fg); }
+    .t-sm { font-size: 10.5px; fill: var(--fg-3); }
+    .box { fill: var(--bg-2); stroke: var(--line-2); }
+    .box-err { fill: rgba(255,97,102,.06); stroke: rgba(255,97,102,.5); }
+    .ln { stroke: var(--fg-3); fill: none; }
+  </style>
+  <rect width="960" height="210" fill="#000"/>
+  <defs><marker id="ag" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10z" fill="#666"/></marker></defs>
+  <g>
+    <rect class="box" x="30" y="50" width="196" height="92" rx="10"/>
+    <text x="50" y="80" class="t-sm">01</text><text class="t-lg ko" x="50" y="104">etcd 백업</text><text class="t-sm ko" x="50" y="124">되돌아올 지점 확보</text>
+    <path class="ln" d="M226 96H262" marker-end="url(#ag)"/>
+    <rect class="box-err" x="264" y="50" width="196" height="92" rx="10"/>
+    <text x="284" y="80" class="t-sm" style="fill:var(--err)">02</text><text class="t-lg ko" x="284" y="104">컨트롤 플레인</text><text class="t-sm ko" x="284" y="124">한 대씩 1.24로</text>
+    <path class="ln" d="M460 96H496" marker-end="url(#ag)"/>
+    <g opacity=".4">
+      <rect class="box" x="498" y="50" width="196" height="92" rx="10" stroke-dasharray="4 4"/>
+      <text x="518" y="80" class="t-sm">03</text><text class="t-lg ko" x="518" y="104">워커 노드</text><text class="t-sm ko" x="518" y="124">순차 업그레이드</text>
+      <path class="ln" d="M694 96H730" marker-end="url(#ag)"/>
+      <rect class="box" x="732" y="50" width="196" height="92" rx="10" stroke-dasharray="4 4"/>
+      <text x="752" y="80" class="t-sm">04</text><text class="t-lg ko" x="752" y="104">검증</text><text class="t-sm ko" x="752" y="124">트래픽, 지표 확인</text>
+    </g>
+  </g>
+  <path d="M362 142V170" stroke="var(--err)" fill="none"/>
+  <rect x="288" y="170" width="148" height="26" rx="13" fill="#000" stroke="var(--err)"/><text x="362" y="187" text-anchor="middle" class="ko" style="fill:var(--err);font-size:11.5px">여기서 사이트 중단</text>
+  <text x="713" y="170" text-anchor="middle" class="t-sm ko">도달하지 못함</text>
+</svg>

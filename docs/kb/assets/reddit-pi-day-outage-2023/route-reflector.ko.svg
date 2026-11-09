@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="220" height="200" viewBox="0 0 220 200" role="img" aria-labelledby="t d">
+  <title id="t">라우트 리플렉터 2대와 클라이언트 6대, BGP 세션 13개</title>
+  <desc id="d">라우트 리플렉터 2대와 클라이언트 6대, BGP 세션 13개</desc>
+  <style>
+    :root { --bg: #000; --bg-1: transparent; --bg-2: #000; --line: #1f1f1f; --line-2: #333; --fg: #ededed; --fg-2: #a1a1a1; --fg-3: #666; --ok: #45dec5; --err: #ff6166; --warn: #f5a524; --sans: "Geist", "Pretendard Variable", Pretendard, ui-sans-serif, system-ui, -apple-system, sans-serif; --mono: "Geist Mono", "Pretendard Variable", Pretendard, ui-monospace, SFMono-Regular, Menlo, monospace; color-scheme: dark; }
+    svg text { font-family: var(--mono); }
+    .t-sm { font-size: 10.5px; fill: var(--fg-3); }
+  </style>
+  <rect width="220" height="200" fill="#000"/>
+<g stroke="#45dec5" stroke-width=".8" opacity=".5"><line x1="150.0" y1="30.7" x2="80" y2="100"/><line x1="150.0" y1="30.7" x2="140" y2="100"/><line x1="190.0" y1="100.0" x2="80" y2="100"/><line x1="190.0" y1="100.0" x2="140" y2="100"/><line x1="150.0" y1="169.3" x2="80" y2="100"/><line x1="150.0" y1="169.3" x2="140" y2="100"/><line x1="70.0" y1="169.3" x2="80" y2="100"/><line x1="70.0" y1="169.3" x2="140" y2="100"/><line x1="30.0" y1="100.0" x2="80" y2="100"/><line x1="30.0" y1="100.0" x2="140" y2="100"/><line x1="70.0" y1="30.7" x2="80" y2="100"/><line x1="70.0" y1="30.7" x2="140" y2="100"/></g><line x1="80" y1="100" x2="140" y2="100" stroke="#45dec5"/><circle cx="150.0" cy="30.7" r="6" fill="#000" stroke="#a1a1a1"/><circle cx="190.0" cy="100.0" r="6" fill="#000" stroke="#a1a1a1"/><circle cx="150.0" cy="169.3" r="6" fill="#000" stroke="#a1a1a1"/><circle cx="70.0" cy="169.3" r="6" fill="#000" stroke="#a1a1a1"/><circle cx="30.0" cy="100.0" r="6" fill="#000" stroke="#a1a1a1"/><circle cx="70.0" cy="30.7" r="6" fill="#000" stroke="#a1a1a1"/><g fill="rgba(69,222,197,.15)" stroke="#45dec5"><circle cx="80" cy="100" r="9"/><circle cx="140" cy="100" r="9"/></g><text x="80" y="124" text-anchor="middle" class="t-sm" style="fill:#45dec5">RR</text><text x="140" y="124" text-anchor="middle" class="t-sm" style="fill:#45dec5">RR</text>
+</svg>

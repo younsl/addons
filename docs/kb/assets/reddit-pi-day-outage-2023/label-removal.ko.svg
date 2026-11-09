@@ -1,0 +1,75 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="330" viewBox="0 0 960 330" role="img" aria-labelledby="t d" class="lblfx">
+  <title id="t">라벨 제거</title>
+  <desc id="d">애니메이션: 1.24 업그레이드와 함께 node-role.kubernetes.io/master 라벨이 사라지고, 셀렉터 매칭이 3에서 0으로, 라우트 리플렉터가 모두 꺼진다</desc>
+  <style>
+    :root { --bg: #000; --bg-1: transparent; --bg-2: #000; --line: #1f1f1f; --line-2: #333; --fg: #ededed; --fg-2: #a1a1a1; --fg-3: #666; --ok: #45dec5; --err: #ff6166; --warn: #f5a524; --sans: "Geist", "Pretendard Variable", Pretendard, ui-sans-serif, system-ui, -apple-system, sans-serif; --mono: "Geist Mono", "Pretendard Variable", Pretendard, ui-monospace, SFMono-Regular, Menlo, monospace; color-scheme: dark; }
+    svg text { font-family: var(--mono); }
+    svg text.ko { font-family: var(--sans); }
+    .t-sm { font-size: 10.5px; fill: var(--fg-3); }
+    .t-md { font-size: 11.5px; fill: var(--fg-2); }
+    .box { fill: var(--bg-2); stroke: var(--line-2); }
+    .lblfx * { animation-duration: 9s; animation-iteration-count: infinite; animation-timing-function: ease-in-out; }
+    .fx-hl { fill: rgba(255,97,102,0); animation-name: fxHl; }
+    .fx-mtext { fill: var(--fg); animation-name: fxText; }
+    .fx-master { transform-box: fill-box; animation-name: fxOut; }
+    .fx-strike { stroke: var(--err); stroke-width: 1.5; stroke-dasharray: 290; stroke-dashoffset: 290; animation-name: fxStrike; }
+    .fx-v123 { animation-name: fxShow1; }
+    .fx-v124 { opacity: 0; animation-name: fxShow2; }
+    .fx-gone { opacity: 0; animation-name: fxLate; }
+    .fx-wire { stroke: var(--ok); stroke-dasharray: 4 4; fill: none; animation-name: fxWire; }
+    .fx-n3 { animation-name: fxEarly; }
+    .fx-n0 { opacity: 0; animation-name: fxLate; }
+    .fx-rr { fill: rgba(69,222,197,.1); stroke: rgba(69,222,197,.5); animation-name: fxRr; }
+    .fx-ok { animation-name: fxEarly; }
+    .fx-bad { opacity: 0; animation-name: fxLate; }
+    @media (prefers-reduced-motion: reduce) {
+  .lblfx * { animation: none !important; }
+  .fx-master, .fx-v123, .fx-n3, .fx-ok { opacity: 0; }
+  .fx-v124, .fx-gone, .fx-n0, .fx-bad { opacity: 1; }
+  .fx-rr { fill: #000; stroke: var(--line-2); }
+}
+    @keyframes fxShow1 { 0%, 22% { opacity: 1; } 26%, 94% { opacity: 0; } 100% { opacity: 1; } }
+    @keyframes fxShow2 { 0%, 22% { opacity: 0; } 26%, 94% { opacity: 1; } 100% { opacity: 0; } }
+    @keyframes fxHl { 0%, 24% { fill: rgba(255,97,102,0); } 30%, 44% { fill: rgba(255,97,102,.14); } 54%, 100% { fill: rgba(255,97,102,0); } }
+    @keyframes fxText { 0%, 24% { fill: var(--fg); } 30%, 100% { fill: var(--err); } }
+    @keyframes fxStrike { 0%, 30% { stroke-dashoffset: 290; } 40%, 100% { stroke-dashoffset: 0; } }
+    @keyframes fxOut { 0%, 44% { opacity: 1; transform: none; } 54%, 94% { opacity: 0; transform: translateX(40px); } 100% { opacity: 1; transform: none; } }
+    @keyframes fxEarly { 0%, 54% { opacity: 1; } 58%, 94% { opacity: 0; } 100% { opacity: 1; } }
+    @keyframes fxLate { 0%, 54% { opacity: 0; } 58%, 94% { opacity: 1; } 100% { opacity: 0; } }
+    @keyframes fxWire { 0%, 54% { stroke: var(--ok); opacity: 1; } 58%, 94% { stroke: var(--err); opacity: .3; } 100% { stroke: var(--ok); opacity: 1; } }
+    @keyframes fxRr { 0%, 54% { fill: rgba(69,222,197,.1); stroke: rgba(69,222,197,.5); } 58%, 94% { fill: #000; stroke: var(--line-2); } 100% { fill: rgba(69,222,197,.1); stroke: rgba(69,222,197,.5); } }
+  </style>
+  <rect width="960" height="330" fill="#000"/>
+  <rect class="box" x="30" y="30" width="470" height="270" rx="12"/>
+  <text x="54" y="64" class="t-sm">$ kubectl get node cp-1 -o yaml</text>
+  <g class="fx-v123"><rect x="420" y="48" width="60" height="24" rx="6" fill="#000" stroke="var(--line-2)"/><text x="450" y="65" text-anchor="middle" class="t-md">1.23</text></g>
+  <g class="fx-v124"><rect x="420" y="48" width="60" height="24" rx="6" fill="#000" stroke="#555"/><text x="450" y="65" text-anchor="middle" style="fill:var(--fg);font-size:11.5px">1.24</text></g>
+  <g style="font-size:13px">
+    <text x="54" y="104" style="fill:var(--fg-2)">metadata:</text>
+    <text x="70" y="132" style="fill:var(--fg-2)">labels:</text>
+    <text x="90" y="162" style="fill:var(--fg-3)">kubernetes.io/hostname: cp-1</text>
+    <g class="fx-master">
+      <rect class="fx-hl" x="80" y="176" width="400" height="30" rx="5"/>
+      <text x="90" y="196" class="fx-mtext">node-role.kubernetes.io/master: ""</text>
+      <line class="fx-strike" x1="88" y1="191" x2="372" y2="191"/>
+    </g>
+    <text x="90" y="236" style="fill:var(--fg-3)">node-role.kubernetes.io/control-plane: ""</text>
+  </g>
+  <text class="fx-gone ko" x="54" y="278" style="fill:var(--err);font-size:12.5px">1.24에서 master 라벨 제거</text>
+
+  <path class="fx-wire" d="M500 165H540"/>
+
+  <rect class="box" x="540" y="30" width="390" height="270" rx="12"/>
+  <text x="564" y="64" class="t-sm">Calico BGPPeer</text>
+  <text x="564" y="96" style="fill:var(--fg-2);font-size:12.5px">peerSelector: has(node-role.../master)</text>
+  <text x="564" y="140" class="t-sm ko" style="font-family:var(--sans)">매칭된 리플렉터</text>
+  <text class="fx-n3" x="564" y="206" style="fill:var(--ok);font:600 64px var(--sans)">3</text>
+  <text class="fx-n0" x="564" y="206" style="fill:var(--err);font:600 64px var(--sans)">0</text>
+  <g>
+    <rect class="fx-rr" x="660" y="160" width="76" height="30" rx="15"/><text x="698" y="180" text-anchor="middle" class="t-md">cp-1</text>
+    <rect class="fx-rr" x="746" y="160" width="76" height="30" rx="15"/><text x="784" y="180" text-anchor="middle" class="t-md">cp-2</text>
+    <rect class="fx-rr" x="832" y="160" width="76" height="30" rx="15"/><text x="870" y="180" text-anchor="middle" class="t-md">cp-3</text>
+  </g>
+  <text class="fx-ok ko" x="564" y="262" style="fill:var(--ok);font-size:13px">파드 라우트 반사 중</text>
+  <text class="fx-bad ko" x="564" y="262" style="fill:var(--err);font-size:13px">피어 0, 파드 라우트 전부 소멸</text>
+</svg>

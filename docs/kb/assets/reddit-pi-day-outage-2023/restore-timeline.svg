@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="190" viewBox="0 0 960 190" role="img" aria-labelledby="t d">
+  <title id="t">Restore timeline</title>
+  <desc id="d">Restore timeline: state rewinds to the pre-upgrade etcd snapshot, and writes between the snapshot and the restore are lost</desc>
+  <style>
+    :root { --bg: #000; --bg-1: transparent; --bg-2: #000; --line: #1f1f1f; --line-2: #333; --fg: #ededed; --fg-2: #a1a1a1; --fg-3: #666; --ok: #45dec5; --err: #ff6166; --warn: #f5a524; --sans: "Geist", "Pretendard Variable", Pretendard, ui-sans-serif, system-ui, -apple-system, sans-serif; --mono: "Geist Mono", "Pretendard Variable", Pretendard, ui-monospace, SFMono-Regular, Menlo, monospace; color-scheme: dark; }
+    svg text { font-family: var(--mono); }
+    svg text.ko { font-family: var(--sans); }
+    .t-sm { font-size: 10.5px; fill: var(--fg-3); }
+    .t-md { font-size: 11.5px; fill: var(--fg-2); }
+  </style>
+  <rect width="960" height="190" fill="#000"/>
+  <defs><pattern id="hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="#555" stroke-width="1.5"/></pattern></defs>
+  <rect x="150" y="78" width="570" height="24" fill="url(#hatch)" opacity=".8"/>
+  <rect x="340" y="78" width="380" height="24" fill="rgba(255,97,102,.18)"/>
+  <line x1="40" y1="90" x2="920" y2="90" stroke="#333"/>
+  <g font-size="11">
+    <circle cx="150" cy="90" r="6" fill="#000" stroke="#ededed"/><text x="150" y="60" text-anchor="middle" class="ko t-md" style="fill:var(--fg)">etcd snapshot</text><text x="150" y="130" text-anchor="middle" class="ko t-sm">Right before upgrade</text>
+    <circle cx="340" cy="90" r="6" fill="#000" stroke="var(--warn)"/><text x="340" y="60" text-anchor="middle" style="fill:var(--warn);font-size:11.5px" class="ko">Upgrade, site down</text>
+    <circle cx="720" cy="90" r="6" fill="#000" stroke="var(--ok)"/><text x="720" y="60" text-anchor="middle" style="fill:var(--ok);font-size:11.5px" class="ko">Restore</text><text x="720" y="130" text-anchor="middle" class="ko t-sm">State rewinds to snapshot</text>
+    <circle cx="860" cy="90" r="6" fill="var(--ok)"/><text x="860" y="60" text-anchor="middle" class="ko t-md" style="fill:var(--fg)">Service back</text>
+  </g>
+  <path d="M720 150 C 600 180, 280 180, 156 150" fill="none" stroke="var(--ok)" stroke-dasharray="3 4" marker-end="url(#ar)"/>
+  <defs><marker id="ar" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10z" fill="#45dec5"/></marker></defs>
+  <g class="t-sm" transform="translate(790,0)"><rect x="40" y="150" width="10" height="10" fill="url(#hatch)"/><text x="58" y="159" class="ko">Lost writes</text><rect x="40" y="168" width="10" height="10" fill="rgba(255,97,102,.4)"/><text x="58" y="177" class="ko">Outage</text></g>
+</svg>

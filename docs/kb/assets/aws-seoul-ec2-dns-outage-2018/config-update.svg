@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="300" viewBox="0 0 960 300" role="img" aria-labelledby="t d" class="fx">
+  <title id="t">The config update, animated</title>
+  <desc id="d">Animation: the minimum healthy hosts setting is removed and read as a very low default, most resolver hosts drop out, and DNS queries fail</desc>
+  <style>
+    :root { --bg: #000; --bg-1: transparent; --bg-2: #000; --line: #1f1f1f; --line-2: #333; --fg: #ededed; --fg-2: #a1a1a1; --fg-3: #666; --ok: #45dec5; --err: #ff6166; --warn: #f5a524; --sans: "Geist", "Pretendard Variable", Pretendard, ui-sans-serif, system-ui, -apple-system, sans-serif; --mono: "Geist Mono", "Pretendard Variable", Pretendard, ui-monospace, SFMono-Regular, Menlo, monospace; color-scheme: dark; }
+    svg text { font-family: var(--mono); }
+    svg text.ko { font-family: var(--sans); }
+    .t-sm { font-size: 10.5px; fill: var(--fg-3); }
+    .t-md { font-size: 11.5px; fill: var(--fg-2); }
+    .zone { fill: none; stroke: var(--line-2); stroke-dasharray: 3 4; }
+    .box { fill: var(--bg-2); stroke: var(--line-2); }
+    .box-ok { fill: rgba(69,222,197,.06); stroke: rgba(69,222,197,.45); }
+    .fx * { animation-duration: 9s; animation-iteration-count: infinite; animation-timing-function: ease-in-out; }
+    .fx-text { fill: var(--fg); animation-name: fxText; }
+    .fx-strike { stroke: var(--err); stroke-width: 1.5; stroke-dasharray: 300; stroke-dashoffset: 300; animation-name: fxStrike; }
+    .fx-early { animation-name: fxEarly; }
+    .fx-late { opacity: 0; animation-name: fxLate; }
+    .fx-host { animation-name: fxHost; }
+    .fx-hot { animation-name: fxHot; }
+    @media (prefers-reduced-motion: reduce) {
+  .fx * { animation: none !important; }
+  .fx-early { opacity: 0; }
+  .fx-late { opacity: 1; }
+  .fx-host { opacity: .12; }
+  .fx-strike { stroke-dashoffset: 0; }
+  .fx-text { fill: var(--err); }
+  .fx-hot { fill: rgba(255,97,102,.14); stroke: rgba(255,97,102,.7); }
+}
+    @keyframes fxText { 0%, 24% { fill: var(--fg); } 30%, 94% { fill: var(--err); } 100% { fill: var(--fg); } }
+    @keyframes fxStrike { 0%, 30% { stroke-dashoffset: 300; } 40%, 94% { stroke-dashoffset: 0; } 100% { stroke-dashoffset: 300; } }
+    @keyframes fxEarly { 0%, 54% { opacity: 1; } 58%, 94% { opacity: 0; } 100% { opacity: 1; } }
+    @keyframes fxLate { 0%, 54% { opacity: 0; } 58%, 94% { opacity: 1; } 100% { opacity: 0; } }
+    @keyframes fxHost { 0%, 44% { opacity: 1; } 54%, 94% { opacity: .12; } 100% { opacity: 1; } }
+    @keyframes fxHot { 0%, 54% { fill: rgba(69,222,197,.06); stroke: rgba(69,222,197,.45); } 58%, 94% { fill: rgba(255,97,102,.14); stroke: rgba(255,97,102,.7); } 100% { fill: rgba(69,222,197,.06); stroke: rgba(69,222,197,.45); } }
+  </style>
+  <rect width="960" height="300" fill="#000"/>
+  <rect class="box" x="30" y="30" width="420" height="240" rx="12"/>
+  <text x="54" y="62" class="ko t-sm">Resolver fleet config (conceptual)</text>
+  <text x="54" y="112" class="t-md">region: ap-northeast-2</text>
+  <text x="54" y="156" class="fx-text" style="font-size:13px">min_healthy_hosts: &lt;normal capacity&gt;</text>
+  <line class="fx-strike" x1="50" y1="152" x2="350" y2="152"/>
+  <text x="54" y="200" class="fx-late ko" style="fill:var(--warn);font-size:13px">Key missing, read as default: very low</text>
+  <text x="54" y="246" class="ko t-sm">ap-northeast-2, 2018-11-22 08:19</text>
+  <rect class="zone" x="490" y="30" width="440" height="240" rx="12"/>
+  <text x="514" y="62" class="ko t-sm">EC2 DNS resolver fleet</text>
+  <g>
+    <rect class="box-ok fx-hot" x="514" y="80" width="88" height="40" rx="6"/><rect class="box-ok fx-hot" x="616" y="80" width="88" height="40" rx="6"/><rect class="box-ok fx-hot" x="718" y="80" width="88" height="40" rx="6"/><rect class="box-ok fx-host" x="820" y="80" width="88" height="40" rx="6"/>
+    <rect class="box-ok fx-host" x="514" y="132" width="88" height="40" rx="6"/><rect class="box-ok fx-host" x="616" y="132" width="88" height="40" rx="6"/><rect class="box-ok fx-host" x="718" y="132" width="88" height="40" rx="6"/><rect class="box-ok fx-host" x="820" y="132" width="88" height="40" rx="6"/>
+    <rect class="box-ok fx-host" x="514" y="184" width="88" height="40" rx="6"/><rect class="box-ok fx-host" x="616" y="184" width="88" height="40" rx="6"/><rect class="box-ok fx-host" x="718" y="184" width="88" height="40" rx="6"/><rect class="box-ok fx-host" x="820" y="184" width="88" height="40" rx="6"/>
+  </g>
+  <text x="514" y="252" class="fx-early ko" style="fill:var(--ok);font-size:12.5px">Instance DNS queries succeed</text>
+  <text x="514" y="252" class="fx-late ko" style="fill:var(--err);font-size:12.5px">Instance DNS queries fail</text>
+</svg>

@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="340" viewBox="0 0 960 340" role="img" aria-labelledby="t d">
+  <title id="t">두 갈래 DNS 경로</title>
+  <desc id="d">두 갈래 DNS 경로: EC2 밖의 사용자는 통신사 리졸버를 거쳐 Route 53 권한 DNS에서 정상 응답을 받았고, EC2 인스턴스 안의 앱 서버는 EC2 DNS 리졸버에서 막혔다</desc>
+  <style>
+    :root { --bg: #000; --bg-1: transparent; --bg-2: #000; --line: #1f1f1f; --line-2: #333; --fg: #ededed; --fg-2: #a1a1a1; --fg-3: #666; --ok: #45dec5; --err: #ff6166; --warn: #f5a524; --sans: "Geist", "Pretendard Variable", Pretendard, ui-sans-serif, system-ui, -apple-system, sans-serif; --mono: "Geist Mono", "Pretendard Variable", Pretendard, ui-monospace, SFMono-Regular, Menlo, monospace; color-scheme: dark; }
+    svg text { font-family: var(--mono); }
+    svg text.ko { font-family: var(--sans); }
+    .t-lg { font: 600 14px var(--sans); fill: var(--fg); }
+    .t-sm { font-size: 10.5px; fill: var(--fg-3); }
+    .box { fill: var(--bg-2); stroke: var(--line-2); }
+    .box-ok { fill: rgba(69,222,197,.06); stroke: rgba(69,222,197,.45); }
+    .box-err { fill: rgba(255,97,102,.06); stroke: rgba(255,97,102,.5); }
+    .ln { stroke: var(--fg-3); fill: none; }
+  </style>
+  <rect width="960" height="340" fill="#000"/>
+  <defs><marker id="aa" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10z" fill="#45dec5"/></marker><marker id="ab" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10z" fill="#666"/></marker></defs>
+  <text x="30" y="44" class="ko" style="fill:var(--ok);font-size:12px">EC2 밖에서 묻는 경우</text>
+  <rect class="box" x="30" y="60" width="190" height="70" rx="10"/><text class="t-lg ko" x="48" y="90">사용자 브라우저</text><text class="t-sm ko" x="48" y="110">스마트폰, PC</text>
+  <path d="M220 95H258" stroke="var(--ok)" stroke-width="1.5" fill="none" marker-end="url(#aa)"/>
+  <rect class="box" x="260" y="60" width="200" height="70" rx="10"/><text class="t-lg ko" x="278" y="90">통신사 리졸버</text><text class="t-sm ko" x="278" y="110">재귀 리졸버</text>
+  <path d="M460 95H498" stroke="var(--ok)" stroke-width="1.5" fill="none" marker-end="url(#aa)"/>
+  <rect class="box-ok" x="500" y="60" width="220" height="70" rx="10"/><text class="t-lg" x="518" y="90">Route 53</text><text class="t-sm ko" x="518" y="110">권한 DNS, 호스티드 존</text>
+  <path d="M700 82l6 7 11-14" stroke="var(--ok)" stroke-width="2" fill="none"/>
+  <path d="M720 95H758" stroke="var(--ok)" stroke-width="1.5" fill="none" marker-end="url(#aa)"/>
+  <rect class="box" x="760" y="60" width="170" height="70" rx="10"/><text class="t-lg ko" x="778" y="90">응답 성공</text><text class="t-sm ko" x="778" y="110">로드 밸런서 주소</text>
+  <line x1="30" y1="166" x2="930" y2="166" stroke="var(--line)"/>
+  <text x="30" y="200" class="ko" style="fill:var(--err);font-size:12px">EC2 인스턴스 안에서 묻는 경우</text>
+  <rect class="box" x="30" y="216" width="190" height="70" rx="10"/><text class="t-lg ko" x="48" y="246">앱 서버</text><text class="t-sm ko" x="48" y="266">EC2 인스턴스</text>
+  <path d="M220 251H258" class="ln" marker-end="url(#ab)"/>
+  <rect class="box-err" x="260" y="216" width="200" height="70" rx="10"/><text class="t-lg ko" x="278" y="246">EC2 DNS 리졸버</text><text class="t-sm ko" x="278" y="266">VPC +2, 재귀 리졸버</text>
+  <path d="M460 251H610V130" stroke="var(--err)" stroke-width="1.5" stroke-dasharray="5 5" fill="none"/>
+  <path d="M527 243l16 16M543 243l-16 16" stroke="var(--err)" stroke-width="2"/>
+  <rect x="680" y="234" width="250" height="34" rx="17" fill="#000" stroke="var(--err)"/><text x="805" y="256" text-anchor="middle" class="ko" style="fill:var(--err);font-size:12px">리졸버 용량 부족, 쿼리 실패</text>
+  <text x="480" y="322" text-anchor="middle" class="ko" style="fill:var(--fg-2);font-size:12.5px">같은 Route 53을 바라보지만, 그 앞에 선 리졸버가 다르다. 권한 DNS는 장애 내내 답하고 있었다.</text>
+</svg>

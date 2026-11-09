@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="300" viewBox="0 0 960 300" role="img" aria-labelledby="t d">
+  <title id="t">Timeline</title>
+  <desc id="d">Timeline: 08:19 outage starts, 08:21 alert, 08:48 root cause found, about 09:03 further removal halted, 09:43 fully recovered. Restoring capacity takes the longest</desc>
+  <style>
+    :root { --bg: #000; --bg-1: transparent; --bg-2: #000; --line: #1f1f1f; --line-2: #333; --fg: #ededed; --fg-2: #a1a1a1; --fg-3: #666; --ok: #45dec5; --err: #ff6166; --warn: #f5a524; --sans: "Geist", "Pretendard Variable", Pretendard, ui-sans-serif, system-ui, -apple-system, sans-serif; --mono: "Geist Mono", "Pretendard Variable", Pretendard, ui-monospace, SFMono-Regular, Menlo, monospace; color-scheme: dark; }
+    svg text { font-family: var(--mono); }
+    svg text.ko { font-family: var(--sans); }
+    .t-sm { font-size: 10.5px; fill: var(--fg-3); }
+  </style>
+  <rect width="960" height="300" fill="#000"/>
+  <text x="60" y="26" class="ko t-sm">Healthy host capacity (conceptual)</text>
+  <path d="M60 50H136L170 114L505 124L841 50H900V140H60Z" fill="rgba(69,222,197,.05)"/>
+  <path d="M60 50H136L170 114L505 124L841 50H900" stroke="var(--fg-2)" stroke-width="1.5" fill="none"/>
+  <g stroke="var(--line-2)" stroke-dasharray="2 4"><line x1="136" y1="40" x2="136" y2="196"/><line x1="152" y1="40" x2="152" y2="196"/><line x1="379" y1="40" x2="379" y2="196"/><line x1="505" y1="40" x2="505" y2="196"/><line x1="841" y1="40" x2="841" y2="196"/></g>
+  <rect x="152" y="150" width="227" height="18" rx="3" fill="rgba(245,165,36,.12)" stroke="rgba(245,165,36,.45)"/><text x="265" y="163" text-anchor="middle" class="ko" style="fill:var(--warn);font-size:11px">Root cause, 27 min</text>
+  <rect x="379" y="150" width="126" height="18" rx="3" fill="rgba(245,165,36,.12)" stroke="rgba(245,165,36,.45)"/><text x="442" y="163" text-anchor="middle" class="ko" style="fill:var(--warn);font-size:11px">Halt removal, 15 min</text>
+  <rect x="505" y="150" width="336" height="18" rx="3" fill="rgba(69,222,197,.1)" stroke="rgba(69,222,197,.45)"/><text x="673" y="163" text-anchor="middle" class="ko" style="fill:var(--ok);font-size:11px">Restore capacity, about 40 min, most of the recovery</text>
+  <rect x="136" y="192" width="705" height="16" fill="rgba(255,97,102,.15)"/>
+  <line x1="60" y1="200" x2="900" y2="200" stroke="var(--line-2)"/>
+  <g class="t-sm" text-anchor="middle">
+    <text x="60" y="226">08:10</text><text x="228" y="226">08:30</text><text x="396" y="226">08:50</text><text x="564" y="226">09:10</text><text x="732" y="226">09:30</text><text x="900" y="226">09:50</text>
+  </g>
+  <circle cx="136" cy="200" r="5" fill="var(--err)"/><circle cx="152" cy="200" r="5" fill="#000" stroke="var(--warn)"/><circle cx="379" cy="200" r="5" fill="#000" stroke="var(--warn)"/><circle cx="505" cy="200" r="5" fill="#000" stroke="var(--warn)"/><circle cx="841" cy="200" r="5" fill="var(--ok)"/>
+  <text x="130" y="256" text-anchor="end" style="fill:var(--err);font-size:12px">08:19</text><text x="130" y="274" text-anchor="end" class="ko t-sm">Outage starts</text>
+  <text x="158" y="256" style="fill:var(--warn);font-size:12px">08:21</text><text x="158" y="274" class="ko t-sm">Alert</text>
+  <text x="379" y="256" text-anchor="middle" style="fill:var(--warn);font-size:12px">08:48</text><text x="379" y="274" text-anchor="middle" class="ko t-sm">Root cause found</text>
+  <text x="505" y="256" text-anchor="middle" style="fill:var(--warn);font-size:12px">about 09:03</text><text x="505" y="274" text-anchor="middle" class="ko t-sm">Further removal halted</text>
+  <text x="841" y="256" text-anchor="middle" style="fill:var(--ok);font-size:12px">09:43</text><text x="841" y="274" text-anchor="middle" class="ko t-sm">Fully recovered</text>
+</svg>
