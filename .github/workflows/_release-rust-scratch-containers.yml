@@ -15,7 +15,6 @@ on:
       - 'box/addons/volume-autoscaler/Dockerfile'
       - 'box/addons/forklift/Dockerfile'
       - 'box/addons/forklift/Dockerfile.mcp'
-      - 'box/addons/ward/Dockerfile'
   workflow_dispatch:
     inputs:
       project:
@@ -33,7 +32,6 @@ on:
           - volume-autoscaler
           - forklift
           - forklift-mcp
-          - ward
       force:
         description: "Rebuild even if the version already exists on GHCR (overwrites the tag)"
         required: false
@@ -241,7 +239,7 @@ jobs:
           PATH="${tools}:${PATH}" RUSTC_BOOTSTRAP=1 \
             CARGO_ENCODED_RUSTFLAGS="$(printf -- '--cfg=bpf_target_arch="%s"\037-Cdebuginfo=2\037-Clink-arg=--btf' "${arch}")" \
             cargo +1.99.1 build --release -Z build-std=core --target bpfel-unknown-none --target-dir "target/${arch}"
-          ls -l "target/${arch}/bpfel-unknown-none/release/ward"
+          ls -l "target/${arch}/bpfel-unknown-none/release/"
 
       - name: Build binary with cargo-zigbuild
         working-directory: ${{ env.PROJECT_BASE_DIR }}
