@@ -4,7 +4,7 @@
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use futures_util::StreamExt as _;
 use k8s_openapi::apimachinery::pkg::apis::meta::v1::{Condition, Time};
@@ -420,6 +420,7 @@ pub async fn start(
     metrics: Arc<Metrics>,
     shutdown: CancellationToken,
 ) -> PolicyStore {
+    let started = Instant::now();
     let api: Api<AgentAccessPolicy> = Api::namespaced(client.clone(), namespace);
     let controller = Controller::new(api.clone(), watcher::Config::default())
         .graceful_shutdown_on(shutdown.clone().cancelled_owned());
@@ -453,6 +454,7 @@ pub async fn start(
     tokio::spawn(track_sync(
         store.clone(),
         synced.clone(),
+        started,
         metrics,
         namespace.to_string(),
         shutdown,
@@ -488,6 +490,7 @@ async fn wait_ready(store: &Store<AgentAccessPolicy>, shutdown: &CancellationTok
 async fn track_sync(
     store: Store<AgentAccessPolicy>,
     synced: Arc<AtomicBool>,
+    started: Instant,
     metrics: Arc<Metrics>,
     namespace: String,
     shutdown: CancellationToken,
@@ -503,6 +506,7 @@ async fn track_sync(
         namespace,
         policy_count = names.len(),
         agents = names.join(","),
+        elapsed_ms = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX),
         "access policies synced; agents without a policy fall back to CHAT_ALLOWED_USERS"
     );
     let mut tick = tokio::time::interval(GAUGE_INTERVAL);
