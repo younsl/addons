@@ -116,6 +116,16 @@ When enabled, the chart adds a Role with `create` on `leases` and `configmaps`, 
 
 Each `unknown` also emits a Warning Event `DeliveryUnknown` with the ARN, so an operator can check the channel.
 
+Logs tell the roles apart without the metric. They are written on role changes only, never on each retry tick.
+
+| Message | Fields | Written by |
+| --- | --- | --- |
+| `acquired leadership` | `identity`, `previous_leader`, `reason` (`created`, `released`, `expired`, `renewed`) | New leader |
+| `claimed the delivery ledger` | `term`, `abandoned` | New leader |
+| `standing by` | `identity`, `leader` | Standby, on first sighting and on every leader change |
+| `lost leadership` | `identity` | Former leader |
+| `released leader lease` | `identity` | Leader on SIGTERM |
+
 ## Testing
 
 - Unit: Lease decisions, CAS conflict, stale term rejected, `pending` to `unknown` on takeover, cursor overlap and cap, Slack result classification, retry then `unknown`.

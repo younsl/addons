@@ -162,7 +162,7 @@ impl Poller {
     async fn step(&self, role: Role, is_leader: bool) -> Role {
         if !is_leader {
             if role != Role::Standby {
-                info!("standing by");
+                tracing::debug!("poller paused");
             }
             return Role::Standby;
         }

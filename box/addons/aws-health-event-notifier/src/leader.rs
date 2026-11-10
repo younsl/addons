@@ -7,7 +7,7 @@ use tokio::sync::watch;
 use tokio::time::{Instant, MissedTickBehavior, interval, timeout};
 use tracing::{info, warn};
 
-use crate::k8s::lease::LeaseLock;
+use crate::k8s::lease::{LeaseLock, LeaseState};
 use crate::observability::metrics::Metrics;
 
 /// How long shutdown waits for the poller to finish its cycle before releasing.
@@ -49,21 +49,25 @@ impl Elector {
     ) -> anyhow::Result<()> {
         let mut ticker = interval(self.cfg.retry_period);
         ticker.set_missed_tick_behavior(MissedTickBehavior::Delay);
-        let mut last_renew: Option<Instant> = None;
-        info!(identity = self.lock.identity(), "leader election started");
+        let mut tracker = Tracker::default();
+        info!(
+            identity = self.lock.identity(),
+            lease = self.lock.name(),
+            "leader election started"
+        );
 
         loop {
             tokio::select! {
                 _ = ticker.tick() => {}
                 _ = shutdown.changed() => break,
             }
-            last_renew = self.step(last_renew).await;
+            self.step(&mut tracker).await;
         }
 
         let _ = timeout(POLLER_DRAIN_TIMEOUT, poller_done.wait_for(|done| *done)).await;
         if *self.leader.borrow() {
             match self.lock.release().await {
-                Ok(()) => info!("released leader lease"),
+                Ok(()) => info!(identity = self.lock.identity(), "released leader lease"),
                 Err(e) => warn!(error = %e, "failed to release leader lease"),
             }
         }
@@ -71,29 +75,75 @@ impl Elector {
         Ok(())
     }
 
-    async fn step(&self, last_renew: Option<Instant>) -> Option<Instant> {
+    async fn step(&self, t: &mut Tracker) {
         match self.lock.try_acquire_or_renew().await {
-            Ok(true) => {
-                self.set_leader(true);
-                Some(Instant::now())
+            Ok(LeaseState::Renewed) => {
+                t.last_renew = Some(Instant::now());
+                t.announced = None;
+                if self.set_leader(true) {
+                    info!(
+                        identity = self.lock.identity(),
+                        previous_leader = self.lock.identity(),
+                        reason = "renewed",
+                        "acquired leadership"
+                    );
+                }
             }
-            Ok(false) => {
-                self.set_leader(false);
-                None
+            Ok(LeaseState::Acquired { previous, reason }) => {
+                t.last_renew = Some(Instant::now());
+                t.announced = None;
+                self.set_leader(true);
+                info!(
+                    identity = self.lock.identity(),
+                    previous_leader = previous.as_deref(),
+                    reason = reason.as_str(),
+                    "acquired leadership"
+                );
+            }
+            Ok(LeaseState::HeldBy(holder)) => {
+                t.last_renew = None;
+                let lost = self.step_down();
+                self.announce_standby(t, holder, lost);
             }
             Err(e) => {
                 warn!(error = %e, "leader lease acquire or renew failed");
-                if last_renew.is_some_and(|t| t.elapsed() > self.cfg.renew_deadline) {
+                if t.last_renew
+                    .is_some_and(|at| at.elapsed() > self.cfg.renew_deadline)
+                {
                     warn!("renew deadline exceeded; stepping down");
-                    self.set_leader(false);
-                    return None;
+                    t.last_renew = None;
+                    if self.step_down() {
+                        self.announce_standby(t, None, true);
+                    }
                 }
-                last_renew
             }
         }
     }
 
-    fn set_leader(&self, is_leader: bool) {
+    /// Logs a standby line on the first sighting of a holder and on every
+    /// change, never on each retry tick.
+    fn announce_standby(&self, t: &mut Tracker, holder: Option<String>, force: bool) {
+        let changed = holder.is_some() && t.announced != holder;
+        if force || changed {
+            info!(
+                identity = self.lock.identity(),
+                leader = holder.as_deref(),
+                "standing by"
+            );
+            t.announced = holder;
+        }
+    }
+
+    fn step_down(&self) -> bool {
+        let lost = self.set_leader(false);
+        if lost {
+            info!(identity = self.lock.identity(), "lost leadership");
+        }
+        lost
+    }
+
+    /// Returns true when leadership changed.
+    fn set_leader(&self, is_leader: bool) -> bool {
         let changed = self.leader.send_if_modified(|current| {
             let changed = *current != is_leader;
             *current = is_leader;
@@ -101,13 +151,16 @@ impl Elector {
         });
         if changed {
             self.metrics.set_leader(is_leader);
-            if is_leader {
-                info!(identity = self.lock.identity(), "acquired leadership");
-            } else {
-                info!(identity = self.lock.identity(), "lost leadership");
-            }
         }
+        changed
     }
+}
+
+#[derive(Default)]
+struct Tracker {
+    last_renew: Option<Instant>,
+    /// Holder named in the last standby line, `None` when unknown or none yet.
+    announced: Option<String>,
 }
 
 #[cfg(test)]
@@ -136,38 +189,77 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn step_tracks_lease_ownership() {
+    async fn step_tracks_lease_ownership_and_announces_once() {
         let server = FakeApiServer::start().await;
         let (a, rx_a, metrics) = elector(&server, "a");
         let (b, rx_b, _) = elector(&server, "b");
+        let (mut ta, mut tb) = (Tracker::default(), Tracker::default());
 
-        assert!(a.step(None).await.is_some());
+        a.step(&mut ta).await;
         assert!(*rx_a.borrow());
-        assert!(b.step(None).await.is_none());
+        assert!(ta.last_renew.is_some());
+
+        b.step(&mut tb).await;
         assert!(!*rx_b.borrow());
+        assert_eq!(tb.announced, Some("a".into()));
+        b.step(&mut tb).await;
+        assert_eq!(tb.announced, Some("a".into()));
+
+        a.step(&mut ta).await;
+        assert!(*rx_a.borrow());
         assert!(metrics.render().contains("aws_health_event_leader 1"));
+    }
+
+    #[tokio::test]
+    async fn unknown_holder_is_not_announced_until_known() {
+        let server = FakeApiServer::start().await;
+        let (a, _, _) = elector(&server, "a");
+        let mut t = Tracker::default();
+        a.announce_standby(&mut t, None, false);
+        assert_eq!(t.announced, None);
+        a.announce_standby(&mut t, Some("b".into()), false);
+        assert_eq!(t.announced, Some("b".into()));
+        a.announce_standby(&mut t, Some("c".into()), false);
+        assert_eq!(t.announced, Some("c".into()));
     }
 
     #[tokio::test]
     async fn api_errors_step_down_after_renew_deadline() {
         let server = FakeApiServer::start().await;
         let (a, rx, _) = elector(&server, "a");
-        let renewed = a.step(None).await;
+        let mut t = Tracker::default();
+        a.step(&mut t).await;
         server.fail_all();
 
-        assert_eq!(a.step(renewed).await, renewed);
+        let renewed = t.last_renew;
+        a.step(&mut t).await;
+        assert_eq!(t.last_renew, renewed);
         assert!(*rx.borrow());
 
-        let stale = Instant::now().checked_sub(Duration::from_secs(1));
-        assert!(a.step(stale).await.is_none());
+        t.last_renew = Instant::now().checked_sub(Duration::from_secs(1));
+        a.step(&mut t).await;
+        assert!(t.last_renew.is_none());
         assert!(!*rx.borrow());
+        assert_eq!(t.announced, None);
+    }
+
+    #[tokio::test]
+    async fn renew_after_step_down_resumes_leadership() {
+        let server = FakeApiServer::start().await;
+        let (a, rx, _) = elector(&server, "a");
+        let mut t = Tracker::default();
+        a.step(&mut t).await;
+        assert!(a.step_down());
+        assert!(!*rx.borrow());
+        a.step(&mut t).await;
+        assert!(*rx.borrow());
     }
 
     #[tokio::test]
     async fn shutdown_releases_lease_to_standby() {
         let server = FakeApiServer::start().await;
         let (a, rx_a, _) = elector(&server, "a");
-        let (b, _, _) = elector(&server, "b");
+        let (b, rx_b, _) = elector(&server, "b");
         let (shutdown_tx, shutdown_rx) = watch::channel(false);
         let (done_tx, done_rx) = watch::channel(false);
 
@@ -180,6 +272,7 @@ mod tests {
         handle.await.unwrap().unwrap();
 
         assert!(!*rx_a.borrow());
-        assert!(b.step(None).await.is_some());
+        b.step(&mut Tracker::default()).await;
+        assert!(*rx_b.borrow());
     }
 }

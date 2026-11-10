@@ -13,7 +13,7 @@ use k8s_openapi::jiff::{SignedDuration, Timestamp};
 use kube::api::PostParams;
 use kube::{Api, Client};
 
-use crate::k8s::error::{K8sResult, conflict_or};
+use crate::k8s::error::{K8sError, K8sResult, conflict_or};
 
 pub struct LeaseLock {
     api: Api<Lease>,
@@ -22,11 +22,46 @@ pub struct LeaseLock {
     duration: Duration,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AcquireReason {
+    /// No Lease existed.
+    Created,
+    /// The previous holder gave it up on shutdown.
+    Released,
+    /// The previous holder stopped renewing.
+    Expired,
+}
+
+impl AcquireReason {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Created => "created",
+            Self::Released => "released",
+            Self::Expired => "expired",
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum LeaseState {
+    Renewed,
+    Acquired {
+        previous: Option<String>,
+        reason: AcquireReason,
+    },
+    /// Another replica holds the Lease. `None` when it just won a concurrent
+    /// write and is not known yet.
+    HeldBy(Option<String>),
+}
+
 #[derive(Debug, PartialEq, Eq)]
 enum Decision {
     Renew,
-    Take,
-    Busy,
+    Take {
+        previous: Option<String>,
+        reason: AcquireReason,
+    },
+    Busy(String),
 }
 
 impl LeaseLock {
@@ -49,34 +84,44 @@ impl LeaseLock {
         &self.identity
     }
 
-    /// Acquires the Lease or renews it. `Ok(false)` means another replica
-    /// holds it or won a concurrent write.
-    pub async fn try_acquire_or_renew(&self) -> K8sResult<bool> {
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// Acquires the Lease or renews it, reporting who holds it otherwise.
+    pub async fn try_acquire_or_renew(&self) -> K8sResult<LeaseState> {
         let now = Timestamp::now();
         let Some(current) = self.api.get_opt(&self.name).await? else {
             return self.create(now).await;
         };
         let spec = current.spec.clone().unwrap_or_default();
-        let next = match decide(&spec, &self.identity, now) {
-            Decision::Busy => return Ok(false),
-            Decision::Renew => LeaseSpec {
-                renew_time: Some(MicroTime(now)),
-                lease_duration_seconds: Some(self.duration_secs()),
-                ..spec
-            },
-            Decision::Take => LeaseSpec {
-                holder_identity: Some(self.identity.clone()),
-                acquire_time: Some(MicroTime(now)),
-                renew_time: Some(MicroTime(now)),
-                lease_duration_seconds: Some(self.duration_secs()),
-                lease_transitions: Some(spec.lease_transitions.unwrap_or(0) + 1),
-                ..spec
-            },
+        let (next, state) = match decide(&spec, &self.identity, now) {
+            Decision::Busy(holder) => return Ok(LeaseState::HeldBy(Some(holder))),
+            Decision::Renew => (
+                LeaseSpec {
+                    renew_time: Some(MicroTime(now)),
+                    lease_duration_seconds: Some(self.duration_secs()),
+                    ..spec
+                },
+                LeaseState::Renewed,
+            ),
+            Decision::Take { previous, reason } => (
+                LeaseSpec {
+                    holder_identity: Some(self.identity.clone()),
+                    acquire_time: Some(MicroTime(now)),
+                    renew_time: Some(MicroTime(now)),
+                    lease_duration_seconds: Some(self.duration_secs()),
+                    lease_transitions: Some(spec.lease_transitions.unwrap_or(0) + 1),
+                    ..spec
+                },
+                LeaseState::Acquired { previous, reason },
+            ),
         };
-        self.replace(current, next).await
+        self.replace(current, next, state).await
     }
 
     /// Gives the Lease up so a standby takes over without waiting for expiry.
+    /// The holder stays recorded so the next leader can log who released it.
     pub async fn release(&self) -> K8sResult<()> {
         let Some(current) = self.api.get_opt(&self.name).await? else {
             return Ok(());
@@ -86,15 +131,16 @@ impl LeaseLock {
             return Ok(());
         }
         let next = LeaseSpec {
-            holder_identity: None,
             acquire_time: None,
             renew_time: None,
             ..spec
         };
-        self.replace(current, next).await.map(|_| ())
+        self.replace(current, next, LeaseState::Renewed)
+            .await
+            .map(|_| ())
     }
 
-    async fn create(&self, now: Timestamp) -> K8sResult<bool> {
+    async fn create(&self, now: Timestamp) -> K8sResult<LeaseState> {
         let lease = Lease {
             metadata: ObjectMeta {
                 name: Some(self.name.clone()),
@@ -110,19 +156,27 @@ impl LeaseLock {
             }),
         };
         match self.api.create(&PostParams::default(), &lease).await {
-            Ok(_) => Ok(true),
+            Ok(_) => Ok(LeaseState::Acquired {
+                previous: None,
+                reason: AcquireReason::Created,
+            }),
             Err(e) => lost_race(conflict_or(e, &self.name)),
         }
     }
 
-    async fn replace(&self, mut current: Lease, spec: LeaseSpec) -> K8sResult<bool> {
+    async fn replace(
+        &self,
+        mut current: Lease,
+        spec: LeaseSpec,
+        on_success: LeaseState,
+    ) -> K8sResult<LeaseState> {
         current.spec = Some(spec);
         match self
             .api
             .replace(&self.name, &PostParams::default(), &current)
             .await
         {
-            Ok(_) => Ok(true),
+            Ok(_) => Ok(on_success),
             Err(e) => lost_race(conflict_or(e, &self.name)),
         }
     }
@@ -132,28 +186,37 @@ impl LeaseLock {
     }
 }
 
-fn lost_race(e: crate::k8s::error::K8sError) -> K8sResult<bool> {
+fn lost_race(e: K8sError) -> K8sResult<LeaseState> {
     match e {
-        crate::k8s::error::K8sError::Conflict(_) => Ok(false),
-        other @ crate::k8s::error::K8sError::Api(_) => Err(other),
+        K8sError::Conflict(_) => Ok(LeaseState::HeldBy(None)),
+        other @ K8sError::Api(_) => Err(other),
     }
 }
 
 fn decide(spec: &LeaseSpec, identity: &str, now: Timestamp) -> Decision {
     match spec.holder_identity.as_deref() {
         Some(holder) if holder == identity => Decision::Renew,
-        None | Some("") => Decision::Take,
-        Some(_) => {
+        None | Some("") => Decision::Take {
+            previous: None,
+            reason: AcquireReason::Released,
+        },
+        Some(holder) => {
+            let previous = Some(holder.to_string());
+            let Some(renewed) = spec.renew_time.as_ref() else {
+                return Decision::Take {
+                    previous,
+                    reason: AcquireReason::Released,
+                };
+            };
             let duration =
                 SignedDuration::from_secs(i64::from(spec.lease_duration_seconds.unwrap_or(0)));
-            let expired = spec
-                .renew_time
-                .as_ref()
-                .is_none_or(|renewed| renewed.0 + duration < now);
-            if expired {
-                Decision::Take
+            if renewed.0 + duration < now {
+                Decision::Take {
+                    previous,
+                    reason: AcquireReason::Expired,
+                }
             } else {
-                Decision::Busy
+                Decision::Busy(holder.to_string())
             }
         }
     }
@@ -175,6 +238,13 @@ mod tests {
         }
     }
 
+    fn take(previous: Option<&str>, reason: AcquireReason) -> Decision {
+        Decision::Take {
+            previous: previous.map(str::to_string),
+            reason,
+        }
+    }
+
     #[test]
     fn own_lease_is_renewed() {
         assert_eq!(
@@ -187,7 +257,7 @@ mod tests {
     fn live_foreign_lease_is_busy() {
         assert_eq!(
             decide(&spec(Some("b"), 5, 15), "a", Timestamp::now()),
-            Decision::Busy
+            Decision::Busy("b".into())
         );
     }
 
@@ -195,7 +265,7 @@ mod tests {
     fn expired_foreign_lease_is_taken() {
         assert_eq!(
             decide(&spec(Some("b"), 30, 15), "a", Timestamp::now()),
-            Decision::Take
+            take(Some("b"), AcquireReason::Expired)
         );
     }
 
@@ -203,21 +273,31 @@ mod tests {
     fn released_lease_is_taken() {
         assert_eq!(
             decide(&spec(None, 0, 15), "a", Timestamp::now()),
-            Decision::Take
+            take(None, AcquireReason::Released)
         );
         assert_eq!(
             decide(&spec(Some(""), 0, 15), "a", Timestamp::now()),
-            Decision::Take
+            take(None, AcquireReason::Released)
         );
     }
 
     #[test]
-    fn lease_without_renew_time_is_taken() {
+    fn lease_without_renew_time_is_released_by_its_holder() {
         let s = LeaseSpec {
             holder_identity: Some("b".into()),
             ..Default::default()
         };
-        assert_eq!(decide(&s, "a", Timestamp::now()), Decision::Take);
+        assert_eq!(
+            decide(&s, "a", Timestamp::now()),
+            take(Some("b"), AcquireReason::Released)
+        );
+    }
+
+    #[test]
+    fn reasons_render_lowercase() {
+        assert_eq!(AcquireReason::Created.as_str(), "created");
+        assert_eq!(AcquireReason::Released.as_str(), "released");
+        assert_eq!(AcquireReason::Expired.as_str(), "expired");
     }
 
     fn lock(server: &FakeApiServer, identity: &str) -> LeaseLock {
@@ -230,28 +310,51 @@ mod tests {
         )
     }
 
+    fn acquired(previous: Option<&str>, reason: AcquireReason) -> LeaseState {
+        LeaseState::Acquired {
+            previous: previous.map(str::to_string),
+            reason,
+        }
+    }
+
     #[tokio::test]
     async fn first_replica_creates_and_second_waits() {
         let server = FakeApiServer::start().await;
         let a = lock(&server, "a");
         let b = lock(&server, "b");
         assert_eq!(a.identity(), "a");
-        assert!(a.try_acquire_or_renew().await.unwrap());
-        assert!(!b.try_acquire_or_renew().await.unwrap());
-        assert!(a.try_acquire_or_renew().await.unwrap());
+        assert_eq!(a.name(), "leader");
+        assert_eq!(
+            a.try_acquire_or_renew().await.unwrap(),
+            acquired(None, AcquireReason::Created)
+        );
+        assert_eq!(
+            b.try_acquire_or_renew().await.unwrap(),
+            LeaseState::HeldBy(Some("a".into()))
+        );
+        assert_eq!(a.try_acquire_or_renew().await.unwrap(), LeaseState::Renewed);
     }
 
     #[tokio::test]
-    async fn release_hands_over_immediately() {
+    async fn release_hands_over_with_previous_holder() {
         let server = FakeApiServer::start().await;
         let a = lock(&server, "a");
         let b = lock(&server, "b");
-        assert!(a.try_acquire_or_renew().await.unwrap());
+        a.try_acquire_or_renew().await.unwrap();
         b.release().await.unwrap();
-        assert!(!b.try_acquire_or_renew().await.unwrap());
+        assert!(matches!(
+            b.try_acquire_or_renew().await.unwrap(),
+            LeaseState::HeldBy(_)
+        ));
         a.release().await.unwrap();
-        assert!(b.try_acquire_or_renew().await.unwrap());
-        assert!(!a.try_acquire_or_renew().await.unwrap());
+        assert_eq!(
+            b.try_acquire_or_renew().await.unwrap(),
+            acquired(Some("a"), AcquireReason::Released)
+        );
+        assert_eq!(
+            a.try_acquire_or_renew().await.unwrap(),
+            LeaseState::HeldBy(Some("b".into()))
+        );
     }
 
     #[tokio::test]
@@ -266,7 +369,8 @@ mod tests {
         let a = lock(&server, "a");
         let b = lock(&server, "b");
         let (ra, rb) = tokio::join!(a.try_acquire_or_renew(), b.try_acquire_or_renew());
-        assert!(ra.unwrap() ^ rb.unwrap());
+        let won = |s: &LeaseState| matches!(s, LeaseState::Acquired { .. });
+        assert!(won(&ra.unwrap()) ^ won(&rb.unwrap()));
     }
 
     #[tokio::test]
