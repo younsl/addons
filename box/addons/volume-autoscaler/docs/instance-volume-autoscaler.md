@@ -1,5 +1,7 @@
 # InstanceVolumeAutoscaler
 
+> Available since app version 0.1.0.
+
 How to declare which EC2 instances get their root volume grown, and how far. Read this before writing an InstanceVolumeAutoscaler, or when migrating from the retired `defaultPolicy` and `policies` config keys.
 
 ## Overview
@@ -159,7 +161,7 @@ kubectl get events --field-selector involvedObject.kind=InstanceVolumeAutoscaler
 
 ## Migrating from config policies
 
-The `defaultPolicy` and `policies` config keys are retired, and a config file that still carries them fails at startup with a pointer here. Translate each entry into an autoscaler.
+The `defaultPolicy` and `policies` config keys are retired, and a config file that still carries them starts with a warning pointing here. Translate each entry into an autoscaler.
 
 - `instanceSelector.tags` becomes `scaleTargetRef.kind: TagSelector` with `tags`. A Name regex has no equivalent. Tag the instances, or target each one by ID.
 - `usageThresholdPercent` becomes `metrics[0].resource.target.averageUtilization`.

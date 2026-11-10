@@ -18,16 +18,36 @@ pub const KEY_UNUSED_REASON: &str = "unused-reason";
 pub const KEY_UNUSED_DAYS: &str = "unused-days";
 pub const KEY_VOLUME_ID: &str = "volume-id";
 pub const KEY_OBSERVED_AT: &str = "unused-observed-at";
+/// When orphan PVC cleanup will delete a scheduled claim.
+pub const KEY_ORPHAN_PVC_DELETE_AFTER: &str = "orphan-pvc-delete-after";
+/// When the one alert before deletion was sent, so a restart never sends it
+/// twice.
+pub const KEY_ORPHAN_PVC_ALERTED_AT: &str = "orphan-pvc-alerted-at";
+/// Set by an operator, never by the scanner: any value but `enabled` keeps a
+/// claim out of orphan PVC cleanup.
+pub const KEY_ORPHAN_PVC_CLEANUP: &str = "orphan-pvc-cleanup";
 
 /// Every key except unused-observed-at, in a fixed order. It is excluded
 /// because it changes on every pass and would make every comparison report a
 /// difference, defeating the skip-unchanged check.
-const DATA_KEYS: [&str; 5] = [
+const DATA_KEYS: [&str; 7] = [
     KEY_UNUSED,
     KEY_UNUSED_SINCE,
     KEY_UNUSED_REASON,
     KEY_UNUSED_DAYS,
     KEY_VOLUME_ID,
+    KEY_ORPHAN_PVC_DELETE_AFTER,
+    KEY_ORPHAN_PVC_ALERTED_AT,
+];
+
+/// The keys 0.1.0 wrote under the legacy prefix.
+pub const LEGACY_KEYS: [&str; 6] = [
+    KEY_UNUSED,
+    KEY_UNUSED_SINCE,
+    KEY_UNUSED_REASON,
+    KEY_UNUSED_DAYS,
+    KEY_VOLUME_ID,
+    KEY_OBSERVED_AT,
 ];
 
 /// How stale unused-observed-at may get before the annotations are rewritten
@@ -69,6 +89,18 @@ pub fn build_annotations(f: &Finding) -> AnnotationSet {
         if !f.volume_id.is_empty() {
             set.insert(key(KEY_VOLUME_ID), f.volume_id.clone());
         }
+        if let Some(t) = f.delete_after {
+            set.insert(
+                key(KEY_ORPHAN_PVC_DELETE_AFTER),
+                t.to_rfc3339_opts(SecondsFormat::Secs, true),
+            );
+            if let Some(a) = f.alerted_at {
+                set.insert(
+                    key(KEY_ORPHAN_PVC_ALERTED_AT),
+                    a.to_rfc3339_opts(SecondsFormat::Secs, true),
+                );
+            }
+        }
     }
     let mut remove: Vec<String> = DATA_KEYS
         .iter()
@@ -82,6 +114,7 @@ pub fn build_annotations(f: &Finding) -> AnnotationSet {
     if !f.unused {
         remove.push(key(KEY_OBSERVED_AT));
     }
+    remove.extend(annotations::legacy_present(&f.annotations, &LEGACY_KEYS));
     AnnotationSet { set, remove }
 }
 
@@ -147,18 +180,55 @@ mod tests {
         assert_eq!(a.set[&key(KEY_UNUSED_REASON)], "no_consumer_pod");
         assert_eq!(a.set[&key(KEY_UNUSED_DAYS)], "3");
         assert_eq!(a.set[&key(KEY_VOLUME_ID)], "vol-1");
-        assert!(a.remove.is_empty(), "{:?}", a.remove);
+        assert_eq!(
+            a.remove,
+            vec![
+                key(KEY_ORPHAN_PVC_DELETE_AFTER),
+                key(KEY_ORPHAN_PVC_ALERTED_AT)
+            ]
+        );
 
         let mut f = unused_finding(now);
         f.volume_id = String::new();
         let a = build_annotations(&f);
         assert!(!a.set.contains_key(&key(KEY_VOLUME_ID)));
-        assert_eq!(a.remove, vec![key(KEY_VOLUME_ID)]);
+        assert_eq!(
+            a.remove,
+            vec![
+                key(KEY_VOLUME_ID),
+                key(KEY_ORPHAN_PVC_DELETE_AFTER),
+                key(KEY_ORPHAN_PVC_ALERTED_AT)
+            ]
+        );
+
+        let mut f = unused_finding(now);
+        f.delete_after = Some(now);
+        let a = build_annotations(&f);
+        assert_eq!(
+            a.set[&key(KEY_ORPHAN_PVC_DELETE_AFTER)],
+            now.to_rfc3339_opts(SecondsFormat::Secs, true)
+        );
 
         let a = build_annotations(&Finding::default());
         assert!(a.set.is_empty());
-        assert_eq!(a.remove.len(), 6, "every data key plus observed-at");
+        assert_eq!(a.remove.len(), 8, "every data key plus observed-at");
         assert!(a.remove.contains(&key(KEY_OBSERVED_AT)));
+    }
+
+    #[test]
+    fn legacy_keys_are_removed() {
+        let now = DateTime::from_timestamp(1_700_000_000, 0).unwrap();
+        let mut f = unused_finding(now);
+        f.annotations.insert(
+            annotations::legacy_key(KEY_UNUSED_SINCE),
+            "2023-01-01T00:00:00Z".into(),
+        );
+        let a = build_annotations(&f);
+        assert!(
+            a.remove
+                .contains(&annotations::legacy_key(KEY_UNUSED_SINCE))
+        );
+        assert!(a.needs_write(&f.annotations, now));
     }
 
     #[test]

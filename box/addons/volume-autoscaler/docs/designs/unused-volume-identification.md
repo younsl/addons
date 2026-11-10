@@ -1,8 +1,8 @@
 # Unused volume identification
 
-| Status | Category |
-| --- | --- |
-| implemented, always on, no configuration surface | cost |
+| Status | Category | Since |
+| --- | --- | --- |
+| implemented, always on, no configuration surface | cost | 0.1.0 |
 
 A cluster leaks storage in a way nothing tells you about. A [Deployment][k8s-deployment] is
 deleted and its [PersistentVolumeClaim][k8s-pvc] survives. A [StatefulSet][k8s-statefulset] is scaled from six
@@ -281,7 +281,7 @@ annotation schema.
 ## What this deliberately does not do
 
 - **No deletion, and no permission to delete.** Covered above. This is the
-  feature's defining constraint, not a phase one.
+  scan's defining constraint. Deleting claims was later added as a separate, opt-in feature, see [orphan-pvc-cleanup.md](orphan-pvc-cleanup.md).
 - **No EBS volumes without a PersistentVolume.** A volume whose PV was deleted
   under `Retain` is invisible here: there is no Kubernetes object left to
   classify. Finding those means an EC2 `DescribeVolumes` sweep filtered on the

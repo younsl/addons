@@ -1,5 +1,7 @@
 # Protective auto-cordon
 
+> Available since app version 0.1.0.
+
 What the [protective auto-cordon][k8s-cordon] does to a [Node][k8s-node] and how to watch it.
 
 It is a protective measure, not maintenance: the addon cordons a Node whose root disk is filling up so the [scheduler][k8s-scheduler] stops placing new [Pods][k8s-pod] on a disk that is about to run out, and lifts the cordon itself once the disk has room again.
@@ -17,7 +19,7 @@ The former `autoProtectiveCordon` key is gone. A config that still sets it fails
 Two lines at startup tell whether it is active and what it found:
 
 ```json
-{"timestamp":"2026-10-10T01:00:00.000000Z","level":"INFO","message":"Protective cordon enabled: ...","enabled":true,"annotation":"volume-autoscaler/protective-cordon","condition":"ProtectiveCordon","dry_run":false}
+{"timestamp":"2026-10-10T01:00:00.000000Z","level":"INFO","message":"Protective cordon enabled: ...","enabled":true,"annotation":"volume-autoscaler.sh/protective-cordon","condition":"ProtectiveCordon","dry_run":false}
 {"timestamp":"2026-10-10T01:00:00.350000Z","level":"INFO","message":"Protective cordon monitoring started","nodes_detected":42,"held_by_addon":1,"held_nodes":"[\"ip-10-0-1-5.ap-northeast-2.compute.internal\"]","cordoned_by_others":2,"condition_out_of_sync":0}
 ```
 
@@ -33,7 +35,7 @@ A failed startup list logs an error instead, usually a missing `nodes` grant. It
 
 ## Behavior
 
-- **Cordon**: when a measured instance maps to a Node (by [`spec.providerID`][k8s-node-spec]) and its root usage is at or above its InstanceVolumeAutoscaler's `averageUtilization` target, the Node gets `spec.unschedulable: true` and the `volume-autoscaler/protective-cordon` [annotation][k8s-annotations] (the cordon time). This happens before the resize, so it also covers the cooldown and max-size skips, the cases where the volume cannot grow in time.
+- **Cordon**: when a measured instance maps to a Node (by [`spec.providerID`][k8s-node-spec]) and its root usage is at or above its InstanceVolumeAutoscaler's `averageUtilization` target, the Node gets `spec.unschedulable: true` and the `volume-autoscaler.sh/protective-cordon` [annotation][k8s-annotations] (the cordon time). This happens before the resize, so it also covers the cooldown and max-size skips, the cases where the volume cannot grow in time.
 - **Uncordon**: once usage is back under the threshold (right after a verified resize, or on any later pass), the addon removes `spec.unschedulable` and the annotation.
 - **Condition**: the `ProtectiveCordon` [Node condition][k8s-node-conditions] mirrors the annotation. It is `True` with reason `ProtectiveCordonApplied` while the addon holds the cordon. It turns `False` with reason `ProtectiveCordonReleased` once the Node is schedulable again with usage back under the threshold, or with reason `ProtectiveCordonMarkRemoved` when someone else removed the annotation. A Node the addon never cordoned gets `False` with reason `ProtectiveCordonNotNeeded` on its first measurement under the threshold, so a Node without the condition has not been measured yet (a `paused` policy, a failed measurement, or a Node that joined since the last pass). A Node at or above the threshold that the addon could not cordon (someone else's cordon, or a failed cordon) stays without it until usage falls back under.
 - **Ownership**: only a cordon carrying the annotation is ever lifted. A Node already cordoned by an operator, a [drain][k8s-drain], or another controller is left alone. A Node someone uncordoned by hand just has the annotation dropped.

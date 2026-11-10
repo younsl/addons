@@ -19,3 +19,17 @@ throughputRecommendation:
   metricNodeNameLabel: node                                  # "instance" for a plain node exporter scrape
   lookbackWindow: 7d
   interval: 30m
+
+orphanPvcCleanup:
+  enabled: false
+  minUnusedAge: 3d
+  noticePeriod: 24h
+  reasons:
+    - no_consumer_pod
+    - statefulset_scaled_down
+    - unbound
+  includeNamespaces: []
+  excludeNamespaces: [kube-system]
+  maxDeletionsPerPass: 1
+  alertEnabled: true                                         # requires alertmanager.enabled
+  alertBefore: 6h

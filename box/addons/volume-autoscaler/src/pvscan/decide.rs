@@ -64,6 +64,7 @@ pub fn classify(inv: &Inventory, min_age: Duration, now: DateTime<Utc>) -> Vec<F
                     .unwrap_or_default(),
                 volume_name: c.volume_name.clone(),
                 annotations: c.annotations.clone(),
+                owned: c.owned,
                 ..Finding::default()
             },
             min_age,
@@ -208,6 +209,7 @@ fn unused_since(
 ) -> DateTime<Utc> {
     existing
         .get(&key(KEY_UNUSED_SINCE))
+        .or_else(|| existing.get(&crate::annotations::legacy_key(KEY_UNUSED_SINCE)))
         .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
         .map(|t| t.with_timezone(&Utc))
         .filter(|t| *t <= now)
@@ -428,6 +430,21 @@ mod tests {
         );
         let out = finalize(f, Duration::from_hours(24), now);
         assert_eq!(out.unused_since, Some(now), "future clock is discarded");
+
+        let mut legacy = Finding {
+            unused: true,
+            ..Finding::default()
+        };
+        legacy.annotations.insert(
+            crate::annotations::legacy_key(KEY_UNUSED_SINCE),
+            since.to_rfc3339(),
+        );
+        let out = finalize(legacy, Duration::from_hours(24), now);
+        assert_eq!(
+            out.unused_since.unwrap().timestamp(),
+            since.timestamp(),
+            "the 0.1.0 clock survives the prefix change"
+        );
 
         let used = finalize(Finding::default(), Duration::from_secs(1), now);
         assert!(used.unused_since.is_none());

@@ -1,5 +1,7 @@
 # Alerting
 
+> Available since app version 0.1.0.
+
 ## Overview
 
 This document explains how volume-autoscaler sends alerts to
@@ -60,6 +62,28 @@ reported.
 
 A resize that is only starting is never alerted, to avoid noise. You learn about
 a resize when it succeeds or fails, not when it begins.
+
+## Orphan PVC cleanup alerts
+
+> Available since app version 0.2.0.
+
+When [orphan PVC cleanup](orphan-pvc-cleanup.md) is enabled, it sends its own alerts, labeled with `namespace`, `persistentvolumeclaim`, `reason`, and `volume_id` (when the claim is EBS-backed):
+
+| Alert | Severity | Fires when |
+|-------|----------|------------|
+| `OrphanPvcDeletionUpcoming` | `warning` | Once per claim, when its deadline is `orphanPvcCleanup.alertBefore` (default `6h`) away. The description carries the deadline and how to opt the claim out |
+| `OrphanPvcDeleted` | `info` | A claim was deleted. The description names the reclaim policy of its volume |
+| `OrphanPvcDeletionFailed` | `warning` | The Pod recheck or the delete failed. The claim stays scheduled and is retried on the next pass |
+
+The upcoming alert is the only alert before a deletion. It is recorded in the claim's `volume-autoscaler.sh/orphan-pvc-alerted-at` annotation in the same patch that marks it, so a restart or failover never sends it twice. A claim canceled and scheduled again gets a new one.
+
+The gates compose as AND: `alertmanager.enabled`, `orphanPvcCleanup.enabled`, and `orphanPvcCleanup.alertEnabled` (default `true`). `notifyOn` applies to resize alerts only. A dry run sends no cleanup alert.
+
+```yaml
+config:
+  orphanPvcCleanup:
+    alertEnabled: false
+```
 
 ## Alert template examples
 
@@ -208,8 +232,7 @@ Alerting is controlled by environment variables, which the Helm chart sets from
 | `ALERTMANAGER_LABELS` | `config.alertmanager.labels` | (empty) | `Key=Value,Key2=Value2` static labels merged into every alert for routing |
 | `ALERTMANAGER_NOTIFY_ON` | `config.alertmanager.notifyOn` | `success` | Which outcomes to alert: `all`, `success`, or `failure` |
 
-When `ALERTMANAGER_ENABLED` is `true`, `ALERTMANAGER_URL` is required; the addon
-refuses to start otherwise.
+When `ALERTMANAGER_ENABLED` is `true`, `ALERTMANAGER_URL` is required. Without it the addon starts with alerting turned off and logs a warning, see [Invalid values](configuration.md#invalid-values).
 
 Enable alerting through Helm `--set` flags:
 

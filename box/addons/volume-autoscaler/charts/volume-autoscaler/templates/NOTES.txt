@@ -29,7 +29,7 @@ Confirm the metrics backend is readable:
   kubectl -n {{ .Release.Namespace }} logs deploy/{{ include "volume-autoscaler.fullname" . }} | grep "metrics check"
 
 List the current recommendations:
-  kubectl get nodes -o custom-columns='NODE:.metadata.name,ACTION:.metadata.annotations.volume-autoscaler/throughput-recommendation,CURRENT:.metadata.annotations.volume-autoscaler/throughput-current-mibps,UTIL%:.metadata.annotations.volume-autoscaler/throughput-utilization-percent,TARGET:.metadata.annotations.volume-autoscaler/throughput-recommended-mibps'
+  kubectl get nodes -o custom-columns='NODE:.metadata.name,ACTION:.metadata.annotations.volume-autoscaler\.sh/throughput-recommendation,CURRENT:.metadata.annotations.volume-autoscaler\.sh/throughput-current-mibps,UTIL%:.metadata.annotations.volume-autoscaler\.sh/throughput-utilization-percent,TARGET:.metadata.annotations.volume-autoscaler\.sh/throughput-recommended-mibps'
 {{- end }}
 
 {{- if and (has "instance-volume-autoscaler" .Values.controllers) (not .Values.serviceAccount.annotations) }}

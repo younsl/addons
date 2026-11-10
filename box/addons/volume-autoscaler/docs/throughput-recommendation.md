@@ -1,5 +1,7 @@
 # Node throughput recommendations
 
+> Available since app version 0.1.0.
+
 How to read and apply the gp3 throughput recommendations the addon publishes on [Nodes][k8s-node]. See the design documents linked below for the decision rules.
 
 Disabled by default. When enabled, a second loop recommends a gp3 throughput (and
@@ -8,7 +10,7 @@ as Node [annotations][k8s-annotations]:
 
 ```console
 $ kubectl get node ip-10-0-1-5.ap-northeast-2.compute.internal \
-    -o jsonpath='{.metadata.annotations.volume-autoscaler/throughput-recommendation}'
+    -o jsonpath='{.metadata.annotations.volume-autoscaler\.sh/throughput-recommendation}'
 increase
 ```
 

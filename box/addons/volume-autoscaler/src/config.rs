@@ -93,6 +93,24 @@ pub struct MetricsBackend {
     pub label_selector: BTreeMap<String, String>,
 }
 
+/// Orphan PVC cleanup: opt-in deletion of the `PersistentVolumeClaims` the
+/// unused volume scan reports. Disabled by default. Only claims are deleted,
+/// never a volume.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct OrphanPvcCleanup {
+    pub enabled: bool,
+    pub min_unused_age: Duration,
+    pub notice_period: Duration,
+    pub reasons: Vec<String>,
+    pub include_namespaces: Vec<String>,
+    pub exclude_namespaces: Vec<String>,
+    pub max_deletions_per_pass: usize,
+    /// Sends Alertmanager alerts for scheduled, deleted, and failed
+    /// deletions. `alertmanager.enabled` remains the master gate.
+    pub alert_enabled: bool,
+    pub alert_before: Duration,
+}
+
 /// All runtime settings for the resizer.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 #[allow(clippy::struct_excessive_bools)]
@@ -145,15 +163,20 @@ pub struct Config {
     pub grafana_annotate_on: String,
     pub throughput_recommendation: ThroughputRecommendation,
     pub metrics: MetricsBackend,
+    pub orphan_pvc_cleanup: OrphanPvcCleanup,
+    /// Invalid values that were replaced instead of failing startup, logged
+    /// once the logger is installed.
+    pub warnings: Vec<String>,
 }
 
-/// The on-disk YAML shape. Durations are strings (Go duration syntax) parsed
+/// The on-disk YAML shape. Durations are strings (Go duration syntax plus `d`
+/// for days) parsed
 /// during `load`. Every optional key carries its default here, so a key
 /// omitted from the file keeps its default and a key present overrides it,
 /// including with an explicit zero. Parsing is strict: an unknown key is an
 /// error.
 #[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields, rename_all = "camelCase", default)]
+#[serde(rename_all = "camelCase", default)]
 struct FileSchema {
     region: String,
     /// Retired: `InstanceVolumeAutoscaler` `scaleTargetRef` scopes targets.
@@ -183,7 +206,11 @@ struct FileSchema {
     grafana_annotation: GrafanaFile,
     throughput_recommendation: ThroughputFile,
     metrics: MetricsFile,
+    orphan_pvc_cleanup: OrphanPvcCleanupFile,
     policies: Option<serde_yaml::Value>,
+    /// Keys this version does not know, reported and ignored.
+    #[serde(flatten)]
+    extra: BTreeMap<String, serde_yaml::Value>,
 }
 
 impl Default for FileSchema {
@@ -210,13 +237,15 @@ impl Default for FileSchema {
             grafana_annotation: GrafanaFile::default(),
             throughput_recommendation: ThroughputFile::default(),
             metrics: MetricsFile::default(),
+            orphan_pvc_cleanup: OrphanPvcCleanupFile::default(),
             policies: None,
+            extra: BTreeMap::new(),
         }
     }
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields, rename_all = "camelCase", default)]
+#[serde(rename_all = "camelCase", default)]
 struct AlertmanagerFile {
     enabled: bool,
     url: String,
@@ -224,6 +253,9 @@ struct AlertmanagerFile {
     labels: BTreeMap<String, String>,
     notify_on: String,
     dashboard_url: String,
+    /// Keys this version does not know, reported and ignored.
+    #[serde(flatten)]
+    extra: BTreeMap<String, serde_yaml::Value>,
 }
 
 impl Default for AlertmanagerFile {
@@ -235,18 +267,22 @@ impl Default for AlertmanagerFile {
             labels: BTreeMap::new(),
             notify_on: NOTIFY_ON_SUCCESS.into(),
             dashboard_url: String::new(),
+            extra: BTreeMap::new(),
         }
     }
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields, rename_all = "camelCase", default)]
+#[serde(rename_all = "camelCase", default)]
 struct GrafanaFile {
     enabled: bool,
     url: String,
     timeout: String,
     tags: Vec<String>,
     annotate_on: String,
+    /// Keys this version does not know, reported and ignored.
+    #[serde(flatten)]
+    extra: BTreeMap<String, serde_yaml::Value>,
 }
 
 impl Default for GrafanaFile {
@@ -257,20 +293,24 @@ impl Default for GrafanaFile {
             timeout: "5s".into(),
             tags: vec!["event:ebs-resize".into()],
             annotate_on: ANNOTATE_ON_ALL.into(),
+            extra: BTreeMap::new(),
         }
     }
 }
 
 #[derive(Debug, Default, Deserialize)]
-#[serde(deny_unknown_fields, rename_all = "camelCase", default)]
+#[serde(rename_all = "camelCase", default)]
 struct MetricsFile {
     url: String,
     tenant_id: String,
     label_selector: BTreeMap<String, String>,
+    /// Keys this version does not know, reported and ignored.
+    #[serde(flatten)]
+    extra: BTreeMap<String, serde_yaml::Value>,
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields, rename_all = "camelCase", default)]
+#[serde(rename_all = "camelCase", default)]
 struct ThroughputFile {
     enabled: bool,
     /// Retired: the backend moved to the top-level `metrics` block.
@@ -281,6 +321,9 @@ struct ThroughputFile {
     metric_node_name_label: String,
     lookback_window: String,
     apply_on_resize: bool,
+    /// Keys this version does not know, reported and ignored.
+    #[serde(flatten)]
+    extra: BTreeMap<String, serde_yaml::Value>,
 }
 
 impl Default for ThroughputFile {
@@ -299,6 +342,99 @@ impl Default for ThroughputFile {
             // explicit false here is the kill switch that keeps it
             // advisory-only.
             apply_on_resize: true,
+            extra: BTreeMap::new(),
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+struct OrphanPvcCleanupFile {
+    enabled: bool,
+    min_unused_age: String,
+    notice_period: String,
+    reasons: Vec<String>,
+    include_namespaces: Vec<String>,
+    exclude_namespaces: Vec<String>,
+    max_deletions_per_pass: i64,
+    alert_enabled: bool,
+    alert_before: String,
+    /// Keys this version does not know, reported and ignored.
+    #[serde(flatten)]
+    extra: BTreeMap<String, serde_yaml::Value>,
+}
+
+impl OrphanPvcCleanupFile {
+    fn parse(&self, fx: &mut Fixes) -> OrphanPvcCleanup {
+        let d = Self::default();
+        fx.unknown("orphanPvcCleanup.", &self.extra);
+        OrphanPvcCleanup {
+            enabled: self.enabled,
+            min_unused_age: fx.duration(
+                "orphanPvcCleanup.minUnusedAge",
+                &self.min_unused_age,
+                &d.min_unused_age,
+            ),
+            notice_period: fx.duration(
+                "orphanPvcCleanup.noticePeriod",
+                &self.notice_period,
+                &d.notice_period,
+            ),
+            reasons: self.reasons.clone(),
+            include_namespaces: self.include_namespaces.clone(),
+            exclude_namespaces: self.exclude_namespaces.clone(),
+            max_deletions_per_pass: usize::try_from(self.max_deletions_per_pass).unwrap_or(0),
+            alert_enabled: self.alert_enabled,
+            alert_before: fx.duration(
+                "orphanPvcCleanup.alertBefore",
+                &self.alert_before,
+                &d.alert_before,
+            ),
+        }
+    }
+}
+
+/// Collects the problems corrected while loading, so an invalid value is
+/// replaced and reported rather than failing startup.
+#[derive(Debug, Default)]
+struct Fixes(Vec<String>);
+
+impl Fixes {
+    fn push(&mut self, msg: String) {
+        self.0.push(msg);
+    }
+
+    /// Parses `raw`, or falls back to `default` and records why.
+    fn duration(&mut self, name: &str, raw: &str, default: &str) -> Duration {
+        parse::parse_duration(name, raw).unwrap_or_else(|err| {
+            self.push(format!("{err}, using {default}"));
+            parse::parse_duration(name, default).unwrap_or_default()
+        })
+    }
+
+    fn unknown(&mut self, prefix: &str, extra: &BTreeMap<String, serde_yaml::Value>) {
+        for k in extra.keys() {
+            self.push(format!("unknown key {prefix}{k} ignored"));
+        }
+    }
+}
+
+impl Default for OrphanPvcCleanupFile {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            min_unused_age: "7d".into(),
+            notice_period: "1d".into(),
+            reasons: crate::pvscan::UNUSED_PVC_REASONS
+                .iter()
+                .map(|r| (*r).to_string())
+                .collect(),
+            include_namespaces: Vec::new(),
+            exclude_namespaces: vec!["kube-system".into()],
+            max_deletions_per_pass: 1,
+            alert_enabled: true,
+            alert_before: "6h".into(),
+            extra: BTreeMap::new(),
         }
     }
 }
@@ -367,13 +503,9 @@ const TO_CRD: &str = "declare targets and resize settings as autoscaler resource
 /// Where a retired metrics backend key now lives.
 const TO_METRICS: &str = "set the backend under metrics.url and metrics.tenantId";
 
-/// Parses and validates a config document. `load` wraps it with the file path.
-pub fn parse(raw: &str, env: &Env) -> Result<Config, ConfigError> {
-    let f: FileSchema = serde_yaml::from_str(raw).map_err(|source| ConfigError::Parse {
-        path: String::new(),
-        source,
-    })?;
-
+/// Records every key the file sets that this version ignores: retired keys,
+/// with where their setting moved, and unknown keys.
+fn report_ignored(f: &FileSchema, fx: &mut Fixes) {
     for (key, present, hint) in [
         ("defaultPolicy", f.default_policy.is_some(), TO_CRD),
         ("policies", f.policies.is_some(), TO_CRD),
@@ -391,27 +523,74 @@ pub fn parse(raw: &str, env: &Env) -> Result<Config, ConfigError> {
         ),
     ] {
         if present {
-            return Err(ConfigError::Invalid(format!(
-                "{key} is no longer a config key: {hint}"
-            )));
+            fx.push(format!(
+                "{key} is no longer a config key and is ignored: {hint}"
+            ));
         }
     }
+    fx.unknown("", &f.extra);
+    fx.unknown("alertmanager.", &f.alertmanager.extra);
+    fx.unknown("grafanaAnnotation.", &f.grafana_annotation.extra);
+    fx.unknown("metrics.", &f.metrics.extra);
+    fx.unknown(
+        "throughputRecommendation.",
+        &f.throughput_recommendation.extra,
+    );
+}
+
+/// Parses the throughput observation window, falling back to the default.
+fn lookback_window(raw: &str, default: &str, fx: &mut Fixes) -> (String, Duration) {
+    const KEY: &str = "throughputRecommendation.lookbackWindow";
+    parse::parse_prom_duration(KEY, raw).unwrap_or_else(|err| {
+        fx.push(format!("{err}, using {default}"));
+        parse::parse_prom_duration(KEY, default).unwrap_or_default()
+    })
+}
+
+/// Parses a config document. `load` wraps it with the file path. Malformed
+/// YAML, a value of the wrong type, and a missing `region` fail. Every other
+/// invalid value is replaced by its default or clamped into range, and listed
+/// in `Config::warnings`, so a bad value never keeps the controller down.
+pub fn parse(raw: &str, env: &Env) -> Result<Config, ConfigError> {
+    let f: FileSchema = serde_yaml::from_str(raw).map_err(|source| ConfigError::Parse {
+        path: String::new(),
+        source,
+    })?;
+    let d = FileSchema::default();
+    let mut fx = Fixes::default();
+
+    report_ignored(&f, &mut fx);
 
     let tr = &f.throughput_recommendation;
+    let dtr = &d.throughput_recommendation;
     let mut c = Config {
         region: f.region.clone(),
-        reconcile_interval: parse::parse_duration("reconcileInterval", &f.reconcile_interval)?,
-        claim_reconcile_interval: parse::parse_duration(
+        reconcile_interval: fx.duration(
+            "reconcileInterval",
+            &f.reconcile_interval,
+            &d.reconcile_interval,
+        ),
+        claim_reconcile_interval: fx.duration(
             "claimReconcileInterval",
             &f.claim_reconcile_interval,
-        )?,
+            &d.claim_reconcile_interval,
+        ),
         reconcile_concurrency: usize::try_from(f.reconcile_concurrency).unwrap_or(0),
-        ssm_poll_interval: parse::parse_duration("ssmPollInterval", &f.ssm_poll_interval)?,
-        ssm_command_timeout: parse::parse_duration("ssmCommandTimeout", &f.ssm_command_timeout)?,
-        volume_modify_timeout: parse::parse_duration(
+        ssm_poll_interval: fx.duration(
+            "ssmPollInterval",
+            &f.ssm_poll_interval,
+            &d.ssm_poll_interval,
+        ),
+        ssm_command_timeout: fx.duration(
+            "ssmCommandTimeout",
+            &f.ssm_command_timeout,
+            &d.ssm_command_timeout,
+        ),
+        volume_modify_timeout: fx.duration(
             "volumeModifyTimeout",
             &f.volume_modify_timeout,
-        )?,
+            &d.volume_modify_timeout,
+        ),
         dry_run: f.dry_run,
         health_port: f.health_port,
         metrics_port: f.metrics_port,
@@ -427,25 +606,31 @@ pub fn parse(raw: &str, env: &Env) -> Result<Config, ConfigError> {
         lease_name: f.lease_name.clone(),
         alertmanager_enabled: f.alertmanager.enabled,
         alertmanager_url: f.alertmanager.url.clone(),
-        alertmanager_timeout: parse::parse_duration(
+        alertmanager_timeout: fx.duration(
             "alertmanager.timeout",
             &f.alertmanager.timeout,
-        )?,
+            &d.alertmanager.timeout,
+        ),
         alertmanager_labels: f.alertmanager.labels.clone(),
         alertmanager_notify_on: f.alertmanager.notify_on.clone(),
         alertmanager_dashboard_url: f.alertmanager.dashboard_url.clone(),
         grafana_annotation_enabled: f.grafana_annotation.enabled,
         grafana_url: f.grafana_annotation.url.clone(),
         grafana_api_token: env.grafana_api_token.clone(),
-        grafana_timeout: parse::parse_duration(
+        grafana_timeout: fx.duration(
             "grafanaAnnotation.timeout",
             &f.grafana_annotation.timeout,
-        )?,
+            &d.grafana_annotation.timeout,
+        ),
         grafana_annotation_tags: f.grafana_annotation.tags.clone(),
         grafana_annotate_on: f.grafana_annotation.annotate_on.clone(),
         throughput_recommendation: ThroughputRecommendation {
             enabled: tr.enabled,
-            interval: parse::parse_duration("throughputRecommendation.interval", &tr.interval)?,
+            interval: fx.duration(
+                "throughputRecommendation.interval",
+                &tr.interval,
+                &dtr.interval,
+            ),
             metric_node_name_label: tr.metric_node_name_label.clone(),
             lookback_window: String::new(),
             lookback_duration: Duration::ZERO,
@@ -457,18 +642,19 @@ pub fn parse(raw: &str, env: &Env) -> Result<Config, ConfigError> {
             bearer_token: env.prometheus_bearer_token.clone(),
             label_selector: f.metrics.label_selector.clone(),
         },
+        orphan_pvc_cleanup: f.orphan_pvc_cleanup.parse(&mut fx),
+        warnings: Vec::new(),
     };
 
     // The observation window is a Prometheus duration, not a Go duration: "7d"
     // is valid PromQL and invalid Go, while "1.5h" is the reverse.
-    let (window, window_duration) = parse::parse_prom_duration(
-        "throughputRecommendation.lookbackWindow",
-        &tr.lookback_window,
-    )?;
+    let (window, window_duration) =
+        lookback_window(&tr.lookback_window, &dtr.lookback_window, &mut fx);
     c.throughput_recommendation.lookback_window = window;
     c.throughput_recommendation.lookback_duration = window_duration;
 
-    c.validate()?;
+    c.sanitize(&mut fx)?;
+    c.warnings = fx.0;
     Ok(c)
 }
 
@@ -477,6 +663,8 @@ mod tests {
     use indoc::indoc;
 
     use super::*;
+
+    type Check = Box<dyn Fn(&Config) -> bool>;
 
     const MINIMAL: &str = indoc! {"
         region: ap-northeast-2
@@ -522,10 +710,23 @@ mod tests {
         assert_eq!(tr.lookback_duration, Duration::from_hours(168));
         assert!(tr.apply_on_resize);
         assert!(c.pod_name.is_empty(), "{:?}", c.pod_name);
+        let uc = &c.orphan_pvc_cleanup;
+        assert!(!uc.enabled);
+        assert_eq!(uc.min_unused_age, Duration::from_hours(168));
+        assert_eq!(uc.notice_period, Duration::from_hours(24));
+        assert_eq!(
+            uc.reasons,
+            vec!["no_consumer_pod", "statefulset_scaled_down", "unbound"]
+        );
+        assert!(uc.alert_enabled);
+        assert_eq!(uc.alert_before, Duration::from_hours(6));
+        assert_eq!(uc.include_namespaces, Vec::<String>::new());
+        assert_eq!(uc.exclude_namespaces, vec!["kube-system"]);
+        assert_eq!(uc.max_deletions_per_pass, 1);
     }
 
     #[test]
-    fn retired_policy_keys_point_at_the_crd() {
+    fn retired_keys_are_reported_and_ignored() {
         for (raw, hint) in [
             (
                 with("defaultPolicy:\n  usageThresholdPercent: 80\n"),
@@ -543,8 +744,14 @@ mod tests {
                 "metrics.url",
             ),
         ] {
-            let err = parse(&raw, &env()).unwrap_err().to_string();
-            assert!(err.contains(hint), "{err}");
+            let c = parse(&raw, &env()).unwrap();
+            assert_eq!(c.warnings.len(), 1, "{:?}", c.warnings);
+            assert!(
+                c.warnings[0].contains("no longer a config key"),
+                "{:?}",
+                c.warnings
+            );
+            assert!(c.warnings[0].contains(hint), "{:?}", c.warnings);
         }
     }
 
@@ -590,6 +797,16 @@ mod tests {
               metricNodeNameLabel: instance
               lookbackWindow: 12h
               applyOnResize: false
+            orphanPvcCleanup:
+              enabled: true
+              minUnusedAge: 30d
+              noticePeriod: 72h
+              reasons: [no_consumer_pod, statefulset_scaled_down]
+              includeNamespaces: [legacy]
+              excludeNamespaces: []
+              maxDeletionsPerPass: 3
+              alertEnabled: false
+              alertBefore: 2d
         "#};
         let e = Env {
             pod_name: "pod-0".into(),
@@ -640,167 +857,249 @@ mod tests {
         assert_eq!(c.pod_name, "pod-0");
         assert_eq!(c.pod_namespace, "kube-system");
         assert_eq!(c.pod_uid, "uid");
+        let uc = &c.orphan_pvc_cleanup;
+        assert!(uc.enabled);
+        assert_eq!(uc.min_unused_age, Duration::from_hours(720));
+        assert_eq!(uc.notice_period, Duration::from_hours(72));
+        assert_eq!(
+            uc.reasons,
+            vec!["no_consumer_pod", "statefulset_scaled_down"]
+        );
+        assert_eq!(uc.include_namespaces, vec!["legacy"]);
+        assert_eq!(uc.exclude_namespaces, Vec::<String>::new());
+        assert_eq!(uc.max_deletions_per_pass, 3);
+        assert!(!uc.alert_enabled);
+        assert_eq!(uc.alert_before, Duration::from_hours(48));
     }
 
     #[test]
-    fn unknown_keys_fail() {
+    fn unknown_keys_are_reported_and_ignored() {
+        for (raw, key) in [
+            (with("bogus: 1\n"), "bogus"),
+            (with("alertmanager:\n  bogus: 1\n"), "alertmanager.bogus"),
+            (
+                with("throughputRecommendation:\n  quantile: 0.9\n"),
+                "throughputRecommendation.quantile",
+            ),
+            (
+                with("orphanPvcCleanup:\n  enabeld: true\n"),
+                "orphanPvcCleanup.enabeld",
+            ),
+        ] {
+            let c = parse(&raw, &env()).unwrap();
+            assert_eq!(c.warnings, vec![format!("unknown key {key} ignored")]);
+        }
+        assert!(
+            !parse(&with("orphanPvcCleanup:\n  enabeld: true\n"), &env())
+                .unwrap()
+                .orphan_pvc_cleanup
+                .enabled
+        );
+    }
+
+    #[test]
+    fn structural_errors_still_fail() {
         for raw in [
-            with("bogus: 1\n"),
-            with(indoc! {"
-                alertmanager:
-                  bogus: 1
-            "}),
-            with(indoc! {"
-                throughputRecommendation:
-                  quantile: 0.9
-            "}),
+            with("dryRun: maybe\n"),
+            with("orphanPvcCleanup:\n  maxDeletionsPerPass: many\n"),
+            "region: [\n".to_string(),
         ] {
             let err = parse(&raw, &env()).unwrap_err();
             assert!(matches!(err, ConfigError::Parse { .. }), "{raw}: {err}");
-            assert!(err.to_string().contains("parse config file"), "{err}");
         }
     }
 
     #[test]
     #[allow(clippy::too_many_lines)]
-    fn validation_errors() {
-        let cases: Vec<(String, &str)> = vec![
-            ("dryRun: true\n".into(), "region is required"),
+    fn invalid_values_fail_open() {
+        assert!(
+            parse("dryRun: true\n", &env())
+                .unwrap_err()
+                .to_string()
+                .contains("region is required")
+        );
+        let cases: Vec<(String, &str, Check)> = vec![
             (
                 with("reconcileInterval: 5min\n"),
                 "invalid reconcileInterval",
+                Box::new(|c| c.reconcile_interval == Duration::from_mins(5)),
             ),
             (
                 with("reconcileInterval: 0s\n"),
                 "reconcileInterval must be greater than 0",
+                Box::new(|c| c.reconcile_interval == Duration::from_mins(5)),
             ),
             (
                 with("claimReconcileInterval: 5s\n"),
                 "claimReconcileInterval must be at least 10s",
+                Box::new(|c| c.claim_reconcile_interval == Duration::from_secs(10)),
             ),
             (
                 with("reconcileConcurrency: 0\n"),
                 "reconcileConcurrency must be greater than 0",
+                Box::new(|c| c.reconcile_concurrency == 10),
             ),
             (
                 with("reconcileConcurrency: -1\n"),
                 "reconcileConcurrency must be greater than 0",
+                Box::new(|c| c.reconcile_concurrency == 10),
             ),
             (
                 with("ssmPollInterval: 0\n"),
                 "ssmPollInterval must be greater than 0",
+                Box::new(|c| c.ssm_poll_interval == Duration::from_secs(1)),
             ),
-            (with("ssmCommandTimeout: x\n"), "invalid ssmCommandTimeout"),
             (
-                with("volumeModifyTimeout: x\n"),
+                with("ssmCommandTimeout: x\n"),
+                "invalid ssmCommandTimeout",
+                Box::new(|c| c.ssm_command_timeout == Duration::from_mins(5)),
+            ),
+            (
+                with("volumeModifyTimeout: 1.5h\n"),
                 "invalid volumeModifyTimeout",
+                Box::new(|c| c.volume_modify_timeout == Duration::from_mins(10)),
             ),
             (
-                with(indoc! {"
-                    alertmanager:
-                      notifyOn: never
-                "}),
+                with("alertmanager:\n  notifyOn: never\n"),
                 "alertmanager.notifyOn must be one of",
+                Box::new(|c| c.alertmanager_notify_on == NOTIFY_ON_SUCCESS),
             ),
             (
-                with(indoc! {"
-                    alertmanager:
-                      enabled: true
-                "}),
+                with("alertmanager:\n  enabled: true\n"),
                 "alertmanager.url is required",
+                Box::new(|c| !c.alertmanager_enabled),
             ),
             (
-                with(indoc! {"
-                    alertmanager:
-                      timeout: bogus
-                "}),
+                with("alertmanager:\n  timeout: bogus\n"),
                 "invalid alertmanager.timeout",
+                Box::new(|c| c.alertmanager_timeout == Duration::from_secs(5)),
             ),
             (
-                with(indoc! {"
-                    grafanaAnnotation:
-                      annotateOn: never
-                "}),
+                with("grafanaAnnotation:\n  annotateOn: never\n"),
                 "grafanaAnnotation.annotateOn must be one of",
+                Box::new(|c| c.grafana_annotate_on == ANNOTATE_ON_ALL),
             ),
             (
-                with(indoc! {"
-                    grafanaAnnotation:
-                      enabled: true
-                "}),
+                with("grafanaAnnotation:\n  enabled: true\n  url: \"\"\n"),
                 "grafanaAnnotation.url is required",
+                Box::new(|c| !c.grafana_annotation_enabled),
             ),
             (
-                with(indoc! {"
-                    grafanaAnnotation:
-                      timeout: bogus
-                "}),
+                with("grafanaAnnotation:\n  timeout: bogus\n"),
                 "invalid grafanaAnnotation.timeout",
+                Box::new(|c| c.grafana_timeout == Duration::from_secs(5)),
             ),
             (
-                with(indoc! {"
-                    throughputRecommendation:
-                      enabled: true
-                "}),
+                with("throughputRecommendation:\n  enabled: true\n"),
                 "metrics.url is required when throughputRecommendation.enabled",
+                Box::new(|c| !c.throughput_recommendation.enabled),
             ),
             (
-                with(indoc! {"
-                    metrics:
-                      labelSelector:
-                        bad-key: x
-                "}),
+                with("metrics:\n  labelSelector:\n    bad-key: x\n    cluster: prd\n"),
                 "invalid metrics.labelSelector key",
+                Box::new(|c| c.metrics.label_selector.len() == 1),
             ),
             (
-                with(indoc! {"
-                    throughputRecommendation:
-                      interval: 0s
-                "}),
+                with("throughputRecommendation:\n  interval: 0s\n"),
                 "throughputRecommendation.interval must be greater than 0",
+                Box::new(|c| c.throughput_recommendation.interval == Duration::from_mins(30)),
             ),
             (
-                with(indoc! {"
-                    throughputRecommendation:
-                      interval: soon
-                "}),
+                with("throughputRecommendation:\n  interval: soon\n"),
                 "invalid throughputRecommendation.interval",
+                Box::new(|c| c.throughput_recommendation.interval == Duration::from_mins(30)),
             ),
             (
-                with(indoc! {r#"
-                    throughputRecommendation:
-                      metricNodeNameLabel: "no-de"
-                "#}),
+                with("throughputRecommendation:\n  metricNodeNameLabel: \"no-de\"\n"),
                 "invalid throughputRecommendation.metricNodeNameLabel",
+                Box::new(|c| c.throughput_recommendation.metric_node_name_label == "node"),
             ),
             (
-                with(indoc! {"
-                    throughputRecommendation:
-                      lookbackWindow: 1.5h
-                "}),
+                with("throughputRecommendation:\n  lookbackWindow: 1.5h\n"),
                 "invalid throughputRecommendation.lookbackWindow",
+                Box::new(|c| c.throughput_recommendation.lookback_window == "7d"),
+            ),
+            (
+                with("orphanPvcCleanup:\n  minUnusedAge: 1.5d\n"),
+                "invalid orphanPvcCleanup.minUnusedAge",
+                Box::new(|c| c.orphan_pvc_cleanup.min_unused_age == Duration::from_hours(168)),
+            ),
+            (
+                with("orphanPvcCleanup:\n  minUnusedAge: 12h\n"),
+                "orphanPvcCleanup.minUnusedAge must be at least 24h",
+                Box::new(|c| c.orphan_pvc_cleanup.min_unused_age == Duration::from_hours(24)),
+            ),
+            (
+                with("orphanPvcCleanup:\n  noticePeriod: 30m\n"),
+                "orphanPvcCleanup.noticePeriod must be at least 1h",
+                Box::new(|c| c.orphan_pvc_cleanup.notice_period == Duration::from_hours(1)),
+            ),
+            (
+                with("orphanPvcCleanup:\n  noticePeriod: x\n"),
+                "invalid orphanPvcCleanup.noticePeriod",
+                Box::new(|c| c.orphan_pvc_cleanup.notice_period == Duration::from_hours(24)),
+            ),
+            (
+                with("orphanPvcCleanup:\n  alertBefore: 30m\n"),
+                "orphanPvcCleanup.alertBefore must be at least 1h",
+                Box::new(|c| c.orphan_pvc_cleanup.alert_before == Duration::from_hours(1)),
+            ),
+            (
+                with("orphanPvcCleanup:\n  reasons: []\n"),
+                "orphanPvcCleanup.reasons has no valid entry",
+                Box::new(|c| c.orphan_pvc_cleanup.reasons.len() == 3),
+            ),
+            (
+                with("orphanPvcCleanup:\n  reasons: [released, unbound]\n"),
+                "invalid orphanPvcCleanup.reasons entry \"released\"",
+                Box::new(|c| c.orphan_pvc_cleanup.reasons == vec!["unbound"]),
+            ),
+            (
+                with("orphanPvcCleanup:\n  maxDeletionsPerPass: 0\n"),
+                "orphanPvcCleanup.maxDeletionsPerPass must be between 1 and 100",
+                Box::new(|c| c.orphan_pvc_cleanup.max_deletions_per_pass == 1),
+            ),
+            (
+                with("orphanPvcCleanup:\n  maxDeletionsPerPass: 101\n"),
+                "orphanPvcCleanup.maxDeletionsPerPass must be between 1 and 100",
+                Box::new(|c| c.orphan_pvc_cleanup.max_deletions_per_pass == 100),
+            ),
+            (
+                with("orphanPvcCleanup:\n  includeNamespaces: [a]\n  excludeNamespaces: [a]\n"),
+                "is both included and excluded, excluded wins",
+                Box::new(|c| c.orphan_pvc_cleanup.exclude_namespaces == vec!["a"]),
             ),
         ];
-        for (raw, want) in cases {
-            let err = parse(&raw, &env()).unwrap_err().to_string();
-            assert!(err.contains(want), "{raw}\nwant {want:?}\ngot {err}");
+        for (raw, want, check) in cases {
+            let c = parse(&raw, &env()).unwrap_or_else(|e| panic!("{raw}: {e}"));
+            assert!(
+                c.warnings.iter().any(|w| w.contains(want)),
+                "{raw}\nwant {want:?}\ngot {:?}",
+                c.warnings
+            );
+            assert!(check(&c), "{raw}: value not corrected");
         }
+        assert_eq!(
+            parse(MINIMAL, &env()).unwrap().warnings,
+            Vec::<String>::new()
+        );
     }
 
     #[test]
     fn grafana_enabled_without_token() {
-        let raw = with(indoc! {"
-            grafanaAnnotation:
-              enabled: true
-              url: http://g
-        "});
-        let err = parse(&raw, &env()).unwrap_err().to_string();
-        assert!(err.contains("GRAFANA_API_TOKEN is required"), "{err}");
+        let raw = with("grafanaAnnotation:\n  enabled: true\n  url: http://g\n");
+        let c = parse(&raw, &env()).unwrap();
+        assert!(!c.grafana_annotation_enabled);
+        assert!(
+            c.warnings[0].contains("GRAFANA_API_TOKEN is required"),
+            "{:?}",
+            c.warnings
+        );
         let e = Env {
             grafana_api_token: "t".into(),
             ..Env::default()
         };
-        assert!(parse(&raw, &e).is_ok());
+        assert!(parse(&raw, &e).unwrap().grafana_annotation_enabled);
     }
 
     #[test]

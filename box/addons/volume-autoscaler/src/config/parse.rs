@@ -9,14 +9,16 @@ use regex::Regex;
 
 use super::ConfigError;
 
-/// Parses a Go duration string (`30s`, `5m`, `1h30m`, `1.5h`, `500ms`). An
+/// Parses a duration string: whole numbers with a unit, `d` for 24-hour days
+/// alongside the Go units (`30s`, `5m`, `1h30m`, `7d`, `1d12h`). Fractions
+/// (`1.5h`) are rejected. An
 /// invalid value (including empty) is a hard error so misconfiguration
 /// (`1hour`, `5min`, or a unitless `300`) fails at startup instead of running
 /// with a surprising value.
 pub fn parse_duration(name: &str, raw: &str) -> Result<Duration, ConfigError> {
     parse_go_duration(raw.trim()).ok_or_else(|| {
         ConfigError::Invalid(format!(
-            "invalid {name} {raw:?}: must be a Go duration such as 30s, 5m, 1h, 1h30m"
+            "invalid {name} {raw:?}: must be a duration such as 30m, 6h, 7d, 1d12h"
         ))
     })
 }
@@ -35,16 +37,16 @@ pub fn parse_go_duration(s: &str) -> Option<Duration> {
     let mut total_nanos: f64 = 0.0;
     while !rest.is_empty() {
         let num_end = rest
-            .find(|c: char| !(c.is_ascii_digit() || c == '.'))
+            .find(|c: char| !c.is_ascii_digit())
             .unwrap_or(rest.len());
         let num = &rest[..num_end];
-        if num.is_empty() || num == "." {
+        if num.is_empty() {
             return None;
         }
         let value: f64 = num.parse().ok()?;
         rest = &rest[num_end..];
         let unit_end = rest
-            .find(|c: char| c.is_ascii_digit() || c == '.')
+            .find(|c: char| c.is_ascii_digit())
             .unwrap_or(rest.len());
         let unit = &rest[..unit_end];
         let scale: f64 = match unit {
@@ -54,6 +56,7 @@ pub fn parse_go_duration(s: &str) -> Option<Duration> {
             "s" => 1e9,
             "m" => 60e9,
             "h" => 3600e9,
+            "d" => 86_400e9,
             _ => return None,
         };
         total_nanos = value.mul_add(scale, total_nanos);
@@ -144,7 +147,6 @@ mod tests {
         assert_eq!(parse_go_duration("30s").unwrap(), Duration::from_secs(30));
         assert_eq!(parse_go_duration("5m").unwrap(), Duration::from_mins(5));
         assert_eq!(parse_go_duration("1h30m").unwrap(), Duration::from_mins(90));
-        assert_eq!(parse_go_duration("1.5h").unwrap(), Duration::from_mins(90));
         assert_eq!(
             parse_go_duration("500ms").unwrap(),
             Duration::from_millis(500)
@@ -158,7 +160,19 @@ mod tests {
             parse_go_duration("1h0m0s").unwrap(),
             Duration::from_hours(1)
         );
-        for bad in ["", "300", "5min", "1hour", "-1s", "s", ".s", "1d", "1h-1m"] {
+        assert_eq!(parse_go_duration("7d").unwrap(), Duration::from_hours(168));
+        assert_eq!(
+            parse_go_duration("1d12h").unwrap(),
+            Duration::from_hours(36)
+        );
+        assert_eq!(
+            parse_go_duration("2d30m").unwrap(),
+            Duration::from_mins(2910)
+        );
+        for bad in [
+            "", "300", "5min", "1hour", "-1s", "s", ".s", "1w", "1day", "1h-1m", "1.5h", "1.5d",
+            "0.5m", "1.",
+        ] {
             assert!(parse_go_duration(bad).is_none(), "{bad}");
         }
         assert!(parse_duration("reconcileInterval", " 5m ").is_ok());

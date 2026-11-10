@@ -68,6 +68,9 @@ pub struct Pvc {
     pub storage_class: String,
     pub capacity_bytes: i64,
     pub annotations: BTreeMap<String, String>,
+    /// Whether `metadata.ownerReferences` is set. An owned claim belongs to a
+    /// controller that decides its lifetime, so orphan PVC cleanup leaves it alone.
+    pub owned: bool,
 }
 
 /// The subset of a `PersistentVolume` the scanner needs.
@@ -146,6 +149,14 @@ pub struct Finding {
     /// The object's current annotation set, used to skip a patch when nothing
     /// changed.
     pub annotations: BTreeMap<String, String>,
+    /// A claim with an owner reference. Only claims carry it.
+    pub owned: bool,
+    /// When orphan PVC cleanup will delete this claim, written as the
+    /// `orphan-pvc-delete-after` annotation. `None` while not scheduled.
+    pub delete_after: Option<DateTime<Utc>>,
+    /// When the alert before deletion was sent, written as the
+    /// `orphan-pvc-alerted-at` annotation.
+    pub alerted_at: Option<DateTime<Utc>>,
 }
 
 impl Finding {

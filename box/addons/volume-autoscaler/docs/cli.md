@@ -1,5 +1,7 @@
 # Built-in CLI
 
+> Available since app version 0.1.0.
+
 ## Overview
 
 The `volume-autoscaler` binary ships operational subcommands alongside the controller, in the style of Grafana Alloy. They validate the config file and list unused volumes, from a laptop before deploying or inside the [Pod][k8s-pod] with `kubectl exec` after. What each autoscaler targets and does is in its status: `kubectl get iva` and `kubectl get pvca`, with per-target detail in `kubectl describe`. See [InstanceVolumeAutoscaler](instance-volume-autoscaler.md#status) and [PersistentVolumeClaimAutoscaler](persistent-volume-claim-autoscaler.md#status).
@@ -58,14 +60,14 @@ volume-autoscaler --controllers persistent-volume-claim-autoscaler
 
 ### validate
 
-Loads the config file, applies defaults, strict-decodes it (unknown keys are errors), and validates every field. Exits non-zero with the first error. Never contacts AWS or the Kubernetes API.
+Loads the config file, applies defaults, and validates every field. Each invalid value the controller would correct at startup is printed as a `warning:` line. It exits non-zero only when the controller could not start: a missing `region`, malformed YAML, or a value of the wrong type. Never contacts AWS or the Kubernetes API.
 
 ```console
 $ volume-autoscaler validate --config config.example.yaml
 config config.example.yaml is valid: region=ap-northeast-2
 ```
 
-Typical use: a CI check on config changes. A file that still carries the retired `defaultPolicy` or `policies` key fails here with a pointer to InstanceVolumeAutoscaler.
+Typical use: a CI check on config changes, failing the job on any `warning:` line. A file that still carries the retired `defaultPolicy` or `policies` key warns with a pointer to InstanceVolumeAutoscaler.
 
 ### unused
 

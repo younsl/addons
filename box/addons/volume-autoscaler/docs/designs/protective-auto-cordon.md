@@ -1,8 +1,8 @@
 # Protective auto-cordon
 
-| Status | Category |
-| --- | --- |
-| implemented (always on for EKS nodes, no switch) | reliability |
+| Status | Category | Since |
+| --- | --- | --- |
+| implemented (always on for EKS nodes, no switch) | reliability | 0.1.0 |
 
 The resize loop grows a root volume once its filesystem crosses a usage threshold. On an in-cluster Kubernetes [Node][k8s-node] the [scheduler][k8s-scheduler] keeps placing [Pods][k8s-pod] on that disk while it grows, and keeps doing so when the volume cannot grow at all. This design [cordons][k8s-cordon] such a Node for as long as its disk is over the threshold, as a protective measure for scheduling, and lifts the cordon automatically once the disk has room again.
 
@@ -26,7 +26,7 @@ The [kubelet][k8s-kubelet]'s own defense comes late and hurts. It reports [`Disk
 
 The cordon state of a Node is shared with operators, drains, Karpenter, and other controllers. The addon must never lift a cordon it did not apply, so it marks its own:
 
-- **Cordon** sets `spec.unschedulable: true` and the `volume-autoscaler/protective-cordon` [annotation][k8s-annotations], whose value is the RFC 3339 instant of the cordon, in one [merge patch][k8s-merge-patch]. The control plane then adds the `node.kubernetes.io/unschedulable` taint, so a protectively cordoned Node looks like this:
+- **Cordon** sets `spec.unschedulable: true` and the `volume-autoscaler.sh/protective-cordon` [annotation][k8s-annotations], whose value is the RFC 3339 instant of the cordon, in one [merge patch][k8s-merge-patch]. The control plane then adds the `node.kubernetes.io/unschedulable` taint, so a protectively cordoned Node looks like this:
 
   ```yaml
   apiVersion: v1
@@ -34,7 +34,7 @@ The cordon state of a Node is shared with operators, drains, Karpenter, and othe
   metadata:
     name: ip-10-0-1-5.ap-northeast-2.compute.internal
     annotations:
-      volume-autoscaler/protective-cordon: "2026-10-09T01:20:00Z"
+      volume-autoscaler.sh/protective-cordon: "2026-10-09T01:20:00Z"
   spec:
     providerID: aws:///ap-northeast-2a/i-0123456789abcdef0
     unschedulable: true
@@ -150,4 +150,4 @@ No IAM permission is added. The [ClusterRole][k8s-rbac] needs `get`, `list`, and
 
 ## Conclusion
 
-The design cordons rather than drains or taints because growing the volume is the fix, so the cordon only stops new Pods from landing on the disk while the resize runs or is blocked, and it acts at the operator's `usageThresholdPercent`, earlier than the kubelet's eviction threshold. The `volume-autoscaler/protective-cordon` annotation is the source of truth for ownership, which lets the addon release only its own cordons across restarts and failover, with the `ProtectiveCordon` condition mirroring it for visibility. A Node failure is logged and counted but never blocks the resize, so alert on any `protective_cordon_total{result="failure"}`.
+The design cordons rather than drains or taints because growing the volume is the fix, so the cordon only stops new Pods from landing on the disk while the resize runs or is blocked, and it acts at the operator's `usageThresholdPercent`, earlier than the kubelet's eviction threshold. The `volume-autoscaler.sh/protective-cordon` annotation is the source of truth for ownership, which lets the addon release only its own cordons across restarts and failover, with the `ProtectiveCordon` condition mirroring it for visibility. A Node failure is logged and counted but never blocks the resize, so alert on any `protective_cordon_total{result="failure"}`.

@@ -57,7 +57,7 @@
   <text x="656" y="186" class="t l">Node, cluster-scoped</text>
   <text x="656" y="206" class="m n">ip-10-0-1-5</text>
   <text x="960" y="206" text-anchor="end" class="t l">m5.4xlarge, gp3</text>
-  <text x="656" y="234" class="t l">annotations, prefix volume-autoscaler/</text>
+  <text x="656" y="234" class="t l">annotations, prefix volume-autoscaler.sh/</text>
   <text x="656" y="256" class="m k">throughput-recommendation</text>
   <text x="900" y="256" class="m k" style="fill:#ededed">increase</text>
   <text x="656" y="274" class="m k">throughput-current-mibps</text>

@@ -25,6 +25,9 @@ pub fn load_config(path: &Path, env: &Env) -> Result<Config> {
 /// contacts AWS or the Kubernetes API.
 pub fn run_validate(path: &Path, env: &Env, out: &mut impl Write) -> Result<()> {
     let cfg = load_config(path, env)?;
+    for w in &cfg.warnings {
+        writeln!(out, "warning: {w}")?;
+    }
     writeln!(
         out,
         "config {} is valid: region={}",
@@ -199,14 +202,22 @@ mod tests {
             "{text}"
         );
 
+        let fixed = path.with_file_name("fixed.yaml");
+        std::fs::write(&fixed, "region: r\npolicies: []\n").unwrap();
+        let mut out = Vec::new();
+        run_validate(&fixed, &Env::default(), &mut out).unwrap();
+        let text = String::from_utf8(out).unwrap();
+        assert!(
+            text.starts_with("warning: policies is no longer a config key"),
+            "{text}"
+        );
+        assert!(text.contains("is valid: region=r"), "{text}");
+
         let bad = path.with_file_name("bad.yaml");
-        std::fs::write(&bad, "region: r\npolicies: []\n").unwrap();
+        std::fs::write(&bad, "dryRun: true\n").unwrap();
         let err = run_validate(&bad, &Env::default(), &mut Vec::new()).unwrap_err();
         assert!(format!("{err:#}").contains("invalid config"), "{err:#}");
-        assert!(
-            format!("{err:#}").contains("autoscaler resources"),
-            "{err:#}"
-        );
+        assert!(format!("{err:#}").contains("region is required"), "{err:#}");
         let err = load_config(&path.with_file_name("missing.yaml"), &Env::default()).unwrap_err();
         assert!(format!("{err:#}").contains("read config file"));
     }

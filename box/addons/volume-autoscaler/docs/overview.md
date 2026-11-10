@@ -15,16 +15,17 @@ Built with Rust 1.99.1 and shipped as a statically linked musl binary (cargo-zig
 ## Features
 
 - Grows the root EBS volume and extends the filesystem (ext2/3/4 or XFS) in place. See [How it works](how-it-works.md)
-- Targets only the instances an InstanceVolumeAutoscaler selects by instance ID or tags. See [InstanceVolumeAutoscaler](instance-volume-autoscaler.md)
-- InstanceVolumeAutoscaler custom resources, modeled on the HorizontalPodAutoscaler, that target instances by ID or tags and set the utilization target, step policies, and max capacity, with HPA-style status conditions and Events. See [InstanceVolumeAutoscaler](instance-volume-autoscaler.md)
-- PersistentVolumeClaimAutoscaler custom resources that grow every claim of a StatefulSet, or one claim, from `kubelet_volume_stats_*` in a cluster-local Prometheus or a central Mimir. See [PersistentVolumeClaimAutoscaler](persistent-volume-claim-autoscaler.md)
-- Safety guards: max capacity, a 6-hour minimum cooldown that keeps each volume within the [EBS limit of four modifications per 24 hours][ebs-modify-limit], and dry run
-- High availability through leader election across replicas. See [High availability](how-it-works.md#high-availability)
-- Protective auto-cordon, always on for EKS nodes, that keeps new Pods off a Node whose root disk crossed the threshold, marks it with a `ProtectiveCordon` Node condition, and uncordons it once usage is back under. See [Protective auto-cordon](protective-auto-cordon.md)
-- Optional gp3 throughput recommendations for in-cluster Nodes, piggybacked onto a size expansion. See [Node throughput recommendations](throughput-recommendation.md)
-- Always-on identification of unused PersistentVolumeClaims and PersistentVolumes. It never deletes one. See [Unused volume identification](unused-volumes.md)
-- Observability through [Prometheus metrics](metrics.md), Kubernetes Events, [Alertmanager alerts](alerting.md), and [Grafana annotations](grafana-annotations.md)
-- A [built-in CLI](cli.md) to validate config and list unused volumes without a running controller
+- Targets only the instances an InstanceVolumeAutoscaler selects by instance ID or tags. See [InstanceVolumeAutoscaler](instance-volume-autoscaler.md) (since 0.1.0)
+- InstanceVolumeAutoscaler custom resources, modeled on the HorizontalPodAutoscaler, that target instances by ID or tags and set the utilization target, step policies, and max capacity, with HPA-style status conditions and Events. See [InstanceVolumeAutoscaler](instance-volume-autoscaler.md) (since 0.1.0)
+- PersistentVolumeClaimAutoscaler custom resources that grow every claim of a StatefulSet, or one claim, from `kubelet_volume_stats_*` in a cluster-local Prometheus or a central Mimir. See [PersistentVolumeClaimAutoscaler](persistent-volume-claim-autoscaler.md) (since 0.1.0)
+- Safety guards: max capacity, a 6-hour minimum cooldown that keeps each volume within the [EBS limit of four modifications per 24 hours][ebs-modify-limit], and dry run (since 0.1.0)
+- High availability through leader election across replicas. See [High availability](how-it-works.md#high-availability) (since 0.1.0)
+- Protective auto-cordon, always on for EKS nodes, that keeps new Pods off a Node whose root disk crossed the threshold, marks it with a `ProtectiveCordon` Node condition, and uncordons it once usage is back under. See [Protective auto-cordon](protective-auto-cordon.md) (since 0.1.0)
+- Optional gp3 throughput recommendations for in-cluster Nodes, piggybacked onto a size expansion. See [Node throughput recommendations](throughput-recommendation.md) (since 0.1.0)
+- Always-on identification of unused PersistentVolumeClaims and PersistentVolumes. See [Unused volume identification](unused-volumes.md) (since 0.1.0)
+- Opt-in orphan PVC cleanup that deletes unused claims after a notice period, never a volume. See [Orphan PVC cleanup](orphan-pvc-cleanup.md) (since 0.2.0)
+- Observability through [Prometheus metrics](metrics.md), Kubernetes Events, [Alertmanager alerts](alerting.md), and [Grafana annotations](grafana-annotations.md) (since 0.1.0)
+- A [built-in CLI](cli.md) to validate config and list unused volumes without a running controller (since 0.1.0)
 
 ## Conclusion
 

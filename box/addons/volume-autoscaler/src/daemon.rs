@@ -92,6 +92,9 @@ pub async fn run(cfg: Config, enabled: Controllers) -> Result<()> {
         unused_volume_scan = enabled.unused_volume_scan,
         "starting volume-autoscaler"
     );
+    for w in &cfg.warnings {
+        warn!(warning = %w, "configuration value corrected, the controller starts anyway");
+    }
     if !enabled.any() {
         anyhow::bail!("--controllers enables nothing");
     }
@@ -105,6 +108,10 @@ pub async fn run(cfg: Config, enabled: Controllers) -> Result<()> {
     }
     if enabled.unused_volume_scan {
         log_unused_volume_scan_policy(&cfg);
+    } else if cfg.orphan_pvc_cleanup.enabled {
+        warn!(
+            "orphanPvcCleanup.enabled is true but the unused-volume-scan controller is disabled by --controllers, so no orphan PVC will be deleted"
+        );
     }
 
     let shutdown = CancellationToken::new();
@@ -485,8 +492,84 @@ fn log_unused_volume_scan_policy(cfg: &Config) {
         annotation_prefix = crate::annotations::PREFIX,
         event_reasons = ?["UnusedVolumeDetected", "UnusedVolumeCleared"],
         dry_run = cfg.dry_run,
-        "Unused volume scan is enabled and will identify PersistentVolumeClaims and PersistentVolumes that no workload is using, publishing each verdict as object annotations, Kubernetes Events, and Prometheus metrics. It never deletes a claim or a volume"
+        "Unused volume scan is enabled and will identify PersistentVolumeClaims and PersistentVolumes that no workload is using, publishing each verdict as object annotations, Kubernetes Events, and Prometheus metrics. It never deletes a volume"
     );
+}
+
+/// Logs at INFO whether orphan PVC cleanup will run, with every effective
+/// setting. It is called once the scanner exists, so an enabled line means
+/// cleanup will actually run on the leader.
+fn log_orphan_pvc_cleanup_policy(cfg: &Config, events: bool) {
+    let c = &cfg.orphan_pvc_cleanup;
+    if !c.enabled {
+        info!(
+            enabled = false,
+            "Orphan PVC cleanup is disabled: unused claims are reported, never deleted, and any deletion scheduled earlier is canceled"
+        );
+        return;
+    }
+    let include = if c.include_namespaces.is_empty() {
+        "all".to_string()
+    } else {
+        c.include_namespaces.join(",")
+    };
+    info!(
+        enabled = true,
+        scan_interval = %go_duration(pvscan::INTERVAL),
+        min_unused_age = %go_duration(c.min_unused_age),
+        notice_period = %go_duration(c.notice_period),
+        earliest_deletion = %go_duration(c.min_unused_age + c.notice_period),
+        reasons = %c.reasons.join(","),
+        include_namespaces = %include,
+        exclude_namespaces = %c.exclude_namespaces.join(","),
+        max_deletions_per_pass = c.max_deletions_per_pass,
+        protect_annotation = %format!("{}=disabled", crate::annotations::key(pvscan::annotations::KEY_ORPHAN_PVC_CLEANUP)),
+        deadline_annotation = %crate::annotations::key(pvscan::annotations::KEY_ORPHAN_PVC_DELETE_AFTER),
+        workload_guards = "deployments,replicasets,daemonsets,statefulsets,jobs,cronjobs",
+        deletes = "persistentvolumeclaims",
+        never_deletes = "persistentvolumes,ebs-volumes",
+        events,
+        alerts = orphan_pvc_alerts_on(cfg),
+        alert_before = %go_duration(c.alert_before.min(c.notice_period)),
+        alert_enabled = c.alert_enabled,
+        alertmanager_enabled = cfg.alertmanager_enabled,
+        dry_run = cfg.dry_run,
+        "Orphan PVC cleanup is enabled: PersistentVolumeClaims unused past minUnusedAge are scheduled, then deleted after noticePeriod. PersistentVolumes and EBS volumes follow their own reclaim policy"
+    );
+}
+
+/// Whether orphan PVC cleanup sends Alertmanager alerts: cleanup and its
+/// `alertEnabled` on, behind the controller-wide `alertmanager.enabled`.
+const fn orphan_pvc_alerts_on(cfg: &Config) -> bool {
+    let c = &cfg.orphan_pvc_cleanup;
+    c.enabled && c.alert_enabled && cfg.alertmanager_enabled
+}
+
+fn orphan_pvc_alerts(
+    cfg: &Config,
+) -> Option<Arc<dyn crate::autoscaler::instance_volume::resizer::AlertNotifier>> {
+    orphan_pvc_alerts_on(cfg).then(|| {
+        Arc::new(crate::alertmanager::Client::new(
+            &cfg.alertmanager_url,
+            cfg.alertmanager_timeout,
+            cfg.alertmanager_labels.clone(),
+            &cfg.alertmanager_dashboard_url,
+        )) as Arc<dyn crate::autoscaler::instance_volume::resizer::AlertNotifier>
+    })
+}
+
+/// The scanner's orphan PVC cleanup policy, or `None` while it is disabled.
+fn orphan_pvc_cleanup_policy(cfg: &Config) -> Option<pvscan::OrphanPvcCleanupPolicy> {
+    let c = &cfg.orphan_pvc_cleanup;
+    c.enabled.then(|| pvscan::OrphanPvcCleanupPolicy {
+        min_unused_age: c.min_unused_age,
+        notice_period: c.notice_period,
+        reasons: c.reasons.clone(),
+        include_namespaces: c.include_namespaces.clone(),
+        exclude_namespaces: c.exclude_namespaces.clone(),
+        max_deletions_per_pass: c.max_deletions_per_pass,
+        alert_before: c.alert_before,
+    })
 }
 
 /// Lists the autoscalers once at startup and logs what the resize loop will
@@ -726,9 +809,10 @@ fn recommender_config(cfg: &Config) -> throughput::Config {
 }
 
 /// Constructs the scanner, or `None` when it cannot run. The scanner has no
-/// enable switch: it never mutates a claim or a volume, its cost is four list
-/// calls an hour, and an addon that already runs inside the cluster is the
-/// natural place for the report.
+/// enable switch: identification never mutates a claim or a volume, its cost
+/// is four list calls an hour, and an addon that already runs inside the
+/// cluster is the natural place for the report. Deleting claims is the
+/// separate, opt-in `orphanPvcCleanup`.
 fn build_scanner(
     cfg: &Config,
     kube: Option<&kube::Client>,
@@ -739,6 +823,9 @@ fn build_scanner(
         error!(
             "Unused volume scan will not run: no in-cluster Kubernetes access. The resize loop is unaffected"
         );
+        if cfg.orphan_pvc_cleanup.enabled {
+            error!("Orphan PVC cleanup will not run: it needs the unused volume scan");
+        }
         return None;
     };
     info!(
@@ -746,12 +833,17 @@ fn build_scanner(
         dry_run = cfg.dry_run,
         "Unused volume scan loop ready"
     );
-    Some(Scanner::new(
-        cfg.dry_run,
-        Arc::new(pvscan::KubeClient::new(client.clone())),
-        rec,
-        events,
-    ))
+    log_orphan_pvc_cleanup_policy(cfg, events.is_some());
+    Some(
+        Scanner::new(
+            cfg.dry_run,
+            Arc::new(pvscan::KubeClient::new(client.clone())),
+            rec,
+            events,
+        )
+        .with_orphan_pvc_cleanup(orphan_pvc_cleanup_policy(cfg))
+        .with_orphan_pvc_alerts(orphan_pvc_alerts(cfg)),
+    )
 }
 
 fn spawn_signal_handler(shutdown: CancellationToken) {
@@ -834,6 +926,26 @@ mod tests {
         c.throughput_recommendation.interval = Duration::from_mins(30);
         log_piggyback_policy(&c);
         log_unused_volume_scan_policy(&c);
+        log_orphan_pvc_cleanup_policy(&c, false);
+        c.orphan_pvc_cleanup.enabled = true;
+        c.orphan_pvc_cleanup.reasons = vec!["no_consumer_pod".into()];
+        c.orphan_pvc_cleanup.max_deletions_per_pass = 5;
+        log_orphan_pvc_cleanup_policy(&c, true);
+        c.orphan_pvc_cleanup.include_namespaces = vec!["legacy".into()];
+        log_orphan_pvc_cleanup_policy(&c, true);
+        let p = orphan_pvc_cleanup_policy(&c).unwrap();
+        assert_eq!(p.reasons, vec!["no_consumer_pod"]);
+        assert_eq!(p.max_deletions_per_pass, 5);
+        c.orphan_pvc_cleanup.alert_enabled = true;
+        c.alertmanager_url = "http://am:9093".into();
+        assert!(
+            orphan_pvc_alerts(&c).is_some(),
+            "cfg() enables alertmanager"
+        );
+        c.orphan_pvc_cleanup.alert_enabled = false;
+        assert!(orphan_pvc_alerts(&c).is_none());
+        c.orphan_pvc_cleanup.enabled = false;
+        assert!(orphan_pvc_cleanup_policy(&c).is_none());
     }
 
     #[test]
@@ -857,6 +969,9 @@ mod tests {
         let c = cfg();
         let metrics = Arc::new(Metrics::new());
         assert!(build_scanner(&c, None, metrics.clone(), None).is_none());
+        let mut enabled = cfg();
+        enabled.orphan_pvc_cleanup.enabled = true;
+        assert!(build_scanner(&enabled, None, metrics.clone(), None).is_none());
         assert!(build_cordon(&c, None).is_none(), "no cluster");
         let clients = Arc::new(Clients::from_parts(
             Box::new(crate::awsx::fake::FakeEc2::default()),

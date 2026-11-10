@@ -1,6 +1,8 @@
 # Unused volume identification
 
-How the addon reports [PersistentVolumeClaims][k8s-pvc] and [PersistentVolumes][k8s-pv] no workload is using, and how to read the report. It never deletes anything.
+> Available since app version 0.1.0.
+
+How the addon reports [PersistentVolumeClaims][k8s-pvc] and [PersistentVolumes][k8s-pv] no workload is using, and how to read the report. The scan itself never deletes anything. Deleting unused claims is the separate, opt-in [orphan PVC cleanup](orphan-pvc-cleanup.md).
 
 A third loop lists the cluster's
 PersistentVolumeClaims, PersistentVolumes, [Pods][k8s-pod], and [StatefulSets][k8s-statefulset] and reports
@@ -11,17 +13,17 @@ every claim and volume no workload is using, as Prometheus metrics and as
 $ kubectl get pvc -n legacy uploads \
     -o jsonpath='{.metadata.annotations}' | jq
 {
-  "volume-autoscaler/unused": "true",
-  "volume-autoscaler/unused-since": "2026-08-20T03:11:00Z",
-  "volume-autoscaler/unused-reason": "no_consumer_pod",
-  "volume-autoscaler/unused-days": "7",
-  "volume-autoscaler/volume-id": "vol-0fedcba9876543210",
-  "volume-autoscaler/unused-observed-at": "2026-08-27T09:00:00Z"
+  "volume-autoscaler.sh/unused": "true",
+  "volume-autoscaler.sh/unused-since": "2026-08-20T03:11:00Z",
+  "volume-autoscaler.sh/unused-reason": "no_consumer_pod",
+  "volume-autoscaler.sh/unused-days": "7",
+  "volume-autoscaler.sh/volume-id": "vol-0fedcba9876543210",
+  "volume-autoscaler.sh/unused-observed-at": "2026-08-27T09:00:00Z"
 }
 ```
 
-The scanner only ever identifies. It never deletes a claim or a volume, and it
-has no permission to: its [ClusterRole][k8s-rbac] grants list and patch, never delete. That
+The scanner only ever identifies. It never deletes a claim or a volume, and
+unless [orphan PVC cleanup](orphan-pvc-cleanup.md) is enabled it has no permission to: its [ClusterRole][k8s-rbac] grants list and patch, never delete. That
 is deliberate. "Unused" is an observation about the cluster's current state, not
 a statement that the data is disposable, and a claim kept for a quarterly job
 looks identical from here to one nobody will ever read again. An operator reviews
@@ -145,7 +147,7 @@ therefore race, so an Event can briefly lapse between passes. The annotation and
 the metrics do not expire and are the durable record.
 
 See [designs/unused-volume-identification.md](designs/unused-volume-identification.md)
-for why the loop identifies rather than deletes, where the grace-period clock
+for why the scan identifies rather than deletes, where the grace-period clock
 lives, and what it deliberately leaves out. See [metrics.md](metrics.md)
 for the exported series and example queries, including the one that totals the
 GiB a cluster is paying for and not using.
@@ -162,4 +164,4 @@ GiB a cluster is paying for and not using.
 
 ## Conclusion
 
-The loop only identifies claims and volumes that have been unused for 24 hours and has no permission to delete them, so every finding is a prompt for an operator to review, not a cleanup. Read the verdict from the object's annotations or the metrics, since Events can lapse between hourly passes. Alert on `time()` minus `volume_autoscaler_unused_scan_last_success_timestamp_seconds` rather than on the findings gauges, which keep their last values even after the scan stops.
+The loop only identifies claims and volumes that have been unused for 24 hours, so every finding is a prompt for an operator to review. Deleting claims happens only when [orphan PVC cleanup](orphan-pvc-cleanup.md) is enabled. Read the verdict from the object's annotations or the metrics, since Events can lapse between hourly passes. Alert on `time()` minus `volume_autoscaler_unused_scan_last_success_timestamp_seconds` rather than on the findings gauges, which keep their last values even after the scan stops.

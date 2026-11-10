@@ -244,7 +244,7 @@
     },
     "goDuration": {
       "type": "string",
-      "pattern": "^ *\\+?(0|([0-9]*\\.?[0-9]+(ns|us|µs|ms|s|m|h))+) *$"
+      "pattern": "^ *\\+?(0|([0-9]+(ns|us|µs|ms|s|m|h|d))+) *$"
     },
     "notifyOutcome": {
       "type": "string",
@@ -401,6 +401,52 @@
             },
             "applyOnResize": {
               "type": "boolean"
+            }
+          }
+        },
+        "orphanPvcCleanup": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "minUnusedAge": {
+              "$ref": "#/definitions/goDuration"
+            },
+            "noticePeriod": {
+              "$ref": "#/definitions/goDuration"
+            },
+            "reasons": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "string",
+                "enum": ["no_consumer_pod", "statefulset_scaled_down", "unbound"]
+              }
+            },
+            "includeNamespaces": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "excludeNamespaces": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "maxDeletionsPerPass": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            },
+            "alertEnabled": {
+              "type": "boolean"
+            },
+            "alertBefore": {
+              "$ref": "#/definitions/goDuration"
             }
           }
         }

@@ -73,6 +73,8 @@ pub struct Metrics {
     unused_scan_failure_total: Counter,
     unused_scan_last_success: Gauge,
     unused_scan_duration: Gauge,
+    orphan_pvc_cleanup_total: CounterVec,
+    orphan_pvc_cleanup_scheduled: Gauge,
 
     claim_utilization: GaugeVec,
     claim_capacity: GaugeVec,
@@ -278,6 +280,17 @@ impl Metrics {
                 "volume_autoscaler_unused_scan_last_success_timestamp_seconds",
                 "Unix timestamp of the last unused volume scan pass that completed without error. Zero until the first one does. Alert on time() minus this value rather than on a boolean up gauge: the findings gauges are republished every pass and hold their last value forever, so age is the only thing that distinguishes a fresh report from a frozen one.",
             ),
+            orphan_pvc_cleanup_total: counter_vec(
+                &r,
+                "volume_autoscaler_orphan_pvc_cleanup_total",
+                "Orphan PVC cleanup actions by action (scheduled, canceled, deleted, failed, deferred, skipped_in_use, dry_run). Only claims are ever deleted, never a volume.",
+                &["action"],
+            ),
+            orphan_pvc_cleanup_scheduled: gauge(
+                &r,
+                "volume_autoscaler_orphan_pvc_cleanup_scheduled",
+                "PersistentVolumeClaims scheduled for deletion and not yet deleted after the latest scan. Alert on it to review deletions before their notice runs out.",
+            ),
             unused_scan_duration: gauge(
                 &r,
                 "volume_autoscaler_unused_scan_duration_seconds",
@@ -457,6 +470,19 @@ impl Metrics {
         self.unused_pv_capacity.reset();
         self.unused_total.reset();
         self.unused_capacity_total.reset();
+    }
+
+    /// Counts one orphan PVC cleanup action.
+    pub fn observe_orphan_pvc_cleanup(&self, action: &str) {
+        self.orphan_pvc_cleanup_total
+            .with_label_values(&[action])
+            .inc();
+    }
+
+    /// Publishes how many claims are waiting out their deletion notice.
+    #[allow(clippy::cast_precision_loss)]
+    pub fn observe_orphan_pvc_cleanup_scheduled(&self, count: usize) {
+        self.orphan_pvc_cleanup_scheduled.set(count as f64);
     }
 
     /// Records one reported unused `PersistentVolumeClaim`.
@@ -678,8 +704,12 @@ mod tests {
         m.observe_throughput_apply_skip("stale");
         m.observe_protective_cordon("cordon", "success");
         m.observe_recommender_reconcile();
+        m.observe_orphan_pvc_cleanup("deleted");
+        m.observe_orphan_pvc_cleanup_scheduled(3);
         let out = m.render();
         for want in [
+            "volume_autoscaler_orphan_pvc_cleanup_total{action=\"deleted\"} 1",
+            "volume_autoscaler_orphan_pvc_cleanup_scheduled 3",
             "volume_autoscaler_root_usage_percent{device=\"/dev/xvda\",instance_id=\"i-1\",name=\"web\",volume_id=\"vol-1\"} 85",
             "volume_autoscaler_root_volume_size_gib{device=\"/dev/xvda\",instance_id=\"i-1\",name=\"web\",volume_id=\"vol-1\"} 100",
             "volume_autoscaler_resize_total{policy=\"default\",result=\"success\"} 1",

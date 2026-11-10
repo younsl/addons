@@ -100,11 +100,15 @@ pub fn build_annotations(obs: &Observation, d: &Decision, window: &str) -> Annot
         );
         set.insert(key(KEY_RECOMMEND_IOPS), d.recommended_iops.to_string());
     }
-    let remove = DATA_KEYS
+    let mut remove: Vec<String> = DATA_KEYS
         .iter()
         .map(|s| key(s))
         .filter(|k| !set.contains_key(k))
         .collect();
+    remove.extend(crate::annotations::legacy_present(
+        &obs.node.annotations,
+        &[DATA_KEYS.as_slice(), &[KEY_OBSERVED_AT]].concat(),
+    ));
     AnnotationSet { set, remove }
 }
 

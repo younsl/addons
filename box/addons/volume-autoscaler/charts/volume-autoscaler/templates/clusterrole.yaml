@@ -39,6 +39,20 @@ rules:
       - get
       - list
       - patch
+  {{- if (.Values.config.orphanPvcCleanup | default dict).enabled }}
+  - apiGroups: [""]
+    resources: ["persistentvolumeclaims"]
+    verbs:
+      - delete
+  - apiGroups: ["apps"]
+    resources: ["deployments", "replicasets", "daemonsets"]
+    verbs:
+      - list
+  - apiGroups: ["batch"]
+    resources: ["jobs", "cronjobs"]
+    verbs:
+      - list
+  {{- end }}
   {{- end }}
   {{- if or (has "unused-volume-scan" .Values.controllers) (has "persistent-volume-claim-autoscaler" .Values.controllers) }}
   - apiGroups: ["apps"]

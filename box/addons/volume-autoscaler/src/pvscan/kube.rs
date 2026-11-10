@@ -1,14 +1,17 @@
 //! Reads the cluster objects the scanner classifies and writes its verdict
-//! back as annotations. Like the Node client, it is deliberately limited to
-//! list and annotate: nothing here can delete a claim or a volume.
+//! back as annotations. The only deletion it can make is of a claim, used by
+//! opt-in orphan PVC cleanup. Nothing here can delete a volume.
 
 use std::collections::{BTreeMap, HashSet};
 
 use async_trait::async_trait;
-use k8s_openapi::api::apps::v1::StatefulSet as K8sStatefulSet;
-use k8s_openapi::api::core::v1::{PersistentVolume, PersistentVolumeClaim, Pod};
+use k8s_openapi::api::apps::v1::{
+    DaemonSet, Deployment, ReplicaSet, StatefulSet as K8sStatefulSet,
+};
+use k8s_openapi::api::batch::v1::{CronJob, Job};
+use k8s_openapi::api::core::v1::{PersistentVolume, PersistentVolumeClaim, Pod, PodSpec};
 use k8s_openapi::apimachinery::pkg::api::resource::Quantity;
-use kube::api::{ListParams, Patch, PatchParams};
+use kube::api::{DeleteParams, ListParams, Patch, PatchParams, Preconditions};
 
 use super::KubeApi;
 use super::types::{Inventory, Pv, Pvc, StatefulSet};
@@ -141,6 +144,143 @@ impl KubeApi for KubeClient {
             .map(|_| ())
             .map_err(|e| format!("patch persistentvolume {name} annotations: {e}"))
     }
+
+    /// Collects the claims named by every workload's Pod template, in one
+    /// sweep per kind. Any failed list fails the whole call, so a partial
+    /// answer can never read as "not referenced".
+    async fn workload_claim_references(&self) -> Result<HashSet<String>, String> {
+        let mut out = HashSet::new();
+        let c = &self.client;
+        self.for_each_page(
+            &kube::Api::<Deployment>::all(c.clone()),
+            "deployments",
+            POD_PAGE_SIZE,
+            |d| {
+                template_claims(
+                    d.metadata.namespace.as_deref(),
+                    d.spec.as_ref().and_then(|s| s.template.spec.as_ref()),
+                    &mut out,
+                );
+            },
+        )
+        .await?;
+        self.for_each_page(
+            &kube::Api::<ReplicaSet>::all(c.clone()),
+            "replicasets",
+            POD_PAGE_SIZE,
+            |r| {
+                template_claims(
+                    r.metadata.namespace.as_deref(),
+                    r.spec
+                        .as_ref()
+                        .and_then(|s| s.template.as_ref())
+                        .and_then(|t| t.spec.as_ref()),
+                    &mut out,
+                );
+            },
+        )
+        .await?;
+        self.for_each_page(
+            &kube::Api::<DaemonSet>::all(c.clone()),
+            "daemonsets",
+            POD_PAGE_SIZE,
+            |d| {
+                template_claims(
+                    d.metadata.namespace.as_deref(),
+                    d.spec.as_ref().and_then(|s| s.template.spec.as_ref()),
+                    &mut out,
+                );
+            },
+        )
+        .await?;
+        self.for_each_page(
+            &kube::Api::<K8sStatefulSet>::all(c.clone()),
+            "statefulsets",
+            POD_PAGE_SIZE,
+            |s| {
+                template_claims(
+                    s.metadata.namespace.as_deref(),
+                    s.spec.as_ref().and_then(|s| s.template.spec.as_ref()),
+                    &mut out,
+                );
+            },
+        )
+        .await?;
+        self.for_each_page(
+            &kube::Api::<Job>::all(c.clone()),
+            "jobs",
+            POD_PAGE_SIZE,
+            |j| {
+                template_claims(
+                    j.metadata.namespace.as_deref(),
+                    j.spec.as_ref().and_then(|s| s.template.spec.as_ref()),
+                    &mut out,
+                );
+            },
+        )
+        .await?;
+        self.for_each_page(
+            &kube::Api::<CronJob>::all(c.clone()),
+            "cronjobs",
+            POD_PAGE_SIZE,
+            |j| {
+                template_claims(
+                    j.metadata.namespace.as_deref(),
+                    j.spec
+                        .as_ref()
+                        .and_then(|s| s.job_template.spec.as_ref())
+                        .and_then(|s| s.template.spec.as_ref()),
+                    &mut out,
+                );
+            },
+        )
+        .await?;
+        Ok(out)
+    }
+
+    async fn claim_mounted(&self, namespace: &str, name: &str) -> Result<bool, String> {
+        let mut in_use = HashSet::new();
+        self.for_each_page(
+            &kube::Api::<Pod>::namespaced(self.client.clone(), namespace),
+            "pods",
+            POD_PAGE_SIZE,
+            |p| claims_in_use(std::slice::from_ref(p), &mut in_use),
+        )
+        .await?;
+        Ok(in_use.contains(&format!("{namespace}/{name}")))
+    }
+
+    /// Deletes the claim only if it is still the object that was judged: the
+    /// UID precondition makes the API server refuse a claim deleted and
+    /// recreated under the same name since the scan.
+    async fn delete_pvc(&self, namespace: &str, name: &str, uid: &str) -> Result<(), String> {
+        let params = DeleteParams {
+            preconditions: Some(Preconditions {
+                uid: Some(uid.to_string()),
+                resource_version: None,
+            }),
+            ..DeleteParams::default()
+        };
+        kube::Api::<PersistentVolumeClaim>::namespaced(self.client.clone(), namespace)
+            .delete(name, &params)
+            .await
+            .map(|_| ())
+            .map_err(|e| format!("delete persistentvolumeclaim {namespace}/{name}: {e}"))
+    }
+}
+
+/// Adds `namespace/name` for every claim a Pod template mounts.
+pub(crate) fn template_claims(
+    namespace: Option<&str>,
+    spec: Option<&PodSpec>,
+    out: &mut HashSet<String>,
+) {
+    let ns = namespace.unwrap_or_default();
+    for v in spec.and_then(|s| s.volumes.as_deref()).unwrap_or_default() {
+        if let Some(c) = &v.persistent_volume_claim {
+            out.insert(format!("{ns}/{}", c.claim_name));
+        }
+    }
 }
 
 pub(crate) fn from_pvc(p: &PersistentVolumeClaim) -> Pvc {
@@ -162,6 +302,11 @@ pub(crate) fn from_pvc(p: &PersistentVolumeClaim) -> Pvc {
             .unwrap_or_default(),
         capacity_bytes: claim_capacity_bytes(p),
         annotations: p.metadata.annotations.clone().unwrap_or_default(),
+        owned: p
+            .metadata
+            .owner_references
+            .as_ref()
+            .is_some_and(|o| !o.is_empty()),
     }
 }
 
@@ -471,6 +616,12 @@ mod tests {
         assert_eq!(c.storage_class, "gp3");
         assert_eq!(c.capacity_bytes, 1024 * 1024 * 1024);
         assert_eq!(c.annotations["k"], "v");
+        assert!(!c.owned);
+        let mut owned = p;
+        owned.metadata.owner_references = Some(vec![
+            k8s_openapi::apimachinery::pkg::apis::meta::v1::OwnerReference::default(),
+        ]);
+        assert!(from_pvc(&owned).owned);
         assert_eq!(
             from_pvc(&PersistentVolumeClaim::default()).storage_class,
             ""
@@ -555,6 +706,28 @@ mod tests {
         let d = from_stateful_set(&K8sStatefulSet::default());
         assert_eq!((d.replicas, d.ordinal_start), (1, 0));
         assert!(d.claim_templates.is_empty(), "{:?}", d.claim_templates);
+    }
+
+    #[test]
+    fn template_claims_collects_pvc_volumes() {
+        let spec = PodSpec {
+            volumes: Some(vec![
+                Volume {
+                    persistent_volume_claim: Some(PersistentVolumeClaimVolumeSource {
+                        claim_name: "data".into(),
+                        read_only: None,
+                    }),
+                    ..Volume::default()
+                },
+                Volume::default(),
+            ]),
+            ..PodSpec::default()
+        };
+        let mut got = HashSet::new();
+        template_claims(Some("ns"), Some(&spec), &mut got);
+        template_claims(Some("ns"), None, &mut got);
+        template_claims(None, Some(&PodSpec::default()), &mut got);
+        assert_eq!(got, HashSet::from(["ns/data".to_string()]));
     }
 
     #[test]

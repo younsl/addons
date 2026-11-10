@@ -5,8 +5,8 @@ Every config file key and its default. Read this when writing the chart values o
 All settings are read from a single YAML config file, mounted from a [ConfigMap][k8s-configmap]
 at `/etc/volume-autoscaler/config.yaml` (override the path with
 `CONFIG_FILE`). The Helm chart renders this file from `.Values.config`. Any key
-omitted from the file takes its default. Parsing is strict: an unknown key fails
-at startup. Two values are injected from the environment instead of the file:
+omitted from the file takes its default. Invalid values fail open, see
+[Invalid values](#invalid-values). Two values are injected from the environment instead of the file:
 the [Pod][k8s-pod] identity (`POD_NAME` / `POD_NAMESPACE` / `POD_UID`, via the downward
 API) and `GRAFANA_API_TOKEN` (from a [Secret][k8s-secret]), so the token never lands in a
 ConfigMap.
@@ -46,7 +46,22 @@ throughputRecommendation:              # node gp3 throughput recommendations; se
   lookbackWindow: 7d                   # a Prometheus duration (7d, 12h), unlike the other intervals
   interval: 30m                        # separate from reconcileInterval
   applyOnResize: true                  # piggyback an increase onto a size expansion; false keeps recommendations advisory-only
+orphanPvcCleanup:                      # deletes unused claims, never a volume; see orphan-pvc-cleanup.md
+  enabled: false                       # requires the unused-volume-scan controller
+  minUnusedAge: 7d                     # at least 24h; the chart sets 3d
+  noticePeriod: 1d                     # wait between scheduling and deletion, at least 1h
+  reasons:
+    - no_consumer_pod
+    - statefulset_scaled_down
+    - unbound
+  includeNamespaces: []                # empty means every namespace
+  excludeNamespaces: [kube-system]     # wins over includeNamespaces
+  maxDeletionsPerPass: 1               # 1 to 100 per hourly scan
+  alertEnabled: true                   # alert upcoming, deleted, failed; requires alertmanager.enabled
+  alertBefore: 6h                      # the one upcoming alert, this long before deletion; at least 1h
 ```
+
+Every key exists since app version 0.1.0, except `orphanPvcCleanup`, which was added in 0.2.0.
 
 A third environment-injected value applies whenever `metrics.url` is queried:
 `PROMETHEUS_BEARER_TOKEN`, for a gateway that fronts the metrics backend with token
@@ -61,6 +76,24 @@ prefix) is fixed policy in the addon rather than a setting. See
 [designs/ebs-throughput-recommendation.md](designs/ebs-throughput-recommendation.md#what-is-no-longer-configurable)
 for each value and why.
 
+## Durations
+
+Every duration key takes whole numbers with a unit: `s`, `m`, `h`, or `d` (24 hours), combined in descending order such as `1d12h` or `2h30m`. `ms`, `us`, and `ns` also parse. Fractions such as `1.5h` or `1.5d` are invalid. `throughputRecommendation.lookbackWindow` is the exception: it is a Prometheus duration, interpolated into PromQL, so it follows the Prometheus grammar (`7d`, `12h`).
+
+## Invalid values
+
+An invalid value never keeps the controller down. It is replaced, logged at WARN once at startup (`configuration value corrected, the controller starts anyway`), and printed by `volume-autoscaler validate` as a `warning:` line:
+
+| Problem | What happens |
+|---------|--------------|
+| Unparseable value (`5min`, `1.5d`, an unknown `notifyOn`) | The key takes its default |
+| Out of range (`minUnusedAge: 12h`, `maxDeletionsPerPass: 0`) | Clamped to the nearest valid value |
+| A feature missing what it needs (`alertmanager.enabled` without `url`) | That feature is turned off |
+| Unknown key or retired key | Ignored |
+| Unknown `orphanPvcCleanup.reasons` entry | Dropped. An empty result falls back to every reason |
+
+Only three problems still fail startup, because no default can stand in for them: a missing `region`, malformed YAML, and a value of the wrong type (`dryRun: maybe`). The Helm chart's `values.schema.json` still rejects invalid values at install time, so a chart install catches them before they reach the controller.
+
 ## Resize settings
 
 The usage target, step size, ceiling, pause switch, and per-group alert switch live in [InstanceVolumeAutoscaler](instance-volume-autoscaler.md) resources. The retired `defaultPolicy`, `policies`, `tagFilters`, and `excludeEKSNodes` keys fail at startup with a pointer to them. The controller discovers every running instance in its region, and only instances an autoscaler's `scaleTargetRef` targets are resized.
@@ -73,4 +106,4 @@ The usage target, step size, ceiling, pause switch, and per-group alert switch l
 
 ## Conclusion
 
-Every setting comes from one strictly parsed YAML file, so an unknown key fails at startup and an omitted key takes its default, while the Pod identity, `GRAFANA_API_TOKEN`, and `PROMETHEUS_BEARER_TOKEN` come from the environment so no credential lands in the ConfigMap. Resize settings are InstanceVolumeAutoscaler resources, not config keys.
+Every setting comes from one YAML file where an omitted key takes its default and an invalid value is corrected and logged rather than failing startup, while the Pod identity, `GRAFANA_API_TOKEN`, and `PROMETHEUS_BEARER_TOKEN` come from the environment so no credential lands in the ConfigMap. Resize settings are InstanceVolumeAutoscaler resources, not config keys.

@@ -1,5 +1,7 @@
 # PersistentVolumeClaimAutoscaler
 
+> Available since app version 0.1.0.
+
 How to grow the PersistentVolumeClaims of a workload before they fill up. Read this before writing a PersistentVolumeClaimAutoscaler or pointing the controller at Prometheus or Mimir.
 
 ## Overview

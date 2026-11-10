@@ -1,5 +1,7 @@
 # Grafana annotations
 
+> Available since app version 0.1.0.
+
 ## Overview
 
 This document explains how volume-autoscaler posts annotations to
@@ -154,8 +156,7 @@ from `config.grafanaAnnotation` values.
 | `GRAFANA_ANNOTATION_TAGS` | `config.grafanaAnnotation.tags` | `event:ebs-resize` | Comma-separated base tags merged into every annotation |
 | `GRAFANA_ANNOTATE_ON` | `config.grafanaAnnotation.annotateOn` | `all` | Which outcomes to annotate: `all`, `success`, or `failure` |
 
-When `GRAFANA_ANNOTATION_ENABLED` is `true`, both `GRAFANA_URL` and
-`GRAFANA_API_TOKEN` are required; the addon refuses to start otherwise.
+When `GRAFANA_ANNOTATION_ENABLED` is `true`, both `GRAFANA_URL` and `GRAFANA_API_TOKEN` are required. Without either the addon starts with annotations turned off and logs a warning, see [Invalid values](configuration.md#invalid-values).
 
 ### Providing the token
 

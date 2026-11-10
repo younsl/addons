@@ -6,7 +6,7 @@ FROM scratch AS runtime
 
 LABEL org.opencontainers.image.title="volume-autoscaler" \
       org.opencontainers.image.description="Grows EC2 root volumes and Kubernetes PersistentVolumeClaims when usage crosses a threshold" \
-      org.opencontainers.image.version="0.1.0" \
+      org.opencontainers.image.version="0.2.0" \
       org.opencontainers.image.licenses="Apache-2.0" \
       org.opencontainers.image.base.name="scratch" \
       org.opencontainers.image.deprecated="false"

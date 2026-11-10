@@ -23,7 +23,8 @@ volume-autoscaler is the successor of external-ebs-autoresizer, renamed when Per
 - **High availability**: Leader election across replicas through a Kubernetes Lease. See [High availability](docs/how-it-works.md#high-availability).
 - **Protective auto-cordon**: Keeps new Pods off an EKS node whose root disk is filling up. See [Protective auto-cordon](docs/protective-auto-cordon.md).
 - **Throughput recommendations**: Optional gp3 throughput recommendations for Nodes. See [Node throughput recommendations](docs/throughput-recommendation.md).
-- **Unused volume identification**: Reports claims and volumes no workload uses, never deletes them. See [Unused volume identification](docs/unused-volumes.md).
+- **Unused volume identification**: Reports claims and volumes no workload uses. See [Unused volume identification](docs/unused-volumes.md).
+- **Orphan PVC cleanup**: Optionally deletes unused claims after a notice period, never a volume. Disabled by default. See [Orphan PVC cleanup](docs/orphan-pvc-cleanup.md).
 - **Observability**: [Prometheus metrics](docs/metrics.md), Kubernetes Events, [Alertmanager alerts](docs/alerting.md), and [Grafana annotations](docs/grafana-annotations.md).
 - **Built-in CLI**: Validates config and lists unused volumes. See [Built-in CLI](docs/cli.md).
 
@@ -77,6 +78,7 @@ Guides and design records live under docs/.
 - [Protective auto-cordon](docs/protective-auto-cordon.md)
 - [Node throughput recommendations](docs/throughput-recommendation.md)
 - [Unused volume identification](docs/unused-volumes.md)
+- [Orphan PVC cleanup](docs/orphan-pvc-cleanup.md)
 - [Built-in CLI](docs/cli.md)
 - [Metrics](docs/metrics.md)
 - [Alerting](docs/alerting.md)
@@ -87,6 +89,7 @@ Guides and design records live under docs/.
 - [Design: node EBS throughput recommendation](docs/designs/ebs-throughput-recommendation.md)
 - [Design: throughput apply on resize](docs/designs/throughput-apply-on-resize.md)
 - [Design: unused volume identification](docs/designs/unused-volume-identification.md)
+- [Design: orphan PVC cleanup](docs/designs/orphan-pvc-cleanup.md)
 
 ## License
 

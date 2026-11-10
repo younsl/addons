@@ -63,6 +63,8 @@ instances have no Node object, so they keep Pod-side Events only.
 
 ## High availability
 
+> Available since app version 0.1.0.
+
 The chart enables [leader election][k8s-leader-election] automatically when `replicaCount` is above 1,
 so extra replicas stand by and only the leader reconciles. This avoids concurrent
 `ModifyVolume` calls against the same volume. The leader holds a
@@ -84,6 +86,23 @@ so extra replicas stand by and only the leader reconciles. This avoids concurren
 [k8s-node]: https://kubernetes.io/docs/concepts/architecture/nodes/
 [k8s-leader-election]: https://kubernetes.io/docs/concepts/architecture/leases/#leader-election
 [k8s-leases]: https://kubernetes.io/docs/concepts/architecture/leases/
+
+## Annotations
+
+> The `volume-autoscaler.sh/` prefix is available since app version 0.2.0. Earlier versions used `volume-autoscaler/`.
+
+Every annotation the addon writes or reads as its own lives under the `volume-autoscaler.sh/` prefix, the same domain as the API group `autoscaling.volume-autoscaler.sh`:
+
+| Object | Keys | Written by |
+|--------|------|------------|
+| PersistentVolumeClaim, PersistentVolume | `unused`, `unused-since`, `unused-reason`, `unused-days`, `volume-id`, `unused-observed-at` | [Unused volume identification](unused-volumes.md) |
+| PersistentVolumeClaim | `orphan-pvc-delete-after`, `orphan-pvc-alerted-at` | [Orphan PVC cleanup](orphan-pvc-cleanup.md) |
+| PersistentVolumeClaim | `orphan-pvc-cleanup` | The operator, to opt a claim out of orphan PVC cleanup |
+| Node | `protective-cordon` | [Protective auto-cordon](protective-auto-cordon.md) |
+| Node | `volume-id`, `throughput-*`, `iops-*` | [Node throughput recommendations](throughput-recommendation.md) |
+| Pod (chart) | `config-checksum` | The Helm chart, to roll the Deployment on a config change |
+
+Version 0.1.0 wrote these keys under `volume-autoscaler/`. The addon still reads the old `unused-since` clock and `protective-cordon` mark, so an upgrade neither restarts the 24-hour grace period nor leaves a Node cordoned forever, and removes every old key on its next write to the object.
 
 ## Conclusion
 

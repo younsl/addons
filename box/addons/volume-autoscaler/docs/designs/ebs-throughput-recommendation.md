@@ -1,8 +1,8 @@
 # Node EBS throughput recommendation
 
-| Status | Category |
-| --- | --- |
-| implemented, disabled by default (`throughputRecommendation.enabled: false`). | performance |
+| Status | Category | Since |
+| --- | --- | --- |
+| implemented, disabled by default (`throughputRecommendation.enabled: false`). | performance | 0.1.0 |
 
 Recommends a gp3 throughput (and the IOPS it requires) for each Kubernetes [Node][k8s-node] in
 the cluster the addon runs in, and publishes the recommendation as [annotations][k8s-annotations] on
@@ -274,18 +274,18 @@ Example:
 ```console
 $ kubectl get node ip-10-0-1-5.ap-northeast-2.compute.internal -o jsonpath='{.metadata.annotations}' | jq
 {
-  "volume-autoscaler/volume-id": "vol-0a1b2c3d4e5f6a7b8",
-  "volume-autoscaler/throughput-current-mibps": "125",
-  "volume-autoscaler/throughput-observed-peak-mibps": "287.4",
-  "volume-autoscaler/throughput-utilization-percent": "229.9",
-  "volume-autoscaler/throughput-recommended-mibps": "375",
-  "volume-autoscaler/iops-current": "3000",
-  "volume-autoscaler/iops-recommended": "3000",
-  "volume-autoscaler/throughput-recommendation": "increase",
-  "volume-autoscaler/throughput-recommendation-reason": "observed_peak_above_provisioned",
-  "volume-autoscaler/throughput-observation-window": "7d/p99",
-  "volume-autoscaler/throughput-observation-samples": "10080",
-  "volume-autoscaler/throughput-observed-at": "2026-07-31T04:12:07Z"
+  "volume-autoscaler.sh/volume-id": "vol-0a1b2c3d4e5f6a7b8",
+  "volume-autoscaler.sh/throughput-current-mibps": "125",
+  "volume-autoscaler.sh/throughput-observed-peak-mibps": "287.4",
+  "volume-autoscaler.sh/throughput-utilization-percent": "229.9",
+  "volume-autoscaler.sh/throughput-recommended-mibps": "375",
+  "volume-autoscaler.sh/iops-current": "3000",
+  "volume-autoscaler.sh/iops-recommended": "3000",
+  "volume-autoscaler.sh/throughput-recommendation": "increase",
+  "volume-autoscaler.sh/throughput-recommendation-reason": "observed_peak_above_provisioned",
+  "volume-autoscaler.sh/throughput-observation-window": "7d/p99",
+  "volume-autoscaler.sh/throughput-observation-samples": "10080",
+  "volume-autoscaler.sh/throughput-observed-at": "2026-07-31T04:12:07Z"
 }
 ```
 
@@ -294,12 +294,12 @@ Listing every node that wants more throughput:
 ```bash
 kubectl get nodes \
   -o custom-columns='NODE:.metadata.name,\
-ACTION:.metadata.annotations.volume-autoscaler/throughput-recommendation,\
-CURRENT:.metadata.annotations.volume-autoscaler/throughput-current-mibps,\
-PEAK:.metadata.annotations.volume-autoscaler/throughput-observed-peak-mibps,\
-UTIL%:.metadata.annotations.volume-autoscaler/throughput-utilization-percent,\
-TARGET:.metadata.annotations.volume-autoscaler/throughput-recommended-mibps,\
-IOPS:.metadata.annotations.volume-autoscaler/iops-recommended'
+ACTION:.metadata.annotations.volume-autoscaler\.sh/throughput-recommendation,\
+CURRENT:.metadata.annotations.volume-autoscaler\.sh/throughput-current-mibps,\
+PEAK:.metadata.annotations.volume-autoscaler\.sh/throughput-observed-peak-mibps,\
+UTIL%:.metadata.annotations.volume-autoscaler\.sh/throughput-utilization-percent,\
+TARGET:.metadata.annotations.volume-autoscaler\.sh/throughput-recommended-mibps,\
+IOPS:.metadata.annotations.volume-autoscaler\.sh/iops-recommended'
 ```
 
 Applying one, once reviewed:
@@ -372,7 +372,7 @@ in a steady state almost every node is unchanged on every pass, and logging thos
 info would bury the writes.
 
 ```json
-{"level":"INFO","msg":"annotated node with EBS throughput recommendation","node":"ip-10-0-1-5","volume":"vol-0a1b2c3d","recommendation":"increase","reason":"observed_peak_above_provisioned","outcome":"written","annotations":{"volume-autoscaler/throughput-recommended-mibps":"375","...":"..."},"removed":null}
+{"level":"INFO","msg":"annotated node with EBS throughput recommendation","node":"ip-10-0-1-5","volume":"vol-0a1b2c3d","recommendation":"increase","reason":"observed_peak_above_provisioned","outcome":"written","annotations":{"volume-autoscaler.sh/throughput-recommended-mibps":"375","...":"..."},"removed":null}
 {"level":"ERROR","msg":"failed to annotate node with EBS throughput recommendation","node":"ip-10-0-2-7","recommendation":"increase","reason":"observed_peak_above_provisioned","outcome":"failed","error":"patch node ip-10-0-2-7 annotations: Operation cannot be fulfilled"}
 ```
 
@@ -397,7 +397,7 @@ the point: a preflight proves the backend answers, not that the configured query
 device matcher, and node label return this cluster's nodes.
 
 ```json
-{"level":"INFO","msg":"EBS throughput recommendation enabled","prometheus_url":"http://mimir-gateway.monitoring","tenant_id":"","interval":"1h0m0s","lookback_window":"7d","quantile":0.99,"headroom_percent":30,"annotation_prefix":"volume-autoscaler","dry_run":false}
+{"level":"INFO","msg":"EBS throughput recommendation enabled","prometheus_url":"http://mimir-gateway.monitoring","tenant_id":"","interval":"1h0m0s","lookback_window":"7d","quantile":0.99,"headroom_percent":30,"annotation_prefix":"volume-autoscaler.sh","dry_run":false}
 {"level":"INFO","msg":"prometheus preflight check succeeded","endpoint":"http://mimir-gateway.monitoring/prometheus/api/v1/query","status":200,"latency":"31ms","attempt":1}
 {"level":"INFO","msg":"EBS throughput recommendation queries resolved","peak_query":"quantile_over_time(0.99, (sum by (node) (rate(node_disk_read_bytes_total{device=~\"nvme[0-9]+n[0-9]+|xvd[a-z]+|sd[a-z]+\"}[1m]) + rate(node_disk_written_bytes_total{device=~\"nvme[0-9]+n[0-9]+|xvd[a-z]+|sd[a-z]+\"}[1m])))[7d:1m]) / 1048576","sample_count_query":"count_over_time((sum by (node) (...))[7d:1m])"}
 {"level":"INFO","msg":"EBS throughput recommendation metrics check succeeded","nodes":12,"series":12,"latency":"1.42s","busiest_node":"ip-10-0-1-5.ap-northeast-2.compute.internal","busiest_node_peak_mibps":287.4}
@@ -478,7 +478,7 @@ retention bounds it, and `interval` because the query cost scales with cluster s
 | `prometheusHeaders` | removed | It was a plain-text ConfigMap field that invited a credential |
 | `seriesSelector` | derived | The query is scoped to the Node names the addon lists from its own API server, so no `cluster` label has to be named. See [Scoping to this cluster without a setting](#scoping-to-this-cluster-without-a-setting) |
 
-Parsing is strict, so a config carrying any of these keys fails at startup rather
+A config carrying any of these keys starts with a warning naming the key, rather
 than silently having no effect.
 
 `minSamples` was an absolute count, and it was wrong: a 7d window at a 1m step holds

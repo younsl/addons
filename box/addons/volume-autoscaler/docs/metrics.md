@@ -45,6 +45,8 @@ A short reminder on metric types:
 
 ## Metrics
 
+Every metric below is available since app version 0.1.0 unless its entry says otherwise.
+
 Every metric name follows the [Prometheus naming
 conventions](https://prometheus.io/docs/practices/naming/) and is built from
 three parts:
@@ -431,6 +433,28 @@ down before it starts failing outright. It is recorded for failed passes too,
 because how long a pass ran before failing separates a slow API server from one
 rejecting the calls.
 
+### volume_autoscaler_orphan_pvc_cleanup_total
+
+- Type: Counter
+- Since: 0.2.0
+- Labels: `action`
+
+[Orphan PVC cleanup](orphan-pvc-cleanup.md) actions. `scheduled` and `canceled` count deadlines written and removed, `deleted` counts claims deleted, `skipped_in_use` counts claims a Pod mounted again right before the delete, `deferred` counts claims past their deadline held back by `maxDeletionsPerPass`, `failed` counts recheck and delete errors, and `dry_run` counts what a dry run would have scheduled or deleted. Failures also raise `error_total` with stage `orphan_pvc_cleanup_references`, `orphan_pvc_cleanup_recheck`, or `orphan_pvc_delete`.
+
+### volume_autoscaler_orphan_pvc_cleanup_scheduled
+
+- Type: Gauge
+- Since: 0.2.0
+
+The number of claims scheduled for deletion and not yet deleted after the latest scan. It reads `0` while cleanup is disabled. Alert on it to review deletions before their notice runs out:
+
+```promql
+max by (cluster) (
+  volume_autoscaler_orphan_pvc_cleanup_scheduled
+    and on (pod) volume_autoscaler_leader == 1
+) > 0
+```
+
 ### volume_autoscaler_claim_utilization_percent
 
 - Type: Gauge
@@ -614,7 +638,7 @@ volume_autoscaler_node_throughput_recommended_mibps
 ```
 
 Throughput utilization per node, the same number the
-`volume-autoscaler/throughput-utilization-percent` annotation carries:
+`volume-autoscaler.sh/throughput-utilization-percent` annotation carries:
 
 ```promql
 100 * volume_autoscaler_node_throughput_observed_peak_mibps

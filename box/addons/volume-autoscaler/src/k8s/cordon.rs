@@ -130,22 +130,31 @@ pub fn annotation_key() -> String {
     crate::annotations::key(ANNOTATION_SUFFIX)
 }
 
+/// The key 0.1.0 marked its cordons with. A Node carrying it is still the
+/// addon's own cordon, or it would never be uncordoned after an upgrade.
+fn legacy_annotation_key() -> String {
+    crate::annotations::legacy_key(ANNOTATION_SUFFIX)
+}
+
 fn cordon_patch(at: DateTime<Utc>) -> serde_json::Value {
     serde_json::json!({
-        "metadata": {"annotations": {annotation_key(): at.to_rfc3339_opts(SecondsFormat::Secs, true)}},
+        "metadata": {"annotations": {
+            annotation_key(): at.to_rfc3339_opts(SecondsFormat::Secs, true),
+            legacy_annotation_key(): null,
+        }},
         "spec": {"unschedulable": true},
     })
 }
 
 fn uncordon_patch() -> serde_json::Value {
     serde_json::json!({
-        "metadata": {"annotations": {annotation_key(): null}},
+        "metadata": {"annotations": {annotation_key(): null, legacy_annotation_key(): null}},
         "spec": {"unschedulable": null},
     })
 }
 
 fn forget_patch() -> serde_json::Value {
-    serde_json::json!({"metadata": {"annotations": {annotation_key(): null}}})
+    serde_json::json!({"metadata": {"annotations": {annotation_key(): null, legacy_annotation_key(): null}}})
 }
 
 /// A strategic merge patch merges `status.conditions` by `type`, so the
@@ -179,11 +188,9 @@ fn from_k8s_node(n: &K8sNode) -> Option<(String, CordonNode)> {
         name: n.metadata.name.clone().unwrap_or_default(),
         uid: n.metadata.uid.clone().unwrap_or_default(),
         unschedulable: spec.and_then(|s| s.unschedulable).unwrap_or(false),
-        protective: n
-            .metadata
-            .annotations
-            .as_ref()
-            .is_some_and(|a| a.contains_key(&annotation_key())),
+        protective: n.metadata.annotations.as_ref().is_some_and(|a| {
+            a.contains_key(&annotation_key()) || a.contains_key(&legacy_annotation_key())
+        }),
         condition: n
             .status
             .as_ref()
@@ -202,6 +209,20 @@ mod tests {
     use kube::api::ObjectMeta;
 
     use super::*;
+
+    #[test]
+    fn legacy_mark_is_still_protective() {
+        let mut n = node(
+            "aws:///ap-northeast-2a/i-0123456789abcdef0",
+            Some(true),
+            false,
+        );
+        n.metadata.annotations = Some(BTreeMap::from([(
+            legacy_annotation_key(),
+            "2026-10-09T00:00:00Z".to_string(),
+        )]));
+        assert!(from_k8s_node(&n).unwrap().1.protective);
+    }
 
     fn node(provider_id: &str, unschedulable: Option<bool>, marked: bool) -> K8sNode {
         K8sNode {
@@ -270,20 +291,29 @@ mod tests {
         assert_eq!(
             cordon_patch(at),
             serde_json::json!({
-                "metadata": {"annotations": {"volume-autoscaler/protective-cordon": "2023-11-14T22:13:20Z"}},
+                "metadata": {"annotations": {
+                    "volume-autoscaler.sh/protective-cordon": "2023-11-14T22:13:20Z",
+                    "volume-autoscaler/protective-cordon": null,
+                }},
                 "spec": {"unschedulable": true},
             })
         );
         assert_eq!(
             uncordon_patch(),
             serde_json::json!({
-                "metadata": {"annotations": {"volume-autoscaler/protective-cordon": null}},
+                "metadata": {"annotations": {
+                    "volume-autoscaler.sh/protective-cordon": null,
+                    "volume-autoscaler/protective-cordon": null,
+                }},
                 "spec": {"unschedulable": null},
             })
         );
         assert_eq!(
             forget_patch(),
-            serde_json::json!({"metadata": {"annotations": {"volume-autoscaler/protective-cordon": null}}})
+            serde_json::json!({"metadata": {"annotations": {
+                "volume-autoscaler.sh/protective-cordon": null,
+                "volume-autoscaler/protective-cordon": null,
+            }}})
         );
         assert_eq!(
             condition_patch(&Condition {
