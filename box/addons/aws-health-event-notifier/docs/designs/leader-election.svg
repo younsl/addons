@@ -1,0 +1,120 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 720" font-family="Geist, Inter, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#ededed"/>
+    </marker>
+    <marker id="d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#666"/>
+    </marker>
+    <style>
+      .t { fill: #ededed; font-size: 15px; font-weight: 600; }
+      .k { fill: #888; font-size: 11px; letter-spacing: 0.08em; }
+      .m { fill: #ededed; font-family: 'Geist Mono', ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; }
+      .s { fill: #a1a1a1; font-size: 12.5px; }
+      .sm { fill: #a1a1a1; font-family: 'Geist Mono', ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+      .l { fill: #a1a1a1; font-family: 'Geist Mono', ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; }
+      .box { fill: #0a0a0a; stroke: #333; stroke-width: 1; }
+      .hot { fill: #0a0a0a; stroke: #ededed; stroke-width: 1.25; }
+      .idle { fill: #0a0a0a; stroke: #444; stroke-width: 1; stroke-dasharray: 4 4; }
+      .w { stroke: #ededed; stroke-width: 1.25; fill: none; }
+      .g { stroke: #666; stroke-width: 1.25; fill: none; stroke-dasharray: 5 5; }
+    </style>
+  </defs>
+
+  <rect width="1200" height="720" fill="#000"/>
+
+  <text x="40" y="52" fill="#ededed" font-size="22" font-weight="600" letter-spacing="-0.02em">Lease-based leader election</text>
+  <text x="40" y="78" class="s">Only the leader polls and posts. The ledger fences a stale leader out, so no event is posted twice.</text>
+
+  <!-- External services -->
+  <rect x="40" y="195" width="200" height="80" rx="8" class="box"/>
+  <text x="58" y="220" class="k">EXTERNAL</text>
+  <text x="58" y="243" class="t">AWS Health API</text>
+  <text x="58" y="262" class="sm">DescribeEvents</text>
+
+  <rect x="40" y="435" width="200" height="80" rx="8" class="box"/>
+  <text x="58" y="460" class="k">EXTERNAL</text>
+  <text x="58" y="483" class="t">Slack</text>
+  <text x="58" y="502" class="sm">Incoming Webhook</text>
+
+  <!-- Cluster frame -->
+  <rect x="300" y="120" width="860" height="470" rx="12" fill="none" stroke="#222"/>
+  <text x="320" y="146" class="l">KUBERNETES NAMESPACE</text>
+  <text x="340" y="182" class="l">Deployment  replicas: 2</text>
+
+  <!-- Pod A: leader -->
+  <rect x="340" y="195" width="220" height="125" rx="8" class="hot"/>
+  <text x="358" y="221" class="k">POD</text>
+  <rect x="470" y="207" width="74" height="22" rx="11" fill="#ededed"/>
+  <text x="507" y="222" text-anchor="middle" fill="#000" font-size="11" font-weight="600" letter-spacing="0.06em">LEADER</text>
+  <text x="358" y="246" class="m">pod-a</text>
+  <text x="358" y="274" class="s">Polls every 60s</text>
+  <text x="358" y="294" class="s">Records, then posts</text>
+
+  <!-- Lease -->
+  <rect x="620" y="205" width="220" height="105" rx="8" class="box"/>
+  <text x="638" y="230" class="k">LEASE</text>
+  <text x="638" y="253" class="m">&lt;fullname&gt;-leader</text>
+  <text x="638" y="276" class="sm">holderIdentity: pod-a</text>
+  <text x="638" y="295" class="sm">leaseDuration: 15s</text>
+
+  <!-- Pod B: standby -->
+  <rect x="900" y="195" width="220" height="125" rx="8" class="idle"/>
+  <text x="918" y="221" class="k">POD</text>
+  <rect x="1022" y="207" width="82" height="22" rx="11" fill="none" stroke="#666"/>
+  <text x="1063" y="222" text-anchor="middle" fill="#a1a1a1" font-size="11" font-weight="600" letter-spacing="0.06em">STANDBY</text>
+  <text x="918" y="246" class="m">pod-b</text>
+  <text x="918" y="274" class="s">Idle, logs the leader</text>
+  <text x="918" y="294" class="s">Takes over in about 15s</text>
+
+  <!-- Event -->
+  <rect x="340" y="435" width="220" height="105" rx="8" class="box"/>
+  <text x="358" y="460" class="k">EVENT</text>
+  <text x="358" y="483" class="m">DeliveryUnknown</text>
+  <text x="358" y="506" class="s">Warning naming the ARN</text>
+  <text x="358" y="525" class="s">Never retried</text>
+
+  <!-- ConfigMap ledger -->
+  <rect x="620" y="435" width="220" height="105" rx="8" class="hot"/>
+  <text x="638" y="460" class="k">CONFIGMAP</text>
+  <text x="638" y="483" class="m">&lt;fullname&gt;-ledger</text>
+  <text x="638" y="506" class="sm">term: 12  holder: pod-a</text>
+  <text x="638" y="525" class="sm">cursor  events[arn].state</text>
+
+  <!-- Arrows: leader -->
+  <path d="M340 235 H246" class="w" marker-end="url(#a)"/>
+  <text x="293" y="226" text-anchor="middle" class="l">poll</text>
+
+  <path d="M340 300 H285 V475 H246" class="w" marker-end="url(#a)"/>
+  <text x="272" y="392" text-anchor="end" class="l">POST</text>
+
+  <path d="M560 257 H614" class="w" marker-end="url(#a)"/>
+  <text x="587" y="248" text-anchor="middle" class="l">renew</text>
+
+  <path d="M520 320 L656 429" class="w" marker-end="url(#a)"/>
+  <text x="604" y="372" class="l">CAS write</text>
+
+  <path d="M450 320 V429" class="w" marker-end="url(#a)"/>
+  <text x="458" y="380" class="l">on unknown</text>
+
+  <!-- Arrows: standby -->
+  <path d="M900 257 H846" class="g" marker-end="url(#d)"/>
+  <text x="873" y="248" text-anchor="middle" class="l">acquire</text>
+
+  <path d="M960 320 L812 429" class="g" marker-end="url(#d)"/>
+  <text x="900" y="388" class="l">claim term+1</text>
+  <text x="900" y="404" class="l">on takeover</text>
+
+  <!-- Send flow -->
+  <text x="40" y="630" class="k">SEND FLOW</text>
+  <rect x="40" y="645" width="230" height="40" rx="20" class="box"/>
+  <text x="155" y="670" text-anchor="middle" class="sm"><tspan fill="#ededed">1</tspan>  CAS pending</text>
+  <path d="M276 665 H310" class="w" marker-end="url(#a)"/>
+  <rect x="316" y="645" width="230" height="40" rx="20" class="box"/>
+  <text x="431" y="670" text-anchor="middle" class="sm"><tspan fill="#ededed">2</tspan>  POST webhook</text>
+  <path d="M552 665 H586" class="w" marker-end="url(#a)"/>
+  <rect x="592" y="645" width="230" height="40" rx="20" class="box"/>
+  <text x="707" y="670" text-anchor="middle" class="sm"><tspan fill="#ededed">3</tspan>  CAS sent or unknown</text>
+  <text x="860" y="660" class="s">A stale leader fails step 1 on a</text>
+  <text x="860" y="679" class="s">CAS conflict and never reaches step 2.</text>
+</svg>
