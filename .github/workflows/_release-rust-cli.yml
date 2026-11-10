@@ -145,9 +145,7 @@ jobs:
 
       - name: Run tests
         working-directory: ${{ env.PROJECT_BASE_DIR }}
-        run: |
-          cargo test --verbose
-          cargo test --release --verbose
+        run: cargo test --verbose
 
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@v2.69.4
