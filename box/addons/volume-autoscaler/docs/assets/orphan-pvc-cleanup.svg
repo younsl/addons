@@ -98,15 +98,15 @@
   <text x="592" y="388" class="t l" text-anchor="middle">delete</text>
 
   <path d="M745 206 V248" class="edge" marker-end="url(#arrow)"/>
-  <text x="757" y="232" class="t l">unused for minUnusedAge</text>
+  <text x="757" y="232" class="t l">alertBefore ahead of minUnusedAge</text>
   <path d="M745 334 V358" class="edge" marker-end="url(#arrow)"/>
-  <text x="757" y="350" class="t l">after noticePeriod</text>
+  <text x="757" y="350" class="t l">at minUnusedAge</text>
 
   <!-- outcomes -->
   <rect x="920" y="250" width="280" height="84" rx="6" class="card"/>
   <text x="936" y="274" class="t n">Canceled</text>
   <text x="936" y="292" class="t d">deadline removed, Normal Event</text>
-  <text x="936" y="308" class="t d">a new full notice if eligible again</text>
+  <text x="936" y="308" class="t d">announced again if eligible again</text>
   <text x="936" y="324" class="t k">back in use, protected, or disabled</text>
   <path d="M870 292 H918" class="dash" marker-end="url(#arrow)"/>
 

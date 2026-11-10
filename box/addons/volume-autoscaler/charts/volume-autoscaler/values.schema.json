@@ -414,9 +414,6 @@
             "minUnusedAge": {
               "$ref": "#/definitions/goDuration"
             },
-            "noticePeriod": {
-              "$ref": "#/definitions/goDuration"
-            },
             "reasons": {
               "type": "array",
               "minItems": 1,

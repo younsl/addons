@@ -23,7 +23,6 @@ throughputRecommendation:
 orphanPvcCleanup:
   enabled: false
   minUnusedAge: 3d
-  noticePeriod: 24h
   reasons:
     - no_consumer_pod
     - statefulset_scaled_down

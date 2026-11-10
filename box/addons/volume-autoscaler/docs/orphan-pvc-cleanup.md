@@ -10,7 +10,7 @@ How the addon deletes orphan [PersistentVolumeClaims][k8s-pvc], the claims the [
 
 - **Claims only**: Deletes PersistentVolumeClaims and leaves each PersistentVolume and EBS volume to its reclaim policy. No AWS API call.
 - **ConfigMap opt-in**: One `orphanPvcCleanup` block in the ConfigMap, disabled by default. No custom resource.
-- **Persisted notice**: Every claim is scheduled with a deadline on its own annotation and a Warning Event before deletion, so even claims unused for months get the full `noticePeriod`.
+- **Persisted notice**: Every claim is scheduled `alertBefore` ahead with a deadline on its own annotation and a Warning Event, so even claims unused for months are announced before deletion.
 - **Unused clock, not age**: `minUnusedAge` counts from when the claim became unused, not from its creation.
 - **Selectable reasons**: Every unused claim reason (`no_consumer_pod`, `statefulset_scaled_down`, `unbound`) is eligible by default. Narrow `reasons` to keep some.
 - **Namespace scope**: Include and exclude lists, with `kube-system` excluded by default.
@@ -40,7 +40,6 @@ config:
   orphanPvcCleanup:
     enabled: true
     minUnusedAge: 3d
-    noticePeriod: 24h
     reasons:
       - no_consumer_pod
       - statefulset_scaled_down
@@ -55,14 +54,13 @@ config:
 | Key | Default | Meaning |
 |-----|---------|---------|
 | `enabled` | `false` | Turns cleanup on. Requires the `unused-volume-scan` controller |
-| `minUnusedAge` | `3d` | How long a claim must stay continuously unused before it is scheduled. At least `24h`, the scan's own threshold. The binary defaults to `7d` when the key is omitted from a config file not rendered by the chart |
-| `noticePeriod` | `24h` | How long a scheduled claim waits before it is deleted. At least `1h` |
+| `minUnusedAge` | `3d` | How long a claim must stay continuously unused before it is deleted. At least `24h`, the scan's own threshold. The binary defaults to `7d` when the key is omitted from a config file not rendered by the chart |
 | `reasons` | all three | Which [unused reasons](unused-volumes.md#what-counts-as-unused) are eligible: `no_consumer_pod`, `statefulset_scaled_down`, `unbound` |
 | `includeNamespaces` | `[]` | Namespaces in scope. Empty means every namespace |
 | `excludeNamespaces` | `[kube-system]` | Namespaces never cleaned up. Exclude wins over include |
 | `maxDeletionsPerPass` | `1` | Max claims deleted per hourly scan, 1 to 100. The rest wait for the next pass |
 | `alertEnabled` | `true` | Sends Alertmanager alerts for upcoming, deleted, and failed deletions. Needs `alertmanager.enabled`. See [Alerting](alerting.md#orphan-pvc-cleanup-alerts) |
-| `alertBefore` | `6h` | When the single upcoming deletion alert is sent, measured back from the deadline. At least `1h`, the scan interval. A value longer than `noticePeriod` alerts on the pass that schedules the claim |
+| `alertBefore` | `6h` | How far ahead of deletion the claim is scheduled and its one upcoming alert is sent, and the least notice any deletion gets. At least `1h`, the scan interval |
 
 Durations take whole numbers with `m`, `h`, or `d`, such as `3d` or `1d12h`. Fractions are invalid, and an invalid value falls back to its default with a warning, see [Invalid values](configuration.md#invalid-values).
 
@@ -74,12 +72,12 @@ The chart adds the `delete` verb on `persistentvolumeclaims` and `list` on Deplo
 
 Every hourly scan decides each unused claim:
 
-1. **Eligible** when its reason is in `reasons`, it has been unused for at least `minUnusedAge`, its namespace is in scope, and no guard below protects it.
-2. **Scheduled** on the first pass that finds it eligible. The scan writes `volume-autoscaler.sh/orphan-pvc-delete-after` with the deadline (now plus `noticePeriod`) and records a Warning Event `OrphanPvcDeletionScheduled`, refreshed every pass until the deadline. Once the deadline is `alertBefore` away, the scan sends the claim's one `OrphanPvcDeletionUpcoming` alert and records it in `volume-autoscaler.sh/orphan-pvc-alerted-at`, so a restart never sends it twice.
+1. **Eligible** when its reason is in `reasons`, it is within `alertBefore` of being unused for `minUnusedAge`, its namespace is in scope, and no guard below protects it.
+2. **Scheduled** on the first pass that finds it eligible. The scan writes `volume-autoscaler.sh/orphan-pvc-delete-after` with the deadline, the moment the claim reaches `minUnusedAge` but never less than `alertBefore` from now, and records a Warning Event `OrphanPvcDeletionScheduled`, refreshed every pass until the deadline. The same pass sends the claim's one `OrphanPvcDeletionUpcoming` alert and records it in `volume-autoscaler.sh/orphan-pvc-alerted-at`, so a restart never sends it twice.
 3. **Deleted** on the first pass after the deadline, longest unused first, up to `maxDeletionsPerPass`. Right before the delete it lists the namespace's Pods again and skips the claim if one mounts it. The delete carries a UID precondition, so a claim recreated under the same name is never touched. A Normal Event `OrphanPvcDeleted` names the volume and its reclaim policy.
-4. **Canceled** when a scheduled claim stops being eligible before its deadline: it comes back into use, gets protected, leaves the scope, or cleanup is disabled. The deadline annotation is removed and a Normal Event `OrphanPvcDeletionCanceled` is recorded. Becoming eligible again starts a new, full notice.
+4. **Canceled** when a scheduled claim stops being eligible before its deadline: it comes back into use, gets protected, leaves the scope, or cleanup is disabled. The deadline annotation is removed and a Normal Event `OrphanPvcDeletionCanceled` is recorded. Becoming eligible again schedules it again, with at least `alertBefore` of notice.
 
-The deadline lives in the claim's own annotation, not in memory. Enabling cleanup on a cluster with claims unused for months schedules them first and deletes nothing until a full `noticePeriod` has passed, and a restart or leader failover neither resets nor skips the notice.
+The deadline lives in the claim's own annotation, not in memory. Enabling cleanup on a cluster with claims unused for months schedules them first and deletes nothing until `alertBefore` has passed, and a restart or leader failover neither resets nor skips the notice. With the chart defaults a claim is scheduled after 66 hours unused and deleted at 72 hours.
 
 ```console
 $ kubectl get pvc -n legacy uploads -o jsonpath='{.metadata.annotations}' | jq
@@ -112,7 +110,7 @@ The guards fail closed. When the workload lists fail, the pass schedules, cancel
 
 ## Dry run
 
-The global `dryRun` covers cleanup too. The scan logs which claims it would schedule and delete and counts them as `orphan_pvc_cleanup_total{action="dry_run"}`, but writes no annotation, records no Event, and deletes nothing. Enabling cleanup without `dryRun` is also safe to preview: nothing is deleted during the first `noticePeriod`, and every claim it will delete carries the deadline annotation and the Warning Event.
+The global `dryRun` covers cleanup too. The scan logs which claims it would schedule and delete and counts them as `orphan_pvc_cleanup_total{action="dry_run"}`, but writes no annotation, records no Event, and deletes nothing. Enabling cleanup without `dryRun` is also safe to preview: nothing is deleted for at least `alertBefore`, and every claim it will delete carries the deadline annotation and the Warning Event.
 
 ## Observing it
 
@@ -138,4 +136,4 @@ See [designs/orphan-pvc-cleanup.md](designs/orphan-pvc-cleanup.md) for why it wo
 
 ## Conclusion
 
-Orphan PVC cleanup deletes only claims, only after they stay unused past `minUnusedAge` and a full `noticePeriod` announced on the claim itself, and leaves the volume to its reclaim policy. It is disabled by default, configured in the ConfigMap, and every claim can opt out with `volume-autoscaler.sh/orphan-pvc-cleanup=disabled`.
+Orphan PVC cleanup deletes only claims, only once they stay unused for `minUnusedAge`, announced `alertBefore` ahead on the claim itself, and leaves the volume to its reclaim policy. It is disabled by default, configured in the ConfigMap, and every claim can opt out with `volume-autoscaler.sh/orphan-pvc-cleanup=disabled`.

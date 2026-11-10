@@ -5,11 +5,13 @@
 //! what happens to the volume behind a deleted claim is decided by its own
 //! reclaim policy, and a `Retain` volume stays reported as `released`.
 //!
-//! A claim is deleted only after a notice period that starts on the pass that
-//! first finds it eligible. The deadline is persisted in the claim's own
-//! `orphan-pvc-delete-after` annotation, so enabling cleanup on a cluster full of claims
-//! unused for months still gives every one of them the full notice, and a
-//! restart neither resets nor skips it.
+//! A claim is deleted once it has been unused for `min_unused_age`. It is
+//! scheduled `alert_before` ahead of that, and the deadline is never less than
+//! `alert_before` after the pass that schedules it, so enabling cleanup on a
+//! cluster full of claims unused for months still announces every deletion
+//! first. The deadline is persisted in the claim's own
+//! `orphan-pvc-delete-after` annotation, so a restart neither resets nor
+//! skips it.
 
 use std::collections::HashSet;
 use std::time::Duration;
@@ -48,10 +50,8 @@ pub const ACTION_DRY_RUN: &str = "dry_run";
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Policy {
     /// How long a claim must have been continuously unused before it is
-    /// scheduled. Never below the scan's own reporting threshold.
+    /// deleted. Never below the scan's own reporting threshold.
     pub min_unused_age: Duration,
-    /// How long a scheduled claim waits before it is deleted.
-    pub notice_period: Duration,
     /// The unused reasons that make a claim eligible.
     pub reasons: Vec<String>,
     /// Empty means every namespace.
@@ -60,8 +60,8 @@ pub struct Policy {
     /// Caps the deletions of one pass, so a misjudgement cannot empty a
     /// cluster in a single hour.
     pub max_deletions_per_pass: usize,
-    /// How long before its deadline a scheduled claim raises its one alert.
-    /// A value longer than `notice_period` alerts on the scheduling pass.
+    /// How far ahead of its deadline a claim is scheduled and raises its one
+    /// alert, and the least notice any deletion gets.
     pub alert_before: Duration,
 }
 
@@ -108,12 +108,14 @@ impl Policy {
                 delete_after,
                 new: false,
             },
-            None => Verdict::Scheduled {
-                delete_after: now
-                    + chrono::TimeDelta::from_std(self.notice_period)
-                        .unwrap_or(chrono::TimeDelta::MAX),
-                new: true,
-            },
+            None => {
+                let since = f.unused_since.unwrap_or(now);
+                Verdict::Scheduled {
+                    delete_after: (since + delta(self.min_unused_age))
+                        .max(now + delta(self.alert_before)),
+                    new: true,
+                }
+            }
         }
     }
 
@@ -127,7 +129,7 @@ impl Policy {
         if !self.reasons.contains(&f.reason) {
             return Some(CAUSE_REASON_NOT_SELECTED);
         }
-        if !f.reportable || f.age < self.min_unused_age {
+        if !f.reportable || f.age + self.alert_before < self.min_unused_age {
             return Some(CAUSE_TOO_RECENT);
         }
         if !self.namespace_in_scope(&f.namespace) {
@@ -154,6 +156,10 @@ impl Policy {
         }
         self.include_namespaces.is_empty() || self.include_namespaces.iter().any(|n| n == namespace)
     }
+}
+
+fn delta(d: Duration) -> chrono::TimeDelta {
+    chrono::TimeDelta::from_std(d).unwrap_or(chrono::TimeDelta::MAX)
 }
 
 /// Reads when the alert before deletion was sent.
@@ -197,7 +203,6 @@ mod tests {
     fn policy() -> Policy {
         Policy {
             min_unused_age: Duration::from_hours(168),
-            notice_period: Duration::from_hours(24),
             reasons: vec![REASON_NO_CONSUMER_POD.into()],
             include_namespaces: vec![],
             exclude_namespaces: vec!["kube-system".into()],
@@ -241,13 +246,44 @@ mod tests {
         let now = DateTime::from_timestamp(1_700_000_000, 0).unwrap();
         let p = policy();
         let none = HashSet::new();
-        let v = p.decide(&candidate(), &none, now);
+        let mut fresh = candidate();
+        fresh.age = Duration::from_hours(162);
+        fresh.unused_since = Some(now - chrono::TimeDelta::hours(162));
         assert_eq!(
-            v,
+            p.decide(&fresh, &none, now),
             Verdict::Scheduled {
-                delete_after: now + chrono::TimeDelta::hours(24),
+                delete_after: now + chrono::TimeDelta::hours(6),
                 new: true
-            }
+            },
+            "deleted when unused for minUnusedAge, scheduled alertBefore ahead"
+        );
+        fresh.age = Duration::from_hours(165);
+        fresh.unused_since = Some(now - chrono::TimeDelta::hours(165));
+        assert_eq!(
+            p.decide(&fresh, &none, now),
+            Verdict::Scheduled {
+                delete_after: now + chrono::TimeDelta::hours(6),
+                new: true
+            },
+            "a late first pass still leaves alertBefore of notice"
+        );
+        fresh.age = Duration::from_hours(161);
+        fresh.unused_since = Some(now - chrono::TimeDelta::hours(161));
+        assert_eq!(
+            p.decide(&fresh, &none, now),
+            Verdict::Ineligible(CAUSE_TOO_RECENT),
+            "not yet inside the alertBefore window"
+        );
+
+        let mut old = candidate();
+        old.unused_since = Some(now - chrono::TimeDelta::hours(200));
+        assert_eq!(
+            p.decide(&old, &none, now),
+            Verdict::Scheduled {
+                delete_after: now + chrono::TimeDelta::hours(6),
+                new: true
+            },
+            "a claim long past minUnusedAge still gets alertBefore of notice"
         );
 
         let mut f = candidate();
@@ -296,7 +332,7 @@ mod tests {
                 CAUSE_REASON_NOT_SELECTED,
             ),
             (
-                Box::new(|f| f.age = Duration::from_hours(100)),
+                Box::new(|f| f.age = Duration::from_hours(161)),
                 CAUSE_TOO_RECENT,
             ),
             (Box::new(|f| f.reportable = false), CAUSE_TOO_RECENT),

@@ -190,10 +190,8 @@ config:
   orphanPvcCleanup:
     # -- (bool) Enable deletion, requires the `unused-volume-scan` controller
     enabled: false
-    # -- (string) How long a claim stays unused before it is scheduled, at least 24h. Units `m`, `h`, `d`
+    # -- (string) How long a claim stays unused before it is deleted, at least 24h. Units `m`, `h`, `d`
     minUnusedAge: "3d"
-    # -- (string) Wait between scheduling and deletion, at least 1h
-    noticePeriod: "24h"
     # -- (list) Unused reasons eligible for deletion: `no_consumer_pod`, `statefulset_scaled_down`, `unbound`
     reasons:
       - no_consumer_pod
@@ -208,7 +206,7 @@ config:
     maxDeletionsPerPass: 1
     # -- (bool) Alert upcoming, deleted, and failed deletions to Alertmanager, requires alertmanager.enabled
     alertEnabled: true
-    # -- (string) Send the one upcoming deletion alert this long before the deadline, at least 1h
+    # -- (string) Schedule the claim and send the one upcoming alert this long before deletion, at least 1h
     alertBefore: "6h"
 
 # -- (list) Extra container env (EnvVar entries)

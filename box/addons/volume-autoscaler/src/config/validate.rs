@@ -17,7 +17,6 @@ use super::{
 use crate::humanize::go_duration;
 
 const MIN_CLAIM_RECONCILE_INTERVAL: Duration = Duration::from_secs(10);
-const MIN_NOTICE_PERIOD: Duration = Duration::from_hours(1);
 const MAX_DELETIONS_PER_PASS: usize = 100;
 
 /// Raises `value` to `min` and records it.
@@ -157,13 +156,6 @@ impl OrphanPvcCleanup {
             &mut self.min_unused_age,
             crate::pvscan::MIN_UNUSED_AGE,
             ", the scan's minimum unused age",
-        );
-        at_least(
-            fx,
-            "orphanPvcCleanup.noticePeriod",
-            &mut self.notice_period,
-            MIN_NOTICE_PERIOD,
-            "",
         );
         at_least(
             fx,

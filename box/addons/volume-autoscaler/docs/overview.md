@@ -23,7 +23,7 @@ Built with Rust 1.99.1 and shipped as a statically linked musl binary (cargo-zig
 - Protective auto-cordon, always on for EKS nodes, that keeps new Pods off a Node whose root disk crossed the threshold, marks it with a `ProtectiveCordon` Node condition, and uncordons it once usage is back under. See [Protective auto-cordon](protective-auto-cordon.md) (since 0.1.0)
 - Optional gp3 throughput recommendations for in-cluster Nodes, piggybacked onto a size expansion. See [Node throughput recommendations](throughput-recommendation.md) (since 0.1.0)
 - Always-on identification of unused PersistentVolumeClaims and PersistentVolumes. See [Unused volume identification](unused-volumes.md) (since 0.1.0)
-- Opt-in orphan PVC cleanup that deletes unused claims after a notice period, never a volume. See [Orphan PVC cleanup](orphan-pvc-cleanup.md) (since 0.2.0)
+- Opt-in orphan PVC cleanup that deletes claims unused for a set time, announced ahead on the claim, never a volume. See [Orphan PVC cleanup](orphan-pvc-cleanup.md) (since 0.2.0)
 - Observability through [Prometheus metrics](metrics.md), Kubernetes Events, [Alertmanager alerts](alerting.md), and [Grafana annotations](grafana-annotations.md) (since 0.1.0)
 - A [built-in CLI](cli.md) to validate config and list unused volumes without a running controller (since 0.1.0)
 

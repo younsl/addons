@@ -517,8 +517,6 @@ fn log_orphan_pvc_cleanup_policy(cfg: &Config, events: bool) {
         enabled = true,
         scan_interval = %go_duration(pvscan::INTERVAL),
         min_unused_age = %go_duration(c.min_unused_age),
-        notice_period = %go_duration(c.notice_period),
-        earliest_deletion = %go_duration(c.min_unused_age + c.notice_period),
         reasons = %c.reasons.join(","),
         include_namespaces = %include,
         exclude_namespaces = %c.exclude_namespaces.join(","),
@@ -530,11 +528,11 @@ fn log_orphan_pvc_cleanup_policy(cfg: &Config, events: bool) {
         never_deletes = "persistentvolumes,ebs-volumes",
         events,
         alerts = orphan_pvc_alerts_on(cfg),
-        alert_before = %go_duration(c.alert_before.min(c.notice_period)),
+        alert_before = %go_duration(c.alert_before),
         alert_enabled = c.alert_enabled,
         alertmanager_enabled = cfg.alertmanager_enabled,
         dry_run = cfg.dry_run,
-        "Orphan PVC cleanup is enabled: PersistentVolumeClaims unused past minUnusedAge are scheduled, then deleted after noticePeriod. PersistentVolumes and EBS volumes follow their own reclaim policy"
+        "Orphan PVC cleanup is enabled: PersistentVolumeClaims are scheduled alertBefore ahead and deleted once unused for minUnusedAge. PersistentVolumes and EBS volumes follow their own reclaim policy"
     );
 }
 
@@ -563,7 +561,6 @@ fn orphan_pvc_cleanup_policy(cfg: &Config) -> Option<pvscan::OrphanPvcCleanupPol
     let c = &cfg.orphan_pvc_cleanup;
     c.enabled.then(|| pvscan::OrphanPvcCleanupPolicy {
         min_unused_age: c.min_unused_age,
-        notice_period: c.notice_period,
         reasons: c.reasons.clone(),
         include_namespaces: c.include_namespaces.clone(),
         exclude_namespaces: c.exclude_namespaces.clone(),

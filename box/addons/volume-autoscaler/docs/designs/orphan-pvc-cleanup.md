@@ -30,11 +30,13 @@ The policy is one cluster-wide block in the ConfigMap, disabled by default. Clea
 | Scaled-down StatefulSet claims count as referenced, forever | `statefulset_scaled_down` is a selectable reason | The scan already tells a live replica slot from a scale-down leftover, so the operator can choose |
 | A failed list reads as "no references" | Any failed workload list pauses cleanup for the pass | An API error must never be the reason data is deleted |
 
-kube-janitor's `--delete-notification` posts one Event before expiry. Here the notice is part of the lifecycle: the deadline is written to the claim, so the full notice is guaranteed even when cleanup is first enabled on claims unused for months.
+kube-janitor's `--delete-notification` posts one Event before expiry. Here the notice is part of the lifecycle: the deadline is written to the claim `alertBefore` ahead and never closer than that to the pass that writes it, so the notice is guaranteed even when cleanup is first enabled on claims unused for months.
 
-## The notice period and where its deadline lives
+## The notice and where its deadline lives
 
-The deadline is persisted in `orphan-pvc-delete-after` on the claim, for the same reason the scan persists `unused-since`: a restart, rollout, or leader failover must neither restart nor skip it. It is written on the first pass that finds the claim eligible and removed on the first pass that finds it ineligible, so a claim that leaves and re-enters eligibility gets a new, full notice. A notice shortened in config never pulls an announced deadline forward.
+The deadline is persisted in `orphan-pvc-delete-after` on the claim, for the same reason the scan persists `unused-since`: a restart, rollout, or leader failover must neither restart nor skip it. It is written on the first pass that finds the claim eligible and removed on the first pass that finds it ineligible, so a claim that leaves and re-enters eligibility is announced again. A setting changed in config never pulls an announced deadline forward.
+
+There is no separate notice setting. The deletion moment is `minUnusedAge`, the one number an operator reasons about ("unused for 72 hours"), and `alertBefore` is both when the claim is announced and the least notice any deletion gets. An earlier design added a `noticePeriod` after `minUnusedAge`, which made the real deletion age the sum of two settings and overlapped with `alertBefore`.
 
 While a claim is scheduled, the standing Event is the Warning `OrphanPvcDeletionScheduled` instead of the Normal `UnusedVolumeDetected`. Identification findings stay Normal because nothing is wrong. A scheduled deletion is the last chance to keep the data, which is what a Warning is for.
 

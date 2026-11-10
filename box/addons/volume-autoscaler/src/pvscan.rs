@@ -1323,7 +1323,6 @@ mod tests {
     fn orphan_policy(max: usize) -> OrphanPvcCleanupPolicy {
         OrphanPvcCleanupPolicy {
             min_unused_age: Duration::from_hours(48),
-            notice_period: Duration::from_hours(24),
             reasons: vec![REASON_NO_CONSUMER_POD.into()],
             include_namespaces: vec![],
             exclude_namespaces: vec!["kube-system".into()],
@@ -1702,10 +1701,21 @@ mod tests {
             }
         };
 
-        let (names, _) = run(orphan_inventory(now, None)).await;
+        let (names, _) = run(orphan_inventory(
+            now,
+            Some(now + chrono::TimeDelta::hours(10)),
+        ))
+        .await;
         assert!(
             names.is_empty(),
-            "scheduling 24h out is outside a 6h window"
+            "a deadline 10h out is outside a 6h window"
+        );
+
+        let (names, _) = run(orphan_inventory(now, None)).await;
+        assert_eq!(
+            names,
+            vec![ALERT_DELETION_UPCOMING],
+            "scheduling always lands inside the alert window"
         );
 
         let (names, patch) = run(orphan_inventory(

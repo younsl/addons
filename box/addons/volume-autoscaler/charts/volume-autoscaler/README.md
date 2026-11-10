@@ -128,16 +128,15 @@ The following table lists the configurable parameters and their default values.
 | config.throughputRecommendation.metricNodeNameLabel | string | `"node"` | Metric label holding the Node name (`node`, or `instance` for a plain node exporter) |
 | config.throughputRecommendation.lookbackWindow | string | `"7d"` | Observation window as a Prometheus duration (7d, 12h) |
 | config.throughputRecommendation.interval | string | `"30m"` | Recommendation interval |
-| config.orphanPvcCleanup | object | `{"alertBefore":"6h","alertEnabled":true,"enabled":false,"excludeNamespaces":["kube-system"],"includeNamespaces":[],"maxDeletionsPerPass":1,"minUnusedAge":"3d","noticePeriod":"24h","reasons":["no_consumer_pod","statefulset_scaled_down","unbound"]}` | Orphan PVC cleanup: deletes PersistentVolumeClaims the unused volume scan reports, never a PersistentVolume or EBS volume |
+| config.orphanPvcCleanup | object | `{"alertBefore":"6h","alertEnabled":true,"enabled":false,"excludeNamespaces":["kube-system"],"includeNamespaces":[],"maxDeletionsPerPass":1,"minUnusedAge":"3d","reasons":["no_consumer_pod","statefulset_scaled_down","unbound"]}` | Orphan PVC cleanup: deletes PersistentVolumeClaims the unused volume scan reports, never a PersistentVolume or EBS volume |
 | config.orphanPvcCleanup.enabled | bool | `false` | Enable deletion, requires the `unused-volume-scan` controller |
-| config.orphanPvcCleanup.minUnusedAge | string | `"3d"` | How long a claim stays unused before it is scheduled, at least 24h. Units `m`, `h`, `d` |
-| config.orphanPvcCleanup.noticePeriod | string | `"24h"` | Wait between scheduling and deletion, at least 1h |
+| config.orphanPvcCleanup.minUnusedAge | string | `"3d"` | How long a claim stays unused before it is deleted, at least 24h. Units `m`, `h`, `d` |
 | config.orphanPvcCleanup.reasons | list | `["no_consumer_pod","statefulset_scaled_down","unbound"]` | Unused reasons eligible for deletion: `no_consumer_pod`, `statefulset_scaled_down`, `unbound` |
 | config.orphanPvcCleanup.includeNamespaces | list | `[]` | Namespaces in scope, empty means all |
 | config.orphanPvcCleanup.excludeNamespaces | list | `["kube-system"]` | Namespaces never cleaned up |
 | config.orphanPvcCleanup.maxDeletionsPerPass | int | `1` | Max claims deleted per hourly scan, 1 to 100 |
 | config.orphanPvcCleanup.alertEnabled | bool | `true` | Alert upcoming, deleted, and failed deletions to Alertmanager, requires alertmanager.enabled |
-| config.orphanPvcCleanup.alertBefore | string | `"6h"` | Send the one upcoming deletion alert this long before the deadline, at least 1h |
+| config.orphanPvcCleanup.alertBefore | string | `"6h"` | Schedule the claim and send the one upcoming alert this long before deletion, at least 1h |
 | extraEnv | list | `[]` | Extra container env (EnvVar entries) |
 | extraEnvFrom | list | `[]` | Extra container envFrom sources |
 | ports.health | int | `8080` | Health port (/healthz, /readyz) |

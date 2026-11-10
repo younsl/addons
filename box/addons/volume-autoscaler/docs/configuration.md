@@ -48,8 +48,7 @@ throughputRecommendation:              # node gp3 throughput recommendations; se
   applyOnResize: true                  # piggyback an increase onto a size expansion; false keeps recommendations advisory-only
 orphanPvcCleanup:                      # deletes unused claims, never a volume; see orphan-pvc-cleanup.md
   enabled: false                       # requires the unused-volume-scan controller
-  minUnusedAge: 7d                     # at least 24h; the chart sets 3d
-  noticePeriod: 1d                     # wait between scheduling and deletion, at least 1h
+  minUnusedAge: 7d                     # deleted once unused this long, at least 24h; the chart sets 3d
   reasons:
     - no_consumer_pod
     - statefulset_scaled_down
@@ -58,7 +57,7 @@ orphanPvcCleanup:                      # deletes unused claims, never a volume; 
   excludeNamespaces: [kube-system]     # wins over includeNamespaces
   maxDeletionsPerPass: 1               # 1 to 100 per hourly scan
   alertEnabled: true                   # alert upcoming, deleted, failed; requires alertmanager.enabled
-  alertBefore: 6h                      # the one upcoming alert, this long before deletion; at least 1h
+  alertBefore: 6h                      # schedule and alert this long before deletion; at least 1h
 ```
 
 Every key exists since app version 0.1.0, except `orphanPvcCleanup`, which was added in 0.2.0.

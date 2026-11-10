@@ -100,7 +100,6 @@ pub struct MetricsBackend {
 pub struct OrphanPvcCleanup {
     pub enabled: bool,
     pub min_unused_age: Duration,
-    pub notice_period: Duration,
     pub reasons: Vec<String>,
     pub include_namespaces: Vec<String>,
     pub exclude_namespaces: Vec<String>,
@@ -352,7 +351,8 @@ impl Default for ThroughputFile {
 struct OrphanPvcCleanupFile {
     enabled: bool,
     min_unused_age: String,
-    notice_period: String,
+    /// Retired: deletion happens at `minUnusedAge`.
+    notice_period: Option<serde_yaml::Value>,
     reasons: Vec<String>,
     include_namespaces: Vec<String>,
     exclude_namespaces: Vec<String>,
@@ -368,17 +368,18 @@ impl OrphanPvcCleanupFile {
     fn parse(&self, fx: &mut Fixes) -> OrphanPvcCleanup {
         let d = Self::default();
         fx.unknown("orphanPvcCleanup.", &self.extra);
+        if self.notice_period.is_some() {
+            fx.push(
+                "orphanPvcCleanup.noticePeriod is no longer a config key and is ignored: a claim is deleted once unused for minUnusedAge, and scheduled alertBefore ahead"
+                    .into(),
+            );
+        }
         OrphanPvcCleanup {
             enabled: self.enabled,
             min_unused_age: fx.duration(
                 "orphanPvcCleanup.minUnusedAge",
                 &self.min_unused_age,
                 &d.min_unused_age,
-            ),
-            notice_period: fx.duration(
-                "orphanPvcCleanup.noticePeriod",
-                &self.notice_period,
-                &d.notice_period,
             ),
             reasons: self.reasons.clone(),
             include_namespaces: self.include_namespaces.clone(),
@@ -424,7 +425,7 @@ impl Default for OrphanPvcCleanupFile {
         Self {
             enabled: false,
             min_unused_age: "7d".into(),
-            notice_period: "1d".into(),
+            notice_period: None,
             reasons: crate::pvscan::UNUSED_PVC_REASONS
                 .iter()
                 .map(|r| (*r).to_string())
@@ -713,7 +714,6 @@ mod tests {
         let uc = &c.orphan_pvc_cleanup;
         assert!(!uc.enabled);
         assert_eq!(uc.min_unused_age, Duration::from_hours(168));
-        assert_eq!(uc.notice_period, Duration::from_hours(24));
         assert_eq!(
             uc.reasons,
             vec!["no_consumer_pod", "statefulset_scaled_down", "unbound"]
@@ -742,6 +742,10 @@ mod tests {
             (
                 with("throughputRecommendation:\n  prometheusTenantId: t\n"),
                 "metrics.url",
+            ),
+            (
+                with("orphanPvcCleanup:\n  noticePeriod: 24h\n"),
+                "deleted once unused for minUnusedAge",
             ),
         ] {
             let c = parse(&raw, &env()).unwrap();
@@ -800,7 +804,6 @@ mod tests {
             orphanPvcCleanup:
               enabled: true
               minUnusedAge: 30d
-              noticePeriod: 72h
               reasons: [no_consumer_pod, statefulset_scaled_down]
               includeNamespaces: [legacy]
               excludeNamespaces: []
@@ -860,7 +863,6 @@ mod tests {
         let uc = &c.orphan_pvc_cleanup;
         assert!(uc.enabled);
         assert_eq!(uc.min_unused_age, Duration::from_hours(720));
-        assert_eq!(uc.notice_period, Duration::from_hours(72));
         assert_eq!(
             uc.reasons,
             vec!["no_consumer_pod", "statefulset_scaled_down"]
@@ -1028,16 +1030,6 @@ mod tests {
                 with("orphanPvcCleanup:\n  minUnusedAge: 12h\n"),
                 "orphanPvcCleanup.minUnusedAge must be at least 24h",
                 Box::new(|c| c.orphan_pvc_cleanup.min_unused_age == Duration::from_hours(24)),
-            ),
-            (
-                with("orphanPvcCleanup:\n  noticePeriod: 30m\n"),
-                "orphanPvcCleanup.noticePeriod must be at least 1h",
-                Box::new(|c| c.orphan_pvc_cleanup.notice_period == Duration::from_hours(1)),
-            ),
-            (
-                with("orphanPvcCleanup:\n  noticePeriod: x\n"),
-                "invalid orphanPvcCleanup.noticePeriod",
-                Box::new(|c| c.orphan_pvc_cleanup.notice_period == Duration::from_hours(24)),
             ),
             (
                 with("orphanPvcCleanup:\n  alertBefore: 30m\n"),
