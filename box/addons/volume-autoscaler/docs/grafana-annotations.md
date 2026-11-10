@@ -36,6 +36,8 @@ dashboard that subscribes to the configured tags renders the markers. Annotating
 is disabled by default and turns on only when you set an enable flag, a URL, and
 a service account token.
 
+![Grafana annotations](assets/grafana-annotations.svg)
+
 ## How annotations are posted
 
 The addon posts one annotation per resize attempt.
