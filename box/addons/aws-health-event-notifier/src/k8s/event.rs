@@ -33,6 +33,26 @@ pub fn build(event: &HealthEvent, reminder_offset_hours: Option<u32>) -> Event {
     }
 }
 
+/// Warning for a send whose Slack outcome is unknown and will not be retried.
+pub fn delivery_unknown(arn: &str, reminder_offset_hours: Option<u32>) -> Event {
+    let what = reminder_offset_hours.map_or_else(
+        || "Notification".to_string(),
+        |h| format!("Reminder (T-{h}h)"),
+    );
+    Event {
+        type_: EventType::Warning,
+        reason: "DeliveryUnknown".into(),
+        action: "Notify".into(),
+        note: Some(truncate(
+            &format!(
+                "{what} for {arn} may not have reached Slack and will not be retried. Check the channel."
+            ),
+            NOTE_MAX,
+        )),
+        secondary: None,
+    }
+}
+
 /// `Warning` for anything actively impacting or under investigation; `Normal`
 /// for purely informational scheduled changes and account notices.
 fn severity(category: Option<&str>) -> EventType {
@@ -134,6 +154,16 @@ mod tests {
         assert_eq!(ev.action, "Remind");
         assert!(matches!(ev.type_, EventType::Normal));
         assert!(ev.note.unwrap().starts_with("Reminder (T-24h): "));
+    }
+
+    #[test]
+    fn delivery_unknown_is_warning_with_arn() {
+        let ev = delivery_unknown("arn:1", None);
+        assert!(matches!(ev.type_, EventType::Warning));
+        assert_eq!(ev.reason, "DeliveryUnknown");
+        assert!(ev.note.unwrap().starts_with("Notification for arn:1"));
+        let ev = delivery_unknown("arn:1", Some(24));
+        assert!(ev.note.unwrap().starts_with("Reminder (T-24h) for arn:1"));
     }
 
     #[test]

@@ -1,5 +1,9 @@
+use std::time::Duration;
+
 use clap::{Args, Parser, Subcommand};
 use secrecy::SecretString;
+
+use crate::error::{AppError, AppResult};
 
 /// Polls the AWS Health API and forwards events to Slack.
 #[derive(Debug, Parser)]
@@ -72,6 +76,9 @@ pub struct RunArgs {
 
     #[command(flatten)]
     pub k8s: K8sArgs,
+
+    #[command(flatten)]
+    pub leader_election: LeaderElectionArgs,
 
     /// Poll interval against the AWS Health API.
     #[arg(long, env = "POLL_INTERVAL_SECS", default_value_t = 60)]
@@ -164,6 +171,76 @@ pub struct K8sArgs {
     pub pod_uid: Option<String>,
 }
 
+/// Lease-based leader election with a `ConfigMap` delivery ledger, so several
+/// replicas can run without posting the same event twice.
+#[derive(Debug, Args)]
+pub struct LeaderElectionArgs {
+    /// Elect one active replica through a Lease. Requires running in-cluster.
+    #[arg(
+        long = "leader-election",
+        env = "LEADER_ELECTION",
+        default_value_t = false
+    )]
+    pub enabled: bool,
+
+    /// Name of the `coordination.k8s.io` Lease used for election.
+    #[arg(
+        long,
+        env = "LEASE_NAME",
+        default_value = "aws-health-event-notifier-leader"
+    )]
+    pub lease_name: String,
+
+    /// Name of the `ConfigMap` holding the delivery ledger.
+    #[arg(
+        long,
+        env = "LEDGER_CONFIGMAP",
+        default_value = "aws-health-event-notifier-ledger"
+    )]
+    pub ledger_configmap: String,
+
+    /// How long a Lease stays valid without renewal before a standby takes it.
+    #[arg(long, env = "LEASE_DURATION_SECS", default_value_t = 15)]
+    pub lease_duration_secs: u64,
+
+    /// How long the leader keeps acting without a successful renewal.
+    #[arg(long, env = "RENEW_DEADLINE_SECS", default_value_t = 10)]
+    pub renew_deadline_secs: u64,
+
+    /// Interval between acquire or renew attempts.
+    #[arg(long, env = "RETRY_PERIOD_SECS", default_value_t = 2)]
+    pub retry_period_secs: u64,
+}
+
+impl LeaderElectionArgs {
+    pub const fn lease_duration(&self) -> Duration {
+        Duration::from_secs(self.lease_duration_secs)
+    }
+
+    pub const fn renew_deadline(&self) -> Duration {
+        Duration::from_secs(self.renew_deadline_secs)
+    }
+
+    pub const fn retry_period(&self) -> Duration {
+        Duration::from_secs(self.retry_period_secs)
+    }
+
+    /// Requires `0 < retryPeriod < renewDeadline < leaseDuration`, so the
+    /// leader stops acting before a standby may take the Lease.
+    pub fn validate(&self) -> AppResult<()> {
+        if self.retry_period_secs == 0
+            || self.retry_period_secs >= self.renew_deadline_secs
+            || self.renew_deadline_secs >= self.lease_duration_secs
+        {
+            return Err(AppError::Config(format!(
+                "leader election requires 0 < retry period ({}s) < renew deadline ({}s) < lease duration ({}s)",
+                self.retry_period_secs, self.renew_deadline_secs, self.lease_duration_secs
+            )));
+        }
+        Ok(())
+    }
+}
+
 #[derive(Debug, Args)]
 pub struct SendArgs {
     /// Lookback window for the event list (hours).
@@ -189,4 +266,42 @@ pub struct SendArgs {
     /// Don't prompt for confirmation before sending.
     #[arg(long, env = "SEND_YES", default_value_t = false)]
     pub yes: bool,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn args(lease: u64, renew: u64, retry: u64) -> LeaderElectionArgs {
+        LeaderElectionArgs {
+            enabled: true,
+            lease_name: "l".into(),
+            ledger_configmap: "c".into(),
+            lease_duration_secs: lease,
+            renew_deadline_secs: renew,
+            retry_period_secs: retry,
+        }
+    }
+
+    #[test]
+    fn leader_election_timing_must_be_ordered() {
+        let ok = args(15, 10, 2);
+        assert!(ok.validate().is_ok());
+        assert_eq!(ok.lease_duration(), Duration::from_secs(15));
+        assert_eq!(ok.renew_deadline(), Duration::from_secs(10));
+        assert_eq!(ok.retry_period(), Duration::from_secs(2));
+        assert!(args(10, 10, 2).validate().is_err());
+        assert!(args(15, 10, 10).validate().is_err());
+        assert!(args(15, 10, 0).validate().is_err());
+    }
+
+    #[test]
+    fn leader_election_defaults_off() {
+        let cli = Cli::parse_from(["ahen", "--slack-webhook-url", "https://example.com", "run"]);
+        let Some(Command::Run(run)) = cli.command else {
+            panic!("expected run");
+        };
+        assert!(!run.leader_election.enabled);
+        assert!(run.leader_election.validate().is_ok());
+    }
 }

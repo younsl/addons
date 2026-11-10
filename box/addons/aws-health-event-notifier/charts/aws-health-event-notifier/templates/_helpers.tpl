@@ -82,3 +82,14 @@ Accepts either a raw string or a structured value (renders via toYaml first).
 {{ tpl (.value | toYaml) .context }}
 {{- end -}}
 {{- end -}}
+
+{{/*
+Leader election Lease and delivery ledger ConfigMap names.
+*/}}
+{{- define "ahen.leaseName" -}}
+{{- printf "%s-leader" (include "ahen.fullname" .) -}}
+{{- end -}}
+
+{{- define "ahen.ledgerName" -}}
+{{- printf "%s-ledger" (include "ahen.fullname" .) -}}
+{{- end -}}

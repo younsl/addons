@@ -19,6 +19,10 @@ The daemon exposes metrics at `GET /metrics` on the admin port
 | `aws_health_event_k8s_events_total` | Counter | `outcome` | Kubernetes Event creation attempts (only when running in-cluster). |
 | `aws_health_event_reminders_sent_total` | Counter | `offset_hours` | Reminders fired, per configured offset. |
 | `aws_health_event_poll_cycles_total` | Counter | `outcome` | AWS Health API poll cycles. |
+| `aws_health_event_leader` | Gauge | none | 1 while this replica holds the leader Lease. Always 1 without leader election. |
+| `aws_health_event_leader_transitions_total` | Counter | none | Leader Lease acquisitions by this replica. |
+| `aws_health_event_ledger_conflicts_total` | Counter | none | Ledger writes rejected because another replica claimed the ledger. |
+| `aws_health_event_delivery_unknown_total` | Counter | none | Sends whose Slack outcome is unknown and that will not be retried. |
 
 ## Label values
 
@@ -39,6 +43,18 @@ The daemon exposes metrics at `GET /metrics` on the admin port
   cycle.
 
 ## Example queries
+
+**Possibly lost notifications**: sends whose Slack outcome is unknown (5xx or timeout after 3 attempts, or in flight during a leader change). Each one also emits a `DeliveryUnknown` Warning Event naming the ARN, so an operator can check the channel.
+
+```promql
+sum(increase(aws_health_event_delivery_unknown_total[15m])) > 0
+```
+
+**Leader count**: exactly one replica should lead under leader election.
+
+```promql
+sum(aws_health_event_leader) != 1
+```
 
 **Slack delivery error rate (5m)**: fraction of webhook posts that failed.
 Alert when sustained above a threshold; the primary signal that notifications

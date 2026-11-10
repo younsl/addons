@@ -40,7 +40,10 @@ impl K8sEventClient {
         let client = Client::try_default()
             .await
             .context("build in-cluster kube client (is this running inside a pod?)")?;
+        Ok(Self::new(client, pod))
+    }
 
+    pub fn new(client: Client, pod: PodIdentity) -> Self {
         let reporter = Reporter {
             controller: env!("CARGO_PKG_NAME").into(),
             instance: Some(pod.name.clone()),
@@ -56,12 +59,12 @@ impl K8sEventClient {
             ..Default::default()
         };
 
-        Ok(Self {
+        Self {
             client,
             namespace: pod.namespace,
             recorder,
             reference,
-        })
+        }
     }
 
     /// Preflight RBAC check: may this `ServiceAccount` `create` Kubernetes
@@ -69,25 +72,17 @@ impl K8sEventClient {
     /// identity may submit without extra permissions. `Ok(false)` means the
     /// RBAC is missing; `Err` means the check itself could not be performed.
     pub async fn can_create_events(&self) -> anyhow::Result<bool> {
-        let review = SelfSubjectAccessReview {
-            spec: SelfSubjectAccessReviewSpec {
-                resource_attributes: Some(ResourceAttributes {
-                    namespace: Some(self.namespace.clone()),
-                    verb: Some("create".into()),
-                    group: Some("events.k8s.io".into()),
-                    resource: Some("events".into()),
-                    ..Default::default()
-                }),
-                ..Default::default()
+        can_i(
+            &self.client,
+            &self.namespace,
+            &Access {
+                group: "events.k8s.io",
+                resource: "events",
+                verb: "create",
+                name: None,
             },
-            ..Default::default()
-        };
-        let api: Api<SelfSubjectAccessReview> = Api::all(self.client.clone());
-        let resp = api
-            .create(&PostParams::default(), &review)
-            .await
-            .context("SelfSubjectAccessReview request failed")?;
-        Ok(resp.status.is_some_and(|s| s.allowed))
+        )
+        .await
     }
 
     /// Publish a Kubernetes Event for the given Health event.
@@ -101,5 +96,116 @@ impl K8sEventClient {
             .publish(&ev, &self.reference)
             .await
             .map_err(|e| AppError::K8s(format!("publish event: {e}")))
+    }
+
+    /// Warn that a send's Slack outcome is unknown and it will not be retried.
+    pub async fn emit_delivery_unknown(
+        &self,
+        arn: &str,
+        reminder_offset_hours: Option<u32>,
+    ) -> AppResult<()> {
+        let ev = event::delivery_unknown(arn, reminder_offset_hours);
+        self.recorder
+            .publish(&ev, &self.reference)
+            .await
+            .map_err(|e| AppError::K8s(format!("publish event: {e}")))
+    }
+}
+
+/// One permission to check. `name` matters when the Role scopes the verb
+/// with `resourceNames`.
+pub struct Access<'a> {
+    pub group: &'a str,
+    pub resource: &'a str,
+    pub verb: &'a str,
+    pub name: Option<&'a str>,
+}
+
+/// Preflight RBAC check through `SelfSubjectAccessReview`, which any
+/// authenticated identity may submit. `Ok(false)` means the permission is
+/// missing, `Err` means the check itself could not be performed.
+pub async fn can_i(client: &Client, namespace: &str, access: &Access<'_>) -> anyhow::Result<bool> {
+    let review = SelfSubjectAccessReview {
+        spec: SelfSubjectAccessReviewSpec {
+            resource_attributes: Some(ResourceAttributes {
+                namespace: Some(namespace.to_string()),
+                verb: Some(access.verb.to_string()),
+                group: Some(access.group.to_string()),
+                resource: Some(access.resource.to_string()),
+                name: access.name.map(str::to_string),
+                ..Default::default()
+            }),
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    let api: Api<SelfSubjectAccessReview> = Api::all(client.clone());
+    let resp = api
+        .create(&PostParams::default(), &review)
+        .await
+        .context("SelfSubjectAccessReview request failed")?;
+    Ok(resp.status.is_some_and(|s| s.allowed))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::k8s::fake::FakeApiServer;
+
+    fn pod() -> PodIdentity {
+        PodIdentity {
+            name: "ahen-0".into(),
+            namespace: "ns".into(),
+            uid: Some("uid".into()),
+        }
+    }
+
+    #[tokio::test]
+    async fn can_i_reflects_review_answer() {
+        let server = FakeApiServer::start().await;
+        let client = server.client();
+        let access = Access {
+            group: "",
+            resource: "configmaps",
+            verb: "update",
+            name: Some("ledger"),
+        };
+        assert!(can_i(&client, "ns", &access).await.unwrap());
+        server.deny("configmaps", "update");
+        assert!(!can_i(&client, "ns", &access).await.unwrap());
+        assert!(
+            K8sEventClient::new(client, pod())
+                .can_create_events()
+                .await
+                .unwrap()
+        );
+    }
+
+    #[tokio::test]
+    async fn can_i_fails_when_review_fails() {
+        let server = FakeApiServer::start().await;
+        server.fail_all();
+        assert!(
+            can_i(
+                &server.client(),
+                "ns",
+                &Access {
+                    group: "coordination.k8s.io",
+                    resource: "leases",
+                    verb: "get",
+                    name: None,
+                },
+            )
+            .await
+            .is_err()
+        );
+    }
+
+    #[tokio::test]
+    async fn emit_delivery_unknown_posts_event() {
+        let server = FakeApiServer::start().await;
+        let client = K8sEventClient::new(server.client(), pod());
+        client.emit_delivery_unknown("arn:1", None).await.unwrap();
+        assert_eq!(server.post_count("/events/"), 1);
     }
 }

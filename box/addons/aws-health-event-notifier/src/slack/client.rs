@@ -1,10 +1,13 @@
 use std::time::Duration;
 
-use reqwest::{Client, Url};
+use reqwest::{Client, StatusCode, Url};
 use secrecy::{ExposeSecret, SecretString};
 use serde_json::Value;
 
 use crate::error::{AppError, AppResult};
+use crate::slack::error::SlackError;
+
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(3);
 
 #[derive(Clone)]
 pub struct SlackClient {
@@ -21,6 +24,7 @@ impl SlackClient {
     pub fn new(webhook_url: &SecretString, timeout: Duration) -> AppResult<Self> {
         let webhook_url = validate_webhook_url(webhook_url.expose_secret())?;
         let http = Client::builder()
+            .connect_timeout(CONNECT_TIMEOUT.min(timeout))
             .timeout(timeout)
             .user_agent(concat!(
                 "aws-health-event-notifier/",
@@ -31,21 +35,43 @@ impl SlackClient {
         Ok(Self { http, webhook_url })
     }
 
-    pub async fn post(&self, payload: &Value) -> AppResult<()> {
+    pub async fn post(&self, payload: &Value) -> Result<(), SlackError> {
         let resp = self
             .http
             .post(self.webhook_url.clone())
             .json(payload)
             .send()
             .await
-            .map_err(|e| AppError::Slack(format!("request failed: {e}")))?;
+            .map_err(|e| classify_transport(&e))?;
 
         let status = resp.status();
-        if !status.is_success() {
-            let body = resp.text().await.unwrap_or_default();
-            return Err(AppError::Slack(format!("status={status} body={body}")));
+        if status.is_success() {
+            return Ok(());
         }
-        Ok(())
+        let body = resp.text().await.unwrap_or_default();
+        Err(classify_status(status, &body))
+    }
+}
+
+/// Only a failure to connect proves the request never reached Slack.
+fn classify_transport(e: &reqwest::Error) -> SlackError {
+    if e.is_connect() || e.is_builder() {
+        SlackError::NotPosted(format!("request failed: {e}"))
+    } else {
+        SlackError::Ambiguous(format!("request failed: {e}"))
+    }
+}
+
+fn classify_status(status: StatusCode, body: &str) -> SlackError {
+    let detail = format!("status={status} body={body}");
+    if status == StatusCode::TOO_MANY_REQUESTS {
+        SlackError::RateLimited(detail)
+    } else if status == StatusCode::BAD_REQUEST && body.contains("invalid_payload") {
+        SlackError::InvalidPayload(detail)
+    } else if status.is_client_error() {
+        SlackError::NotPosted(detail)
+    } else {
+        SlackError::Ambiguous(detail)
     }
 }
 
@@ -115,23 +141,67 @@ mod tests {
         assert!(c.post(&json!({"text": "hi"})).await.is_ok());
     }
 
-    #[tokio::test]
-    async fn post_errors_on_non_2xx() {
+    async fn post_with_status(status: u16, body: &str) -> SlackError {
         let server = MockServer::start().await;
         Mock::given(method("POST"))
-            .respond_with(ResponseTemplate::new(403).set_body_string("invalid_token"))
+            .respond_with(ResponseTemplate::new(status).set_body_string(body))
             .mount(&server)
             .await;
-        let c = client(&server.uri());
-        let err = c.post(&json!({"text": "hi"})).await.unwrap_err();
-        assert!(matches!(err, AppError::Slack(m) if m.contains("403")));
+        client(&server.uri())
+            .post(&json!({"text": "hi"}))
+            .await
+            .unwrap_err()
     }
 
     #[tokio::test]
-    async fn post_errors_on_connection_failure() {
+    async fn post_4xx_is_not_posted() {
+        let err = post_with_status(403, "invalid_token").await;
+        assert!(matches!(&err, SlackError::NotPosted(m) if m.contains("403")));
+        assert!(err.is_retry_safe());
+    }
+
+    #[tokio::test]
+    async fn post_429_is_rate_limited() {
+        let err = post_with_status(429, "rate_limited").await;
+        assert!(matches!(err, SlackError::RateLimited(_)));
+        assert!(err.is_retry_safe());
+    }
+
+    #[tokio::test]
+    async fn post_invalid_payload_is_permanent() {
+        let err = post_with_status(400, "invalid_payload").await;
+        assert!(matches!(err, SlackError::InvalidPayload(_)));
+        assert!(!err.is_retry_safe());
+    }
+
+    #[tokio::test]
+    async fn post_5xx_is_ambiguous() {
+        let err = post_with_status(500, "rollup_error").await;
+        assert!(matches!(err, SlackError::Ambiguous(_)));
+        assert!(!err.is_retry_safe());
+    }
+
+    #[tokio::test]
+    async fn post_timeout_after_send_is_ambiguous() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .respond_with(ResponseTemplate::new(200).set_delay(Duration::from_secs(3)))
+            .mount(&server)
+            .await;
+        let c = SlackClient::new(
+            &SecretString::from(server.uri()),
+            Duration::from_millis(200),
+        )
+        .unwrap();
+        let err = c.post(&json!({"text": "hi"})).await.unwrap_err();
+        assert!(matches!(err, SlackError::Ambiguous(_)));
+    }
+
+    #[tokio::test]
+    async fn post_connection_failure_is_not_posted() {
         // Unroutable port: request itself fails before any response.
         let c = client("http://127.0.0.1:1/hook");
         let err = c.post(&json!({"text": "hi"})).await.unwrap_err();
-        assert!(matches!(err, AppError::Slack(m) if m.contains("request failed")));
+        assert!(matches!(err, SlackError::NotPosted(m) if m.contains("request failed")));
     }
 }

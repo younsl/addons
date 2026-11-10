@@ -1,11 +1,12 @@
 mod aws;
 mod config;
-mod dedup;
 mod error;
 mod filter;
 mod health;
 mod interactive;
 mod k8s;
+mod leader;
+mod ledger;
 mod notify;
 mod observability;
 mod poller;

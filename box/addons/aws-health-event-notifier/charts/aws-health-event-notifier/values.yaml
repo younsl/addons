@@ -101,6 +101,19 @@ rbac:
   # Disable to manage the RBAC yourself (the SA still needs those verbs).
   create: true
 
+# Lease-based leader election with a ConfigMap delivery ledger. Set
+# replicaCount to 2 or more when enabled. Only the leader polls and posts, and
+# the ledger keeps a replica that lost the Lease from posting the same event twice.
+leaderElection:
+  # -- (bool) Elect one active replica through a Lease (`<fullname>-leader`) and record deliveries in a ConfigMap (`<fullname>-ledger`).
+  enabled: false
+  # -- (int) Seconds a Lease stays valid without renewal before a standby takes it.
+  leaseDurationSeconds: 15
+  # -- (int) Seconds the leader keeps acting without a successful renewal. Must be less than leaseDurationSeconds.
+  renewDeadlineSeconds: 10
+  # -- (int) Seconds between acquire or renew attempts. Must be less than renewDeadlineSeconds.
+  retryPeriodSeconds: 2
+
 podDisruptionBudget:
   # -- (bool) Whether to create a PodDisruptionBudget.
   enabled: true

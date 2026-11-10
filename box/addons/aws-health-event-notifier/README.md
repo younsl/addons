@@ -22,6 +22,7 @@ A pull-model daemon: the pod queries the AWS Health [DescribeEvents](https://doc
 - **Pull model**: Polls the AWS Health API directly; no EventBridge or webhook ingress
 - **Cold-start suppression**: Populates the dedup cache without sending on restart to prevent replay floods
 - **In-process filtering**: Allow/deny by [event type category](https://docs.aws.amazon.com/health/latest/ug/aws-health-concepts-and-terms.html), AWS service code, region, and `SERVICE/EVENT_TYPE_CODE` pair (e.g. drop `VPN/AWS_VPN_REDUNDANCY_LOSS` while keeping other VPN events, or drop a Direct Connect outage in an unused region while still paging on one at home); the Helm chart manages all filter settings in a ConfigMap and rolls pods on change
+- **High availability**: Optional Lease-based leader election with a ConfigMap delivery ledger, so two or more replicas run without posting the same event twice
 - **Scheduled reminders**: Fires reminders at configurable offsets before a scheduled event's start time
 - **Kubernetes Events**: Emits a K8s Event per alarm on its own Pod, best-effort alongside Slack
 - **Interactive send**: send subcommand multi-selects recent events and forwards them on demand
@@ -30,6 +31,7 @@ A pull-model daemon: the pod queries the AWS Health [DescribeEvents](https://doc
 
 ## Documentation
 
+- [Leader election design](docs/designs/leader-election.md): lease-based HA without duplicate Slack posts
 - [Region filtering design](docs/designs/region-filtering.md): why region is a filter dimension, and its semantics
 - [Metrics](docs/metrics.md): Prometheus metric list, label values, example queries
 - [Helm values](charts/aws-health-event-notifier/values.yaml): Chart configuration reference
@@ -83,6 +85,9 @@ All settings are CLI flags backed by environment variables. Key ones:
 | ALLOW_REGIONS / DENY_REGIONS | _(empty)_ | Filter by AWS region code (`global` always allowed unless denied) |
 | ALLOW_EVENT_CODES / DENY_EVENT_CODES | _(empty)_ | Filter by `SERVICE/EVENT_TYPE_CODE` pair (e.g. VPN/AWS_VPN_REDUNDANCY_LOSS) |
 | REMINDER_OFFSETS_HOURS | 24 | Reminder offsets before start time |
+| LEADER_ELECTION | false | Elect one active replica through a Lease, record deliveries in a ConfigMap |
+| LEASE_NAME / LEDGER_CONFIGMAP | aws-health-event-notifier-leader / -ledger | Lease and ledger ConfigMap names |
+| LEASE_DURATION_SECS / RENEW_DEADLINE_SECS / RETRY_PERIOD_SECS | 15 / 10 / 2 | Election timing |
 | ADMIN_ADDR | 0.0.0.0:8081 | Admin server (/healthz, /readyz, /metrics) |
 
 ## Development

@@ -4,6 +4,7 @@ use prometheus_client::encoding::EncodeLabelSet;
 use prometheus_client::encoding::text::encode;
 use prometheus_client::metrics::counter::Counter;
 use prometheus_client::metrics::family::Family;
+use prometheus_client::metrics::gauge::Gauge;
 use prometheus_client::registry::Registry;
 
 #[derive(Clone, Hash, PartialEq, Eq, EncodeLabelSet, Debug)]
@@ -41,6 +42,10 @@ struct MetricsInner {
     pub poll_cycles: Family<OutcomeLabels, Counter>,
     pub reminders_sent: Family<ReminderLabels, Counter>,
     pub k8s_events: Family<OutcomeLabels, Counter>,
+    pub leader: Gauge,
+    pub leader_transitions: Counter,
+    pub ledger_conflicts: Counter,
+    pub delivery_unknown: Counter,
 }
 
 impl Metrics {
@@ -52,6 +57,10 @@ impl Metrics {
         let poll_cycles = Family::<OutcomeLabels, Counter>::default();
         let reminders_sent = Family::<ReminderLabels, Counter>::default();
         let k8s_events = Family::<OutcomeLabels, Counter>::default();
+        let leader = Gauge::default();
+        let leader_transitions = Counter::default();
+        let ledger_conflicts = Counter::default();
+        let delivery_unknown = Counter::default();
 
         registry.register(
             "aws_health_event_received_total",
@@ -83,6 +92,26 @@ impl Metrics {
             "Kubernetes Event creation attempts by outcome",
             k8s_events.clone(),
         );
+        registry.register(
+            "aws_health_event_leader",
+            "1 while this replica holds the leader Lease",
+            leader.clone(),
+        );
+        registry.register(
+            "aws_health_event_leader_transitions",
+            "Leader Lease acquisitions by this replica",
+            leader_transitions.clone(),
+        );
+        registry.register(
+            "aws_health_event_ledger_conflicts",
+            "Ledger writes rejected because another replica claimed the ledger",
+            ledger_conflicts.clone(),
+        );
+        registry.register(
+            "aws_health_event_delivery_unknown",
+            "Sends whose Slack outcome is unknown and that will not be retried",
+            delivery_unknown.clone(),
+        );
 
         Self {
             inner: Arc::new(MetricsInner {
@@ -93,6 +122,10 @@ impl Metrics {
                 poll_cycles,
                 reminders_sent,
                 k8s_events,
+                leader,
+                leader_transitions,
+                ledger_conflicts,
+                delivery_unknown,
             }),
         }
     }
@@ -153,6 +186,21 @@ impl Metrics {
             .inc();
     }
 
+    pub fn set_leader(&self, is_leader: bool) {
+        self.inner.leader.set(i64::from(is_leader));
+        if is_leader {
+            self.inner.leader_transitions.inc();
+        }
+    }
+
+    pub fn record_ledger_conflict(&self) {
+        self.inner.ledger_conflicts.inc();
+    }
+
+    pub fn record_delivery_unknown(&self) {
+        self.inner.delivery_unknown.inc();
+    }
+
     pub fn render(&self) -> String {
         let mut out = String::new();
         encode(&mut out, &self.inner.registry).unwrap_or_default();
@@ -180,6 +228,9 @@ mod tests {
         m.record_poll("ok");
         m.record_reminder(24);
         m.record_k8s_event("ok");
+        m.set_leader(true);
+        m.record_ledger_conflict();
+        m.record_delivery_unknown();
 
         let out = m.render();
         assert!(out.contains("aws_health_event_received_total"));
@@ -188,6 +239,10 @@ mod tests {
         assert!(out.contains("aws_health_event_poll_cycles_total"));
         assert!(out.contains("aws_health_event_reminders_sent_total"));
         assert!(out.contains("aws_health_event_k8s_events_total"));
+        assert!(out.contains("aws_health_event_leader 1"));
+        assert!(out.contains("aws_health_event_leader_transitions_total 1"));
+        assert!(out.contains("aws_health_event_ledger_conflicts_total 1"));
+        assert!(out.contains("aws_health_event_delivery_unknown_total 1"));
         // Label values surfaced.
         assert!(out.contains("service=\"EC2\""));
         assert!(out.contains("offset_hours=\"24\""));

@@ -131,6 +131,27 @@
         }
       }
     },
+    "leaderElection": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "leaseDurationSeconds": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "renewDeadlineSeconds": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "retryPeriodSeconds": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
     "podDisruptionBudget": {
       "type": "object",
       "additionalProperties": false,

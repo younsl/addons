@@ -73,6 +73,20 @@ spec:
             - name: REMINDER_OFFSETS_HOURS
               value: {{ join "," . | quote }}
             {{- end }}
+            {{- if .Values.leaderElection.enabled }}
+            - name: LEADER_ELECTION
+              value: "true"
+            - name: LEASE_NAME
+              value: {{ include "ahen.leaseName" . | quote }}
+            - name: LEDGER_CONFIGMAP
+              value: {{ include "ahen.ledgerName" . | quote }}
+            - name: LEASE_DURATION_SECS
+              value: {{ .Values.leaderElection.leaseDurationSeconds | quote }}
+            - name: RENEW_DEADLINE_SECS
+              value: {{ .Values.leaderElection.renewDeadlineSeconds | quote }}
+            - name: RETRY_PERIOD_SECS
+              value: {{ .Values.leaderElection.retryPeriodSeconds | quote }}
+            {{- end }}
             {{- with .Values.slack.channel }}
             - name: SLACK_CHANNEL
               value: {{ . | quote }}

@@ -1,6 +1,6 @@
 # aws-health-event-notifier
 
-![Version: 0.4.0](https://img.shields.io/badge/Version-0.4.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.3.0](https://img.shields.io/badge/AppVersion-0.3.0-informational?style=flat-square)
+![Version: 0.5.0](https://img.shields.io/badge/Version-0.5.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.4.0](https://img.shields.io/badge/AppVersion-0.4.0-informational?style=flat-square)
 
 Receives AWS Health events and posts them to Slack
 
@@ -39,7 +39,7 @@ helm install aws-health-event-notifier oci://ghcr.io/younsl/charts/aws-health-ev
 Install a specific version:
 
 ```console
-helm install aws-health-event-notifier oci://ghcr.io/younsl/charts/aws-health-event-notifier --version 0.4.0
+helm install aws-health-event-notifier oci://ghcr.io/younsl/charts/aws-health-event-notifier --version 0.5.0
 ```
 
 ### Install from local chart
@@ -47,7 +47,7 @@ helm install aws-health-event-notifier oci://ghcr.io/younsl/charts/aws-health-ev
 Download aws-health-event-notifier chart and install from local directory:
 
 ```console
-helm pull oci://ghcr.io/younsl/charts/aws-health-event-notifier --untar --version 0.4.0
+helm pull oci://ghcr.io/younsl/charts/aws-health-event-notifier --untar --version 0.5.0
 helm install aws-health-event-notifier ./aws-health-event-notifier
 ```
 
@@ -101,6 +101,10 @@ The following table lists the configurable parameters and their default values.
 | poller.eventLocale | string | `"en"` | Locale passed to `DescribeEventDetails` (AWS accepts en, ja, zh, not en_US). |
 | poller.reminderOffsetsHours | list | `[24]` | Reminder offsets in hours before `startTime`. A reminder fires once per `(eventArn, offset)` when `startTime - now <= offset`. Reminders only fire for events that have an `endTime` set (i.e., scheduled-window events). Empty list disables reminders. |
 | rbac.create | bool | `true` | Create a Role + RoleBinding granting create/patch on Events. Disable to manage the RBAC yourself (the SA still needs those verbs). |
+| leaderElection.enabled | bool | `false` | Elect one active replica through a Lease (`<fullname>-leader`) and record deliveries in a ConfigMap (`<fullname>-ledger`). |
+| leaderElection.leaseDurationSeconds | int | `15` | Seconds a Lease stays valid without renewal before a standby takes it. |
+| leaderElection.renewDeadlineSeconds | int | `10` | Seconds the leader keeps acting without a successful renewal. Must be less than leaseDurationSeconds. |
+| leaderElection.retryPeriodSeconds | int | `2` | Seconds between acquire or renew attempts. Must be less than renewDeadlineSeconds. |
 | podDisruptionBudget.enabled | bool | `true` | Whether to create a PodDisruptionBudget. |
 | podDisruptionBudget.maxUnavailable | int | `1` | Maximum number of pods that can be unavailable during disruption. |
 | podDisruptionBudget.unhealthyPodEvictionPolicy | string | `"IfHealthyBudget"` | Eviction policy for unhealthy pods. One of `IfHealthyBudget` or `AlwaysAllow`. |

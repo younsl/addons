@@ -11,14 +11,185 @@ use crate::aws::account::AccountIdentity;
 use crate::aws::health::HealthClient;
 use crate::config::{RunArgs, SlackArgs};
 use crate::filter::{Catalogs, EventFilter, FilterLists, ServiceEventCode, validate_filters};
-use crate::k8s::client::{K8sEventClient, PodIdentity};
+use crate::k8s::client::{Access, K8sEventClient, PodIdentity, can_i};
+use crate::k8s::lease::LeaseLock;
+use crate::k8s::ledger_store::LedgerStore;
+use crate::leader::{Elector, ElectorCfg};
+use crate::ledger::journal::Journal;
 use crate::notify::{Notifier, SlackOpts};
 use crate::observability::metrics::Metrics;
 use crate::poller::{Poller, PollerCfg};
 use crate::slack::client::SlackClient;
 
+/// RBAC the leader-elected mode needs. `get` and `update` are checked against
+/// the named objects, matching a Role scoped with `resourceNames`.
+const fn ha_permissions<'a>(lease: &'a str, ledger: &'a str) -> [Access<'a>; 7] {
+    [
+        access("coordination.k8s.io", "leases", "create", None),
+        access("coordination.k8s.io", "leases", "get", Some(lease)),
+        access("coordination.k8s.io", "leases", "update", Some(lease)),
+        access("", "configmaps", "create", None),
+        access("", "configmaps", "get", Some(ledger)),
+        access("", "configmaps", "update", Some(ledger)),
+        access("events.k8s.io", "events", "create", None),
+    ]
+}
+
+const fn access<'a>(
+    group: &'a str,
+    resource: &'a str,
+    verb: &'a str,
+    name: Option<&'a str>,
+) -> Access<'a> {
+    Access {
+        group,
+        resource,
+        verb,
+        name,
+    }
+}
+
+/// Kubernetes wiring for leader election. Built before anything else so a
+/// misconfigured HA deployment fails at startup instead of running unfenced.
+struct HaSetup {
+    client: kube::Client,
+    namespace: String,
+    identity: String,
+    pod_uid: Option<String>,
+    lease_name: String,
+    ledger_name: String,
+    election: ElectorCfg,
+    lease_duration: Duration,
+}
+
+impl HaSetup {
+    async fn from_config(run_cfg: &RunArgs) -> anyhow::Result<Option<Self>> {
+        let election = &run_cfg.leader_election;
+        if !election.enabled {
+            return Ok(None);
+        }
+        election.validate()?;
+        let ha = Self::connect(run_cfg).await?;
+        tracing::info!(
+            identity = %ha.identity,
+            lease = %election.lease_name,
+            ledger = %election.ledger_configmap,
+            "leader election ENABLED"
+        );
+        Ok(Some(ha))
+    }
+
+    async fn connect(run_cfg: &RunArgs) -> anyhow::Result<Self> {
+        let (Some(identity), Some(namespace)) = (
+            run_cfg.k8s.pod_name.clone(),
+            run_cfg.k8s.pod_namespace.clone(),
+        ) else {
+            anyhow::bail!("leader election requires POD_NAME and POD_NAMESPACE (Downward API)");
+        };
+        let client = kube::Client::try_default()
+            .await
+            .context("leader election requires an in-cluster Kubernetes client")?;
+        let election = &run_cfg.leader_election;
+        let mut missing = Vec::new();
+        for access in ha_permissions(&election.lease_name, &election.ledger_configmap) {
+            if !can_i(&client, &namespace, &access)
+                .await
+                .context("leader election RBAC preflight failed")?
+            {
+                missing.push(format!("{} {}", access.verb, access.resource));
+            }
+        }
+        if !missing.is_empty() {
+            anyhow::bail!(
+                "leader election RBAC missing in namespace {namespace}: {}. Apply the chart RBAC (rbac.create=true).",
+                missing.join(", ")
+            );
+        }
+        Ok(Self {
+            client,
+            namespace,
+            identity,
+            pod_uid: run_cfg.k8s.pod_uid.clone(),
+            lease_name: run_cfg.leader_election.lease_name.clone(),
+            ledger_name: run_cfg.leader_election.ledger_configmap.clone(),
+            election: ElectorCfg {
+                retry_period: run_cfg.leader_election.retry_period(),
+                renew_deadline: run_cfg.leader_election.renew_deadline(),
+            },
+            lease_duration: run_cfg.leader_election.lease_duration(),
+        })
+    }
+
+    fn events_client(&self) -> K8sEventClient {
+        K8sEventClient::new(
+            self.client.clone(),
+            PodIdentity {
+                name: self.identity.clone(),
+                namespace: self.namespace.clone(),
+                uid: self.pod_uid.clone(),
+            },
+        )
+    }
+
+    fn journal(&self) -> Journal {
+        Journal::configmap(LedgerStore::new(
+            self.client.clone(),
+            &self.namespace,
+            self.ledger_name.clone(),
+        ))
+    }
+
+    fn elector(self, leader: watch::Sender<bool>, metrics: Metrics) -> Elector {
+        let lock = LeaseLock::new(
+            self.client,
+            &self.namespace,
+            self.lease_name,
+            self.identity,
+            self.lease_duration,
+        );
+        Elector::new(lock, self.election, leader, metrics)
+    }
+}
+
+/// Spawns the poller, gated by the elector under leader election. Without
+/// election this replica is always the leader.
+fn spawn_poller(
+    tasks: &mut JoinSet<anyhow::Result<()>>,
+    poller: Arc<Poller>,
+    ha: Option<HaSetup>,
+    metrics: Metrics,
+    shutdown: &watch::Receiver<bool>,
+) {
+    let (leader_tx, leader_rx) = watch::channel(ha.is_none());
+    let (poller_done_tx, poller_done_rx) = watch::channel(false);
+    let poller_shutdown = shutdown.clone();
+    tasks.spawn(async move {
+        let result = poller.run(leader_rx, poller_shutdown).await;
+        let _ = poller_done_tx.send(true);
+        result
+    });
+
+    let elector_shutdown = shutdown.clone();
+    if let Some(ha) = ha {
+        let elector = ha.elector(leader_tx, metrics);
+        tasks.spawn(async move { elector.run(elector_shutdown, poller_done_rx).await });
+    } else {
+        metrics.set_leader(true);
+        tasks.spawn(async move {
+            let mut rx = elector_shutdown;
+            let _ = rx.changed().await;
+            drop(leader_tx);
+            Ok(())
+        });
+    }
+}
+
+const SEND_RETRY_BACKOFF: Duration = Duration::from_secs(1);
+
 pub async fn run(slack_cfg: SlackArgs, run_cfg: RunArgs) -> anyhow::Result<()> {
     let metrics = Metrics::new();
+
+    let ha = HaSetup::from_config(&run_cfg).await?;
 
     let slack = SlackClient::new(
         &slack_cfg.slack_webhook_url,
@@ -81,7 +252,10 @@ pub async fn run(slack_cfg: SlackArgs, run_cfg: RunArgs) -> anyhow::Result<()> {
         "resolved AWS account identity"
     );
 
-    let k8s = build_k8s_client(&run_cfg).await;
+    let k8s = match &ha {
+        Some(ha) => Some(ha.events_client()),
+        None => build_k8s_client(&run_cfg).await,
+    };
     let notifier = Notifier::new(
         slack,
         SlackOpts {
@@ -94,24 +268,29 @@ pub async fn run(slack_cfg: SlackArgs, run_cfg: RunArgs) -> anyhow::Result<()> {
         metrics.clone(),
     );
 
+    let (journal, identity) = match &ha {
+        Some(ha) => (ha.journal(), ha.identity.clone()),
+        None => (
+            Journal::memory(),
+            run_cfg
+                .k8s
+                .pod_name
+                .clone()
+                .unwrap_or_else(|| "local".to_string()),
+        ),
+    };
+
     let poller = Arc::new(Poller::new(
         aws,
         notifier,
         filter,
-        metrics,
-        PollerCfg {
-            interval: Duration::from_secs(run_cfg.poll_interval_secs),
-            initial_lookback: Duration::from_secs(run_cfg.initial_lookback_secs),
-            cold_start_suppress: run_cfg.cold_start_suppress,
-            services: run_cfg.allow_services.clone(),
-            categories: run_cfg.allow_categories.clone(),
-            reminder_offsets_hours: run_cfg.reminder_offsets_hours.clone(),
-        },
+        metrics.clone(),
+        journal,
+        identity,
+        poller_cfg(&run_cfg),
     ));
 
-    let poller_rx = shutdown_rx.clone();
-    let poller_clone = poller.clone();
-    tasks.spawn(async move { poller_clone.run(poller_rx).await });
+    spawn_poller(&mut tasks, poller, ha, metrics, &shutdown_rx);
 
     tasks.spawn(async move {
         wait_for_signal().await;
@@ -123,6 +302,18 @@ pub async fn run(slack_cfg: SlackArgs, run_cfg: RunArgs) -> anyhow::Result<()> {
         res.context("task panicked")??;
     }
     Ok(())
+}
+
+fn poller_cfg(run_cfg: &RunArgs) -> PollerCfg {
+    PollerCfg {
+        interval: Duration::from_secs(run_cfg.poll_interval_secs),
+        initial_lookback: Duration::from_secs(run_cfg.initial_lookback_secs),
+        cold_start_suppress: run_cfg.cold_start_suppress,
+        services: run_cfg.allow_services.clone(),
+        categories: run_cfg.allow_categories.clone(),
+        reminder_offsets_hours: run_cfg.reminder_offsets_hours.clone(),
+        retry_backoff: SEND_RETRY_BACKOFF,
+    }
 }
 
 /// Borrows the configured filter lists off `RunArgs` for the filter and its

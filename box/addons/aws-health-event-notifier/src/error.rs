@@ -5,6 +5,9 @@ pub enum AppError {
     #[error("upstream slack error: {0}")]
     Slack(String),
 
+    #[error("invalid configuration: {0}")]
+    Config(String),
+
     #[error("kubernetes event error: {0}")]
     K8s(String),
 

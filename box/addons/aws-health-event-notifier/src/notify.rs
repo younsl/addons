@@ -8,11 +8,11 @@
 
 use tracing::{info, warn};
 
-use crate::error::AppResult;
 use crate::health::HealthEvent;
 use crate::k8s::client::K8sEventClient;
 use crate::observability::metrics::Metrics;
 use crate::slack::client::SlackClient;
+use crate::slack::error::SlackError;
 use crate::slack::formatter::{self, SlackMessageOpts};
 
 /// Owned presentation options shared by every Slack message.
@@ -54,7 +54,7 @@ impl Notifier {
         &self,
         event: &HealthEvent,
         reminder_offset_hours: Option<u32>,
-    ) -> AppResult<()> {
+    ) -> Result<(), SlackError> {
         let payload = formatter::build(
             event,
             &SlackMessageOpts {
@@ -74,6 +74,24 @@ impl Notifier {
 
         self.emit_k8s(event, reminder_offset_hours).await;
         Ok(())
+    }
+
+    /// Best-effort Warning Event for a send whose Slack outcome is unknown.
+    pub async fn report_unknown(&self, arn: &str, reminder_offset_hours: Option<u32>) {
+        self.metrics.record_delivery_unknown();
+        warn!(
+            arn = %arn,
+            reminder_offset_hours,
+            "slack delivery outcome unknown; not retrying, check the channel"
+        );
+        let Some(k8s) = &self.k8s else { return };
+        match k8s.emit_delivery_unknown(arn, reminder_offset_hours).await {
+            Ok(()) => self.metrics.record_k8s_event("ok"),
+            Err(e) => {
+                self.metrics.record_k8s_event("error");
+                warn!(arn = %arn, error = %e, "kubernetes event creation failed");
+            }
+        }
     }
 
     /// Best-effort Kubernetes Event emission.
@@ -163,5 +181,27 @@ mod tests {
         let (n, metrics) = notifier(&server.uri());
         assert!(n.publish(&event(), Some(24)).await.is_err());
         assert!(metrics.render().contains("outcome=\"error\""));
+    }
+
+    #[tokio::test]
+    async fn report_unknown_counts_and_emits() {
+        let server = crate::k8s::fake::FakeApiServer::start().await;
+        let (mut n, metrics) = notifier("http://127.0.0.1:1");
+        n.k8s = Some(K8sEventClient::new(
+            server.client(),
+            crate::k8s::client::PodIdentity {
+                name: "p".into(),
+                namespace: "ns".into(),
+                uid: None,
+            },
+        ));
+        n.report_unknown("arn:1", Some(24)).await;
+        let out = metrics.render();
+        assert!(out.contains("aws_health_event_delivery_unknown_total 1"));
+        assert_eq!(server.post_count("/events/"), 1);
+
+        server.fail_all();
+        n.report_unknown("arn:2", None).await;
+        assert!(metrics.render().contains("{outcome=\"error\"} 1"));
     }
 }
