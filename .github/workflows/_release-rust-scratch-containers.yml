@@ -120,6 +120,10 @@ jobs:
 
       - name: Run tests
         working-directory: ${{ env.PROJECT_BASE_DIR }}
+        # Fat LTO on every release test binary runs the runner out of memory
+        env:
+          CARGO_PROFILE_RELEASE_LTO: "false"
+          CARGO_PROFILE_RELEASE_CODEGEN_UNITS: "16"
         run: |
           cargo test --verbose
           cargo test --release --verbose
