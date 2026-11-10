@@ -42,7 +42,7 @@ impl SlackClient {
             .json(payload)
             .send()
             .await
-            .map_err(|e| classify_transport(&e))?;
+            .map_err(classify_transport)?;
 
         let status = resp.status();
         if status.is_success() {
@@ -54,7 +54,9 @@ impl SlackClient {
 }
 
 /// Only a failure to connect proves the request never reached Slack.
-fn classify_transport(e: &reqwest::Error) -> SlackError {
+/// The webhook URL path is the secret, so it is stripped before formatting.
+fn classify_transport(e: reqwest::Error) -> SlackError {
+    let e = e.without_url();
     if e.is_connect() || e.is_builder() {
         SlackError::NotPosted(format!("request failed: {e}"))
     } else {
@@ -202,6 +204,8 @@ mod tests {
         // Unroutable port: request itself fails before any response.
         let c = client("http://127.0.0.1:1/hook");
         let err = c.post(&json!({"text": "hi"})).await.unwrap_err();
-        assert!(matches!(err, SlackError::NotPosted(m) if m.contains("request failed")));
+        assert!(
+            matches!(&err, SlackError::NotPosted(m) if m.contains("request failed") && !m.contains("/hook"))
+        );
     }
 }
