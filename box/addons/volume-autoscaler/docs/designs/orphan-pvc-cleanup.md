@@ -34,7 +34,15 @@ kube-janitor's `--delete-notification` posts one Event before expiry. Here the n
 
 ## The notice and where its deadline lives
 
-The deadline is persisted in `orphan-pvc-delete-after` on the claim, for the same reason the scan persists `unused-since`: a restart, rollout, or leader failover must neither restart nor skip it. It is written on the first pass that finds the claim eligible and removed on the first pass that finds it ineligible, so a claim that leaves and re-enters eligibility is announced again. A setting changed in config never pulls an announced deadline forward.
+The clock and the deadline are persisted, for the same reason the scan persists `unused-since`: a restart, rollout, or leader failover must neither restart nor skip them. A deadline is written on the first pass that finds the claim eligible and removed on the first pass that finds it ineligible, so a claim that leaves and re-enters eligibility is announced again. A setting changed in config never pulls an announced deadline forward.
+
+They are not persisted on the claim. Annotations are writable by anyone who can patch the claim, which is often more people than can delete it, and a deadline read from the claim would let them have the controller delete it on their behalf, with no notice, by writing a past `orphan-pvc-delete-after` and an old `unused-since`. So the state lives in a ConfigMap in the controller's namespace that only the controller writes, keyed by claim UID:
+
+- The controller clock starts when the controller first records the claim. The scan's `unused-since` annotation is still the identification clock and still bounds the cleanup clock, but only from below: the later of the two wins, so editing it can delay a deletion and never hasten one.
+- The deadline annotation on the claim stays as the operator's view. It is honored only when it equals the stored deadline, so a forged or edited copy reschedules the claim instead of deleting it.
+- A pass that cannot read the state does nothing, like a pass that cannot list workloads.
+
+The cost is a slower first run: enabling cleanup on long-orphaned claims waits `minUnusedAge` from the moment of enabling, not from when the claims were orphaned. A ConfigMap was preferred over signing the annotations because it needs no key management and keeps working when the claim's annotations are stripped by a GitOps sync.
 
 There is no separate notice setting. The deletion moment is `minUnusedAge`, the one number an operator reasons about ("unused for 72 hours"), and `alertBefore` is both when the claim is announced and the least notice any deletion gets. An earlier design added a `noticePeriod` after `minUnusedAge`, which made the real deletion age the sum of two settings and overlapped with `alertBefore`.
 

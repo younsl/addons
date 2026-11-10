@@ -439,7 +439,7 @@ rejecting the calls.
 - Since: 0.2.0
 - Labels: `action`
 
-[Orphan PVC cleanup](orphan-pvc-cleanup.md) actions. `scheduled` and `canceled` count deadlines written and removed, `deleted` counts claims deleted, `skipped_in_use` counts claims a Pod mounted again right before the delete, `deferred` counts claims past their deadline held back by `maxDeletionsPerPass`, `failed` counts recheck and delete errors, and `dry_run` counts what a dry run would have scheduled or deleted. Failures also raise `error_total` with stage `orphan_pvc_cleanup_references`, `orphan_pvc_cleanup_recheck`, or `orphan_pvc_delete`.
+[Orphan PVC cleanup](orphan-pvc-cleanup.md) actions. `scheduled` and `canceled` count deadlines written and removed, `deleted` counts claims deleted, `skipped_in_use` counts claims a Pod mounted again right before the delete, `deferred` counts claims past their deadline held back by `maxDeletionsPerPass`, `failed` counts recheck and delete errors, and `dry_run` counts what a dry run would have scheduled or deleted. Failures also raise `error_total` with stage `orphan_pvc_cleanup_references`, `orphan_pvc_cleanup_state`, `orphan_pvc_cleanup_recheck`, or `orphan_pvc_delete`.
 
 ### volume_autoscaler_orphan_pvc_cleanup_scheduled
 

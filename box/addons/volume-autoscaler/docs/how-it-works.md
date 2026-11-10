@@ -96,7 +96,7 @@ Every annotation the addon writes or reads as its own lives under the `volume-au
 | Object | Keys | Written by |
 |--------|------|------------|
 | PersistentVolumeClaim, PersistentVolume | `unused`, `unused-since`, `unused-reason`, `unused-days`, `volume-id`, `unused-observed-at` | [Unused volume identification](unused-volumes.md) |
-| PersistentVolumeClaim | `orphan-pvc-delete-after`, `orphan-pvc-alerted-at` | [Orphan PVC cleanup](orphan-pvc-cleanup.md) |
+| PersistentVolumeClaim | `orphan-pvc-delete-after` (a display copy, the deadline that counts is in the [cleanup state](orphan-pvc-cleanup.md#state)) | [Orphan PVC cleanup](orphan-pvc-cleanup.md) |
 | PersistentVolumeClaim | `orphan-pvc-cleanup` | The operator, to opt a claim out of orphan PVC cleanup |
 | Node | `protective-cordon` | [Protective auto-cordon](protective-auto-cordon.md) |
 | Node | `volume-id`, `throughput-*`, `iops-*` | [Node throughput recommendations](throughput-recommendation.md) |

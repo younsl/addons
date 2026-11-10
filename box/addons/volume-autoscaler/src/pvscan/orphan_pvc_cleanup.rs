@@ -9,14 +9,19 @@
 //! scheduled `alert_before` ahead of that, and the deadline is never less than
 //! `alert_before` after the pass that schedules it, so enabling cleanup on a
 //! cluster full of claims unused for months still announces every deletion
-//! first. The deadline is persisted in the claim's own
-//! `orphan-pvc-delete-after` annotation, so a restart neither resets nor
-//! skips it.
+//! first.
+//!
+//! Nothing a claim carries can bring its deletion forward. Anyone who can
+//! patch a claim can edit its annotations, so the unused clock and the
+//! deadline that count live in a [`State`] kept in a `ConfigMap` only the
+//! controller writes. The claim's own `unused-since` can only push the clock
+//! later, and its `orphan-pvc-delete-after` is shown to operators and has to
+//! match the stored deadline before it is honored.
 
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use std::time::Duration;
 
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, SecondsFormat, Utc};
 
 use super::annotations::{KEY_ORPHAN_PVC_CLEANUP, KEY_ORPHAN_PVC_DELETE_AFTER, key};
 use super::types::{Finding, KIND_PVC};
@@ -65,6 +70,61 @@ pub struct Policy {
     pub alert_before: Duration,
 }
 
+/// One claim's entry in the controller-owned state.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Record {
+    /// `namespace/name`, so the stored state reads on its own.
+    pub claim: String,
+    /// When the controller first saw the claim unused and eligible.
+    pub first_seen: DateTime<Utc>,
+    pub delete_after: Option<DateTime<Utc>>,
+    /// When the one alert before deletion was sent.
+    pub alerted_at: Option<DateTime<Utc>>,
+}
+
+/// The controller-owned state, keyed by claim UID.
+pub type State = BTreeMap<String, Record>;
+
+fn stamp(t: DateTime<Utc>) -> String {
+    t.to_rfc3339_opts(SecondsFormat::Secs, true)
+}
+
+fn parse_time(v: &serde_json::Value) -> Option<DateTime<Utc>> {
+    v.as_str()
+        .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
+        .map(|t| t.with_timezone(&Utc))
+}
+
+impl Record {
+    /// Encodes the record as the JSON value of its `ConfigMap` key.
+    #[must_use]
+    pub fn encode(&self) -> String {
+        let mut m = serde_json::Map::new();
+        m.insert("claim".into(), self.claim.clone().into());
+        m.insert("firstSeen".into(), stamp(self.first_seen).into());
+        if let Some(t) = self.delete_after {
+            m.insert("deleteAfter".into(), stamp(t).into());
+        }
+        if let Some(t) = self.alerted_at {
+            m.insert("alertedAt".into(), stamp(t).into());
+        }
+        serde_json::Value::Object(m).to_string()
+    }
+
+    /// Decodes a stored record. One that does not parse is dropped, which
+    /// restarts that claim's clock rather than guessing it.
+    #[must_use]
+    pub fn decode(raw: &str) -> Option<Self> {
+        let v: serde_json::Value = serde_json::from_str(raw).ok()?;
+        Some(Self {
+            claim: v.get("claim")?.as_str()?.to_string(),
+            first_seen: parse_time(v.get("firstSeen")?)?,
+            delete_after: v.get("deleteAfter").and_then(parse_time),
+            alerted_at: v.get("alertedAt").and_then(parse_time),
+        })
+    }
+}
+
 /// One claim's cleanup decision for one pass.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Verdict {
@@ -94,29 +154,63 @@ impl Verdict {
 }
 
 impl Policy {
-    /// Decides one finding. `referenced` holds `namespace/name` for every
-    /// claim a workload's Pod template names, which keeps a claim of a
-    /// Deployment scaled to zero or a suspended `CronJob` alive.
+    /// Decides one finding and returns the record to keep for it, `None`
+    /// when the claim leaves the state. `referenced` holds `namespace/name`
+    /// for every claim a workload's Pod template names, which keeps a claim
+    /// of a Deployment scaled to zero or a suspended `CronJob` alive.
     #[must_use]
-    pub fn decide(&self, f: &Finding, referenced: &HashSet<String>, now: DateTime<Utc>) -> Verdict {
+    pub fn decide(
+        &self,
+        f: &Finding,
+        referenced: &HashSet<String>,
+        stored: Option<&Record>,
+        now: DateTime<Utc>,
+    ) -> (Verdict, Option<Record>) {
         if let Some(cause) = self.ineligible(f, referenced) {
-            return Verdict::Ineligible(cause);
+            return (Verdict::Ineligible(cause), None);
         }
-        match existing_deadline(f) {
-            Some(delete_after) if delete_after <= now => Verdict::Due { delete_after },
-            Some(delete_after) => Verdict::Scheduled {
-                delete_after,
-                new: false,
-            },
-            None => {
-                let since = f.unused_since.unwrap_or(now);
-                Verdict::Scheduled {
-                    delete_after: (since + delta(self.min_unused_age))
-                        .max(now + delta(self.alert_before)),
-                    new: true,
+        let first_seen = stored
+            .map(|r| r.first_seen)
+            .filter(|t| *t <= now)
+            .unwrap_or(now);
+        let mut record = Record {
+            claim: f.key(),
+            first_seen,
+            delete_after: None,
+            alerted_at: None,
+        };
+        if let Some(r) = stored
+            && let Some(deadline) = r.delete_after
+            && existing_deadline(f) == Some(deadline)
+        {
+            record.delete_after = Some(deadline);
+            record.alerted_at = r.alerted_at;
+            let verdict = if deadline <= now {
+                Verdict::Due {
+                    delete_after: deadline,
                 }
-            }
+            } else {
+                Verdict::Scheduled {
+                    delete_after: deadline,
+                    new: false,
+                }
+            };
+            return (verdict, Some(record));
         }
+        let since = f.unused_since.map_or(first_seen, |t| t.max(first_seen));
+        let age = (now - since).to_std().unwrap_or_default();
+        if age + self.alert_before < self.min_unused_age {
+            return (Verdict::Ineligible(CAUSE_TOO_RECENT), Some(record));
+        }
+        let deadline = (since + delta(self.min_unused_age)).max(now + delta(self.alert_before));
+        record.delete_after = Some(deadline);
+        (
+            Verdict::Scheduled {
+                delete_after: deadline,
+                new: true,
+            },
+            Some(record),
+        )
     }
 
     fn ineligible(&self, f: &Finding, referenced: &HashSet<String>) -> Option<&'static str> {
@@ -128,9 +222,6 @@ impl Policy {
         }
         if !self.reasons.contains(&f.reason) {
             return Some(CAUSE_REASON_NOT_SELECTED);
-        }
-        if !f.reportable || f.age + self.alert_before < self.min_unused_age {
-            return Some(CAUSE_TOO_RECENT);
         }
         if !self.namespace_in_scope(&f.namespace) {
             return Some(CAUSE_NAMESPACE_EXCLUDED);
@@ -156,33 +247,21 @@ impl Policy {
         }
         self.include_namespaces.is_empty() || self.include_namespaces.iter().any(|n| n == namespace)
     }
+
+    /// Whether a scheduled claim with this deadline is inside its alert
+    /// window.
+    #[must_use]
+    pub fn alert_due(&self, delete_after: DateTime<Utc>, now: DateTime<Utc>) -> bool {
+        delete_after - now <= delta(self.alert_before)
+    }
 }
 
 fn delta(d: Duration) -> chrono::TimeDelta {
     chrono::TimeDelta::from_std(d).unwrap_or(chrono::TimeDelta::MAX)
 }
 
-/// Reads when the alert before deletion was sent.
-#[must_use]
-pub fn existing_alerted_at(f: &Finding) -> Option<DateTime<Utc>> {
-    f.annotations
-        .get(&key(super::annotations::KEY_ORPHAN_PVC_ALERTED_AT))
-        .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
-        .map(|t| t.with_timezone(&Utc))
-}
-
-impl Policy {
-    /// Whether a scheduled claim with this deadline is inside its alert
-    /// window.
-    #[must_use]
-    pub fn alert_due(&self, delete_after: DateTime<Utc>, now: DateTime<Utc>) -> bool {
-        delete_after - now
-            <= chrono::TimeDelta::from_std(self.alert_before).unwrap_or(chrono::TimeDelta::MAX)
-    }
-}
-
-/// Reads the persisted deadline. An unparseable one restarts the notice
-/// rather than reading as due.
+/// Reads the deadline shown on the claim. It is a display copy: a deadline
+/// counts only when it equals the stored one.
 #[must_use]
 pub fn existing_deadline(f: &Finding) -> Option<DateTime<Utc>> {
     f.annotations
@@ -193,16 +272,22 @@ pub fn existing_deadline(f: &Finding) -> Option<DateTime<Utc>> {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeMap;
-
     use super::*;
     use crate::pvscan::types::{KIND_PV, REASON_NO_CONSUMER_POD, REASON_UNBOUND};
 
     type Mutate = Box<dyn Fn(&mut Finding)>;
 
+    fn now() -> DateTime<Utc> {
+        DateTime::from_timestamp(1_700_000_000, 0).unwrap()
+    }
+
+    fn hours(h: i64) -> chrono::TimeDelta {
+        chrono::TimeDelta::hours(h)
+    }
+
     fn policy() -> Policy {
         Policy {
-            min_unused_age: Duration::from_hours(168),
+            min_unused_age: Duration::from_hours(72),
             reasons: vec![REASON_NO_CONSUMER_POD.into()],
             include_namespaces: vec![],
             exclude_namespaces: vec!["kube-system".into()],
@@ -211,23 +296,7 @@ mod tests {
         }
     }
 
-    #[test]
-    fn alert_window() {
-        let now = DateTime::from_timestamp(1_700_000_000, 0).unwrap();
-        let p = policy();
-        assert!(!p.alert_due(now + chrono::TimeDelta::hours(7), now));
-        assert!(p.alert_due(now + chrono::TimeDelta::hours(6), now));
-        assert!(p.alert_due(now + chrono::TimeDelta::hours(1), now));
-        let mut f = candidate();
-        assert_eq!(existing_alerted_at(&f), None);
-        f.annotations.insert(
-            key(super::super::annotations::KEY_ORPHAN_PVC_ALERTED_AT),
-            "2023-11-14T22:13:20Z".into(),
-        );
-        assert_eq!(existing_alerted_at(&f), Some(now));
-    }
-
-    fn candidate() -> Finding {
+    fn candidate(unused_hours: i64) -> Finding {
         Finding {
             kind: KIND_PVC.into(),
             namespace: "legacy".into(),
@@ -236,91 +305,150 @@ mod tests {
             unused: true,
             reportable: true,
             reason: REASON_NO_CONSUMER_POD.into(),
-            age: Duration::from_hours(200),
+            unused_since: Some(now() - hours(unused_hours)),
             ..Finding::default()
         }
     }
 
+    fn record(first_seen_hours_ago: i64, deadline: Option<DateTime<Utc>>) -> Record {
+        Record {
+            claim: "legacy/uploads".into(),
+            first_seen: now() - hours(first_seen_hours_ago),
+            delete_after: deadline,
+            alerted_at: None,
+        }
+    }
+
+    fn announce(f: &mut Finding, t: DateTime<Utc>) {
+        f.annotations
+            .insert(key(KEY_ORPHAN_PVC_DELETE_AFTER), stamp(t));
+    }
+
     #[test]
-    fn eligible_claim_is_scheduled_then_due() {
-        let now = DateTime::from_timestamp(1_700_000_000, 0).unwrap();
+    fn records_round_trip() {
+        let mut r = record(3, Some(now()));
+        r.alerted_at = Some(now() - hours(1));
+        assert_eq!(Record::decode(&r.encode()), Some(r.clone()));
+        r.delete_after = None;
+        r.alerted_at = None;
+        assert_eq!(Record::decode(&r.encode()), Some(r));
+        assert_eq!(Record::decode("not json"), None);
+        assert_eq!(Record::decode(r#"{"claim":"a/b"}"#), None);
+    }
+
+    #[test]
+    fn the_first_pass_starts_the_controller_clock() {
+        let none = HashSet::new();
+        let (v, r) = policy().decide(&candidate(100), &none, None, now());
+        assert_eq!(
+            v,
+            Verdict::Ineligible(CAUSE_TOO_RECENT),
+            "a claim the controller never saw is not scheduled from its annotation"
+        );
+        assert_eq!(r.unwrap().first_seen, now());
+    }
+
+    #[test]
+    fn scheduled_alert_before_ahead_and_due_at_min_unused_age() {
         let p = policy();
         let none = HashSet::new();
-        let mut fresh = candidate();
-        fresh.age = Duration::from_hours(162);
-        fresh.unused_since = Some(now - chrono::TimeDelta::hours(162));
+        let (v, r) = p.decide(&candidate(66), &none, Some(&record(66, None)), now());
         assert_eq!(
-            p.decide(&fresh, &none, now),
+            v,
             Verdict::Scheduled {
-                delete_after: now + chrono::TimeDelta::hours(6),
+                delete_after: now() + hours(6),
+                new: true
+            }
+        );
+        assert_eq!(r.unwrap().delete_after, Some(now() + hours(6)));
+
+        let (v, _) = p.decide(&candidate(65), &none, Some(&record(65, None)), now());
+        assert_eq!(v, Verdict::Ineligible(CAUSE_TOO_RECENT));
+
+        let (v, _) = p.decide(&candidate(70), &none, Some(&record(70, None)), now());
+        assert_eq!(
+            v,
+            Verdict::Scheduled {
+                delete_after: now() + hours(6),
                 new: true
             },
-            "deleted when unused for minUnusedAge, scheduled alertBefore ahead"
-        );
-        fresh.age = Duration::from_hours(165);
-        fresh.unused_since = Some(now - chrono::TimeDelta::hours(165));
-        assert_eq!(
-            p.decide(&fresh, &none, now),
-            Verdict::Scheduled {
-                delete_after: now + chrono::TimeDelta::hours(6),
-                new: true
-            },
-            "a late first pass still leaves alertBefore of notice"
-        );
-        fresh.age = Duration::from_hours(161);
-        fresh.unused_since = Some(now - chrono::TimeDelta::hours(161));
-        assert_eq!(
-            p.decide(&fresh, &none, now),
-            Verdict::Ineligible(CAUSE_TOO_RECENT),
-            "not yet inside the alertBefore window"
+            "a late first schedule still leaves alertBefore"
         );
 
-        let mut old = candidate();
-        old.unused_since = Some(now - chrono::TimeDelta::hours(200));
+        let deadline = now() + hours(2);
+        let mut f = candidate(70);
+        announce(&mut f, deadline);
+        let (v, r) = p.decide(&f, &none, Some(&record(70, Some(deadline))), now());
         assert_eq!(
-            p.decide(&old, &none, now),
+            v,
             Verdict::Scheduled {
-                delete_after: now + chrono::TimeDelta::hours(6),
-                new: true
-            },
-            "a claim long past minUnusedAge still gets alertBefore of notice"
-        );
-
-        let mut f = candidate();
-        let later = now + chrono::TimeDelta::hours(3);
-        f.annotations.insert(
-            key(KEY_ORPHAN_PVC_DELETE_AFTER),
-            later.to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
-        );
-        assert_eq!(
-            p.decide(&f, &none, now),
-            Verdict::Scheduled {
-                delete_after: later,
+                delete_after: deadline,
                 new: false
             }
         );
+        assert_eq!(r.unwrap().delete_after, Some(deadline));
+        let (v, _) = p.decide(&f, &none, Some(&record(70, Some(deadline))), deadline);
         assert_eq!(
-            p.decide(&f, &none, later),
+            v,
             Verdict::Due {
-                delete_after: later
+                delete_after: deadline
             }
         );
-        assert_eq!(p.decide(&f, &none, later).delete_after(), Some(later));
+    }
 
-        f.annotations
-            .insert(key(KEY_ORPHAN_PVC_DELETE_AFTER), "garbage".into());
+    #[test]
+    fn tampered_annotations_cannot_bring_deletion_forward() {
+        let p = policy();
+        let none = HashSet::new();
+        let mut f = candidate(10_000);
+        announce(&mut f, now() - hours(1));
+        let (v, _) = p.decide(&f, &none, Some(&record(1, None)), now());
+        assert_eq!(
+            v,
+            Verdict::Ineligible(CAUSE_TOO_RECENT),
+            "an old unused-since and a past deadline on the claim count for nothing"
+        );
+
+        let stored = now() + hours(5);
+        let mut f = candidate(70);
+        announce(&mut f, now() - hours(1));
+        let (v, _) = p.decide(&f, &none, Some(&record(70, Some(stored))), now());
+        assert_eq!(
+            v,
+            Verdict::Scheduled {
+                delete_after: now() + hours(6),
+                new: true
+            },
+            "a deadline that does not match the stored one reschedules"
+        );
+
+        let mut f = candidate(70);
+        f.annotations.clear();
+        let (v, _) = p.decide(&f, &none, Some(&record(70, Some(now() - hours(1)))), now());
         assert!(
-            matches!(
-                p.decide(&f, &none, now),
-                Verdict::Scheduled { new: true, .. }
-            ),
-            "an unparseable deadline restarts the notice"
+            matches!(v, Verdict::Scheduled { new: true, .. }),
+            "a removed deadline reschedules instead of deleting"
+        );
+
+        let (v, _) = p.decide(&candidate(1), &none, Some(&record(100, None)), now());
+        assert_eq!(
+            v,
+            Verdict::Ineligible(CAUSE_TOO_RECENT),
+            "a later unused-since pushes the clock back"
+        );
+
+        let mut future = record(0, None);
+        future.first_seen = now() + hours(5);
+        let (_, r) = p.decide(&candidate(1), &none, Some(&future), now());
+        assert_eq!(
+            r.unwrap().first_seen,
+            now(),
+            "a stored time in the future restarts at now"
         );
     }
 
     #[test]
     fn ineligible_causes() {
-        let now = Utc::now();
         let p = policy();
         let none = HashSet::new();
         let cases: Vec<(Mutate, &str)> = vec![
@@ -331,11 +459,6 @@ mod tests {
                 Box::new(|f| f.reason = REASON_UNBOUND.into()),
                 CAUSE_REASON_NOT_SELECTED,
             ),
-            (
-                Box::new(|f| f.age = Duration::from_hours(161)),
-                CAUSE_TOO_RECENT,
-            ),
-            (Box::new(|f| f.reportable = false), CAUSE_TOO_RECENT),
             (
                 Box::new(|f| f.namespace = "kube-system".into()),
                 CAUSE_NAMESPACE_EXCLUDED,
@@ -357,36 +480,32 @@ mod tests {
             (Box::new(|f| f.owned = true), CAUSE_OWNED),
         ];
         for (mutate, want) in cases {
-            let mut f = candidate();
+            let mut f = candidate(100);
             mutate(&mut f);
-            assert_eq!(
-                p.decide(&f, &none, now),
-                Verdict::Ineligible(want),
-                "{want}"
-            );
-            assert_eq!(p.decide(&f, &none, now).delete_after(), None);
+            let (v, r) = p.decide(&f, &none, Some(&record(100, None)), now());
+            assert_eq!(v, Verdict::Ineligible(want), "{want}");
+            assert_eq!(v.delete_after(), None);
+            assert!(r.is_none(), "{want}: the claim leaves the state");
         }
-
         let refs = HashSet::from(["legacy/uploads".to_string()]);
-        assert_eq!(
-            p.decide(&candidate(), &refs, now),
-            Verdict::Ineligible(CAUSE_REFERENCED)
-        );
+        let (v, r) = p.decide(&candidate(100), &refs, Some(&record(100, None)), now());
+        assert_eq!(v, Verdict::Ineligible(CAUSE_REFERENCED));
+        assert!(r.is_none());
 
-        let mut f = candidate();
-        f.annotations = BTreeMap::from([(
+        let mut f = candidate(100);
+        f.annotations.insert(
             key(KEY_ORPHAN_PVC_CLEANUP),
-            ORPHAN_PVC_CLEANUP_ENABLED.to_string(),
-        )]);
-        assert!(matches!(
-            p.decide(&f, &none, now),
-            Verdict::Scheduled { .. }
-        ));
+            ORPHAN_PVC_CLEANUP_ENABLED.into(),
+        );
+        let (v, _) = p.decide(&f, &none, Some(&record(100, None)), now());
+        assert!(matches!(v, Verdict::Scheduled { .. }));
     }
 
     #[test]
-    fn include_namespaces_narrow_the_scope() {
+    fn alert_window_and_scope() {
         let mut p = policy();
+        assert!(!p.alert_due(now() + hours(7), now()));
+        assert!(p.alert_due(now() + hours(6), now()));
         p.include_namespaces = vec!["legacy".into()];
         assert!(p.namespace_in_scope("legacy"));
         assert!(!p.namespace_in_scope("app"));

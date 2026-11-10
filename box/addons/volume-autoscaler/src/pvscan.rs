@@ -33,7 +33,9 @@ pub use annotations::{build_annotations, key};
 pub use decide::classify;
 pub use defaults::{INTERVAL, MIN_UNUSED_AGE};
 pub use kube::KubeClient;
-pub use orphan_pvc_cleanup::{Policy as OrphanPvcCleanupPolicy, Verdict};
+pub use orphan_pvc_cleanup::{
+    Policy as OrphanPvcCleanupPolicy, Record as OrphanPvcRecord, State as OrphanPvcState, Verdict,
+};
 pub use types::*;
 
 /// The subset of Kubernetes operations this module depends on. Lists and
@@ -59,6 +61,11 @@ pub trait KubeApi: Send + Sync {
     /// Whether a live Pod mounts the claim right now.
     async fn claim_mounted(&self, namespace: &str, name: &str) -> Result<bool, String>;
     async fn delete_pvc(&self, namespace: &str, name: &str, uid: &str) -> Result<(), String>;
+    /// Reads the controller-owned orphan PVC cleanup state. A missing store
+    /// reads as empty.
+    async fn load_orphan_state(&self) -> Result<OrphanPvcState, String>;
+    /// Replaces the controller-owned orphan PVC cleanup state.
+    async fn save_orphan_state(&self, state: &OrphanPvcState) -> Result<(), String>;
 }
 
 /// Receives metrics observations. `observability::Metrics` implements it.
@@ -243,12 +250,14 @@ pub struct Scanner {
 /// What orphan PVC cleanup may do in one pass.
 enum OrphanPvcCleanupState<'a> {
     Off,
-    /// Enabled, but the workload references could not be read. Nothing is
-    /// scheduled, canceled, or deleted until a pass can read them.
+    /// Enabled, but the workload references or the stored state could not
+    /// be read. Nothing is scheduled, canceled, or deleted until a pass can
+    /// read them.
     Hold,
     Active(
         &'a OrphanPvcCleanupPolicy,
         std::collections::HashSet<String>,
+        OrphanPvcState,
     ),
 }
 
@@ -320,13 +329,18 @@ impl Scanner {
         self.rec.reset_unused_volumes();
         let mut due = Vec::new();
         let mut scheduled = 0usize;
+        let mut next_state = OrphanPvcState::new();
         for (i, f) in findings.iter_mut().enumerate() {
-            let (verdict, cause) = plan(f, &state, now);
-            let upcoming = self.mark_upcoming(f, &state, verdict, now);
+            let (verdict, cause, record) = plan(f, &state, now);
+            let upcoming = record.is_some_and(|r| {
+                let (r, up) = self.mark_upcoming(r, &state, verdict, now);
+                next_state.insert(f.uid.clone(), r);
+                up
+            });
             self.report(f);
             match self.publish(f, now).await {
                 Ok(outcome) => {
-                    if upcoming && outcome == OUTCOME_WRITTEN {
+                    if upcoming {
                         self.alert_upcoming(f).await;
                     }
                     debug!(kind = %f.kind, object = %f.key(), unused = f.unused, outcome, "unused-volume annotations settled");
@@ -345,6 +359,14 @@ impl Scanner {
                 }
             }
         }
+        if let OrphanPvcCleanupState::Active(_, _, stored) = &state
+            && !self.dry_run
+            && *stored != next_state
+            && let Err(err) = self.kube.save_orphan_state(&next_state).await
+        {
+            self.rec.observe_error("orphan_pvc_cleanup_state");
+            error!(error = %err, "failed to save the orphan PVC cleanup state, new schedules start over on the next pass");
+        }
         let pending = due.len();
         let deleted = self.delete_due(&findings, due).await;
         self.rec
@@ -357,12 +379,21 @@ impl Scanner {
         let Some(policy) = &self.orphan_pvc_cleanup else {
             return OrphanPvcCleanupState::Off;
         };
-        match self.kube.workload_claim_references().await {
-            Ok(refs) => OrphanPvcCleanupState::Active(policy, refs),
+        let refs = match self.kube.workload_claim_references().await {
+            Ok(refs) => refs,
             Err(err) => {
                 self.rec.observe_error("orphan_pvc_cleanup_references");
                 error!(error = %err,
                     "orphan PVC cleanup paused for this pass: workload claim references could not be read, so no claim is scheduled, canceled, or deleted");
+                return OrphanPvcCleanupState::Hold;
+            }
+        };
+        match self.kube.load_orphan_state().await {
+            Ok(stored) => OrphanPvcCleanupState::Active(policy, refs, stored),
+            Err(err) => {
+                self.rec.observe_error("orphan_pvc_cleanup_state");
+                error!(error = %err,
+                    "orphan PVC cleanup paused for this pass: its state could not be read, so no claim is scheduled, canceled, or deleted");
                 OrphanPvcCleanupState::Hold
             }
         }
@@ -525,27 +556,31 @@ impl Scanner {
     /// Marks a scheduled claim inside its alert window that has not alerted
     /// yet, so the same patch that publishes its annotations records the
     /// alert. Returns whether to send it once that patch is written.
+    /// Marks a scheduled claim inside its alert window that has not alerted
+    /// yet, recording the alert in its stored record. Returns the record to
+    /// keep and whether to send the alert.
     fn mark_upcoming(
         &self,
-        f: &mut Finding,
+        mut record: OrphanPvcRecord,
         state: &OrphanPvcCleanupState<'_>,
         verdict: Option<Verdict>,
         now: DateTime<Utc>,
-    ) -> bool {
-        let OrphanPvcCleanupState::Active(policy, _) = state else {
-            return false;
+    ) -> (OrphanPvcRecord, bool) {
+        let OrphanPvcCleanupState::Active(policy, _, _) = state else {
+            return (record, false);
         };
         let Some(Verdict::Scheduled { delete_after, .. }) = verdict else {
-            return false;
+            return (record, false);
         };
-        if self.orphan_pvc_alerts.is_none()
-            || f.alerted_at.is_some()
+        if self.dry_run
+            || self.orphan_pvc_alerts.is_none()
+            || record.alerted_at.is_some()
             || !policy.alert_due(delete_after, now)
         {
-            return false;
+            return (record, false);
         }
-        f.alerted_at = Some(now);
-        true
+        record.alerted_at = Some(now);
+        (record, true)
     }
 
     async fn alert_upcoming(&self, f: &Finding) {
@@ -810,39 +845,35 @@ impl Scanner {
     }
 }
 
-/// Applies one pass's orphan PVC cleanup state to a finding: sets the deadline its
-/// annotations will carry and returns the verdict, plus why a claim is not a
-/// candidate.
+/// Applies one pass's orphan PVC cleanup state to a finding: sets the
+/// deadline its annotations will show and returns the verdict, why a claim is
+/// not a candidate, and the record to keep for it.
 fn plan(
     f: &mut Finding,
     state: &OrphanPvcCleanupState<'_>,
     now: DateTime<Utc>,
-) -> (Option<Verdict>, Option<&'static str>) {
+) -> (
+    Option<Verdict>,
+    Option<&'static str>,
+    Option<OrphanPvcRecord>,
+) {
     match state {
         OrphanPvcCleanupState::Off => {
             f.delete_after = None;
-            f.alerted_at = None;
-            (None, Some(orphan_pvc_cleanup::CAUSE_DISABLED))
+            (None, Some(orphan_pvc_cleanup::CAUSE_DISABLED), None)
         }
         OrphanPvcCleanupState::Hold => {
             f.delete_after = orphan_pvc_cleanup::existing_deadline(f);
-            f.alerted_at = orphan_pvc_cleanup::existing_alerted_at(f);
-            (None, None)
+            (None, None, None)
         }
-        OrphanPvcCleanupState::Active(policy, refs) => {
-            let v = policy.decide(f, refs, now);
+        OrphanPvcCleanupState::Active(policy, refs, stored) => {
+            let (v, record) = policy.decide(f, refs, stored.get(&f.uid), now);
             f.delete_after = v.delete_after();
-            f.alerted_at = match v {
-                Verdict::Scheduled { new: false, .. } | Verdict::Due { .. } => {
-                    orphan_pvc_cleanup::existing_alerted_at(f)
-                }
-                _ => None,
-            };
             let cause = match v {
                 Verdict::Ineligible(c) => Some(c),
                 _ => None,
             };
-            (Some(v), cause)
+            (Some(v), cause, record)
         }
     }
 }
@@ -887,6 +918,37 @@ mod tests {
         fail_mounted: bool,
         fail_delete: bool,
         deletes: Mutex<Vec<(String, String)>>,
+        /// An explicit stored state. `None` derives one from the inventory, as
+        /// if earlier passes had recorded every claim's annotated clock and
+        /// deadline.
+        state: Mutex<Option<OrphanPvcState>>,
+        fail_state: bool,
+        saved: Mutex<Vec<OrphanPvcState>>,
+    }
+
+    /// The state earlier passes would have written for the inventory.
+    fn derived_state(inv: &Inventory) -> OrphanPvcState {
+        let at = |c: &Pvc, k: &str| {
+            c.annotations
+                .get(&key(k))
+                .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
+                .map(|t| t.with_timezone(&Utc))
+        };
+        inv.pvcs
+            .iter()
+            .filter_map(|c| {
+                let first_seen = at(c, annotations::KEY_UNUSED_SINCE)?;
+                Some((
+                    c.uid.clone(),
+                    OrphanPvcRecord {
+                        claim: format!("{}/{}", c.namespace, c.name),
+                        first_seen,
+                        delete_after: at(c, annotations::KEY_ORPHAN_PVC_DELETE_AFTER),
+                        alerted_at: None,
+                    },
+                ))
+            })
+            .collect()
     }
 
     #[async_trait]
@@ -940,6 +1002,21 @@ mod tests {
                 return Err("timeout".into());
             }
             Ok(self.mounted.contains(&format!("{namespace}/{name}")))
+        }
+        async fn load_orphan_state(&self) -> Result<OrphanPvcState, String> {
+            if self.fail_state {
+                return Err("forbidden".into());
+            }
+            Ok(self
+                .state
+                .lock()
+                .unwrap()
+                .clone()
+                .unwrap_or_else(|| derived_state(&self.inv.lock().unwrap())))
+        }
+        async fn save_orphan_state(&self, state: &OrphanPvcState) -> Result<(), String> {
+            self.saved.lock().unwrap().push(state.clone());
+            Ok(())
         }
         async fn delete_pvc(&self, namespace: &str, name: &str, uid: &str) -> Result<(), String> {
             if self.fail_delete {
@@ -1134,10 +1211,7 @@ mod tests {
         assert!(uploads.1.contains_key(&key("unused-observed-at")));
         assert_eq!(
             uploads.2,
-            vec![
-                key(annotations::KEY_ORPHAN_PVC_DELETE_AFTER),
-                key(annotations::KEY_ORPHAN_PVC_ALERTED_AT)
-            ],
+            vec![key(annotations::KEY_ORPHAN_PVC_DELETE_AFTER)],
             "an unscheduled claim queues only the absent deadline for removal"
         );
         let pending = &patches[1];
@@ -1149,8 +1223,7 @@ mod tests {
             pending.2,
             vec![
                 key("volume-id"),
-                key(annotations::KEY_ORPHAN_PVC_DELETE_AFTER),
-                key(annotations::KEY_ORPHAN_PVC_ALERTED_AT)
+                key(annotations::KEY_ORPHAN_PVC_DELETE_AFTER)
             ]
         );
 
@@ -1671,11 +1744,12 @@ mod tests {
         let now = Utc::now();
         let mut policy = orphan_policy(10);
         policy.alert_before = Duration::from_hours(6);
-        let run = |inv: Inventory| {
+        let run = |inv: Inventory, state: Option<OrphanPvcState>| {
             let policy = policy.clone();
             async move {
                 let kube = Arc::new(FakeKube {
                     inv: Mutex::new(inv),
+                    state: Mutex::new(state),
                     ..FakeKube::default()
                 });
                 let alerts = Arc::new(Alerts::default());
@@ -1690,52 +1764,93 @@ mod tests {
                     .iter()
                     .map(|a| a.1.clone())
                     .collect();
-                let patch = kube
-                    .patches
-                    .lock()
-                    .unwrap()
-                    .iter()
-                    .find(|p| p.0 == "legacy/uploads")
-                    .cloned();
-                (names, patch)
+                let saved = kube.saved.lock().unwrap().last().cloned();
+                (names, saved)
             }
         };
 
-        let (names, _) = run(orphan_inventory(
-            now,
-            Some(now + chrono::TimeDelta::hours(10)),
-        ))
+        let (names, _) = run(
+            orphan_inventory(now, Some(now + chrono::TimeDelta::hours(10))),
+            None,
+        )
         .await;
         assert!(
             names.is_empty(),
             "a deadline 10h out is outside a 6h window"
         );
 
-        let (names, _) = run(orphan_inventory(now, None)).await;
+        let (names, _) = run(orphan_inventory(now, None), None).await;
         assert_eq!(
             names,
             vec![ALERT_DELETION_UPCOMING],
             "scheduling always lands inside the alert window"
         );
 
-        let (names, patch) = run(orphan_inventory(
-            now,
-            Some(now + chrono::TimeDelta::hours(5)),
-        ))
-        .await;
+        let inv = orphan_inventory(now, Some(now + chrono::TimeDelta::hours(5)));
+        let (names, saved) = run(inv.clone(), None).await;
         assert_eq!(names, vec![ALERT_DELETION_UPCOMING]);
+        assert_eq!(saved.unwrap()["uid-uploads"].alerted_at, Some(now));
+
+        let mut state = derived_state(&inv);
+        state.get_mut("uid-uploads").unwrap().alerted_at = Some(now - chrono::TimeDelta::hours(1));
+        let (names, _) = run(inv, Some(state)).await;
+        assert!(names.is_empty(), "already alerted");
+    }
+
+    #[tokio::test]
+    async fn orphan_pvc_cleanup_trusts_only_the_stored_state() {
+        let now = Utc::now();
+        let kube = Arc::new(FakeKube {
+            inv: Mutex::new(orphan_inventory(
+                now,
+                Some(now - chrono::TimeDelta::hours(1)),
+            )),
+            state: Mutex::new(Some(OrphanPvcState::new())),
+            ..FakeKube::default()
+        });
+        let rec = Arc::new(Rec::default());
+        let s = scanner(kube.clone(), rec.clone(), None, false, now)
+            .with_orphan_pvc_cleanup(Some(orphan_policy(10)));
+        s.reconcile().await.unwrap();
+        assert!(
+            kube.deletes.lock().unwrap().is_empty(),
+            "a past deadline and an old clock on the claim alone delete nothing"
+        );
+        let saved = kube.saved.lock().unwrap().last().cloned().unwrap();
         assert_eq!(
-            patch.unwrap().1[&key(annotations::KEY_ORPHAN_PVC_ALERTED_AT)],
-            stamp(now)
+            saved["uid-uploads"].first_seen, now,
+            "the controller clock starts now"
+        );
+        assert_eq!(saved["uid-uploads"].delete_after, None);
+        let patches = kube.patches.lock().unwrap().clone();
+        let uploads = patches.iter().find(|p| p.0 == "legacy/uploads").unwrap();
+        assert!(
+            uploads
+                .2
+                .contains(&key(annotations::KEY_ORPHAN_PVC_DELETE_AFTER)),
+            "the forged deadline is removed from the claim"
         );
 
-        let mut inv = orphan_inventory(now, Some(now + chrono::TimeDelta::hours(5)));
-        inv.pvcs[1].annotations.insert(
-            key(annotations::KEY_ORPHAN_PVC_ALERTED_AT),
-            stamp(now - chrono::TimeDelta::hours(1)),
+        let kube = Arc::new(FakeKube {
+            inv: Mutex::new(orphan_inventory(
+                now,
+                Some(now - chrono::TimeDelta::hours(1)),
+            )),
+            fail_state: true,
+            ..FakeKube::default()
+        });
+        let rec = Arc::new(Rec::default());
+        let s = scanner(kube.clone(), rec.clone(), None, false, now)
+            .with_orphan_pvc_cleanup(Some(orphan_policy(10)));
+        s.reconcile().await.unwrap();
+        assert!(kube.deletes.lock().unwrap().is_empty());
+        assert!(kube.saved.lock().unwrap().is_empty());
+        assert!(
+            rec.errors
+                .lock()
+                .unwrap()
+                .contains(&"orphan_pvc_cleanup_state".to_string())
         );
-        let (names, _) = run(inv).await;
-        assert!(names.is_empty(), "already alerted");
     }
 
     #[tokio::test]

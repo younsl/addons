@@ -154,9 +154,6 @@ pub struct Finding {
     /// When orphan PVC cleanup will delete this claim, written as the
     /// `orphan-pvc-delete-after` annotation. `None` while not scheduled.
     pub delete_after: Option<DateTime<Utc>>,
-    /// When the alert before deletion was sent, written as the
-    /// `orphan-pvc-alerted-at` annotation.
-    pub alerted_at: Option<DateTime<Utc>>,
 }
 
 impl Finding {

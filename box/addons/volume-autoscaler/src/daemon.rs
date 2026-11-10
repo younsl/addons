@@ -527,6 +527,7 @@ fn log_orphan_pvc_cleanup_policy(cfg: &Config, events: bool) {
         deletes = "persistentvolumeclaims",
         never_deletes = "persistentvolumes,ebs-volumes",
         events,
+        state_configmap = %format!("{}/{}", cfg.pod_namespace, orphan_pvc_state_name(cfg)),
         alerts = orphan_pvc_alerts_on(cfg),
         alert_before = %go_duration(c.alert_before),
         alert_enabled = c.alert_enabled,
@@ -554,6 +555,12 @@ fn orphan_pvc_alerts(
             &cfg.alertmanager_dashboard_url,
         )) as Arc<dyn crate::autoscaler::instance_volume::resizer::AlertNotifier>
     })
+}
+
+/// The `ConfigMap` holding the orphan PVC cleanup state, next to the leader
+/// election Lease. The chart grants access to this name only.
+fn orphan_pvc_state_name(cfg: &Config) -> String {
+    format!("{}-orphan-pvc", cfg.lease_name)
 }
 
 /// The scanner's orphan PVC cleanup policy, or `None` while it is disabled.
@@ -831,15 +838,22 @@ fn build_scanner(
         "Unused volume scan loop ready"
     );
     log_orphan_pvc_cleanup_policy(cfg, events.is_some());
+    let mut kube = pvscan::KubeClient::new(client.clone());
+    let mut policy = orphan_pvc_cleanup_policy(cfg);
+    if policy.is_some() {
+        if cfg.pod_namespace.is_empty() {
+            error!(
+                "Orphan PVC cleanup will not run: POD_NAMESPACE is unset, so there is no namespace for its state ConfigMap"
+            );
+            policy = None;
+        } else {
+            kube = kube.with_orphan_state(&cfg.pod_namespace, &orphan_pvc_state_name(cfg));
+        }
+    }
     Some(
-        Scanner::new(
-            cfg.dry_run,
-            Arc::new(pvscan::KubeClient::new(client.clone())),
-            rec,
-            events,
-        )
-        .with_orphan_pvc_cleanup(orphan_pvc_cleanup_policy(cfg))
-        .with_orphan_pvc_alerts(orphan_pvc_alerts(cfg)),
+        Scanner::new(cfg.dry_run, Arc::new(kube), rec, events)
+            .with_orphan_pvc_cleanup(policy)
+            .with_orphan_pvc_alerts(orphan_pvc_alerts(cfg)),
     )
 }
 

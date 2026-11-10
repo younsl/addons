@@ -9,12 +9,14 @@ use k8s_openapi::api::apps::v1::{
     DaemonSet, Deployment, ReplicaSet, StatefulSet as K8sStatefulSet,
 };
 use k8s_openapi::api::batch::v1::{CronJob, Job};
-use k8s_openapi::api::core::v1::{PersistentVolume, PersistentVolumeClaim, Pod, PodSpec};
+use k8s_openapi::api::core::v1::{
+    ConfigMap, PersistentVolume, PersistentVolumeClaim, Pod, PodSpec,
+};
 use k8s_openapi::apimachinery::pkg::api::resource::Quantity;
 use kube::api::{DeleteParams, ListParams, Patch, PatchParams, Preconditions};
 
-use super::KubeApi;
 use super::types::{Inventory, Pv, Pvc, StatefulSet};
+use super::{KubeApi, OrphanPvcRecord, OrphanPvcState};
 use crate::k8s::annotation_patch;
 use crate::k8s::nodes::PAGE_SIZE;
 
@@ -27,15 +29,42 @@ const EBS_CSI_DRIVER: &str = "ebs.csi.aws.com";
 /// chart is sized for the addon's steady state, not for a 500-Pod page.
 const POD_PAGE_SIZE: u32 = 100;
 
+/// The field manager that owns the orphan PVC cleanup state `ConfigMap`.
+const STATE_FIELD_MANAGER: &str = "volume-autoscaler";
+
 /// The kube-backed scanner client.
 pub struct KubeClient {
     client: kube::Client,
+    /// Namespace and name of the `ConfigMap` holding the orphan PVC cleanup
+    /// state, in the controller's own namespace so a user who can patch a
+    /// claim cannot edit it.
+    orphan_state: Option<(String, String)>,
 }
 
 impl KubeClient {
     #[must_use]
     pub const fn new(client: kube::Client) -> Self {
-        Self { client }
+        Self {
+            client,
+            orphan_state: None,
+        }
+    }
+
+    #[must_use]
+    pub fn with_orphan_state(mut self, namespace: &str, name: &str) -> Self {
+        self.orphan_state = Some((namespace.to_string(), name.to_string()));
+        self
+    }
+
+    fn orphan_state_api(&self) -> Result<(kube::Api<ConfigMap>, &str), String> {
+        let (ns, name) = self
+            .orphan_state
+            .as_ref()
+            .ok_or("no orphan PVC cleanup state ConfigMap configured")?;
+        Ok((
+            kube::Api::namespaced(self.client.clone(), ns),
+            name.as_str(),
+        ))
     }
 
     /// Lists every object of one kind, handing each page to `reduce` and
@@ -267,6 +296,47 @@ impl KubeApi for KubeClient {
             .map(|_| ())
             .map_err(|e| format!("delete persistentvolumeclaim {namespace}/{name}: {e}"))
     }
+
+    async fn load_orphan_state(&self) -> Result<OrphanPvcState, String> {
+        let (api, name) = self.orphan_state_api()?;
+        let cm = api
+            .get_opt(name)
+            .await
+            .map_err(|e| format!("get configmap {name}: {e}"))?;
+        Ok(cm.map(|c| decode_state(&c)).unwrap_or_default())
+    }
+
+    async fn save_orphan_state(&self, state: &OrphanPvcState) -> Result<(), String> {
+        let (api, name) = self.orphan_state_api()?;
+        let data: BTreeMap<String, String> = state
+            .iter()
+            .map(|(uid, r)| (uid.clone(), r.encode()))
+            .collect();
+        let body = serde_json::json!({
+            "apiVersion": "v1",
+            "kind": "ConfigMap",
+            "metadata": {"name": name},
+            "data": data,
+        });
+        api.patch(
+            name,
+            &PatchParams::apply(STATE_FIELD_MANAGER).force(),
+            &Patch::Apply(body),
+        )
+        .await
+        .map(|_| ())
+        .map_err(|e| format!("apply configmap {name}: {e}"))
+    }
+}
+
+/// Reads every record a state `ConfigMap` holds, dropping the ones that do
+/// not decode.
+pub(crate) fn decode_state(cm: &ConfigMap) -> OrphanPvcState {
+    cm.data
+        .iter()
+        .flatten()
+        .filter_map(|(uid, raw)| OrphanPvcRecord::decode(raw).map(|r| (uid.clone(), r)))
+        .collect()
 }
 
 /// Adds `namespace/name` for every claim a Pod template mounts.
@@ -706,6 +776,28 @@ mod tests {
         let d = from_stateful_set(&K8sStatefulSet::default());
         assert_eq!((d.replicas, d.ordinal_start), (1, 0));
         assert!(d.claim_templates.is_empty(), "{:?}", d.claim_templates);
+    }
+
+    #[test]
+    fn state_configmap_decodes_valid_records() {
+        let r = OrphanPvcRecord {
+            claim: "ns/c".into(),
+            first_seen: chrono::DateTime::from_timestamp(1_700_000_000, 0).unwrap(),
+            delete_after: None,
+            alerted_at: None,
+        };
+        let cm = ConfigMap {
+            data: Some(BTreeMap::from([
+                ("uid-1".to_string(), r.encode()),
+                ("uid-2".to_string(), "garbage".to_string()),
+            ])),
+            ..ConfigMap::default()
+        };
+        assert_eq!(
+            decode_state(&cm),
+            BTreeMap::from([("uid-1".to_string(), r)])
+        );
+        assert!(decode_state(&ConfigMap::default()).is_empty());
     }
 
     #[test]

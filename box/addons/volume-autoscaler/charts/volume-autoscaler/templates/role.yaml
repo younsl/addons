@@ -20,4 +20,17 @@ rules:
       - create
       - update
   {{- end }}
+  {{- if and (has "unused-volume-scan" .Values.controllers) (.Values.config.orphanPvcCleanup | default dict).enabled }}
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs:
+      - create
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    resourceNames:
+      - {{ include "volume-autoscaler.fullname" . }}-orphan-pvc
+    verbs:
+      - get
+      - patch
+  {{- end }}
 {{- end }}

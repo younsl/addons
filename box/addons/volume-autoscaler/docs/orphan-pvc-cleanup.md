@@ -72,12 +72,21 @@ The chart adds the `delete` verb on `persistentvolumeclaims` and `list` on Deplo
 
 Every hourly scan decides each unused claim:
 
-1. **Eligible** when its reason is in `reasons`, it is within `alertBefore` of being unused for `minUnusedAge`, its namespace is in scope, and no guard below protects it.
-2. **Scheduled** on the first pass that finds it eligible. The scan writes `volume-autoscaler.sh/orphan-pvc-delete-after` with the deadline, the moment the claim reaches `minUnusedAge` but never less than `alertBefore` from now, and records a Warning Event `OrphanPvcDeletionScheduled`, refreshed every pass until the deadline. The same pass sends the claim's one `OrphanPvcDeletionUpcoming` alert and records it in `volume-autoscaler.sh/orphan-pvc-alerted-at`, so a restart never sends it twice.
+1. **Eligible** when its reason is in `reasons`, it is within `alertBefore` of being unused for `minUnusedAge` by the controller's own clock (see [State](#state)), its namespace is in scope, and no guard below protects it.
+2. **Scheduled** on the first pass that finds it eligible. The scan writes `volume-autoscaler.sh/orphan-pvc-delete-after` with the deadline, the moment the claim reaches `minUnusedAge` but never less than `alertBefore` from now, and records a Warning Event `OrphanPvcDeletionScheduled`, refreshed every pass until the deadline. The same pass sends the claim's one `OrphanPvcDeletionUpcoming` alert and records it in the state, so a restart never sends it twice.
 3. **Deleted** on the first pass after the deadline, longest unused first, up to `maxDeletionsPerPass`. Right before the delete it lists the namespace's Pods again and skips the claim if one mounts it. The delete carries a UID precondition, so a claim recreated under the same name is never touched. A Normal Event `OrphanPvcDeleted` names the volume and its reclaim policy.
 4. **Canceled** when a scheduled claim stops being eligible before its deadline: it comes back into use, gets protected, leaves the scope, or cleanup is disabled. The deadline annotation is removed and a Normal Event `OrphanPvcDeletionCanceled` is recorded. Becoming eligible again schedules it again, with at least `alertBefore` of notice.
 
-The deadline lives in the claim's own annotation, not in memory. Enabling cleanup on a cluster with claims unused for months schedules them first and deletes nothing until `alertBefore` has passed, and a restart or leader failover neither resets nor skips the notice. With the chart defaults a claim is scheduled after 66 hours unused and deleted at 72 hours.
+With the chart defaults a claim is scheduled after 66 hours unused and deleted at 72 hours, counted from when the controller first saw it unused.
+
+## State
+
+The clock and the deadline that decide a deletion live in a ConfigMap only the controller writes, `<release fullname>-orphan-pvc` in the controller's namespace, one key per claim UID. Anyone who can patch a claim can edit its annotations, so nothing on the claim can bring a deletion forward:
+
+- The unused clock starts when the controller first sees the claim unused and eligible. The claim's `unused-since` can only push it later, never earlier.
+- `orphan-pvc-delete-after` on the claim is a copy for operators. A deletion happens only when it matches the stored deadline. A changed or removed copy reschedules the claim with at least `alertBefore` of notice.
+
+Enabling cleanup on a cluster with claims unused for months therefore starts their clocks at that moment, so the first deletions happen `minUnusedAge` later. A restart or leader failover neither resets nor skips a clock or a deadline. If the state cannot be read, the pass schedules, cancels, and deletes nothing and counts `error_total{stage="orphan_pvc_cleanup_state"}`. The chart grants `create` on ConfigMaps and `get` and `patch` on this one name, in the release namespace only, while cleanup is enabled.
 
 ```console
 $ kubectl get pvc -n legacy uploads -o jsonpath='{.metadata.annotations}' | jq
@@ -106,7 +115,7 @@ A claim is never scheduled while any of these holds:
 kubectl annotate pvc -n legacy uploads volume-autoscaler.sh/orphan-pvc-cleanup=disabled
 ```
 
-The guards fail closed. When the workload lists fail, the pass schedules, cancels, and deletes nothing and counts `error_total{stage="orphan_pvc_cleanup_references"}`. When the Pod recheck before a delete fails, that claim is skipped.
+The guards fail closed. When the workload lists or the [state](#state) cannot be read, the pass schedules, cancels, and deletes nothing and counts `error_total{stage="orphan_pvc_cleanup_references"}` or `error_total{stage="orphan_pvc_cleanup_state"}`. When the Pod recheck before a delete fails, that claim is skipped.
 
 ## Dry run
 
