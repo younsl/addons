@@ -1042,3 +1042,380 @@ fn render_delete_modal(f: &mut Frame, area: Rect, app: &App, id: &str) {
     ];
     f.render_widget(Paragraph::new(lines).block(block), area);
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::app::{DetailState, StatusKind};
+    use crate::test_support::{
+        item_id, link, locked_app, new_item, render_to_string, setup_app, unlocked_app,
+    };
+    use crate::vault::NewItem;
+
+    const W: u16 = 120;
+    const H: u16 = 40;
+
+    fn render(app: &App) -> String {
+        render_to_string(app, W, H)
+    }
+
+    fn set_setup(app: &mut App, f: impl FnOnce(&mut SetupState)) {
+        if let Screen::Setup(s) = &mut app.screen {
+            f(s);
+        }
+    }
+
+    fn set_list(app: &mut App, f: impl FnOnce(&mut AppListState)) {
+        if let Screen::List(l) = &mut app.screen {
+            f(l);
+        }
+    }
+
+    fn set_form(app: &mut App, f: impl FnOnce(&mut FormState)) {
+        if let Screen::Form(s) = &mut app.screen {
+            f(s);
+        }
+    }
+
+    fn detail_for(item: NewItem, reveal: bool) -> String {
+        let title = item.title.clone();
+        let (_dir, mut app) = unlocked_app(vec![item]);
+        let id = item_id(&app, &title);
+        app.screen = Screen::Detail(DetailState {
+            id,
+            reveal,
+            pending_g: false,
+        });
+        render(&app)
+    }
+
+    fn line_text(line: &Line) -> String {
+        line.spans.iter().map(|s| s.content.as_ref()).collect()
+    }
+
+    #[test]
+    fn setup_screen_masks_and_shows_error() {
+        let (_dir, mut app) = setup_app();
+        set_setup(&mut app, |s| {
+            s.password = "abc".into();
+            s.confirm = "abcd".into();
+            s.error = Some("passwords do not match".into());
+        });
+        let out = render(&app);
+        assert!(out.contains("Set vault password"));
+        assert!(out.contains("•••"));
+        assert!(!out.contains("abc"));
+        assert!(out.contains("passwords do not match"));
+        assert!(out.contains("locked"));
+        assert!(out.contains("Tab next"));
+        assert!(out.contains(&format!("v{}", env!("CARGO_PKG_VERSION"))));
+    }
+
+    #[test]
+    fn setup_screen_reveals_on_request() {
+        let (_dir, mut app) = setup_app();
+        set_setup(&mut app, |s| {
+            s.password = "visible1".into();
+            s.reveal = true;
+            s.focus = SetupFocus::Confirm;
+        });
+        assert!(render(&app).contains("visible1"));
+    }
+
+    #[test]
+    fn unlock_screen_renders_error() {
+        let (_dir, mut app) = locked_app();
+        if let Screen::Unlock(s) = &mut app.screen {
+            s.password = "typed-in".into();
+            s.error = Some("invalid master password".into());
+        }
+        let out = render(&app);
+        assert!(out.contains("Unlock vault"));
+        assert!(out.contains("invalid master password"));
+        assert!(out.contains("Enter unlock"));
+        assert!(!out.contains("typed-in"));
+        if let Screen::Unlock(s) = &mut app.screen {
+            s.reveal = true;
+        }
+        assert!(render(&app).contains("typed-in"));
+    }
+
+    #[test]
+    fn list_empty_vault_message() {
+        let (_dir, app) = unlocked_app(Vec::new());
+        let out = render(&app);
+        assert!(out.contains("vault is empty"));
+        assert!(out.contains("press : to search"));
+        assert!(out.contains("unlocked"));
+    }
+
+    #[test]
+    fn list_no_matches_message_and_search_hint() {
+        let (_dir, mut app) = unlocked_app(vec![new_item("Alpha", "")]);
+        set_list(&mut app, |l| {
+            l.search = "zzz".into();
+            l.searching = true;
+        });
+        let out = render(&app);
+        assert!(out.contains("no matches"));
+        assert!(out.contains(":zzz"));
+        assert!(out.contains("type to filter"));
+    }
+
+    #[test]
+    fn list_renders_tree_rows() {
+        let (_dir, mut app) = unlocked_app(vec![
+            new_item("Mail", "work"),
+            new_item("Deploy", "work/ci"),
+            new_item("Solo", ""),
+        ]);
+        set_list(&mut app, |l| {
+            l.collapsed.insert("work/ci".into());
+            l.selected = 99;
+        });
+        let out = render(&app);
+        assert!(out.contains("▾ work"));
+        assert!(out.contains("(2)"));
+        assert!(out.contains("▸ ci"));
+        assert!(!out.contains("Deploy"));
+        assert!(out.contains("Mail"));
+        assert!(out.contains("mail-user"));
+        assert!(out.contains("Solo"));
+        assert!(out.contains("n new"));
+    }
+
+    #[test]
+    fn list_truncates_long_titles() {
+        let long = "x".repeat(200);
+        let (_dir, app) = unlocked_app(vec![new_item(&long, "")]);
+        let out = render(&app);
+        assert!(out.contains('…'));
+        assert!(!out.contains(&long));
+    }
+
+    #[test]
+    fn delete_modal_shows_title_or_unknown() {
+        let (_dir, mut app) = unlocked_app(vec![new_item("Alpha", "")]);
+        let id = item_id(&app, "Alpha");
+        set_list(&mut app, |l| l.confirm_delete_id = Some(id));
+        let out = render(&app);
+        assert!(out.contains("Delete credential"));
+        assert!(out.contains("delete \"Alpha\" ?"));
+        set_list(&mut app, |l| l.confirm_delete_id = Some("missing".into()));
+        assert!(render(&app).contains("(unknown)"));
+    }
+
+    #[test]
+    fn help_modal_overlays_screen() {
+        let (_dir, mut app) = unlocked_app(Vec::new());
+        app.show_help = true;
+        let out = render(&app);
+        assert!(out.contains("Help"));
+        assert!(out.contains("open detail / toggle group"));
+        assert!(out.contains("copy Nth link's URL"));
+    }
+
+    #[test]
+    fn status_bar_shows_info_and_error() {
+        let (_dir, mut app) = unlocked_app(Vec::new());
+        app.set_status("saved", StatusKind::Info);
+        assert!(render(&app).contains("saved"));
+        app.set_status("broken", StatusKind::Error);
+        assert!(render(&app).contains("broken"));
+    }
+
+    #[test]
+    fn detail_missing_item() {
+        let (_dir, mut app) = unlocked_app(Vec::new());
+        app.open_detail("missing".into());
+        assert!(render(&app).contains("(item not found)"));
+    }
+
+    #[test]
+    fn detail_full_item_masked() {
+        let mut item = new_item("Alpha", "work / ci");
+        item.url = "https://example.com".into();
+        item.notes = "line one\nline two".into();
+        item.links = vec![
+            link("docs", "manual", "https://example.com/docs"),
+            link("", "", "https://example.com/x"),
+        ];
+        let out = detail_for(item, false);
+        assert!(out.contains("Detail"));
+        assert!(out.contains("Alpha"));
+        assert!(out.contains("work › ci"));
+        assert!(out.contains("created "));
+        assert!(out.contains("alpha-user"));
+        assert!(out.contains("[gx]"));
+        assert!(!out.contains("Alpha-pw"));
+        assert!(out.contains("line one"));
+        assert!(out.contains("line two"));
+        assert!(out.contains("[1] docs"));
+        assert!(out.contains("manual"));
+        assert!(out.contains("[2] (unnamed)"));
+        assert!(out.contains("[g2]"));
+        assert!(out.contains("gx open url"));
+    }
+
+    #[test]
+    fn detail_reveals_password() {
+        assert!(detail_for(new_item("Alpha", ""), true).contains("Alpha-pw"));
+    }
+
+    #[test]
+    fn detail_links_without_notes_and_empty_password() {
+        let mut item = new_item("Alpha", "");
+        item.password = String::new();
+        item.links = vec![link("only", "", "")];
+        let out = detail_for(item, false);
+        assert!(out.contains("Links"));
+        assert!(out.contains("[1] only"));
+        assert!(!out.contains("[u]"));
+    }
+
+    #[test]
+    fn detail_row_truncates_long_values() {
+        let value = "v".repeat(100);
+        let line = detail_row("URL", &value, &["u", "gx"], Style::default(), 40);
+        let text = line_text(&line);
+        assert!(text.contains('…'));
+        assert!(text.ends_with("[gx]"));
+        let plain = detail_row("Empty", "", &["u"], Style::default(), 40);
+        assert!(!line_text(&plain).contains('['));
+    }
+
+    fn form_app() -> (crate::test_support::TempDir, App) {
+        let (dir, mut app) = unlocked_app(Vec::new());
+        app.start_new();
+        set_form(&mut app, |f| {
+            f.title = "Alpha".into();
+            f.password = "form-secret".into();
+            f.notes = "first\nsecond".into();
+        });
+        (dir, app)
+    }
+
+    #[test]
+    fn form_create_masks_password() {
+        let (_dir, app) = form_app();
+        let out = render(&app);
+        assert!(out.contains("New credential"));
+        assert!(out.contains("Alpha▌"));
+        assert!(!out.contains("form-secret"));
+        assert!(out.contains("first"));
+        assert!(out.contains("second"));
+        assert!(out.contains("[+] add link"));
+        assert!(out.contains("Ctrl+S save"));
+    }
+
+    #[test]
+    fn form_password_focus_shows_hint_and_reveal() {
+        let (_dir, mut app) = form_app();
+        set_form(&mut app, |f| {
+            f.focus = FormFocus::Password;
+            f.reveal = true;
+            f.error = Some("title is required".into());
+        });
+        let out = render(&app);
+        assert!(out.contains("form-secret▌"));
+        assert!(out.contains("Ctrl+G generate"));
+        assert!(out.contains("title is required"));
+    }
+
+    #[test]
+    fn form_notes_focus_puts_cursor_on_last_line() {
+        let (_dir, mut app) = form_app();
+        set_form(&mut app, |f| f.focus = FormFocus::Notes);
+        assert!(render(&app).contains("second▌"));
+        set_form(&mut app, |f| f.notes.clear());
+        assert!(render(&app).contains("Notes     ▌"));
+    }
+
+    #[test]
+    fn form_add_link_focus_without_links() {
+        let (_dir, mut app) = form_app();
+        set_form(&mut app, |f| f.focus = FormFocus::AddLink);
+        assert!(render(&app).contains("[+] add link▌"));
+    }
+
+    #[test]
+    fn form_edit_with_links() {
+        let mut item = new_item("Alpha", "");
+        item.links = vec![
+            link("docs", "manual", "https://example.com/docs"),
+            link("wiki", "", ""),
+        ];
+        let (_dir, mut app) = unlocked_app(vec![item]);
+        let id = item_id(&app, "Alpha");
+        app.start_edit(&id).unwrap();
+        set_form(&mut app, |f| f.focus = FormFocus::LinkDescription(0));
+        let out = render(&app);
+        assert!(out.contains("Edit credential"));
+        assert!(out.contains("[1] Name"));
+        assert!(out.contains("[2] Name"));
+        assert!(out.contains("manual▌"));
+        assert!(out.contains("https://example.com/docs"));
+        set_form(&mut app, |f| f.focus = FormFocus::LinkUrl(1));
+        assert!(render(&app).contains("URL         ▌"));
+    }
+
+    #[test]
+    fn generator_screen() {
+        let (_dir, mut app) = unlocked_app(Vec::new());
+        let mut g = GenState::new();
+        g.symbols = false;
+        g.output = "generated-output".into();
+        app.screen = Screen::Generator(g);
+        let out = render(&app);
+        assert!(out.contains("Password generator"));
+        assert!(out.contains("generated-output"));
+        assert!(out.contains("length   24"));
+        assert!(out.contains("symbols  off"));
+        assert!(out.contains("numbers  on"));
+        assert!(out.contains("+/- length"));
+    }
+
+    #[test]
+    fn tiny_terminal_does_not_panic() {
+        let (_dir, mut app) = setup_app();
+        assert_ne!(render_to_string(&app, 20, 6), "");
+        app.show_help = true;
+        assert_ne!(render_to_string(&app, 20, 6), "");
+    }
+
+    #[test]
+    fn truncate_respects_display_width() {
+        assert_eq!(truncate("short".into(), 10), "short");
+        assert_eq!(truncate("abcdefgh".into(), 5), "abcd…");
+        assert_eq!(truncate("한국어텍스트".into(), 5), "한국…");
+        assert_eq!(truncate("abc".into(), 0), "…");
+    }
+
+    #[test]
+    fn pad_to_width_handles_wide_chars() {
+        assert_eq!(pad_to_width("ab", 4), "ab  ");
+        assert_eq!(pad_to_width("한", 3), "한 ");
+        assert_eq!(pad_to_width("abcdef", 3), "abcdef");
+    }
+
+    #[test]
+    fn short_date_formats_rfc3339() {
+        assert_eq!(short_date(""), "");
+        assert_eq!(short_date("2024-01-02T03:04:05+00:00"), "2024-01-02 03:04");
+    }
+
+    #[test]
+    fn centered_clamps_to_area() {
+        let area = Rect::new(0, 0, 100, 50);
+        assert_eq!(centered(20, 10, area), Rect::new(40, 20, 20, 10));
+        assert_eq!(centered(200, 100, area), Rect::new(0, 0, 100, 50));
+    }
+
+    #[test]
+    fn masked_and_toggle_lines() {
+        assert_eq!(line_text(&masked("abc", false)), "•••");
+        assert_eq!(line_text(&masked("abc", true)), "abc");
+        assert_eq!(line_text(&toggle_line("x", true)), "x  on ");
+        assert_eq!(line_text(&toggle_line("x", false)), "x  off");
+    }
+}

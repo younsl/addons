@@ -14,8 +14,14 @@ pub const KEY_LEN: usize = 32;
 pub const NONCE_LEN: usize = 12;
 pub const SALT_LEN: usize = 16;
 
+#[cfg(not(test))]
 const ARGON_M_COST: u32 = 64 * 1024;
+#[cfg(test)]
+const ARGON_M_COST: u32 = 8 * ARGON_P_COST;
+#[cfg(not(test))]
 const ARGON_T_COST: u32 = 3;
+#[cfg(test)]
+const ARGON_T_COST: u32 = 1;
 const ARGON_P_COST: u32 = 4;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

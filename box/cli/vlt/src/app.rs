@@ -1,4 +1,5 @@
 use std::collections::BTreeSet;
+use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
@@ -25,6 +26,7 @@ pub struct App {
     pub clipboard_clear_at: Option<Instant>,
     pub should_quit: bool,
     pub show_help: bool,
+    pub session: session::Store,
 }
 
 pub enum Screen {
@@ -253,15 +255,26 @@ pub enum RowKind {
 ///   2. `$XDG_DATA_HOME/vlt/vault.json` if `XDG_DATA_HOME` is set and non-empty.
 ///   3. Fallback `$HOME/.local/share/vlt/vault.json`.
 fn resolve_vault_path() -> VltResult<PathBuf> {
-    if let Some(p) = std::env::var_os("VLT_VAULT_PATH").filter(|s| !s.is_empty()) {
+    vault_path_from(
+        std::env::var_os("VLT_VAULT_PATH"),
+        std::env::var_os("XDG_DATA_HOME"),
+        std::env::var_os("HOME"),
+    )
+}
+
+fn vault_path_from(
+    vault: Option<OsString>,
+    xdg_data: Option<OsString>,
+    home: Option<OsString>,
+) -> VltResult<PathBuf> {
+    if let Some(p) = vault.filter(|s| !s.is_empty()) {
         return Ok(PathBuf::from(p));
     }
-    let base = std::env::var_os("XDG_DATA_HOME")
+    let base = xdg_data
         .filter(|s| !s.is_empty())
         .map(PathBuf::from)
         .or_else(|| {
-            std::env::var_os("HOME")
-                .filter(|s| !s.is_empty())
+            home.filter(|s| !s.is_empty())
                 .map(|h| PathBuf::from(h).join(".local").join("share"))
         })
         .ok_or(VltError::NoConfigDir)?;
@@ -287,6 +300,10 @@ fn migrate_legacy(new_path: &Path) {
         .join("Application Support")
         .join("io.younsl.vlt")
         .join("vault.json");
+    move_legacy(&legacy, new_path);
+}
+
+fn move_legacy(legacy: &Path, new_path: &Path) {
     if !legacy.exists() {
         return;
     }
@@ -295,19 +312,30 @@ fn migrate_legacy(new_path: &Path) {
     {
         return;
     }
-    let _ = std::fs::rename(&legacy, new_path);
+    let _ = std::fs::rename(legacy, new_path);
 }
 
 impl App {
     pub fn new() -> VltResult<Self> {
         let vault_path = resolve_vault_path()?;
         migrate_legacy(&vault_path);
+        Ok(Self::launch(
+            vault_path,
+            session::Store::from_env(),
+            arboard::Clipboard::new().ok(),
+        ))
+    }
 
+    fn launch(
+        vault_path: PathBuf,
+        session: session::Store,
+        clipboard: Option<arboard::Clipboard>,
+    ) -> Self {
         // Try to silently unlock from a non-expired cached session.
         let mut vault: Option<Vault> = None;
         let mut cache_status: Option<String> = None;
         if vault_path.exists()
-            && let session::LoadResult::Hit { master, encrypted } = session::load(&vault_path)
+            && let session::LoadResult::Hit { master, encrypted } = session.load(&vault_path)
         {
             match Vault::open_vault(&vault_path, &master) {
                 Ok(v) => {
@@ -320,7 +348,7 @@ impl App {
                 }
                 Err(_) => {
                     // Stale cache (password changed, vault rotated, etc.)
-                    session::clear();
+                    session.clear();
                 }
             }
         }
@@ -348,15 +376,16 @@ impl App {
             vault,
             screen,
             status: None,
-            clipboard: arboard::Clipboard::new().ok(),
+            clipboard,
             clipboard_clear_at: None,
             should_quit: false,
             show_help: false,
+            session,
         };
         if let Some(msg) = cache_status {
             app.set_status(msg, StatusKind::Info);
         }
-        Ok(app)
+        app
     }
 
     pub fn set_status<S: Into<String>>(&mut self, msg: S, kind: StatusKind) {
@@ -395,7 +424,7 @@ impl App {
         match Vault::create(&self.vault_path, &pwd) {
             Ok(v) => {
                 self.vault = Some(v);
-                let outcome = session::save(&pwd, &self.vault_path);
+                let outcome = self.session.save(&pwd, &self.vault_path);
                 self.screen = Screen::List(default_list());
                 self.set_status(
                     format!("vault created · {}", session_outcome_label(outcome)),
@@ -414,7 +443,7 @@ impl App {
         match Vault::open_vault(&self.vault_path, &pwd) {
             Ok(v) => {
                 self.vault = Some(v);
-                let outcome = session::save(&pwd, &self.vault_path);
+                let outcome = self.session.save(&pwd, &self.vault_path);
                 self.screen = Screen::List(default_list());
                 self.set_status(
                     format!("unlocked · {}", session_outcome_label(outcome)),
@@ -427,7 +456,7 @@ impl App {
 
     pub fn lock_vault(&mut self) {
         self.vault = None;
-        session::clear();
+        self.session.clear();
         self.screen = Screen::Unlock(UnlockState {
             password: String::new(),
             error: None,
@@ -710,5 +739,673 @@ fn emit_rows(
             depth: depth + 1,
             kind: RowKind::Item(it),
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_support::{
+        MASTER, TempDir, fixed_keyring, item_id, link, locked_app, new_item, no_keyring, setup_app,
+        store, unlocked_app,
+    };
+
+    fn form(links: usize) -> FormState {
+        FormState {
+            mode: FormMode::Create,
+            focus: FormFocus::Title,
+            title: String::new(),
+            username: String::new(),
+            password: String::new(),
+            url: String::new(),
+            group: String::new(),
+            notes: String::new(),
+            links: (0..links).map(|_| Link::default()).collect(),
+            reveal: false,
+            error: None,
+        }
+    }
+
+    fn past(secs: u64) -> Instant {
+        Instant::now()
+            .checked_sub(Duration::from_secs(secs))
+            .expect("instant in the past")
+    }
+
+    fn status_text(app: &App) -> String {
+        app.status.as_ref().map(|s| s.0.clone()).unwrap_or_default()
+    }
+
+    fn status_kind(app: &App) -> Option<StatusKind> {
+        app.status.as_ref().map(|s| s.2)
+    }
+
+    fn form_mut(app: &mut App) -> &mut FormState {
+        match &mut app.screen {
+            Screen::Form(f) => f,
+            _ => panic!("expected form screen"),
+        }
+    }
+
+    fn form_error(app: &App) -> Option<String> {
+        match &app.screen {
+            Screen::Form(f) => f.error.clone(),
+            _ => None,
+        }
+    }
+
+    fn row_labels(app: &App, list: &ListState) -> Vec<String> {
+        app.visible_rows(list)
+            .iter()
+            .map(|r| match &r.kind {
+                RowKind::Group {
+                    path,
+                    count,
+                    expanded,
+                    ..
+                } => format!("{}G:{path}:{count}:{expanded}", r.depth),
+                RowKind::Item(it) => format!("{}I:{}", r.depth, it.title),
+            })
+            .collect()
+    }
+
+    #[test]
+    fn focus_next_cycles_without_links() {
+        let mut f = form(0);
+        let expected = [
+            FormFocus::Username,
+            FormFocus::Password,
+            FormFocus::Url,
+            FormFocus::Group,
+            FormFocus::Notes,
+            FormFocus::AddLink,
+            FormFocus::Title,
+        ];
+        for want in expected {
+            f.focus_next();
+            assert_eq!(f.focus, want);
+        }
+    }
+
+    #[test]
+    fn focus_next_walks_link_rows() {
+        let mut f = form(2);
+        f.focus = FormFocus::Notes;
+        let expected = [
+            FormFocus::LinkName(0),
+            FormFocus::LinkDescription(0),
+            FormFocus::LinkUrl(0),
+            FormFocus::LinkName(1),
+            FormFocus::LinkDescription(1),
+            FormFocus::LinkUrl(1),
+            FormFocus::AddLink,
+        ];
+        for want in expected {
+            f.focus_next();
+            assert_eq!(f.focus, want);
+        }
+    }
+
+    #[test]
+    fn focus_prev_cycles_through_links() {
+        let mut f = form(2);
+        let expected = [
+            FormFocus::AddLink,
+            FormFocus::LinkUrl(1),
+            FormFocus::LinkDescription(1),
+            FormFocus::LinkName(1),
+            FormFocus::LinkUrl(0),
+            FormFocus::LinkDescription(0),
+            FormFocus::LinkName(0),
+            FormFocus::Notes,
+            FormFocus::Group,
+            FormFocus::Url,
+            FormFocus::Password,
+            FormFocus::Username,
+            FormFocus::Title,
+        ];
+        for want in expected {
+            f.focus_prev();
+            assert_eq!(f.focus, want);
+        }
+    }
+
+    #[test]
+    fn focus_prev_from_add_link_without_links_goes_to_notes() {
+        let mut f = form(0);
+        f.focus = FormFocus::AddLink;
+        f.focus_prev();
+        assert_eq!(f.focus, FormFocus::Notes);
+    }
+
+    #[test]
+    fn add_link_focuses_new_link() {
+        let mut f = form(1);
+        f.add_link();
+        assert_eq!(f.links.len(), 2);
+        assert_eq!(f.focus, FormFocus::LinkName(1));
+    }
+
+    #[test]
+    fn delete_focused_link_ignores_non_link_focus() {
+        let mut f = form(1);
+        f.delete_focused_link();
+        assert_eq!(f.links.len(), 1);
+        f.focus = FormFocus::LinkName(5);
+        f.delete_focused_link();
+        assert_eq!(f.links.len(), 1);
+    }
+
+    #[test]
+    fn delete_last_remaining_link_moves_to_add_link() {
+        let mut f = form(1);
+        f.focus = FormFocus::LinkUrl(0);
+        f.delete_focused_link();
+        assert!(f.links.is_empty());
+        assert_eq!(f.focus, FormFocus::AddLink);
+    }
+
+    #[test]
+    fn delete_trailing_link_moves_to_previous() {
+        let mut f = form(2);
+        f.focus = FormFocus::LinkDescription(1);
+        f.delete_focused_link();
+        assert_eq!(f.links.len(), 1);
+        assert_eq!(f.focus, FormFocus::LinkName(0));
+    }
+
+    #[test]
+    fn delete_middle_link_keeps_index() {
+        let mut f = form(3);
+        f.focus = FormFocus::LinkName(1);
+        f.delete_focused_link();
+        assert_eq!(f.links.len(), 2);
+        assert_eq!(f.focus, FormFocus::LinkName(1));
+    }
+
+    #[test]
+    fn current_value_mut_targets_focused_field() {
+        let mut f = form(1);
+        let focuses = [
+            FormFocus::Title,
+            FormFocus::Username,
+            FormFocus::Password,
+            FormFocus::Url,
+            FormFocus::Group,
+            FormFocus::Notes,
+            FormFocus::LinkName(0),
+            FormFocus::LinkDescription(0),
+            FormFocus::LinkUrl(0),
+        ];
+        for (i, focus) in focuses.into_iter().enumerate() {
+            f.focus = focus;
+            f.current_value_mut().unwrap().push_str(&i.to_string());
+        }
+        assert_eq!(f.title, "0");
+        assert_eq!(f.username, "1");
+        assert_eq!(f.password, "2");
+        assert_eq!(f.url, "3");
+        assert_eq!(f.group, "4");
+        assert_eq!(f.notes, "5");
+        assert_eq!(f.links[0].name, "6");
+        assert_eq!(f.links[0].description, "7");
+        assert_eq!(f.links[0].url, "8");
+        f.focus = FormFocus::AddLink;
+        assert!(f.current_value_mut().is_none());
+        f.focus = FormFocus::LinkName(9);
+        assert!(f.current_value_mut().is_none());
+    }
+
+    #[test]
+    fn gen_state_defaults() {
+        let g = GenState::default();
+        assert_eq!(g.length, 24);
+        assert!(g.symbols && g.numbers);
+        assert_eq!(g.output.len(), 24);
+    }
+
+    #[test]
+    fn gen_state_regenerate_respects_options() {
+        let mut g = GenState::new();
+        g.length = 40;
+        g.symbols = false;
+        g.numbers = false;
+        g.regenerate();
+        assert_eq!(g.output.len(), 40);
+        assert!(g.output.chars().all(|c| c.is_ascii_alphabetic()));
+    }
+
+    #[test]
+    fn vault_path_prefers_override() {
+        let p = vault_path_from(Some("/v.json".into()), Some("/d".into()), Some("/h".into()));
+        assert_eq!(p.unwrap(), PathBuf::from("/v.json"));
+    }
+
+    #[test]
+    fn vault_path_uses_xdg_then_home() {
+        assert_eq!(
+            vault_path_from(Some("".into()), Some("/d".into()), None).unwrap(),
+            PathBuf::from("/d/vlt/vault.json")
+        );
+        assert_eq!(
+            vault_path_from(None, Some("".into()), Some("/h".into())).unwrap(),
+            PathBuf::from("/h/.local/share/vlt/vault.json")
+        );
+        assert!(matches!(
+            vault_path_from(None, None, Some("".into())),
+            Err(VltError::NoConfigDir)
+        ));
+    }
+
+    #[test]
+    fn resolve_vault_path_reads_environment() {
+        let from_env = vault_path_from(
+            std::env::var_os("VLT_VAULT_PATH"),
+            std::env::var_os("XDG_DATA_HOME"),
+            std::env::var_os("HOME"),
+        );
+        assert_eq!(resolve_vault_path().ok(), from_env.ok());
+    }
+
+    #[test]
+    fn migrate_legacy_skips_existing_vault() {
+        let dir = TempDir::new();
+        std::fs::write(dir.vault_path(), b"{}").unwrap();
+        migrate_legacy(&dir.vault_path());
+        assert_eq!(std::fs::read(dir.vault_path()).unwrap(), b"{}");
+    }
+
+    #[test]
+    fn move_legacy_without_source_is_noop() {
+        let dir = TempDir::new();
+        move_legacy(&dir.path().join("legacy.json"), &dir.vault_path());
+        assert!(!dir.vault_path().exists());
+    }
+
+    #[test]
+    fn move_legacy_moves_file_into_new_location() {
+        let dir = TempDir::new();
+        let legacy = dir.path().join("legacy.json");
+        std::fs::write(&legacy, b"legacy").unwrap();
+        let target = dir.path().join("nested").join("vault.json");
+        move_legacy(&legacy, &target);
+        assert!(!legacy.exists());
+        assert_eq!(std::fs::read(&target).unwrap(), b"legacy");
+    }
+
+    #[test]
+    fn move_legacy_gives_up_when_parent_cannot_be_created() {
+        let dir = TempDir::new();
+        let legacy = dir.path().join("legacy.json");
+        std::fs::write(&legacy, b"legacy").unwrap();
+        let blocker = dir.path().join("blocker");
+        std::fs::write(&blocker, b"x").unwrap();
+        move_legacy(&legacy, &blocker.join("vault.json"));
+        assert!(legacy.exists());
+    }
+
+    #[test]
+    fn launch_without_vault_shows_setup() {
+        let dir = TempDir::new();
+        let app = App::launch(dir.vault_path(), store(&dir), None);
+        assert!(matches!(app.screen, Screen::Setup(_)));
+        assert!(app.vault.is_none());
+        assert!(app.status.is_none());
+    }
+
+    #[test]
+    fn launch_with_vault_and_no_cache_shows_unlock() {
+        let dir = TempDir::new();
+        Vault::create(&dir.vault_path(), MASTER).unwrap();
+        let app = App::launch(dir.vault_path(), store(&dir), None);
+        assert!(matches!(app.screen, Screen::Unlock(_)));
+    }
+
+    #[test]
+    fn launch_restores_plaintext_session() {
+        let dir = TempDir::new();
+        Vault::create(&dir.vault_path(), MASTER).unwrap();
+        store(&dir).save(MASTER, &dir.vault_path());
+        let app = App::launch(dir.vault_path(), store(&dir), None);
+        assert!(matches!(app.screen, Screen::List(_)));
+        assert!(app.vault.is_some());
+        assert!(status_text(&app).contains("plaintext fallback"));
+    }
+
+    #[test]
+    fn launch_restores_encrypted_session() {
+        let dir = TempDir::new();
+        Vault::create(&dir.vault_path(), MASTER).unwrap();
+        let keyed = || session::Store::new(Some(dir.session_path()), fixed_keyring);
+        keyed().save(MASTER, &dir.vault_path());
+        let app = App::launch(dir.vault_path(), keyed(), None);
+        assert!(matches!(app.screen, Screen::List(_)));
+        assert!(status_text(&app).contains("encrypted via keyring"));
+    }
+
+    #[test]
+    fn launch_clears_stale_session() {
+        let dir = TempDir::new();
+        Vault::create(&dir.vault_path(), MASTER).unwrap();
+        let stale = session::Store::new(Some(dir.session_path()), no_keyring);
+        stale.save("not the master", &dir.vault_path());
+        let app = App::launch(dir.vault_path(), store(&dir), None);
+        assert!(matches!(app.screen, Screen::Unlock(_)));
+        assert!(!dir.session_path().exists());
+    }
+
+    #[test]
+    fn tick_expires_old_status() {
+        let (_dir, mut app) = unlocked_app(Vec::new());
+        app.set_status("fresh", StatusKind::Info);
+        app.tick();
+        assert!(app.status.is_some());
+        app.status = Some(("old".into(), past(10), StatusKind::Info));
+        app.tick();
+        assert!(app.status.is_none());
+    }
+
+    #[test]
+    fn tick_clears_clipboard_deadline() {
+        let (_dir, mut app) = unlocked_app(Vec::new());
+        app.clipboard_clear_at = Some(Instant::now() + CLIPBOARD_CLEAR);
+        app.tick();
+        assert!(app.clipboard_clear_at.is_some());
+        app.clipboard_clear_at = Some(past(1));
+        app.tick();
+        assert!(app.clipboard_clear_at.is_none());
+    }
+
+    fn setup_with(app: &mut App, password: &str, confirm: &str) {
+        if let Screen::Setup(s) = &mut app.screen {
+            s.password = password.into();
+            s.confirm = confirm.into();
+        }
+        app.try_setup();
+    }
+
+    fn setup_error(app: &App) -> Option<String> {
+        match &app.screen {
+            Screen::Setup(s) => s.error.clone(),
+            _ => None,
+        }
+    }
+
+    #[test]
+    fn try_setup_rejects_short_password() {
+        let (_dir, mut app) = setup_app();
+        setup_with(&mut app, "short", "short");
+        assert!(setup_error(&app).unwrap().contains("at least 8"));
+    }
+
+    #[test]
+    fn try_setup_rejects_mismatch() {
+        let (_dir, mut app) = setup_app();
+        setup_with(&mut app, "long enough 1", "long enough 2");
+        assert_eq!(setup_error(&app).unwrap(), "passwords do not match");
+    }
+
+    #[test]
+    fn try_setup_creates_vault_and_caches_session() {
+        let (dir, mut app) = setup_app();
+        setup_with(&mut app, MASTER, MASTER);
+        assert!(matches!(app.screen, Screen::List(_)));
+        assert!(app.vault.is_some());
+        assert!(dir.vault_path().exists());
+        assert!(dir.session_path().exists());
+        assert!(status_text(&app).starts_with("vault created"));
+        assert!(status_text(&app).contains("plaintext"));
+    }
+
+    #[test]
+    fn try_setup_reports_existing_vault() {
+        let (dir, mut app) = setup_app();
+        Vault::create(&dir.vault_path(), MASTER).unwrap();
+        setup_with(&mut app, MASTER, MASTER);
+        assert!(setup_error(&app).unwrap().contains("already initialized"));
+    }
+
+    #[test]
+    fn try_setup_and_unlock_ignore_other_screens() {
+        let (_dir, mut app) = unlocked_app(Vec::new());
+        app.try_setup();
+        app.try_unlock();
+        assert!(matches!(app.screen, Screen::List(_)));
+    }
+
+    fn unlock_with(app: &mut App, password: &str) {
+        if let Screen::Unlock(s) = &mut app.screen {
+            s.password = password.into();
+        }
+        app.try_unlock();
+    }
+
+    #[test]
+    fn try_unlock_with_wrong_password_sets_error() {
+        let (_dir, mut app) = locked_app();
+        unlock_with(&mut app, "wrong password");
+        match &app.screen {
+            Screen::Unlock(s) => assert_eq!(s.error.as_deref(), Some("invalid master password")),
+            _ => panic!("expected unlock screen"),
+        }
+    }
+
+    #[test]
+    fn try_unlock_opens_vault() {
+        let (_dir, mut app) = locked_app();
+        unlock_with(&mut app, MASTER);
+        assert!(matches!(app.screen, Screen::List(_)));
+        assert!(status_text(&app).starts_with("unlocked"));
+    }
+
+    #[test]
+    fn lock_vault_clears_session() {
+        let (dir, mut app) = unlocked_app(Vec::new());
+        app.session.save(MASTER, &dir.vault_path());
+        app.lock_vault();
+        assert!(app.vault.is_none());
+        assert!(matches!(app.screen, Screen::Unlock(_)));
+        assert!(!dir.session_path().exists());
+    }
+
+    #[test]
+    fn open_empty_url_reports_error() {
+        let (_dir, mut app) = unlocked_app(Vec::new());
+        app.open_url("");
+        assert_eq!(status_text(&app), "no URL");
+        assert!(status_kind(&app) == Some(StatusKind::Error));
+    }
+
+    #[test]
+    fn copy_without_clipboard_reports_error() {
+        let (_dir, mut app) = unlocked_app(Vec::new());
+        app.copy_value("value", "label");
+        assert_eq!(status_text(&app), "clipboard unavailable");
+        assert!(app.clipboard_clear_at.is_none());
+    }
+
+    #[test]
+    fn navigation_helpers_switch_screens() {
+        let (_dir, mut app) = unlocked_app(Vec::new());
+        app.open_detail("abc".into());
+        assert!(matches!(&app.screen, Screen::Detail(d) if d.id == "abc" && !d.reveal));
+        app.start_new();
+        assert!(matches!(&app.screen, Screen::Form(f) if matches!(f.mode, FormMode::Create)));
+        app.back_to_list();
+        assert!(matches!(app.screen, Screen::List(_)));
+    }
+
+    #[test]
+    fn start_edit_loads_item_into_form() {
+        let mut item = new_item("Alpha", "work");
+        item.links = vec![link("docs", "", "")];
+        let (_dir, mut app) = unlocked_app(vec![item]);
+        let id = item_id(&app, "Alpha");
+        app.start_edit(&id).unwrap();
+        let f = form_mut(&mut app);
+        assert!(matches!(&f.mode, FormMode::Edit(e) if *e == id));
+        assert_eq!(f.title, "Alpha");
+        assert_eq!(f.group, "work");
+        assert_eq!(f.links.len(), 1);
+    }
+
+    #[test]
+    fn start_edit_errors() {
+        let (_dir, mut app) = unlocked_app(Vec::new());
+        assert!(matches!(
+            app.start_edit("missing"),
+            Err(VltError::ItemNotFound(_))
+        ));
+        app.vault = None;
+        assert!(matches!(
+            app.start_edit("missing"),
+            Err(VltError::NotInitialized)
+        ));
+    }
+
+    #[test]
+    fn save_form_requires_title_and_password() {
+        let (_dir, mut app) = unlocked_app(Vec::new());
+        app.start_new();
+        app.save_form();
+        assert_eq!(form_error(&app).as_deref(), Some("title is required"));
+        form_mut(&mut app).title = "Alpha".into();
+        app.save_form();
+        assert_eq!(form_error(&app).as_deref(), Some("password is required"));
+    }
+
+    #[test]
+    fn save_form_creates_and_persists_item() {
+        let (dir, mut app) = unlocked_app(Vec::new());
+        app.start_new();
+        let f = form_mut(&mut app);
+        f.title = "Alpha".into();
+        f.password = "pw-123".into();
+        f.group = " team ".into();
+        app.save_form();
+        assert!(matches!(app.screen, Screen::Detail(_)));
+        assert_eq!(status_text(&app), "saved");
+        let reopened = Vault::open_vault(&dir.vault_path(), MASTER).unwrap();
+        assert_eq!(reopened.items().len(), 1);
+        assert_eq!(reopened.items()[0].group, "team");
+    }
+
+    #[test]
+    fn save_form_updates_existing_item() {
+        let (dir, mut app) = unlocked_app(vec![new_item("Alpha", "")]);
+        let id = item_id(&app, "Alpha");
+        app.start_edit(&id).unwrap();
+        form_mut(&mut app).title = "Beta".into();
+        app.save_form();
+        assert!(matches!(&app.screen, Screen::Detail(d) if d.id == id));
+        let reopened = Vault::open_vault(&dir.vault_path(), MASTER).unwrap();
+        assert_eq!(reopened.items()[0].title, "Beta");
+    }
+
+    #[test]
+    fn save_form_reports_missing_item_and_locked_vault() {
+        let (_dir, mut app) = unlocked_app(vec![new_item("Alpha", "")]);
+        let id = item_id(&app, "Alpha");
+        app.start_edit(&id).unwrap();
+        form_mut(&mut app).mode = FormMode::Edit("gone".into());
+        app.save_form();
+        assert!(form_error(&app).unwrap().contains("item not found"));
+        app.vault = None;
+        app.save_form();
+        assert_eq!(
+            form_error(&app).as_deref(),
+            Some("vault is not initialized")
+        );
+    }
+
+    #[test]
+    fn save_form_ignores_other_screens() {
+        let (_dir, mut app) = unlocked_app(Vec::new());
+        app.save_form();
+        assert!(matches!(app.screen, Screen::List(_)));
+    }
+
+    #[test]
+    fn delete_item_persists_and_errors() {
+        let (dir, mut app) = unlocked_app(vec![new_item("Alpha", "")]);
+        let id = item_id(&app, "Alpha");
+        app.delete_item(&id).unwrap();
+        assert!(
+            Vault::open_vault(&dir.vault_path(), MASTER)
+                .unwrap()
+                .items()
+                .is_empty()
+        );
+        assert!(app.delete_item(&id).is_err());
+        app.vault = None;
+        assert!(matches!(
+            app.delete_item(&id),
+            Err(VltError::NotInitialized)
+        ));
+    }
+
+    #[test]
+    fn visible_rows_builds_sorted_tree() {
+        let (_dir, app) = unlocked_app(vec![
+            new_item("zeta", ""),
+            new_item("Alpha", ""),
+            new_item("Deploy", "work/ci"),
+            new_item("Mail", "work"),
+            new_item("Bank", " home // money "),
+        ]);
+        let labels = row_labels(&app, &default_list());
+        assert_eq!(
+            labels,
+            [
+                "0G:home:1:true",
+                "1G:home/money:1:true",
+                "3I:Bank",
+                "0G:work:2:true",
+                "1G:work/ci:1:true",
+                "3I:Deploy",
+                "2I:Mail",
+                "1I:Alpha",
+                "1I:zeta",
+            ]
+        );
+    }
+
+    #[test]
+    fn visible_rows_hides_collapsed_groups() {
+        let (_dir, app) = unlocked_app(vec![new_item("Mail", "work"), new_item("Solo", "")]);
+        let mut list = default_list();
+        list.collapsed.insert("work".into());
+        assert_eq!(row_labels(&app, &list), ["0G:work:1:false", "1I:Solo"]);
+    }
+
+    #[test]
+    fn visible_rows_search_filters_and_expands() {
+        let mut ci = new_item("Deploy", "work/ci");
+        ci.url = "https://ci.example.com".into();
+        let (_dir, app) = unlocked_app(vec![ci, new_item("Mail", "work"), new_item("Solo", "")]);
+        let mut list = default_list();
+        list.collapsed.insert("work".into());
+        list.search = " CI.EXAMPLE ".into();
+        assert_eq!(
+            row_labels(&app, &list),
+            ["0G:work:1:true", "1G:work/ci:1:true", "3I:Deploy"]
+        );
+        list.search = "solo-user".into();
+        assert_eq!(row_labels(&app, &list), ["1I:Solo"]);
+        list.search = "work".into();
+        assert_eq!(row_labels(&app, &list).len(), 4);
+    }
+
+    #[test]
+    fn visible_rows_without_vault_is_empty() {
+        let (_dir, app) = setup_app();
+        assert!(app.visible_rows(&default_list()).is_empty());
+    }
+
+    #[test]
+    fn session_outcome_labels() {
+        assert!(session_outcome_label(session::SaveOutcome::Encrypted).contains("encrypted"));
+        assert!(session_outcome_label(session::SaveOutcome::Plaintext).contains("plaintext"));
+        assert!(session_outcome_label(session::SaveOutcome::Failed).contains("failed"));
     }
 }

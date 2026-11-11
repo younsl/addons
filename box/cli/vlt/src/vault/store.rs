@@ -139,3 +139,138 @@ fn write_atomic(path: &Path, file: &VaultFile) -> VltResult<()> {
     fs::rename(&tmp, path)?;
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_support::{MASTER, TempDir, new_item};
+    use crate::vault::item::Item;
+
+    #[test]
+    fn create_then_open_roundtrip() {
+        let dir = TempDir::new();
+        let path = dir.vault_path();
+        let mut vault = Vault::create(&path, MASTER).unwrap();
+        assert!(vault.items().is_empty());
+        vault.add_item(Item::from_new(new_item("Alpha", "")));
+        vault.persist().unwrap();
+
+        let reopened = Vault::open_vault(&path, MASTER).unwrap();
+        assert_eq!(reopened.items().len(), 1);
+        assert_eq!(reopened.items()[0].title, "Alpha");
+        assert!(!path.with_extension("json.tmp").exists());
+    }
+
+    #[test]
+    fn create_creates_missing_parent_dirs() {
+        let dir = TempDir::new();
+        let path = dir.path().join("a").join("b").join("vault.json");
+        Vault::create(&path, MASTER).unwrap();
+        assert!(path.exists());
+    }
+
+    #[test]
+    fn create_rejects_existing_vault() {
+        let dir = TempDir::new();
+        Vault::create(&dir.vault_path(), MASTER).unwrap();
+        assert!(matches!(
+            Vault::create(&dir.vault_path(), MASTER),
+            Err(VltError::AlreadyInitialized)
+        ));
+    }
+
+    #[test]
+    fn create_rejects_short_password() {
+        let dir = TempDir::new();
+        assert!(matches!(
+            Vault::create(&dir.vault_path(), "short"),
+            Err(VltError::InvalidInput(_))
+        ));
+        assert!(!dir.vault_path().exists());
+    }
+
+    #[test]
+    fn open_missing_vault_is_not_initialized() {
+        let dir = TempDir::new();
+        assert!(matches!(
+            Vault::open_vault(&dir.vault_path(), MASTER),
+            Err(VltError::NotInitialized)
+        ));
+    }
+
+    #[test]
+    fn open_with_wrong_password_fails() {
+        let dir = TempDir::new();
+        Vault::create(&dir.vault_path(), MASTER).unwrap();
+        assert!(matches!(
+            Vault::open_vault(&dir.vault_path(), "wrong password"),
+            Err(VltError::InvalidMasterPassword)
+        ));
+    }
+
+    #[test]
+    fn open_rejects_unknown_version() {
+        let dir = TempDir::new();
+        let path = dir.vault_path();
+        Vault::create(&path, MASTER).unwrap();
+        let mut file: VaultFile = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        file.version = 99;
+        fs::write(&path, serde_json::to_vec(&file).unwrap()).unwrap();
+        assert!(matches!(
+            Vault::open_vault(&path, MASTER),
+            Err(VltError::InvalidInput(msg)) if msg.contains("99")
+        ));
+    }
+
+    #[test]
+    fn open_rejects_corrupt_json() {
+        let dir = TempDir::new();
+        fs::write(dir.vault_path(), b"not json").unwrap();
+        assert!(matches!(
+            Vault::open_vault(&dir.vault_path(), MASTER),
+            Err(VltError::Serde(_))
+        ));
+    }
+
+    #[test]
+    fn find_update_and_delete_items() {
+        let dir = TempDir::new();
+        let mut vault = Vault::create(&dir.vault_path(), MASTER).unwrap();
+        let item = Item::from_new(new_item("Alpha", "g"));
+        let id = item.id.clone();
+        vault.add_item(item);
+
+        assert_eq!(vault.find_item(&id).unwrap().title, "Alpha");
+        let updated = vault
+            .update_item(&id, |it| it.title = "Beta".into())
+            .unwrap();
+        assert_eq!(updated.title, "Beta");
+
+        vault.delete_item(&id).unwrap();
+        assert!(vault.items().is_empty());
+    }
+
+    #[test]
+    fn missing_item_errors() {
+        let dir = TempDir::new();
+        let mut vault = Vault::create(&dir.vault_path(), MASTER).unwrap();
+        assert!(matches!(
+            vault.find_item("x"),
+            Err(VltError::ItemNotFound(_))
+        ));
+        assert!(matches!(
+            vault.update_item("x", |_| {}),
+            Err(VltError::ItemNotFound(_))
+        ));
+        assert!(matches!(
+            vault.delete_item("x"),
+            Err(VltError::ItemNotFound(_))
+        ));
+    }
+
+    #[test]
+    fn payload_without_items_defaults_to_empty() {
+        let payload: VaultPayload = serde_json::from_str("{}").unwrap();
+        assert!(payload.items.is_empty());
+    }
+}

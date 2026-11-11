@@ -3,6 +3,8 @@ mod crypto;
 mod error;
 mod input;
 mod session;
+#[cfg(test)]
+mod test_support;
 mod ui;
 mod vault;
 
