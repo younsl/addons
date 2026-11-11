@@ -5,7 +5,7 @@ on:
   push:
     branches: [main]
     paths:
-      - 'box/cli/ij/Cargo.toml'
+      - 'box/cli/*/Cargo.toml'
   workflow_dispatch:
     inputs:
       project:
@@ -14,6 +14,8 @@ on:
         type: choice
         options:
           - ij
+          - valcon
+          - vlt
       force:
         description: "Release even if the version already exists (overwrites the existing release)"
         required: false
@@ -39,6 +41,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
 
       - name: Resolve project and version from Cargo.toml
         id: info
@@ -46,21 +50,26 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SELECTED: ${{ inputs.project }}
           FORCE: ${{ inputs.force }}
+          BEFORE: ${{ github.event.before }}
         run: |
           set -euo pipefail
 
-          PROJECT_NAME="${SELECTED:-ij}"
-
-          case "${PROJECT_NAME}" in
-            ij)
-              PROJECT_BASE_DIR="box/cli/ij"
-              MACOS_RUNNER="macos-26"
-              ;;
-            *)
-              echo "::error::Unknown project '${PROJECT_NAME}'"
+          if [[ -n "${SELECTED}" ]]; then
+            PROJECT_NAME="${SELECTED}"
+          else
+            mapfile -t CHANGED < <(git diff --name-only "${BEFORE}" "${GITHUB_SHA}" -- 'box/cli/*/Cargo.toml' | cut -d/ -f3 | sort -u)
+            if (( ${#CHANGED[@]} == 0 )); then
+              echo "::error::No box/cli/*/Cargo.toml changed between ${BEFORE} and ${GITHUB_SHA}"
               exit 1
-              ;;
-          esac
+            fi
+            if (( ${#CHANGED[@]} > 1 )); then
+              echo "::warning::Several CLIs changed (${CHANGED[*]}), releasing ${CHANGED[0]} only. Dispatch the others manually."
+            fi
+            PROJECT_NAME="${CHANGED[0]}"
+          fi
+
+          PROJECT_BASE_DIR="box/cli/${PROJECT_NAME}"
+          MACOS_RUNNER="macos-26"
 
           CARGO_TOML="${PROJECT_BASE_DIR}/Cargo.toml"
           if [[ ! -f "${CARGO_TOML}" ]]; then
@@ -119,6 +128,10 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+
+      - name: Install Linux build dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libdbus-1-dev pkg-config
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
@@ -188,6 +201,10 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+
+      - name: Install Linux build dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libdbus-1-dev pkg-config
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
