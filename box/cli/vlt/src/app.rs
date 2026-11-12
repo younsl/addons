@@ -746,8 +746,8 @@ fn emit_rows(
 mod tests {
     use super::*;
     use crate::test_support::{
-        MASTER, TempDir, fixed_keyring, item_id, link, locked_app, new_item, no_keyring, setup_app,
-        store, unlocked_app,
+        TempDir, fixed_keyring, item_id, link, locked_app, master, new_item, no_keyring,
+        random_secret, setup_app, store, unlocked_app,
     };
 
     fn form(links: usize) -> FormState {
@@ -1056,7 +1056,7 @@ mod tests {
     #[test]
     fn launch_with_vault_and_no_cache_shows_unlock() {
         let dir = TempDir::new();
-        Vault::create(&dir.vault_path(), MASTER).unwrap();
+        Vault::create(&dir.vault_path(), master()).unwrap();
         let app = App::launch(dir.vault_path(), store(&dir), None);
         assert!(matches!(app.screen, Screen::Unlock(_)));
     }
@@ -1064,8 +1064,8 @@ mod tests {
     #[test]
     fn launch_restores_plaintext_session() {
         let dir = TempDir::new();
-        Vault::create(&dir.vault_path(), MASTER).unwrap();
-        store(&dir).save(MASTER, &dir.vault_path());
+        Vault::create(&dir.vault_path(), master()).unwrap();
+        store(&dir).save(master(), &dir.vault_path());
         let app = App::launch(dir.vault_path(), store(&dir), None);
         assert!(matches!(app.screen, Screen::List(_)));
         assert!(app.vault.is_some());
@@ -1075,9 +1075,9 @@ mod tests {
     #[test]
     fn launch_restores_encrypted_session() {
         let dir = TempDir::new();
-        Vault::create(&dir.vault_path(), MASTER).unwrap();
+        Vault::create(&dir.vault_path(), master()).unwrap();
         let keyed = || session::Store::new(Some(dir.session_path()), fixed_keyring);
-        keyed().save(MASTER, &dir.vault_path());
+        keyed().save(master(), &dir.vault_path());
         let app = App::launch(dir.vault_path(), keyed(), None);
         assert!(matches!(app.screen, Screen::List(_)));
         assert!(status_text(&app).contains("encrypted via keyring"));
@@ -1086,9 +1086,9 @@ mod tests {
     #[test]
     fn launch_clears_stale_session() {
         let dir = TempDir::new();
-        Vault::create(&dir.vault_path(), MASTER).unwrap();
+        Vault::create(&dir.vault_path(), master()).unwrap();
         let stale = session::Store::new(Some(dir.session_path()), no_keyring);
-        stale.save("not the master", &dir.vault_path());
+        stale.save(&random_secret(16), &dir.vault_path());
         let app = App::launch(dir.vault_path(), store(&dir), None);
         assert!(matches!(app.screen, Screen::Unlock(_)));
         assert!(!dir.session_path().exists());
@@ -1134,21 +1134,22 @@ mod tests {
     #[test]
     fn try_setup_rejects_short_password() {
         let (_dir, mut app) = setup_app();
-        setup_with(&mut app, "short", "short");
+        let short = random_secret(5);
+        setup_with(&mut app, &short, &short);
         assert!(setup_error(&app).unwrap().contains("at least 8"));
     }
 
     #[test]
     fn try_setup_rejects_mismatch() {
         let (_dir, mut app) = setup_app();
-        setup_with(&mut app, "long enough 1", "long enough 2");
+        setup_with(&mut app, &random_secret(16), &random_secret(16));
         assert_eq!(setup_error(&app).unwrap(), "passwords do not match");
     }
 
     #[test]
     fn try_setup_creates_vault_and_caches_session() {
         let (dir, mut app) = setup_app();
-        setup_with(&mut app, MASTER, MASTER);
+        setup_with(&mut app, master(), master());
         assert!(matches!(app.screen, Screen::List(_)));
         assert!(app.vault.is_some());
         assert!(dir.vault_path().exists());
@@ -1160,8 +1161,8 @@ mod tests {
     #[test]
     fn try_setup_reports_existing_vault() {
         let (dir, mut app) = setup_app();
-        Vault::create(&dir.vault_path(), MASTER).unwrap();
-        setup_with(&mut app, MASTER, MASTER);
+        Vault::create(&dir.vault_path(), master()).unwrap();
+        setup_with(&mut app, master(), master());
         assert!(setup_error(&app).unwrap().contains("already initialized"));
     }
 
@@ -1183,7 +1184,7 @@ mod tests {
     #[test]
     fn try_unlock_with_wrong_password_sets_error() {
         let (_dir, mut app) = locked_app();
-        unlock_with(&mut app, "wrong password");
+        unlock_with(&mut app, &random_secret(16));
         match &app.screen {
             Screen::Unlock(s) => assert_eq!(s.error.as_deref(), Some("invalid master password")),
             _ => panic!("expected unlock screen"),
@@ -1193,7 +1194,7 @@ mod tests {
     #[test]
     fn try_unlock_opens_vault() {
         let (_dir, mut app) = locked_app();
-        unlock_with(&mut app, MASTER);
+        unlock_with(&mut app, master());
         assert!(matches!(app.screen, Screen::List(_)));
         assert!(status_text(&app).starts_with("unlocked"));
     }
@@ -1201,7 +1202,7 @@ mod tests {
     #[test]
     fn lock_vault_clears_session() {
         let (dir, mut app) = unlocked_app(Vec::new());
-        app.session.save(MASTER, &dir.vault_path());
+        app.session.save(master(), &dir.vault_path());
         app.lock_vault();
         assert!(app.vault.is_none());
         assert!(matches!(app.screen, Screen::Unlock(_)));
@@ -1285,7 +1286,7 @@ mod tests {
         app.save_form();
         assert!(matches!(app.screen, Screen::Detail(_)));
         assert_eq!(status_text(&app), "saved");
-        let reopened = Vault::open_vault(&dir.vault_path(), MASTER).unwrap();
+        let reopened = Vault::open_vault(&dir.vault_path(), master()).unwrap();
         assert_eq!(reopened.items().len(), 1);
         assert_eq!(reopened.items()[0].group, "team");
     }
@@ -1298,7 +1299,7 @@ mod tests {
         form_mut(&mut app).title = "Beta".into();
         app.save_form();
         assert!(matches!(&app.screen, Screen::Detail(d) if d.id == id));
-        let reopened = Vault::open_vault(&dir.vault_path(), MASTER).unwrap();
+        let reopened = Vault::open_vault(&dir.vault_path(), master()).unwrap();
         assert_eq!(reopened.items()[0].title, "Beta");
     }
 
@@ -1331,7 +1332,7 @@ mod tests {
         let id = item_id(&app, "Alpha");
         app.delete_item(&id).unwrap();
         assert!(
-            Vault::open_vault(&dir.vault_path(), MASTER)
+            Vault::open_vault(&dir.vault_path(), master())
                 .unwrap()
                 .items()
                 .is_empty()

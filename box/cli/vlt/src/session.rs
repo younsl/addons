@@ -295,9 +295,7 @@ impl Store {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_support::{TempDir, fixed_keyring, no_keyring};
-
-    const MASTER: &str = "session master";
+    use crate::test_support::{TempDir, fixed_keyring, master, no_keyring, random_bytes};
 
     fn vault_path(dir: &TempDir) -> PathBuf {
         dir.vault_path()
@@ -375,7 +373,7 @@ mod tests {
         let store = Store::new(None, no_keyring);
         assert_miss(&store.load(&vault_path(&dir)));
         assert!(matches!(
-            store.save(MASTER, &vault_path(&dir)),
+            store.save(master(), &vault_path(&dir)),
             SaveOutcome::Failed
         ));
         store.clear();
@@ -386,12 +384,12 @@ mod tests {
         let dir = TempDir::new();
         let store = Store::new(Some(dir.session_path()), no_keyring);
         assert!(matches!(
-            store.save(MASTER, &vault_path(&dir)),
+            store.save(master(), &vault_path(&dir)),
             SaveOutcome::Plaintext
         ));
         match store.load(&vault_path(&dir)) {
             LoadResult::Hit { master, encrypted } => {
-                assert_eq!(master, MASTER);
+                assert_eq!(master, crate::test_support::master());
                 assert!(!encrypted);
             }
             LoadResult::Miss => panic!("expected cache hit"),
@@ -404,7 +402,7 @@ mod tests {
         use std::os::unix::fs::PermissionsExt;
         let dir = TempDir::new();
         let store = Store::new(Some(dir.session_path()), no_keyring);
-        store.save(MASTER, &vault_path(&dir));
+        store.save(master(), &vault_path(&dir));
         let mode = std::fs::metadata(dir.session_path())
             .unwrap()
             .permissions()
@@ -417,14 +415,14 @@ mod tests {
         let dir = TempDir::new();
         let store = Store::new(Some(dir.session_path()), fixed_keyring);
         assert!(matches!(
-            store.save(MASTER, &vault_path(&dir)),
+            store.save(master(), &vault_path(&dir)),
             SaveOutcome::Encrypted
         ));
         let raw = std::fs::read_to_string(dir.session_path()).unwrap();
-        assert!(!raw.contains(MASTER));
+        assert!(!raw.contains(master()));
         match store.load(&vault_path(&dir)) {
             LoadResult::Hit { master, encrypted } => {
-                assert_eq!(master, MASTER);
+                assert_eq!(master, crate::test_support::master());
                 assert!(encrypted);
             }
             LoadResult::Miss => panic!("expected cache hit"),
@@ -436,7 +434,7 @@ mod tests {
         let dir = TempDir::new();
         let path = dir.path().join("nested").join("session.json");
         let store = Store::new(Some(path.clone()), no_keyring);
-        store.save(MASTER, &vault_path(&dir));
+        store.save(master(), &vault_path(&dir));
         assert!(path.exists());
     }
 
@@ -447,7 +445,7 @@ mod tests {
         std::fs::write(&blocker, b"x").unwrap();
         let store = Store::new(Some(blocker.join("session.json")), no_keyring);
         assert!(matches!(
-            store.save(MASTER, &vault_path(&dir)),
+            store.save(master(), &vault_path(&dir)),
             SaveOutcome::Failed
         ));
     }
@@ -459,7 +457,7 @@ mod tests {
         std::fs::create_dir_all(target.join("child")).unwrap();
         let store = Store::new(Some(target), no_keyring);
         assert!(matches!(
-            store.save(MASTER, &vault_path(&dir)),
+            store.save(master(), &vault_path(&dir)),
             SaveOutcome::Failed
         ));
     }
@@ -471,7 +469,7 @@ mod tests {
         std::fs::create_dir_all(target.with_extension("json.tmp")).unwrap();
         let store = Store::new(Some(target), no_keyring);
         assert!(matches!(
-            store.save(MASTER, &vault_path(&dir)),
+            store.save(master(), &vault_path(&dir)),
             SaveOutcome::Failed
         ));
     }
@@ -500,7 +498,7 @@ mod tests {
             chrono::Utc::now().timestamp() - 1,
             &vault_path(&dir),
             Payload::Plain {
-                master: MASTER.into(),
+                master: master().into(),
             },
         );
         let store = Store::new(Some(dir.session_path()), no_keyring);
@@ -516,7 +514,7 @@ mod tests {
             future(),
             Path::new("/elsewhere/vault.json"),
             Payload::Plain {
-                master: MASTER.into(),
+                master: master().into(),
             },
         );
         let store = Store::new(Some(dir.session_path()), no_keyring);
@@ -531,7 +529,7 @@ mod tests {
             &dir.session_path(),
             future(),
             &vault_path(&dir),
-            wrapped(&[1u8; NONCE_LEN], MASTER.as_bytes()),
+            wrapped(&random_bytes::<NONCE_LEN>(), master().as_bytes()),
         );
         let store = Store::new(Some(dir.session_path()), no_keyring);
         assert_miss(&store.load(&vault_path(&dir)));
@@ -565,7 +563,7 @@ mod tests {
     #[test]
     fn wrapped_cache_with_bad_ciphertext_encoding_is_dropped() {
         assert_wrapped_payload_dropped(Payload::Wrapped {
-            nonce_b64: B64.encode([0u8; NONCE_LEN]),
+            nonce_b64: B64.encode(random_bytes::<NONCE_LEN>()),
             ciphertext_b64: "!!".into(),
         });
     }
@@ -573,21 +571,21 @@ mod tests {
     #[test]
     fn wrapped_cache_that_fails_to_decrypt_is_dropped() {
         assert_wrapped_payload_dropped(Payload::Wrapped {
-            nonce_b64: B64.encode([0u8; NONCE_LEN]),
+            nonce_b64: B64.encode(random_bytes::<NONCE_LEN>()),
             ciphertext_b64: B64.encode([0u8; 32]),
         });
     }
 
     #[test]
     fn wrapped_cache_with_non_utf8_master_is_dropped() {
-        assert_wrapped_payload_dropped(wrapped(&[2u8; NONCE_LEN], &[0xff, 0xfe, 0xfd]));
+        assert_wrapped_payload_dropped(wrapped(&random_bytes::<NONCE_LEN>(), &[0xff, 0xfe, 0xfd]));
     }
 
     #[test]
     fn clear_removes_cache_file() {
         let dir = TempDir::new();
         let store = Store::new(Some(dir.session_path()), no_keyring);
-        store.save(MASTER, &vault_path(&dir));
+        store.save(master(), &vault_path(&dir));
         assert!(dir.session_path().exists());
         store.clear();
         assert!(!dir.session_path().exists());

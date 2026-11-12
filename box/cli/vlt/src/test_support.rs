@@ -1,4 +1,5 @@
 use std::path::{Path, PathBuf};
+use std::sync::LazyLock;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::Terminal;
@@ -8,7 +9,25 @@ use crate::app::{App, GenState, Screen, SetupFocus, SetupState, UnlockState};
 use crate::session;
 use crate::vault::{Item, Link, NewItem, Vault};
 
-pub const MASTER: &str = "correct horse battery";
+pub fn random_bytes<const N: usize>() -> [u8; N] {
+    let mut buf = [0u8; N];
+    getrandom::fill(&mut buf).expect("os rng");
+    buf
+}
+
+pub fn random_secret(len: usize) -> String {
+    const ALPHABET: &[u8] = b"abcdefghijklmnopqrstuvwxyz0123456789";
+    let mut buf = vec![0u8; len];
+    getrandom::fill(&mut buf).expect("os rng");
+    buf.iter()
+        .map(|b| char::from(ALPHABET[usize::from(*b) % ALPHABET.len()]))
+        .collect()
+}
+
+pub fn master() -> &'static str {
+    static MASTER: LazyLock<String> = LazyLock::new(|| random_secret(24));
+    &MASTER
+}
 
 pub struct TempDir(PathBuf);
 
@@ -43,8 +62,9 @@ pub const fn no_keyring() -> Option<[u8; 32]> {
 }
 
 #[allow(clippy::unnecessary_wraps)]
-pub const fn fixed_keyring() -> Option<[u8; 32]> {
-    Some([7u8; 32])
+pub fn fixed_keyring() -> Option<[u8; 32]> {
+    static KEY: LazyLock<[u8; 32]> = LazyLock::new(random_bytes);
+    Some(*KEY)
 }
 
 pub fn store(dir: &TempDir) -> session::Store {
@@ -87,7 +107,7 @@ fn base_app(dir: &TempDir, vault: Option<Vault>, screen: Screen) -> App {
 
 pub fn unlocked_app(items: Vec<NewItem>) -> (TempDir, App) {
     let dir = TempDir::new();
-    let mut vault = Vault::create(&dir.vault_path(), MASTER).expect("create vault");
+    let mut vault = Vault::create(&dir.vault_path(), master()).expect("create vault");
     for it in items {
         vault.add_item(Item::from_new(it));
     }
@@ -112,7 +132,7 @@ pub fn setup_app() -> (TempDir, App) {
 
 pub fn locked_app() -> (TempDir, App) {
     let dir = TempDir::new();
-    Vault::create(&dir.vault_path(), MASTER).expect("create vault");
+    Vault::create(&dir.vault_path(), master()).expect("create vault");
     let screen = Screen::Unlock(UnlockState {
         password: String::new(),
         error: None,

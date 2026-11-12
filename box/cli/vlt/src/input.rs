@@ -521,8 +521,8 @@ mod tests {
     use super::*;
     use crate::app::{DetailState, FormState, SetupState, UnlockState};
     use crate::test_support::{
-        MASTER, TempDir, ch, ctrl, item_id, key, link, locked_app, new_item, setup_app,
-        unlocked_app,
+        TempDir, ch, ctrl, item_id, key, link, locked_app, master, new_item, random_secret,
+        setup_app, unlocked_app,
     };
     use crate::vault::NewItem;
 
@@ -658,10 +658,10 @@ mod tests {
     #[test]
     fn setup_enter_moves_focus_then_submits() {
         let (dir, mut app) = setup_app();
-        type_str(&mut app, MASTER);
+        type_str(&mut app, master());
         handle(&mut app, key(KeyCode::Enter));
         assert!(setup(&app).focus == SetupFocus::Confirm);
-        type_str(&mut app, MASTER);
+        type_str(&mut app, master());
         handle(&mut app, key(KeyCode::Enter));
         assert!(matches!(app.screen, Screen::List(_)));
         assert!(dir.vault_path().exists());
@@ -690,13 +690,13 @@ mod tests {
     #[test]
     fn unlock_enter_with_wrong_then_right_password() {
         let (_dir, mut app) = locked_app();
-        type_str(&mut app, "wrong password");
+        type_str(&mut app, &random_secret(16));
         handle(&mut app, key(KeyCode::Enter));
         assert!(unlock(&app).error.is_some());
         if let Screen::Unlock(s) = &mut app.screen {
             s.password.clear();
         }
-        type_str(&mut app, MASTER);
+        type_str(&mut app, master());
         handle(&mut app, key(KeyCode::Enter));
         assert!(matches!(app.screen, Screen::List(_)));
     }

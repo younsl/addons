@@ -143,19 +143,19 @@ fn write_atomic(path: &Path, file: &VaultFile) -> VltResult<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_support::{MASTER, TempDir, new_item};
+    use crate::test_support::{TempDir, master, new_item, random_secret};
     use crate::vault::item::Item;
 
     #[test]
     fn create_then_open_roundtrip() {
         let dir = TempDir::new();
         let path = dir.vault_path();
-        let mut vault = Vault::create(&path, MASTER).unwrap();
+        let mut vault = Vault::create(&path, master()).unwrap();
         assert!(vault.items().is_empty());
         vault.add_item(Item::from_new(new_item("Alpha", "")));
         vault.persist().unwrap();
 
-        let reopened = Vault::open_vault(&path, MASTER).unwrap();
+        let reopened = Vault::open_vault(&path, master()).unwrap();
         assert_eq!(reopened.items().len(), 1);
         assert_eq!(reopened.items()[0].title, "Alpha");
         assert!(!path.with_extension("json.tmp").exists());
@@ -165,16 +165,16 @@ mod tests {
     fn create_creates_missing_parent_dirs() {
         let dir = TempDir::new();
         let path = dir.path().join("a").join("b").join("vault.json");
-        Vault::create(&path, MASTER).unwrap();
+        Vault::create(&path, master()).unwrap();
         assert!(path.exists());
     }
 
     #[test]
     fn create_rejects_existing_vault() {
         let dir = TempDir::new();
-        Vault::create(&dir.vault_path(), MASTER).unwrap();
+        Vault::create(&dir.vault_path(), master()).unwrap();
         assert!(matches!(
-            Vault::create(&dir.vault_path(), MASTER),
+            Vault::create(&dir.vault_path(), master()),
             Err(VltError::AlreadyInitialized)
         ));
     }
@@ -183,7 +183,7 @@ mod tests {
     fn create_rejects_short_password() {
         let dir = TempDir::new();
         assert!(matches!(
-            Vault::create(&dir.vault_path(), "short"),
+            Vault::create(&dir.vault_path(), &random_secret(5)),
             Err(VltError::InvalidInput(_))
         ));
         assert!(!dir.vault_path().exists());
@@ -193,7 +193,7 @@ mod tests {
     fn open_missing_vault_is_not_initialized() {
         let dir = TempDir::new();
         assert!(matches!(
-            Vault::open_vault(&dir.vault_path(), MASTER),
+            Vault::open_vault(&dir.vault_path(), master()),
             Err(VltError::NotInitialized)
         ));
     }
@@ -201,9 +201,9 @@ mod tests {
     #[test]
     fn open_with_wrong_password_fails() {
         let dir = TempDir::new();
-        Vault::create(&dir.vault_path(), MASTER).unwrap();
+        Vault::create(&dir.vault_path(), master()).unwrap();
         assert!(matches!(
-            Vault::open_vault(&dir.vault_path(), "wrong password"),
+            Vault::open_vault(&dir.vault_path(), &random_secret(16)),
             Err(VltError::InvalidMasterPassword)
         ));
     }
@@ -212,12 +212,12 @@ mod tests {
     fn open_rejects_unknown_version() {
         let dir = TempDir::new();
         let path = dir.vault_path();
-        Vault::create(&path, MASTER).unwrap();
+        Vault::create(&path, master()).unwrap();
         let mut file: VaultFile = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
         file.version = 99;
         fs::write(&path, serde_json::to_vec(&file).unwrap()).unwrap();
         assert!(matches!(
-            Vault::open_vault(&path, MASTER),
+            Vault::open_vault(&path, master()),
             Err(VltError::InvalidInput(msg)) if msg.contains("99")
         ));
     }
@@ -227,7 +227,7 @@ mod tests {
         let dir = TempDir::new();
         fs::write(dir.vault_path(), b"not json").unwrap();
         assert!(matches!(
-            Vault::open_vault(&dir.vault_path(), MASTER),
+            Vault::open_vault(&dir.vault_path(), master()),
             Err(VltError::Serde(_))
         ));
     }
@@ -235,7 +235,7 @@ mod tests {
     #[test]
     fn find_update_and_delete_items() {
         let dir = TempDir::new();
-        let mut vault = Vault::create(&dir.vault_path(), MASTER).unwrap();
+        let mut vault = Vault::create(&dir.vault_path(), master()).unwrap();
         let item = Item::from_new(new_item("Alpha", "g"));
         let id = item.id.clone();
         vault.add_item(item);
@@ -253,7 +253,7 @@ mod tests {
     #[test]
     fn missing_item_errors() {
         let dir = TempDir::new();
-        let mut vault = Vault::create(&dir.vault_path(), MASTER).unwrap();
+        let mut vault = Vault::create(&dir.vault_path(), master()).unwrap();
         assert!(matches!(
             vault.find_item("x"),
             Err(VltError::ItemNotFound(_))
