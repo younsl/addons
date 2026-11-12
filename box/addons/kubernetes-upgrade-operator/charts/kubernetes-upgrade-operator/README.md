@@ -1,6 +1,6 @@
 # kubernetes-upgrade-operator
 
-![Version: 0.1.0](https://img.shields.io/badge/Version-0.1.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.6.0](https://img.shields.io/badge/AppVersion-0.6.0-informational?style=flat-square)
+![Version: 0.2.0](https://img.shields.io/badge/Version-0.2.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.6.0](https://img.shields.io/badge/AppVersion-0.6.0-informational?style=flat-square)
 
 Kubernetes Upgrade Operator for EKS clusters
 
@@ -39,7 +39,7 @@ helm install kubernetes-upgrade-operator oci://ghcr.io/younsl/charts/kubernetes-
 Install a specific version:
 
 ```console
-helm install kubernetes-upgrade-operator oci://ghcr.io/younsl/charts/kubernetes-upgrade-operator --version 0.1.0
+helm install kubernetes-upgrade-operator oci://ghcr.io/younsl/charts/kubernetes-upgrade-operator --version 0.2.0
 ```
 
 ### Install from local chart
@@ -47,7 +47,7 @@ helm install kubernetes-upgrade-operator oci://ghcr.io/younsl/charts/kubernetes-
 Download kubernetes-upgrade-operator chart and install from local directory:
 
 ```console
-helm pull oci://ghcr.io/younsl/charts/kubernetes-upgrade-operator --untar --version 0.1.0
+helm pull oci://ghcr.io/younsl/charts/kubernetes-upgrade-operator --untar --version 0.2.0
 helm install kubernetes-upgrade-operator ./kubernetes-upgrade-operator
 ```
 
@@ -113,6 +113,7 @@ The following table lists the configurable parameters and their default values.
 | nodeSelector | object | `{}` | Node selector for pod scheduling. |
 | tolerations | list | `[]` | Tolerations for pod scheduling. |
 | affinity | object | `{}` | Affinity rules for pod scheduling. |
+| extraPodSpec | object | `{}` | Extra Pod spec fields, e.g. runtimeClassName. Fields the chart already renders are rejected. |
 | logging.level | string | `"info"` | Log level: trace, debug, info, warn, error. `RUST_LOG` on the pod overrides it. |
 | logging.format | string | `"json"` | Log format: json or text |
 | slack.enabled | bool | `false` | Whether to create a Slack webhook Secret and inject the URL into the operator. |

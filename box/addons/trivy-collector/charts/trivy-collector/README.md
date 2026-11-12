@@ -1,6 +1,6 @@
 # trivy-collector
 
-![Version: 0.14.0](https://img.shields.io/badge/Version-0.14.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 1.8.1](https://img.shields.io/badge/AppVersion-1.8.1-informational?style=flat-square)
+![Version: 0.15.0](https://img.shields.io/badge/Version-0.15.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 1.8.1](https://img.shields.io/badge/AppVersion-1.8.1-informational?style=flat-square)
 
 Multi-cluster Trivy report collector and viewer
 
@@ -39,7 +39,7 @@ helm install trivy-collector oci://ghcr.io/younsl/charts/trivy-collector -f valu
 Install a specific version:
 
 ```console
-helm install trivy-collector oci://ghcr.io/younsl/charts/trivy-collector --version 0.14.0
+helm install trivy-collector oci://ghcr.io/younsl/charts/trivy-collector --version 0.15.0
 ```
 
 ### Install from local chart
@@ -47,7 +47,7 @@ helm install trivy-collector oci://ghcr.io/younsl/charts/trivy-collector --versi
 Download trivy-collector chart and install from local directory:
 
 ```console
-helm pull oci://ghcr.io/younsl/charts/trivy-collector --untar --version 0.14.0
+helm pull oci://ghcr.io/younsl/charts/trivy-collector --untar --version 0.15.0
 helm install trivy-collector ./trivy-collector
 ```
 
@@ -122,6 +122,7 @@ The following table lists the configurable parameters and their default values.
 | scraper.nodeSelector | object | `{}` | Node selector. |
 | scraper.tolerations | list | `[]` | Tolerations. |
 | scraper.affinity | object | `{}` | Affinity rules. |
+| scraper.extraPodSpec | object | `{}` | Extra Pod spec fields, e.g. runtimeClassName. Fields the chart already renders are rejected. |
 | scraper.topologySpreadConstraints | list | `[]` | Topology spread constraints. |
 | scraper.serviceMonitor | object | `{"additionalLabels":{},"annotations":{},"enabled":false,"interval":"30s","scrapeTimeout":""}` | ServiceMonitor for scraper (requires Prometheus Operator). |
 | scraper.serviceMonitor.enabled | bool | `false` | Create a ServiceMonitor for the scraper pod. |
@@ -141,6 +142,7 @@ The following table lists the configurable parameters and their default values.
 | server.nodeSelector | object | `{}` | Node selector. |
 | server.tolerations | list | `[]` | Tolerations. |
 | server.affinity | object | `{}` | Affinity rules. |
+| server.extraPodSpec | object | `{}` | Extra Pod spec fields, e.g. runtimeClassName. Fields the chart already renders are rejected. |
 | server.topologySpreadConstraints | list | `[]` | Topology spread constraints. |
 | server.mcp | object | `{"allowedHosts":[],"enabled":false,"stateless":false}` | Embedded MCP (Model Context Protocol) server for LLM agents such as kagent. Served by the server pod at `/mcp` over the Streamable HTTP transport and gated by the same auth and RBAC as the REST API. |
 | server.mcp.enabled | bool | `false` | Mount the MCP endpoint at `/mcp`. |
@@ -206,7 +208,7 @@ The following table lists the configurable parameters and their default values.
 | readinessProbe.failureThreshold | int | `3` | Number of failures before marking not ready |
 | dnsPolicy | string | "" | DNS policy for the pod (ClusterFirst, ClusterFirstWithHostNet, Default, None) |
 | dnsConfig | object | {} | DNS configuration for the pod |
-| migration | object | `{"exportState":{"affinity":{},"backoffLimit":2,"dbPath":"/data/trivy.db","dryRun":false,"enabled":false,"existingClaim":"","nodeSelector":{},"resources":{"limits":{"memory":"128Mi"},"requests":{"cpu":"50m","memory":"64Mi"}},"tolerations":[],"ttlSecondsAfterFinished":3600}}` | One-shot migration off the PersistentVolume. Reports need no export, the next scraper start relists them, but API tokens and report notes are unrecoverable, so they are read out of the legacy database and written to a Secret and a ConfigMap before the volume goes away.  Run with exportState.enabled and the old PVC name, verify both objects, then disable it and delete the PVC. Until then the PVC is the rollback. |
+| migration | object | `{"exportState":{"affinity":{},"backoffLimit":2,"dbPath":"/data/trivy.db","dryRun":false,"enabled":false,"existingClaim":"","extraPodSpec":{},"nodeSelector":{},"resources":{"limits":{"memory":"128Mi"},"requests":{"cpu":"50m","memory":"64Mi"}},"tolerations":[],"ttlSecondsAfterFinished":3600}}` | One-shot migration off the PersistentVolume. Reports need no export, the next scraper start relists them, but API tokens and report notes are unrecoverable, so they are read out of the legacy database and written to a Secret and a ConfigMap before the volume goes away.  Run with exportState.enabled and the old PVC name, verify both objects, then disable it and delete the PVC. Until then the PVC is the rollback. |
 | migration.exportState.enabled | bool | `false` | Run the export as a pre-install/pre-upgrade hook Job. |
 | migration.exportState.existingClaim | string | `""` | Name of the existing PVC holding the legacy database. |
 | migration.exportState.dbPath | string | `"/data/trivy.db"` | Path to the legacy database inside that volume. |
@@ -216,6 +218,7 @@ The following table lists the configurable parameters and their default values.
 | migration.exportState.nodeSelector | object | `{}` | Node selector. Defaults to the scraper's, because the legacy PVC is ReadWriteOnce and this Job can only mount it where the scraper already has it attached. |
 | migration.exportState.tolerations | list | `[]` | Tolerations. Defaults to the scraper's. Without them a Job on a tainted node stays Pending, and a pending pre-sync hook blocks the upgrade it was meant to precede. |
 | migration.exportState.affinity | object | `{}` | Affinity rules. Defaults to the scraper's. |
+| migration.exportState.extraPodSpec | object | `{}` | Extra Pod spec fields, e.g. runtimeClassName. Fields the chart already renders are rejected. |
 | migration.exportState.resources | object | `{"limits":{"memory":"128Mi"},"requests":{"cpu":"50m","memory":"64Mi"}}` | Resource requests and limits. |
 | extraObjects | list | [] | Extra Kubernetes objects to deploy alongside the chart |
 

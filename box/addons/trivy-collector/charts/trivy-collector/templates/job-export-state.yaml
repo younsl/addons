@@ -80,4 +80,7 @@ spec:
           persistentVolumeClaim:
             claimName: {{ required "migration.exportState.existingClaim is required" .Values.migration.exportState.existingClaim }}
             readOnly: true
+      {{- with .Values.migration.exportState.extraPodSpec }}
+      {{- toYaml . | nindent 6 }}
+      {{- end }}
 {{- end }}

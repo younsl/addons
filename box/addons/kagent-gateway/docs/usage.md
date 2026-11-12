@@ -37,7 +37,7 @@ The chart is also released to the OCI registry on `Chart.yaml` version bumps. Li
 
 ```bash
 crane ls ghcr.io/younsl/charts/kagent-gateway
-helm install kagent-gateway oci://ghcr.io/younsl/charts/kagent-gateway --version 0.4.0
+helm install kagent-gateway oci://ghcr.io/younsl/charts/kagent-gateway --version 0.5.0
 ```
 
 Values are documented in the [chart README](../charts/kagent-gateway/README.md).

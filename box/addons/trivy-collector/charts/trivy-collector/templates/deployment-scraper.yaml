@@ -124,3 +124,6 @@ spec:
       dnsConfig:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+      {{- with .Values.scraper.extraPodSpec }}
+      {{- toYaml . | nindent 6 }}
+      {{- end }}

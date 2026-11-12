@@ -201,6 +201,14 @@
     "affinity": {
       "type": ["object", "null"]
     },
+    "extraPodSpec": {
+      "type": ["object", "null"],
+      "propertyNames": {
+        "not": {
+          "enum": ["affinity", "containers", "dnsConfig", "dnsPolicy", "imagePullSecrets", "nodeSelector", "priorityClassName", "securityContext", "serviceAccountName", "tolerations", "topologySpreadConstraints", "volumes"]
+        }
+      }
+    },
     "topologySpreadConstraints": {
       "$ref": "#/definitions/nullableObjectList"
     },

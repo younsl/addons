@@ -2,7 +2,7 @@ apiVersion: v2
 name: volume-autoscaler
 description: Grows EC2 root volumes and Kubernetes PersistentVolumeClaims when usage crosses a threshold
 type: application
-version: 0.2.0
+version: 0.3.0
 appVersion: "0.2.0"
 keywords:
   - aws

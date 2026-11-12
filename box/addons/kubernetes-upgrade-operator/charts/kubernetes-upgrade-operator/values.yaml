@@ -146,6 +146,8 @@ nodeSelector: {}
 tolerations: []
 # -- (object) Affinity rules for pod scheduling.
 affinity: {}
+# -- (object) Extra Pod spec fields, e.g. runtimeClassName. Fields the chart already renders are rejected.
+extraPodSpec: {}
 
 logging:
   # -- (string) Log level: trace, debug, info, warn, error. `RUST_LOG` on the pod overrides it.

@@ -59,6 +59,14 @@
     "affinity": {
       "type": "object"
     },
+    "extraPodSpec": {
+      "type": ["object", "null"],
+      "propertyNames": {
+        "not": {
+          "enum": ["affinity", "containers", "imagePullSecrets", "nodeSelector", "securityContext", "serviceAccountName", "tolerations", "topologySpreadConstraints", "volumes"]
+        }
+      }
+    },
     "podDisruptionBudget": {
       "$ref": "#/definitions/podDisruptionBudget"
     },

@@ -309,6 +309,8 @@ nodeSelector: {}
 tolerations: []
 # -- (object) Affinity rules for pod scheduling
 affinity: {}
+# -- (object) Extra Pod spec fields, e.g. runtimeClassName. Fields the chart already renders are rejected
+extraPodSpec: {}
 # -- (list) Topology spread constraints for pod scheduling. `labelSelector` is
 # filled in with the chart's selector labels when a constraint omits it, so
 # spreading replicas across zones needs only the topologyKey.

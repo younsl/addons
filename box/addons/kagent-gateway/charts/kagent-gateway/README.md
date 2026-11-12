@@ -1,6 +1,6 @@
 # kagent-gateway
 
-![Version: 0.4.0](https://img.shields.io/badge/Version-0.4.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.3.0](https://img.shields.io/badge/AppVersion-0.3.0-informational?style=flat-square)
+![Version: 0.5.0](https://img.shields.io/badge/Version-0.5.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.3.0](https://img.shields.io/badge/AppVersion-0.3.0-informational?style=flat-square)
 
 Posts Alertmanager alerts to Slack and replies in-thread with an analysis from a kagent agent over A2A
 
@@ -39,7 +39,7 @@ helm install kagent-gateway oci://ghcr.io/younsl/charts/kagent-gateway -f values
 Install a specific version:
 
 ```console
-helm install kagent-gateway oci://ghcr.io/younsl/charts/kagent-gateway --version 0.4.0
+helm install kagent-gateway oci://ghcr.io/younsl/charts/kagent-gateway --version 0.5.0
 ```
 
 ### Install from local chart
@@ -47,7 +47,7 @@ helm install kagent-gateway oci://ghcr.io/younsl/charts/kagent-gateway --version
 Download kagent-gateway chart and install from local directory:
 
 ```console
-helm pull oci://ghcr.io/younsl/charts/kagent-gateway --untar --version 0.4.0
+helm pull oci://ghcr.io/younsl/charts/kagent-gateway --untar --version 0.5.0
 helm install kagent-gateway ./kagent-gateway
 ```
 
@@ -175,6 +175,7 @@ The following table lists the configurable parameters and their default values.
 | nodeSelector | object | `{}` | Node selector for pod scheduling |
 | tolerations | list | `[]` | Tolerations for pod scheduling |
 | affinity | object | `{}` | Affinity rules for pod scheduling |
+| extraPodSpec | object | `{}` | Extra Pod spec fields, e.g. runtimeClassName. Fields the chart already renders are rejected |
 | topologySpreadConstraints | list | `[]` | Topology spread constraints for pod scheduling. `labelSelector` is filled in with the chart's selector labels when a constraint omits it, so spreading replicas across zones needs only the topologyKey. |
 | dnsPolicy | string | `""` | Pod DNS policy, e.g. ClusterFirst or None; empty omits the field |
 | dnsConfig | object | `{}` | Pod DNS config (used with dnsPolicy None); empty omits the field |

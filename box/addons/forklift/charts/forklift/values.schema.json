@@ -228,6 +228,14 @@
             },
             "podAnnotations": {
               "$ref": "#/definitions/stringMap"
+            },
+            "extraPodSpec": {
+              "type": ["object", "null"],
+              "propertyNames": {
+                "not": {
+                  "enum": ["containers", "imagePullSecrets", "nodeSelector", "restartPolicy", "securityContext", "serviceAccountName", "tolerations", "volumes"]
+                }
+              }
             }
           }
         }
@@ -692,6 +700,14 @@
         "affinity": {
           "type": ["object", "null"]
         },
+        "extraPodSpec": {
+          "type": ["object", "null"],
+          "propertyNames": {
+            "not": {
+              "enum": ["affinity", "containers", "imagePullSecrets", "nodeSelector", "priorityClassName", "securityContext", "tolerations"]
+            }
+          }
+        },
         "priorityClassName": {
           "type": ["string", "null"]
         },
@@ -711,6 +727,14 @@
     },
     "affinity": {
       "type": ["object", "null"]
+    },
+    "extraPodSpec": {
+      "type": ["object", "null"],
+      "propertyNames": {
+        "not": {
+          "enum": ["affinity", "containers", "dnsConfig", "dnsPolicy", "imagePullSecrets", "nodeSelector", "priorityClassName", "securityContext", "serviceAccountName", "tolerations", "topologySpreadConstraints", "volumes"]
+        }
+      }
     },
     "topologySpreadConstraints": {
       "$ref": "#/definitions/objectList"

@@ -1,6 +1,6 @@
 # aws-health-event-notifier
 
-![Version: 0.5.0](https://img.shields.io/badge/Version-0.5.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.4.0](https://img.shields.io/badge/AppVersion-0.4.0-informational?style=flat-square)
+![Version: 0.6.0](https://img.shields.io/badge/Version-0.6.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.4.0](https://img.shields.io/badge/AppVersion-0.4.0-informational?style=flat-square)
 
 Receives AWS Health events and posts them to Slack
 
@@ -39,7 +39,7 @@ helm install aws-health-event-notifier oci://ghcr.io/younsl/charts/aws-health-ev
 Install a specific version:
 
 ```console
-helm install aws-health-event-notifier oci://ghcr.io/younsl/charts/aws-health-event-notifier --version 0.5.0
+helm install aws-health-event-notifier oci://ghcr.io/younsl/charts/aws-health-event-notifier --version 0.6.0
 ```
 
 ### Install from local chart
@@ -47,7 +47,7 @@ helm install aws-health-event-notifier oci://ghcr.io/younsl/charts/aws-health-ev
 Download aws-health-event-notifier chart and install from local directory:
 
 ```console
-helm pull oci://ghcr.io/younsl/charts/aws-health-event-notifier --untar --version 0.5.0
+helm pull oci://ghcr.io/younsl/charts/aws-health-event-notifier --untar --version 0.6.0
 helm install aws-health-event-notifier ./aws-health-event-notifier
 ```
 
@@ -133,6 +133,7 @@ The following table lists the configurable parameters and their default values.
 | nodeSelector | object | `{}` | Node selector for pod scheduling. |
 | tolerations | list | `[]` | Tolerations for pod scheduling. |
 | affinity | object | `{}` | Affinity rules for pod scheduling. |
+| extraPodSpec | object | `{}` | Extra Pod spec fields, e.g. runtimeClassName. Fields the chart already renders are rejected. |
 | topologySpreadConstraints | list | `[]` | Topology spread constraints. |
 | extraObjects | list | `[]` | Extra Kubernetes manifests to apply with the release. |
 

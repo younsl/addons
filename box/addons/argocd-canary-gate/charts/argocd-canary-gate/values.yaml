@@ -84,6 +84,8 @@ topologySpreadConstraints:
 
 # -- (object) Affinity rules for the gate pods
 affinity: {}
+# -- (object) Extra Pod spec fields, e.g. runtimeClassName. Fields the chart already renders are rejected
+extraPodSpec: {}
 
 podDisruptionBudget:
   # -- (bool) Create a PodDisruptionBudget

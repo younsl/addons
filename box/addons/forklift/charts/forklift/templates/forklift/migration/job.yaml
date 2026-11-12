@@ -161,4 +161,7 @@ spec:
       tolerations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+      {{- with .Values.storage.migration.extraPodSpec }}
+      {{- toYaml . | nindent 6 }}
+      {{- end }}
 {{- end }}

@@ -659,6 +659,30 @@
         "null"
       ]
     },
+    "extraPodSpec": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "propertyNames": {
+        "not": {
+          "enum": [
+            "affinity",
+            "automountServiceAccountToken",
+            "containers",
+            "dnsConfig",
+            "dnsPolicy",
+            "imagePullSecrets",
+            "nodeSelector",
+            "securityContext",
+            "serviceAccountName",
+            "terminationGracePeriodSeconds",
+            "tolerations",
+            "topologySpreadConstraints"
+          ]
+        }
+      }
+    },
     "topologySpreadConstraints": {
       "type": [
         "array",

@@ -1,6 +1,6 @@
 # aurora-database-insights-exporter
 
-![Version: 0.2.0](https://img.shields.io/badge/Version-0.2.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.1.1](https://img.shields.io/badge/AppVersion-0.1.1-informational?style=flat-square)
+![Version: 0.3.0](https://img.shields.io/badge/Version-0.3.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.1.1](https://img.shields.io/badge/AppVersion-0.1.1-informational?style=flat-square)
 
 Prometheus exporter for AWS Aurora MySQL Database Insights metrics
 
@@ -39,7 +39,7 @@ helm install aurora-database-insights-exporter oci://ghcr.io/younsl/charts/auror
 Install a specific version:
 
 ```console
-helm install aurora-database-insights-exporter oci://ghcr.io/younsl/charts/aurora-database-insights-exporter --version 0.2.0
+helm install aurora-database-insights-exporter oci://ghcr.io/younsl/charts/aurora-database-insights-exporter --version 0.3.0
 ```
 
 ### Install from local chart
@@ -47,7 +47,7 @@ helm install aurora-database-insights-exporter oci://ghcr.io/younsl/charts/auror
 Download aurora-database-insights-exporter chart and install from local directory:
 
 ```console
-helm pull oci://ghcr.io/younsl/charts/aurora-database-insights-exporter --untar --version 0.2.0
+helm pull oci://ghcr.io/younsl/charts/aurora-database-insights-exporter --untar --version 0.3.0
 helm install aurora-database-insights-exporter ./aurora-database-insights-exporter
 ```
 
@@ -125,6 +125,7 @@ The following table lists the configurable parameters and their default values.
 | nodeSelector | object | `{}` | Node selector |
 | tolerations | list | `[]` | Tolerations |
 | affinity | object | `{}` | Affinity rules |
+| extraPodSpec | object | `{}` | Extra Pod spec fields, e.g. runtimeClassName. Fields the chart already renders are rejected |
 | topologySpreadConstraints | list | `[]` | Topology spread constraints |
 | extraObjects | list | `[]` | Extra Kubernetes objects to deploy with tpl support |
 

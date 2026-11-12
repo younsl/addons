@@ -3,7 +3,7 @@ name: aws-health-event-notifier
 description: Receives AWS Health events and posts them to Slack
 type: application
 deprecated: false
-version: 0.5.0
+version: 0.6.0
 appVersion: "0.4.0"
 home: https://github.com/younsl/addons
 sources:

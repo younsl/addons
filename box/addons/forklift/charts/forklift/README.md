@@ -1,6 +1,6 @@
 # forklift
 
-![Version: 0.22.0](https://img.shields.io/badge/Version-0.22.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.20.0](https://img.shields.io/badge/AppVersion-0.20.0-informational?style=flat-square)
+![Version: 0.23.0](https://img.shields.io/badge/Version-0.23.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.20.0](https://img.shields.io/badge/AppVersion-0.20.0-informational?style=flat-square)
 
 Lightweight Kubernetes-native artifact repository (Maven, npm, Cargo, Go, PyPI) with proxy caching and supply-chain controls (age policy, package approval, vulnerability scanning)
 
@@ -45,7 +45,7 @@ helm install forklift oci://ghcr.io/younsl/charts/forklift -f values.yaml
 Install a specific version:
 
 ```console
-helm install forklift oci://ghcr.io/younsl/charts/forklift --version 0.22.0
+helm install forklift oci://ghcr.io/younsl/charts/forklift --version 0.23.0
 ```
 
 ### Install from local chart
@@ -53,7 +53,7 @@ helm install forklift oci://ghcr.io/younsl/charts/forklift --version 0.22.0
 Download forklift chart and install from local directory:
 
 ```console
-helm pull oci://ghcr.io/younsl/charts/forklift --untar --version 0.22.0
+helm pull oci://ghcr.io/younsl/charts/forklift --untar --version 0.23.0
 helm install forklift ./forklift
 ```
 
@@ -138,6 +138,7 @@ The following table lists the configurable parameters and their default values.
 | storage.migration.stagingSizeLimit | string | `""` | Staging emptyDir size limit. Must fit concurrency times the largest blob. |
 | storage.migration.resources | object | `{}` | Job resources. |
 | storage.migration.podAnnotations | object | `{"karpenter.sh/do-not-disrupt":"true"}` | Job pod annotations. Karpenter must not evict a running copy. |
+| storage.migration.extraPodSpec | object | `{}` | Extra Pod spec fields, e.g. runtimeClassName. Fields the chart already renders are rejected. |
 | seaweedfs.enabled | bool | `true` | Deploy bundled SeaweedFS. |
 | seaweedfs.master.enabled | bool | `false` |  |
 | seaweedfs.volume.enabled | bool | `false` |  |
@@ -269,6 +270,7 @@ The following table lists the configurable parameters and their default values.
 | mcp.nodeSelector | object | `{}` | Node selector for MCP pod scheduling. |
 | mcp.tolerations | list | `[]` | Tolerations for MCP pod scheduling. |
 | mcp.affinity | object | `{}` | Affinity rules for MCP pod scheduling. |
+| mcp.extraPodSpec | object | `{}` | Extra Pod spec fields, e.g. runtimeClassName. Fields the chart already renders are rejected. |
 | mcp.priorityClassName | string | `""` | Priority class name for MCP pods. Empty uses the cluster default. |
 | mcp.extraEnv | list | `[]` | Raw environment variables appended to the MCP container. |
 | serviceMonitor.enabled | bool | `false` | Create a Prometheus Operator ServiceMonitor. |
@@ -278,6 +280,7 @@ The following table lists the configurable parameters and their default values.
 | nodeSelector | object | `{}` | Node selector for pod scheduling. |
 | tolerations | list | `[]` | Tolerations for pod scheduling. |
 | affinity | object | `{}` | Affinity rules for pod scheduling. |
+| extraPodSpec | object | `{}` | Extra Pod spec fields, e.g. runtimeClassName. Fields the chart already renders are rejected. |
 | topologySpreadConstraints | list | `[]` | Topology spread constraints for pod scheduling. |
 | priorityClassName | string | `""` | Priority class name for pod scheduling. Empty uses the cluster default. |
 | dnsPolicy | string | `""` | Pod DNS policy. Empty uses the cluster default. |

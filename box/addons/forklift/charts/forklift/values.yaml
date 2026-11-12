@@ -161,6 +161,8 @@ storage:
     # -- (object) Job pod annotations. Karpenter must not evict a running copy.
     podAnnotations:
       karpenter.sh/do-not-disrupt: "true"
+    # -- (object) Extra Pod spec fields, e.g. runtimeClassName. Fields the chart already renders are rejected.
+    extraPodSpec: {}
 
 # Bundled SeaweedFS (all-in-one subchart), auto-wired to the s3 backend. For
 # production disable it and point storage.s3.* at an external store.
@@ -637,6 +639,8 @@ mcp:
   tolerations: []
   # -- (object) Affinity rules for MCP pod scheduling.
   affinity: {}
+  # -- (object) Extra Pod spec fields, e.g. runtimeClassName. Fields the chart already renders are rejected.
+  extraPodSpec: {}
   # -- (string) Priority class name for MCP pods. Empty uses the cluster default.
   priorityClassName: ""
   # -- (list) Raw environment variables appended to the MCP container.
@@ -658,6 +662,8 @@ nodeSelector: {}
 tolerations: []
 # -- (object) Affinity rules for pod scheduling.
 affinity: {}
+# -- (object) Extra Pod spec fields, e.g. runtimeClassName. Fields the chart already renders are rejected.
+extraPodSpec: {}
 # -- (list) Topology spread constraints for pod scheduling.
 topologySpreadConstraints: []
 # -- (string) Priority class name for pod scheduling. Empty uses the cluster default.

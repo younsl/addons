@@ -30,7 +30,7 @@ Install directly from OCI registry:
 helm install aurora-database-insights-exporter oci://ghcr.io/younsl/charts/aurora-database-insights-exporter \
   --namespace monitoring \
   --create-namespace \
-  --version 0.1.0 \
+  --version 0.3.0 \
   --set config.aws.region=ap-northeast-2
 ```
 
@@ -38,7 +38,7 @@ Or pull the chart locally first, then install:
 
 ```bash
 helm pull oci://ghcr.io/younsl/charts/aurora-database-insights-exporter \
-  --untar --version 0.1.0
+  --untar --version 0.3.0
 
 helm install aurora-database-insights-exporter ./aurora-database-insights-exporter \
   --namespace monitoring \

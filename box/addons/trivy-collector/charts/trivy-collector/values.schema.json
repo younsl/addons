@@ -168,6 +168,29 @@
             "null"
           ]
         },
+        "extraPodSpec": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "propertyNames": {
+            "not": {
+              "enum": [
+                "affinity",
+                "containers",
+                "dnsConfig",
+                "dnsPolicy",
+                "imagePullSecrets",
+                "nodeSelector",
+                "securityContext",
+                "serviceAccountName",
+                "tolerations",
+                "topologySpreadConstraints",
+                "volumes"
+              ]
+            }
+          }
+        },
         "topologySpreadConstraints": {
           "type": [
             "array",
@@ -243,6 +266,28 @@
             "object",
             "null"
           ]
+        },
+        "extraPodSpec": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "propertyNames": {
+            "not": {
+              "enum": [
+                "affinity",
+                "containers",
+                "dnsConfig",
+                "dnsPolicy",
+                "imagePullSecrets",
+                "nodeSelector",
+                "securityContext",
+                "serviceAccountName",
+                "tolerations",
+                "topologySpreadConstraints"
+              ]
+            }
+          }
         },
         "topologySpreadConstraints": {
           "type": [
@@ -577,6 +622,27 @@
                 "object",
                 "null"
               ]
+            },
+            "extraPodSpec": {
+              "type": [
+                "object",
+                "null"
+              ],
+              "propertyNames": {
+                "not": {
+                  "enum": [
+                    "affinity",
+                    "containers",
+                    "imagePullSecrets",
+                    "nodeSelector",
+                    "restartPolicy",
+                    "securityContext",
+                    "serviceAccountName",
+                    "tolerations",
+                    "volumes"
+                  ]
+                }
+              }
             },
             "resources": {
               "type": [

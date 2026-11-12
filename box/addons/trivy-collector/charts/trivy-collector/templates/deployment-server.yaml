@@ -144,3 +144,6 @@ spec:
       dnsConfig:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+      {{- with .Values.server.extraPodSpec }}
+      {{- toYaml . | nindent 6 }}
+      {{- end }}

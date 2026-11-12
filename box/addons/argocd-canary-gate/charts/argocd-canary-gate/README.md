@@ -1,6 +1,6 @@
 # argocd-canary-gate
 
-![Version: 0.2.0](https://img.shields.io/badge/Version-0.2.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.1.0](https://img.shields.io/badge/AppVersion-0.1.0-informational?style=flat-square)
+![Version: 0.3.0](https://img.shields.io/badge/Version-0.3.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.1.0](https://img.shields.io/badge/AppVersion-0.1.0-informational?style=flat-square)
 
 Admission gate that blocks an Argo CD Application sync while an Argo Rollouts canary is still in progress
 
@@ -43,7 +43,7 @@ helm install argocd-canary-gate oci://ghcr.io/younsl/charts/argocd-canary-gate -
 Install a specific version:
 
 ```console
-helm install argocd-canary-gate oci://ghcr.io/younsl/charts/argocd-canary-gate --version 0.2.0
+helm install argocd-canary-gate oci://ghcr.io/younsl/charts/argocd-canary-gate --version 0.3.0
 ```
 
 ### Install from local chart
@@ -51,7 +51,7 @@ helm install argocd-canary-gate oci://ghcr.io/younsl/charts/argocd-canary-gate -
 Download argocd-canary-gate chart and install from local directory:
 
 ```console
-helm pull oci://ghcr.io/younsl/charts/argocd-canary-gate --untar --version 0.2.0
+helm pull oci://ghcr.io/younsl/charts/argocd-canary-gate --untar --version 0.3.0
 helm install argocd-canary-gate ./argocd-canary-gate
 ```
 
@@ -100,6 +100,7 @@ The following table lists the configurable parameters and their default values.
 | tolerations | list | `[]` | Tolerations for the gate pods |
 | topologySpreadConstraints | list | `[{"labelSelector":{"matchLabels":{"app.kubernetes.io/name":"argocd-canary-gate"}},"maxSkew":1,"topologyKey":"kubernetes.io/hostname","whenUnsatisfiable":"ScheduleAnyway"}]` | Topology spread constraints. Spreading replicas keeps one node loss from failing every gated sync |
 | affinity | object | `{}` | Affinity rules for the gate pods |
+| extraPodSpec | object | `{}` | Extra Pod spec fields, e.g. runtimeClassName. Fields the chart already renders are rejected |
 | podDisruptionBudget.enabled | bool | `true` | Create a PodDisruptionBudget |
 | podDisruptionBudget.minAvailable | int/string | `1` | Minimum available replicas during voluntary disruption |
 | podDisruptionBudget.unhealthyPodEvictionPolicy | string | `"IfHealthyBudget"` | `IfHealthyBudget` guards a healthy replica while the budget is met. `AlwaysAllow` drops that guard. Empty leaves it unset |

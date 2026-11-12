@@ -87,4 +87,7 @@ spec:
       {{- with .Values.mcp.priorityClassName }}
       priorityClassName: {{ . }}
       {{- end }}
+      {{- with .Values.mcp.extraPodSpec }}
+      {{- toYaml . | nindent 6 }}
+      {{- end }}
 {{- end }}
