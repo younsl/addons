@@ -13,6 +13,7 @@ on:
       - 'box/addons/argocd-canary-gate/Dockerfile'
       - 'box/addons/filesystem-cleaner/Dockerfile'
       - 'box/addons/volume-autoscaler/Dockerfile'
+      - 'box/addons/node-configuration-operator/Dockerfile'
       - 'box/addons/forklift/Dockerfile'
       - 'box/addons/forklift/Dockerfile.mcp'
   workflow_dispatch:
@@ -30,6 +31,7 @@ on:
           - argocd-canary-gate
           - filesystem-cleaner
           - volume-autoscaler
+          - node-configuration-operator
           - forklift
           - forklift-mcp
       force:
