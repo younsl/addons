@@ -65,6 +65,7 @@ A complete hardening baseline is in [examples/os-hardening.yaml](examples/os-har
 | [Security](docs/security.md) | Agent privileges and what a resource author can do |
 | [Metrics](docs/metrics.md) | Prometheus metrics and alert ideas |
 | [Development](docs/development.md) | Build, test, and release |
+| [Changelog](CHANGELOG.md) | Notable changes by image version |
 
 ## License
 
