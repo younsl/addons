@@ -179,3 +179,7 @@ The agent cannot see what a script changed, so a script gives up what the declar
 ## Validation
 
 The CRD schema rejects wrong types, relative paths, wildcards outside the last path segment, and a rule with no action or more than one, an empty script, a duplicate rule name, and a fileMode with both or neither of `mode` and `clear`. An invalid regular expression, an invalid `maxUnavailable`, and rules larger than 900 KiB cannot be expressed in the schema, so they surface as the `Ready` and `Progressing` conditions with the reason `InvalidSpec`.
+
+## Conclusion
+
+A NodeConfiguration is a target, a rollout strategy, and a flat list of named rules with one idempotent action each. Prefer the declarative actions, keep `script` for what they cannot express, and try a change with `dryRun` before it writes to a node.

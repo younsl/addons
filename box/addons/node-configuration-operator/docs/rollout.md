@@ -131,3 +131,7 @@ os-hardening   6         2         5            1        False   RollingOut   3d
 ## Agent upgrades
 
 A new image replaces the agent pods under `agent.updateStrategy` of the chart. That is independent of any NodeConfiguration: a restarted agent applies the bindings of its node again and reports the same revisions.
+
+## Conclusion
+
+A rule change is a new revision that moves through the nodes under the budget of its own NodeConfiguration, and a failed rule stops it where it is. Cordon protects a node while it moves, pause and OnDelete hand the timing to you, and the `Progressing` condition says where a rollout stands.

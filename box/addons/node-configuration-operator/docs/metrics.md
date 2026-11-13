@@ -156,3 +156,7 @@ Rollout state is in the status of the resources, not in a metric. Watch the `Pro
 | An agent stopped running | `time() - node_configuration_agent_last_run_timestamp_seconds > 3600` | Set the threshold to a few times the longest `intervalSeconds` |
 | Repeated drift on a node | `increase(node_configuration_agent_rule_outcomes_total{outcome="changed"}[1h]) > 5` | Something else rewrites what a rule manages |
 | The controller keeps failing | `increase(node_configuration_reconcile_total{result="error"}[15m]) > 5` | Usually an RBAC or API server problem |
+
+## Conclusion
+
+Three agent metrics answer the daily questions: is every node in line, did something drift, and is every agent still running. The controller adds who leads and whether its reconciles succeed. Rollout progress stays in the status of the resources, so pair these metrics with the `Progressing` condition.

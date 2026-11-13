@@ -151,3 +151,7 @@ The `Progressing` condition follows the rollout of a revision and is described i
 - Removing a rule does not undo it. The node keeps the last applied state until it is replaced.
 - A node the target selects but no agent pod can run on (an `agent.nodeSelector` that leaves it out, or no free pod slot) never reports, which holds the rollout.
 - An excluded node still runs an idle agent pod when the rest of the target selects it.
+
+## Conclusion
+
+The controller decides which node gets which revision, and the agent on each node applies it and reports back. A binding ties the two together and lives exactly as long as its node and its NodeConfiguration. Everything else, the rollout, the cordon, and the status, is read from or written to that one object per node.

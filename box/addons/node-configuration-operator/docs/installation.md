@@ -79,3 +79,7 @@ The agents are a DaemonSet and need no election.
 ## Uninstall
 
 Deleting a NodeConfiguration makes the controller remove its bindings. A binding is also removed with its node, by the Kubernetes garbage collector. The nodes keep the configuration that was applied. The CRD stays on `helm uninstall` while `crds.keep` is true.
+
+## Conclusion
+
+One chart installs the controller, the agent template, and the RBAC both need, and the NodeConfigurations can ship in the same release. Keep leader election on, add a second replica where the controller must not pause, and remember that an uninstall leaves the nodes as they were configured.

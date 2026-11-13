@@ -10,6 +10,9 @@
 | `src/payload.rs` | The revision hash |
 | `src/controller/rollout.rs` | Which node gets which revision, within the budget |
 | `src/controller/status.rs` | Conditions and counts |
+| `src/controller/cordon.rs` | Cordon and uncordon of a node that moves, with the Node events |
+| `src/controller/cleanup.rs` | Bindings and cordons a deleted NodeConfiguration left behind |
+| `src/controller/leader.rs` | Leader election over a Lease |
 | `src/agent/hostfs.rs` | Path resolution and atomic writes inside the host mount |
 | `src/agent/rules.rs` | The rule actions |
 | `src/agent/script.rs` | The script runner and its host helper |
@@ -34,3 +37,7 @@ The rule engine only needs a directory, so its tests run against a temporary dir
 ## Release
 
 Bump `org.opencontainers.image.version` in the Dockerfile for the image and `version` in `Chart.yaml` for the chart. Each release runs on push to `main`.
+
+## Conclusion
+
+The Rust types are the source of the CRDs, the chart, and the checks, so a change starts there and `make crd`, `make lint`, and `make test` carry it through. A release is a version bump pushed to `main`, nothing else.

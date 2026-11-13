@@ -26,7 +26,7 @@ The three capabilities are what the rules need: `FOWNER` to change the mode of f
 
 Anyone who can create or update a NodeConfiguration can write any file on every selected node, including `/etc/sudoers` and files under `/etc/ssh`. Treat write access to the resource as node root on the managed node groups, and grant it as narrowly as cluster-admin.
 
-The controller creates the agent DaemonSet, so its ServiceAccount can create DaemonSets in the release namespace and patch or delete the one named after the agent. It can read only the template ConfigMap. Whoever can edit that ConfigMap decides what the agent pods run.
+The controller creates the agent DaemonSet, so its ServiceAccount can create DaemonSets in the release namespace and patch or delete the one named after the agent. It can read only the template ConfigMap. It can also patch every Node, which the cordon option of a rollout uses to set `spec.unschedulable` and one annotation. Whoever can edit that ConfigMap decides what the agent pods run.
 
 The same holds for write access to NodeConfigurationBindings, because a binding is what the agent applies. Only the controller needs it. The agent can read bindings and write their status, and holds no AWS permission.
 
@@ -45,3 +45,7 @@ A race on a parent directory that the account can rename is not closed. Prefer r
 - It never executes a command on the host unless `agent.allowScripts` is on. There is no shell in the image, and a script runs through the shell of the node.
 - It never follows a symbolic link out of the host mount.
 - It never selects a node that Karpenter owns.
+
+## Conclusion
+
+The agent is as powerful as node root, and write access to a NodeConfiguration, a binding, or the agent template is the same power one step removed. Grant those as narrowly as cluster-admin, leave scripts off unless a rule needs them, and rely on the link guards only as a second line behind that access control.
