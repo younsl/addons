@@ -84,6 +84,10 @@ The following table lists the configurable parameters and their default values.
 | leaderElection.leaseDurationSeconds | int | `15` | Seconds a standby waits on a Lease that is not renewed before it takes over. |
 | leaderElection.renewDeadlineSeconds | int | `10` | Seconds the leader keeps trying to renew the Lease before it steps down. Must be below `leaseDurationSeconds`. |
 | leaderElection.retryPeriodSeconds | int | `2` | Seconds between two attempts to take or renew the Lease. Must be below `renewDeadlineSeconds`. |
+| podDisruptionBudget.enabled | bool | `false` | Whether to create a PodDisruptionBudget for the controller pods. Leave it off with one replica, or a node drain waits on it. |
+| podDisruptionBudget.minAvailable | int/string | `""` | Controller pods that must stay available during a voluntary disruption, as a count or a percentage. When set it replaces `maxUnavailable`. |
+| podDisruptionBudget.maxUnavailable | int/string | `1` | Controller pods that may be unavailable during a voluntary disruption, as a count or a percentage. |
+| podDisruptionBudget.unhealthyPodEvictionPolicy | string | `"IfHealthyBudget"` | `IfHealthyBudget` evicts an unhealthy pod only while the budget is met. `AlwaysAllow` always evicts it. Empty leaves it unset. |
 | revisionHistoryLimit | int | `5` | Number of old ReplicaSets and DaemonSet revisions to retain for rollback. |
 | image.registry | string | `"ghcr.io"` | Container image registry host, prefixed to `repository`. Set empty when `repository` carries the full path. |
 | image.repository | string | `"younsl/node-configuration-operator"` | Container image repository path without registry prefix. The controller and the agent run the same image. |
@@ -104,6 +108,7 @@ The following table lists the configurable parameters and their default values.
 | nodeSelector | object | `{}` | Node selector for controller pod scheduling. |
 | tolerations | list | `[]` | Tolerations for controller pod scheduling. |
 | affinity | object | `{}` | Affinity rules for controller pod scheduling. |
+| topologySpreadConstraints | list | `[]` | Topology spread constraints of the controller pods. Spreading the replicas keeps one node or zone loss from taking the leader and every standby at once. |
 | extraPodSpec | object | `{}` | Extra Pod spec fields of the controller, e.g. runtimeClassName. Fields the chart already renders are rejected. |
 | logging.level | string | `"info"` | Log level of the controller and the agent pods: trace, debug, info, warn, error. `RUST_LOG` on the pod overrides it. |
 | logging.format | string | `"json"` | Log format: json or text |

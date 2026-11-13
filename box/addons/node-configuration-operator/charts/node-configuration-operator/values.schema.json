@@ -56,6 +56,25 @@
         }
       }
     },
+    "podDisruptionBudget": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "minAvailable": {
+          "type": ["integer", "string", "null"]
+        },
+        "maxUnavailable": {
+          "type": ["integer", "string", "null"]
+        },
+        "unhealthyPodEvictionPolicy": {
+          "type": ["string", "null"],
+          "enum": ["", "IfHealthyBudget", "AlwaysAllow", null]
+        }
+      }
+    },
     "revisionHistoryLimit": {
       "type": "integer",
       "minimum": 0
@@ -124,11 +143,17 @@
     "affinity": {
       "type": ["object", "null"]
     },
+    "topologySpreadConstraints": {
+      "type": ["array", "null"],
+      "items": {
+        "type": "object"
+      }
+    },
     "extraPodSpec": {
       "type": ["object", "null"],
       "propertyNames": {
         "not": {
-          "enum": ["affinity", "containers", "imagePullSecrets", "nodeSelector", "priorityClassName", "serviceAccountName", "tolerations"]
+          "enum": ["affinity", "containers", "imagePullSecrets", "nodeSelector", "priorityClassName", "serviceAccountName", "tolerations", "topologySpreadConstraints"]
         }
       }
     },

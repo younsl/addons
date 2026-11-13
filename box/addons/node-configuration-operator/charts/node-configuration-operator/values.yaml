@@ -26,6 +26,16 @@ leaderElection:
   # -- (int) Seconds between two attempts to take or renew the Lease. Must be below `renewDeadlineSeconds`.
   retryPeriodSeconds: 2
 
+podDisruptionBudget:
+  # -- (bool) Whether to create a PodDisruptionBudget for the controller pods. Leave it off with one replica, or a node drain waits on it.
+  enabled: false
+  # -- (int/string) Controller pods that must stay available during a voluntary disruption, as a count or a percentage. When set it replaces `maxUnavailable`.
+  minAvailable: ""
+  # -- (int/string) Controller pods that may be unavailable during a voluntary disruption, as a count or a percentage.
+  maxUnavailable: 1
+  # -- (string) `IfHealthyBudget` evicts an unhealthy pod only while the budget is met. `AlwaysAllow` always evicts it. Empty leaves it unset.
+  unhealthyPodEvictionPolicy: IfHealthyBudget
+
 # -- (int) Number of old ReplicaSets and DaemonSet revisions to retain for rollback.
 revisionHistoryLimit: 5
 
@@ -85,6 +95,14 @@ nodeSelector: {}
 tolerations: []
 # -- (object) Affinity rules for controller pod scheduling.
 affinity: {}
+# -- (list) Topology spread constraints of the controller pods. Spreading the replicas keeps one node or zone loss from taking the leader and every standby at once.
+topologySpreadConstraints: []
+  # - maxSkew: 1
+  #   topologyKey: kubernetes.io/hostname
+  #   whenUnsatisfiable: ScheduleAnyway
+  #   labelSelector:
+  #     matchLabels:
+  #       app.kubernetes.io/name: node-configuration-operator
 # -- (object) Extra Pod spec fields of the controller, e.g. runtimeClassName. Fields the chart already renders are rejected.
 extraPodSpec: {}
 

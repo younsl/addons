@@ -60,13 +60,24 @@ leaderElection:
   leaseDurationSeconds: 15
   renewDeadlineSeconds: 10
   retryPeriodSeconds: 2
+podDisruptionBudget:
+  enabled: true
+  maxUnavailable: 1
+topologySpreadConstraints:
+  - maxSkew: 1
+    topologyKey: kubernetes.io/hostname
+    whenUnsatisfiable: ScheduleAnyway
+    labelSelector:
+      matchLabels:
+        app.kubernetes.io/name: node-configuration-operator
 ```
 
 - A leader that stops gives the Lease back, so a standby takes over within `retryPeriodSeconds`. After a crash a standby waits `leaseDurationSeconds` on a Lease that is no longer renewed.
 - A leader that cannot renew within `renewDeadlineSeconds` stops and restarts as a standby, before any standby may take over.
 - Leader election is on by default with one replica too, so the old and the new pod never act together during a rolling update.
 - The chart refuses `replicaCount` above 1 with `leaderElection.enabled: false`.
-- Spread the replicas over nodes with `affinity`, and watch `node_configuration_controller_leader`, which is 1 on the leader.
+- `topologySpreadConstraints` keeps the replicas on different nodes, and `podDisruptionBudget` keeps a node drain from evicting them all at once. The budget is off by default, because with one replica it would block the drain.
+- Watch `node_configuration_controller_leader`, which is 1 on the leader.
 
 ```console
 $ kubectl get lease node-configuration-operator -n kube-system

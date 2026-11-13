@@ -26,6 +26,8 @@ annotations:
       description: "Controller RBAC to patch Nodes and record Events, for the cordon option of a rollout"
     - kind: added
       description: "Status Age, Last Change, and Changed columns on NodeConfigurationBinding"
+    - kind: added
+      description: "podDisruptionBudget and topologySpreadConstraints values for the controller pods"
     - kind: changed
       description: "A NodeConfigurationBinding is owned by its Node, so the nodeconfigurations/finalizers rule is gone"
     - kind: changed
