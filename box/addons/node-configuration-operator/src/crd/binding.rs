@@ -33,6 +33,8 @@ pub const NODE_LABEL: &str = "node-configuration-operator.sh/node";
     printcolumn = r#"{"name":"Ready","type":"boolean","jsonPath":".status.ready"}"#,
     printcolumn = r#"{"name":"Failed","type":"integer","jsonPath":".status.failedRules"}"#,
     printcolumn = r#"{"name":"Status Age","type":"date","jsonPath":".status.lastTransitionTime"}"#,
+    printcolumn = r#"{"name":"Last Change","type":"date","jsonPath":".status.lastChangeTime"}"#,
+    printcolumn = r#"{"name":"Changed","type":"integer","jsonPath":".status.lastChangedRules","priority":1}"#,
     printcolumn = r#"{"name":"Age","type":"date","jsonPath":".metadata.creationTimestamp"}"#
 )]
 #[serde(rename_all = "camelCase")]
@@ -86,6 +88,13 @@ pub struct NodeConfigurationBindingStatus {
     /// When `observedRevision` or `ready` last changed, in RFC 3339.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_transition_time: Option<String>,
+    /// When a run last corrected the node, in RFC 3339. It outlives the runs
+    /// after it that find nothing to change.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_change_time: Option<String>,
+    /// Rules that corrected the node in the run at `lastChangeTime`.
+    #[serde(default)]
+    pub last_changed_rules: i32,
 }
 
 /// What the last run did with one rule.
@@ -101,6 +110,12 @@ pub struct RuleStatus {
     /// What changed, is pending, or failed.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub message: Option<String>,
+    /// When the rule last corrected the node, in RFC 3339.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_change_time: Option<String>,
+    /// What the rule changed at `lastChangeTime`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_change: Option<String>,
 }
 
 /// The node name as a label value, hashed when it is too long for one.

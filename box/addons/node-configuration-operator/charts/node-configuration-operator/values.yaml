@@ -13,8 +13,18 @@ crds:
   # -- (object) Additional labels to add to the CRD resources.
   additionalLabels: {}
 
-# -- (int) Number of controller replicas to run.
+# -- (int) Number of controller replicas to run. Above 1 requires `leaderElection.enabled`, and the replicas beyond the leader stand by.
 replicaCount: 1
+
+leaderElection:
+  # -- (bool) Whether a controller replica acts only while it holds a Lease in the release namespace. One replica keeps it on so that two pods never act at once during a rolling update.
+  enabled: true
+  # -- (int) Seconds a standby waits on a Lease that is not renewed before it takes over.
+  leaseDurationSeconds: 15
+  # -- (int) Seconds the leader keeps trying to renew the Lease before it steps down. Must be below `leaseDurationSeconds`.
+  renewDeadlineSeconds: 10
+  # -- (int) Seconds between two attempts to take or renew the Lease. Must be below `renewDeadlineSeconds`.
+  retryPeriodSeconds: 2
 
 # -- (int) Number of old ReplicaSets and DaemonSet revisions to retain for rollback.
 revisionHistoryLimit: 5
@@ -162,6 +172,7 @@ nodeConfigurations: []
   #       type: RollingUpdate
   #       rollingUpdate:
   #         maxUnavailable: 1
+  #         cordon: false
   #     minReadySeconds: 30
   #     paused: false
   #     progressDeadlineSeconds: 600

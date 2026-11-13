@@ -269,6 +269,10 @@ spec:
                     description: Parameters of `RollingUpdate`.
                     nullable: true
                     properties:
+                      cordon:
+                        default: false
+                        description: Cordons a node before it moves to a new revision and uncordons it once the revision is configured there, so no new Pod is scheduled on a node whose configuration is changing. A node that was already cordoned is left as it is, and a dry run never cordons.
+                        type: boolean
                       maxUnavailable:
                         description: Nodes that may be on a new revision without being configured yet, as a count or a percentage such as `10%`. Omitted means 1, one node at a time.
                         nullable: true

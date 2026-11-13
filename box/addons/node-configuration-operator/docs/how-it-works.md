@@ -19,12 +19,25 @@ A binding is to a NodeConfiguration what a Pod is to a Deployment. It carries a 
 ## Controller
 
 - Watches NodeConfigurations, their bindings, and the managed node group nodes, through `kube::runtime::Controller`.
+- Acts only while it holds the leader Lease when leader election is on, see [High availability](installation.md#high-availability).
 - Selects the nodes of a resource by label: `eks.amazonaws.com/nodegroup` must exist (or match `spec.target.nodeGroups`), `karpenter.sh/nodepool` must not exist, and `spec.target.nodeSelector` must match. Nodes named in `spec.target.excludeNodes` are left out.
 - Creates a binding for every selected node that has none, so a new or replaced node is configured as soon as it joins.
 - Moves bindings to a new revision within the `maxUnavailable` budget of the resource, see [Rollout](rollout.md).
+- Cordons a node before it moves and uncordons it once the revision is configured, when the resource asks for it, see [Cordon](rollout.md#cordon).
 - Deletes the binding of a node that left the target, and writes the status from the bindings: the rollout counts and the aggregated results.
 
-Every binding carries an ownerReference, so deleting the NodeConfiguration removes its bindings.
+## Binding lifecycle
+
+A binding lives exactly as long as its node and its NodeConfiguration, the way a Karpenter NodeClaim follows its node.
+
+| Event | What removes the binding |
+| --- | --- |
+| The node is deleted | The Kubernetes garbage collector. The Node is the only ownerReference of the binding, so this also works while no controller runs |
+| The node is replaced under the same name | The garbage collector or the controller, whichever sees it first. The ownerReference carries the UID of the old node, and the new node gets a fresh binding with no result |
+| The node leaves the target | The controller, on its next pass |
+| The NodeConfiguration is deleted | The controller. It removes the bindings and gives back the cordons of every NodeConfiguration that no longer exists, when it starts and after every deletion |
+
+A binding does not reference its NodeConfiguration as an owner. It names it in `spec.configuration` and in the `node-configuration-operator.sh/configuration` label. A binding created by 0.1.0 is handed over to its node on the first pass of a newer controller.
 
 ## Agent DaemonSet
 
@@ -40,7 +53,7 @@ A change of the targets changes the pod template, so the agent pods restart unde
 ## Agent
 
 - Watches only the bindings labeled with its own node name.
-- Runs a binding when it changes and then every `intervalSeconds`. The rules run in list order, and a failed rule does not stop the ones after it. Bindings run one at a time.
+- Runs a binding when its spec changes and then every `intervalSeconds`. The status it writes does not start another run. The rules run in list order, and a failed rule does not stop the ones after it. Bindings run one at a time.
 - Holds a grouped binding back until every binding of the same group with a higher priority is configured on the node, and reports `waiting for <name>` meanwhile. It checks again after 15 seconds.
 - In a dry run, compares and reports each difference as `pending` without writing.
 - Compares before it writes. A node already in line is read and left untouched, so the interval can be short.
@@ -102,12 +115,24 @@ status:
 
 A rule that touches several paths counts once per node, under the outcome that matters most. `changed` drops back to `unchanged` on the next run, so a steady `changed` count means something else keeps rewriting the node. The counts of a rule add up to the nodes that ran the current revision, and a node that waits for a higher priority of its group is in none of them.
 
-The binding of a node holds the same result rule by rule in `status.rules`.
+The binding of a node holds the same result rule by rule in `status.rules`. That is the result of the last run, so a rule that corrected the node reads `unchanged` one interval later. What a run corrected stays in separate fields until a later run corrects something again.
+
+| Binding field | Meaning |
+| --- | --- |
+| `status.lastChangeTime` | When a run last corrected the node |
+| `status.lastChangedRules` | Rules that corrected the node in that run |
+| `status.rules[].lastChangeTime` | When this rule last corrected the node |
+| `status.rules[].lastChange` | What this rule changed then |
+
+```console
+$ kubectl get ncb os-hardening.ip-10-0-1-10.ap-northeast-2.compute.internal -o jsonpath='{range .status.rules[?(@.lastChange)]}{.name}{"\t"}{.lastChangeTime}{"\t"}{.lastChange}{"\n"}{end}'
+motd	2026-11-13T05:09:45Z	file /etc/motd, created
+```
 
 ```console
 $ kubectl get nodeconfigurationbindings
-NAME                                                       CONFIGURATION   NODE                                          REVISION     APPLIED      READY   FAILED
-os-hardening.ip-10-0-1-10.ap-northeast-2.compute.internal   os-hardening    ip-10-0-1-10.ap-northeast-2.compute.internal   5f1c0a9e2b   5f1c0a9e2b   true    0
+NAME                                                       CONFIGURATION   NODE                                          REVISION     APPLIED      READY   FAILED   STATUS AGE   LAST CHANGE   AGE
+os-hardening.ip-10-0-1-10.ap-northeast-2.compute.internal   os-hardening    ip-10-0-1-10.ap-northeast-2.compute.internal   5f1c0a9e2b   5f1c0a9e2b   true    0        3d           3d            3d
 ```
 
 | Ready | Reason | Meaning |

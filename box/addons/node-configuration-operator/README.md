@@ -13,6 +13,9 @@ node-configuration-operator (NCO) is a [Kubernetes operator](https://kubernetes.
 - An opt-in script action for what the declarative actions cannot express, such as reloading a service
 - Continuous reconcile on every interval, with no write on a node already in line
 - Deployment-style rollout per NodeConfiguration: rolling update with maxUnavailable, minReadySeconds, pause, progress deadline, and OnDelete
+- Optional cordon of a node while it moves to a new revision, recorded as Cordon and Uncordon events on the Node
+- Bindings that live and die with their node, like a Karpenter NodeClaim
+- Controller replicas with leader election through a Lease
 - Direct access to the node OS through the host root mount, with no SSM, SSH, or AWS permission
 - One agent pod per node applies every NodeConfiguration. The controller creates the agent DaemonSet with the node affinity of the targets, on managed node groups only and never on Karpenter nodes
 - Groups that apply several NodeConfigurations on a node in priority order

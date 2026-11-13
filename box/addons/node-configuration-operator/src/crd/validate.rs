@@ -224,6 +224,7 @@ mod tests {
             type_: crate::crd::StrategyType::OnDelete,
             rolling_update: Some(crate::crd::RollingUpdate {
                 max_unavailable: Some(IntOrString::Int(0)),
+                cordon: false,
             }),
         };
         s.rules = (0..16)

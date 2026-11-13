@@ -5,8 +5,9 @@ pub mod hostfs;
 pub mod rules;
 pub mod script;
 
-use std::sync::Arc;
-use std::time::Duration;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex, PoisonError};
+use std::time::{Duration, Instant};
 
 use kube::api::{Api, ListParams, Patch, PatchParams};
 use kube::runtime::controller::Action;
@@ -40,6 +41,42 @@ pub struct Context {
     pub scripts: Scripts,
     pub node_name: String,
     pub metrics: Arc<Metrics>,
+    pub schedule: Schedule,
+}
+
+/// When each binding runs next, by UID. The status the agent writes comes
+/// back as a watch event, and without this every write would run the rules
+/// again right away.
+#[derive(Default)]
+pub struct Schedule(Mutex<HashMap<String, (Option<i64>, Instant)>>);
+
+impl Schedule {
+    /// How long the binding still has to wait. `None` runs it now, which a
+    /// new generation always does.
+    fn wait(&self, binding: &NodeConfigurationBinding) -> Option<Duration> {
+        let uid = binding.uid()?;
+        let run = self
+            .0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .get(&uid)
+            .copied();
+        let (generation, due) = run?;
+        if generation != binding.metadata.generation {
+            return None;
+        }
+        due.checked_duration_since(Instant::now())
+            .filter(|left| !left.is_zero())
+    }
+
+    fn set(&self, binding: &NodeConfigurationBinding, after: Duration) {
+        if let Some(uid) = binding.uid() {
+            self.0
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .insert(uid, (binding.metadata.generation, Instant::now() + after));
+        }
+    }
 }
 
 fn log(report: &Report, configuration: &str) {
@@ -74,6 +111,7 @@ fn log(report: &Report, configuration: &str) {
 
 /// The status of a run. The transition time moves only when the revision or
 /// the readiness changes, so an unchanged node costs no write per interval.
+/// What a run corrected is kept until a later run corrects something again.
 fn status_of(
     binding: &NodeConfigurationBinding,
     run: Run,
@@ -83,8 +121,29 @@ fn status_of(
         ready,
         failed,
         message,
-        rules,
+        mut rules,
     } = run;
+    let previous = binding.status.as_ref();
+    let mut changed = 0;
+    for rule in &mut rules {
+        if rule.outcome == Outcome::Changed.as_str() {
+            changed += 1;
+            rule.last_change_time = Some(now.to_string());
+            rule.last_change.clone_from(&rule.message);
+        } else if let Some(before) =
+            previous.and_then(|s| s.rules.iter().find(|r| r.name == rule.name))
+        {
+            rule.last_change_time.clone_from(&before.last_change_time);
+            rule.last_change.clone_from(&before.last_change);
+        }
+    }
+    let (last_change_time, last_changed_rules) = if changed > 0 {
+        (Some(now.to_string()), changed)
+    } else {
+        previous.map_or((None, 0), |s| {
+            (s.last_change_time.clone(), s.last_changed_rules)
+        })
+    };
     let revision = Some(binding.spec.revision.clone());
     let unchanged = binding
         .status
@@ -99,6 +158,8 @@ fn status_of(
         last_transition_time: unchanged
             .and_then(|s| s.last_transition_time.clone())
             .or_else(|| Some(now.to_string())),
+        last_change_time,
+        last_changed_rules,
     }
 }
 
@@ -230,6 +291,7 @@ async fn run(binding: &NodeConfigurationBinding, ctx: &Context) -> Result<Run, E
             name: name.to_string(),
             outcome: outcome.as_str().to_string(),
             message,
+            ..RuleStatus::default()
         })
         .collect();
     Ok(Run {
@@ -246,12 +308,18 @@ pub async fn reconcile(
     if binding.spec.node_name != ctx.node_name {
         return Ok(Action::await_change());
     }
+    if let Some(wait) = ctx.schedule.wait(&binding) {
+        return Ok(Action::requeue(wait));
+    }
     let result = apply(&binding, &ctx).await;
     ctx.metrics.reconciled(result.is_ok());
-    result
+    let next = result?;
+    ctx.schedule.set(&binding, next);
+    Ok(Action::requeue(next))
 }
 
-async fn apply(binding: &NodeConfigurationBinding, ctx: &Context) -> Result<Action, Error> {
+/// Runs the binding and returns how long until its next run.
+async fn apply(binding: &NodeConfigurationBinding, ctx: &Context) -> Result<Duration, Error> {
     let run = run(binding, ctx).await?;
     let (ready, failed) = (run.ready, run.failed);
     let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
@@ -266,13 +334,13 @@ async fn apply(binding: &NodeConfigurationBinding, ctx: &Context) -> Result<Acti
             .await?;
     }
     let interval = Duration::from_secs(u64::from(binding.spec.interval_seconds));
-    Ok(Action::requeue(if ready {
+    Ok(if ready {
         interval
     } else if failed == 0 {
         WAIT
     } else {
         RETRY.min(interval)
-    }))
+    })
 }
 
 #[allow(clippy::needless_pass_by_value)]
@@ -308,6 +376,7 @@ mod tests {
             scripts: Scripts::Disabled,
             node_name: "node-1".to_string(),
             metrics: Arc::new(Metrics::new(&mut Registry::default())),
+            schedule: Schedule::default(),
         });
         (server, ctx)
     }
@@ -371,9 +440,18 @@ mod tests {
         assert_eq!(status["ready"], true);
         assert_eq!(status["failedRules"], 0);
         assert!(status["message"].is_null(), "{status}");
+        let changed_at = status["lastChangeTime"].clone();
+        assert!(changed_at.is_string(), "{status}");
+        assert_eq!(status["lastChangedRules"], 1);
         assert_eq!(
             status["rules"],
-            json!([{"name": "motd", "outcome": "changed", "message": "file /motd, created"}])
+            json!([{
+                "name": "motd",
+                "outcome": "changed",
+                "message": "file /motd, created",
+                "lastChangeTime": changed_at,
+                "lastChange": "file /motd, created"
+            }])
         );
 
         // The next run finds the node in line, and that result is written once.
@@ -384,8 +462,16 @@ mod tests {
         let status = reported(&server).await;
         assert_eq!(
             status["rules"],
-            json!([{"name": "motd", "outcome": "unchanged"}])
+            json!([{
+                "name": "motd",
+                "outcome": "unchanged",
+                "lastChangeTime": changed_at,
+                "lastChange": "file /motd, created"
+            }]),
+            "what the first run corrected stays visible"
         );
+        assert_eq!(status["lastChangeTime"], changed_at);
+        assert_eq!(status["lastChangedRules"], 1);
         binding.status = Some(serde_json::from_value(status).unwrap());
         reconcile(Arc::new(binding), ctx).await.unwrap();
     }
@@ -545,6 +631,86 @@ mod tests {
         let mine = Arc::new(binding("/motd"));
         let error = reconcile(mine.clone(), ctx.clone()).await.unwrap_err();
         assert_eq!(error_policy(mine, &error, ctx), Action::requeue(RETRY));
+    }
+
+    #[tokio::test]
+    async fn a_status_write_does_not_run_the_rules_again() {
+        let dir = tempfile::tempdir().unwrap();
+        let (server, ctx) = context(dir.path()).await;
+        let mut binding = binding("/motd");
+        binding.metadata.uid = Some("uid-1".to_string());
+        binding.metadata.generation = Some(1);
+        expect_status(&server, &binding, 2).await;
+
+        reconcile(Arc::new(binding.clone()), ctx.clone())
+            .await
+            .unwrap();
+        // The watch event of the status that was just written.
+        binding.status = Some(serde_json::from_value(reported(&server).await).unwrap());
+        std::fs::remove_file(dir.path().join("motd")).unwrap();
+        let action = reconcile(Arc::new(binding.clone()), ctx.clone())
+            .await
+            .unwrap();
+        assert_ne!(action, Action::await_change());
+        assert!(
+            !dir.path().join("motd").exists(),
+            "the rules wait for the interval"
+        );
+        assert_eq!(server.received_requests().await.unwrap().len(), 1);
+        let left = ctx.schedule.wait(&binding).unwrap();
+        assert!(left <= Duration::from_secs(120) && left > Duration::from_secs(110));
+
+        // A new generation runs at once, and so does a binding that was recreated.
+        binding.status = None;
+        binding.metadata.generation = Some(2);
+        assert_eq!(ctx.schedule.wait(&binding), None);
+        reconcile(Arc::new(binding.clone()), ctx.clone())
+            .await
+            .unwrap();
+        assert!(dir.path().join("motd").exists());
+        binding.metadata.uid = Some("uid-2".to_string());
+        assert_eq!(ctx.schedule.wait(&binding), None);
+    }
+
+    #[test]
+    fn a_change_is_kept_until_a_later_run_changes_something() {
+        let rule = |outcome: Outcome, message: Option<&str>| RuleStatus {
+            name: "motd".to_string(),
+            outcome: outcome.as_str().to_string(),
+            message: message.map(ToString::to_string),
+            ..RuleStatus::default()
+        };
+        let run = |rules: Vec<RuleStatus>| Run {
+            rules,
+            ..Run::finished(0, None)
+        };
+        let mut binding = binding("/motd");
+        let first = status_of(
+            &binding,
+            run(vec![rule(Outcome::Changed, Some("created"))]),
+            "t1",
+        );
+        assert_eq!(first.last_change_time.as_deref(), Some("t1"));
+        assert_eq!(first.last_changed_rules, 1);
+
+        binding.status = Some(first);
+        let second = status_of(&binding, run(vec![rule(Outcome::Unchanged, None)]), "t2");
+        assert_eq!(second.last_change_time.as_deref(), Some("t1"));
+        assert_eq!(second.last_changed_rules, 1);
+        assert_eq!(second.rules[0].last_change_time.as_deref(), Some("t1"));
+        assert_eq!(second.rules[0].last_change.as_deref(), Some("created"));
+
+        binding.status = Some(second);
+        let waiting = status_of(&binding, Run::finished(0, None), "t3");
+        assert_eq!(waiting.last_change_time.as_deref(), Some("t1"));
+        binding.status = Some(waiting);
+        let third = status_of(
+            &binding,
+            run(vec![rule(Outcome::Changed, Some("rewritten"))]),
+            "t4",
+        );
+        assert_eq!(third.last_change_time.as_deref(), Some("t4"));
+        assert_eq!(third.rules[0].last_change.as_deref(), Some("rewritten"));
     }
 
     #[test]

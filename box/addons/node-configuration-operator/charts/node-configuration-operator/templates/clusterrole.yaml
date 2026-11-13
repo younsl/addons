@@ -11,16 +11,15 @@ rules:
   - apiGroups: ["node-configuration-operator.sh"]
     resources: ["nodeconfigurations/status"]
     verbs: ["get", "patch", "update"]
-  # The bindings carry a blocking ownerReference to their NodeConfiguration.
-  - apiGroups: ["node-configuration-operator.sh"]
-    resources: ["nodeconfigurations/finalizers"]
-    verbs: ["update"]
   - apiGroups: ["node-configuration-operator.sh"]
     resources: ["nodeconfigurationbindings"]
     verbs: ["get", "list", "watch", "create", "update", "delete"]
   - apiGroups: [""]
     resources: ["nodes"]
-    verbs: ["get", "list", "watch"]
+    verbs: ["get", "list", "watch", "patch"]
+  - apiGroups: ["events.k8s.io"]
+    resources: ["events"]
+    verbs: ["create", "patch"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole

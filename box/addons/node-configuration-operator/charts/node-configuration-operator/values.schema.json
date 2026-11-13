@@ -35,6 +35,27 @@
       "type": "integer",
       "minimum": 0
     },
+    "leaderElection": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "leaseDurationSeconds": {
+          "type": "integer",
+          "minimum": 2
+        },
+        "renewDeadlineSeconds": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "retryPeriodSeconds": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
     "revisionHistoryLimit": {
       "type": "integer",
       "minimum": 0
@@ -314,6 +335,9 @@
                           "pattern": "^([1-9][0-9]?|100)%$"
                         }
                       ]
+                    },
+                    "cordon": {
+                      "type": "boolean"
                     }
                   }
                 }

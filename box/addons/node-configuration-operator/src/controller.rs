@@ -2,19 +2,23 @@
 //! through one `NodeConfigurationBinding` per node, and reports the rollout.
 
 pub mod agentset;
+pub mod cleanup;
+pub mod cordon;
+pub mod leader;
 pub mod results;
 pub mod rollout;
 pub mod status;
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 use std::time::Duration;
 
 use k8s_openapi::api::core::v1::Node;
-use k8s_openapi::apimachinery::pkg::apis::meta::v1::ObjectMeta;
+use k8s_openapi::apimachinery::pkg::apis::meta::v1::{ObjectMeta, OwnerReference};
 use kube::api::{Api, DeleteParams, ListParams, Patch, PatchParams, PostParams};
 use kube::runtime::controller::Action;
-use kube::{Client, Resource as _, ResourceExt as _};
+use kube::runtime::events::Recorder;
+use kube::{Client, ResourceExt as _};
 use serde_json::json;
 use tracing::{info, warn};
 
@@ -39,6 +43,7 @@ pub enum Error {
 
 pub struct Context {
     pub client: Client,
+    pub recorder: Recorder,
     pub metrics: Arc<Metrics>,
 }
 
@@ -58,27 +63,59 @@ pub fn node_selector(target: &Target) -> String {
     terms.join(",")
 }
 
+fn node_owner(node: &str, uid: &str) -> OwnerReference {
+    OwnerReference {
+        api_version: "v1".to_string(),
+        kind: "Node".to_string(),
+        name: node.to_string(),
+        uid: uid.to_string(),
+        controller: None,
+        block_owner_deletion: None,
+    }
+}
+
+/// The UID of the node that owns a binding. A binding written before the
+/// node became the owner has none.
+fn owner_uid(binding: &NodeConfigurationBinding) -> Option<&str> {
+    binding
+        .owner_references()
+        .iter()
+        .find(|owner| owner.kind == "Node")
+        .map(|owner| owner.uid.as_str())
+}
+
+// The node is the only owner, so the garbage collector removes the binding
+// with the node, also while no controller runs.
 fn new_binding(
-    obj: &NodeConfiguration,
+    configuration: &str,
     node: &str,
+    uid: &str,
     spec: NodeConfigurationBindingSpec,
 ) -> NodeConfigurationBinding {
-    let configuration = obj.name_any();
     NodeConfigurationBinding {
         metadata: ObjectMeta {
-            name: Some(binding::name(&configuration, node)),
+            name: Some(binding::name(configuration, node)),
             labels: Some(
                 [
-                    (CONFIGURATION_LABEL.to_string(), configuration),
+                    (CONFIGURATION_LABEL.to_string(), configuration.to_string()),
                     (NODE_LABEL.to_string(), binding::node_key(node)),
                 ]
                 .into(),
             ),
-            owner_references: obj.controller_owner_ref(&()).map(|owner| vec![owner]),
+            owner_references: Some(vec![node_owner(node, uid)]),
             ..ObjectMeta::default()
         },
         spec,
         status: None,
+    }
+}
+
+/// Deletes a binding. One the garbage collector removed first is fine.
+pub async fn remove(api: &Api<NodeConfigurationBinding>, binding: &str) -> Result<(), kube::Error> {
+    match api.delete(binding, &DeleteParams::default()).await {
+        Ok(_) => Ok(()),
+        Err(kube::Error::Api(status)) if status.code == 404 => Ok(()),
+        Err(e) => Err(e),
     }
 }
 
@@ -105,31 +142,85 @@ pub async fn reconcile(obj: Arc<NodeConfiguration>, ctx: Arc<Context>) -> Result
     result
 }
 
+/// The targeted nodes with their UID, and the listed nodes `name` holds
+/// cordoned.
+async fn nodes_of(
+    obj: &NodeConfiguration,
+    ctx: &Context,
+) -> Result<(BTreeMap<String, String>, BTreeSet<String>), Error> {
+    let name = obj.name_any();
+    let mut nodes = BTreeMap::new();
+    let mut cordoned = BTreeSet::new();
+    for node in Api::<Node>::all(ctx.client.clone())
+        .list_metadata(&ListParams::default().labels(&node_selector(&obj.spec.target)))
+        .await?
+    {
+        let node_name = node.name_any();
+        if cordon::holders(node.metadata.annotations.as_ref()).contains(&name) {
+            cordoned.insert(node_name.clone());
+        }
+        if node.metadata.deletion_timestamp.is_none()
+            && !obj.spec.target.exclude_nodes.contains(&node_name)
+        {
+            nodes.insert(node_name, node.uid().unwrap_or_default());
+        }
+    }
+    Ok((nodes, cordoned))
+}
+
+/// The bindings of `name`, without those of a node that was replaced under
+/// the same name. Such a node has not run anything yet, so it starts over.
+async fn bindings_of(
+    name: &str,
+    nodes: &BTreeMap<String, String>,
+    api: &Api<NodeConfigurationBinding>,
+) -> Result<Vec<NodeConfigurationBinding>, Error> {
+    let mut bindings = Vec::new();
+    for binding in api
+        .list(&ListParams::default().labels(&format!("{CONFIGURATION_LABEL}={name}")))
+        .await?
+    {
+        let node = &binding.spec.node_name;
+        let replaced = owner_uid(&binding)
+            .zip(nodes.get(node))
+            .is_some_and(|(owner, current)| owner != current);
+        if replaced {
+            remove(api, &binding.name_any()).await?;
+            info!(
+                name,
+                node, "Deleted the binding of a node that was replaced"
+            );
+        } else {
+            bindings.push(binding);
+        }
+    }
+    Ok(bindings)
+}
+
 async fn roll_out(obj: &NodeConfiguration, ctx: &Context) -> Result<Observation, Error> {
     let name = obj.name_any();
     let revision = AgentPayload::of(&obj.spec).revision();
+    let cordons = obj.spec.cordons();
 
-    let nodes: BTreeSet<String> = Api::<Node>::all(ctx.client.clone())
-        .list_metadata(&ListParams::default().labels(&node_selector(&obj.spec.target)))
-        .await?
-        .into_iter()
-        .filter(|node| node.metadata.deletion_timestamp.is_none())
-        .map(|node| node.name_any())
-        .filter(|node| !obj.spec.target.exclude_nodes.contains(node))
-        .collect();
+    let (nodes, cordoned) = nodes_of(obj, ctx).await?;
+    if !cordons {
+        for node in &cordoned {
+            cordon::free(ctx, node, &name, cordon::Why::Disabled).await?;
+        }
+    }
     let api: Api<NodeConfigurationBinding> = Api::all(ctx.client.clone());
-    let bindings = api
-        .list(&ListParams::default().labels(&format!("{CONFIGURATION_LABEL}={name}")))
-        .await?
-        .items;
+    let bindings = bindings_of(&name, &nodes, &api).await?;
 
-    let plan = rollout::plan(&obj.spec, &revision, &nodes, &bindings, chrono::Utc::now());
+    let targeted: BTreeSet<String> = nodes.keys().cloned().collect();
+    let now = chrono::Utc::now();
+    let plan = rollout::plan(&obj.spec, &revision, &targeted, &bindings, now);
     for index in &plan.delete {
-        let stale = bindings[*index].name_any();
-        api.delete(&stale, &DeleteParams::default()).await?;
+        let stale = &bindings[*index];
+        cordon::free(ctx, &stale.spec.node_name, &name, cordon::Why::Untargeted).await?;
+        remove(&api, &stale.name_any()).await?;
         info!(
             name,
-            binding = stale,
+            binding = stale.name_any(),
             "Deleted the binding of a node that is no longer targeted"
         );
     }
@@ -142,9 +233,10 @@ async fn roll_out(obj: &NodeConfiguration, ctx: &Context) -> Result<Observation,
             },
         );
         let assigned = spec.revision.clone();
+        let uid = nodes.get(&create.node).map_or("", String::as_str);
         api.create(
             &PostParams::default(),
-            &new_binding(obj, &create.node, spec),
+            &new_binding(&name, &create.node, uid, spec),
         )
         .await?;
         info!(
@@ -154,16 +246,40 @@ async fn roll_out(obj: &NodeConfiguration, ctx: &Context) -> Result<Observation,
             "Assigned a revision to a new node"
         );
     }
-    for index in &plan.update {
-        let mut updated = bindings[*index].clone();
-        let node = updated.spec.node_name.clone();
-        updated.spec = current_spec(obj, &node, &revision);
-        api.replace(&updated.name_any(), &PostParams::default(), &updated)
-            .await?;
-        info!(name, node, revision, "Moved a node to the current revision");
+    for (index, binding) in bindings.iter().enumerate() {
+        let node = &binding.spec.node_name;
+        let Some(uid) = nodes.get(node) else {
+            continue;
+        };
+        let moves = plan.update.contains(&index);
+        let adopted = owner_uid(binding) != Some(uid.as_str());
+        if moves || adopted {
+            let mut updated = binding.clone();
+            updated.metadata.owner_references = Some(vec![node_owner(node, uid)]);
+            if moves {
+                if cordons {
+                    cordon::acquire(ctx, node, &name, &revision).await?;
+                }
+                updated.spec = current_spec(obj, node, &revision);
+            }
+            api.replace(&updated.name_any(), &PostParams::default(), &updated)
+                .await?;
+            if moves {
+                info!(name, node, revision, "Moved a node to the current revision");
+            } else {
+                info!(name, node, "Handed the binding over to its node");
+            }
+        }
+        if cordons
+            && !moves
+            && cordoned.contains(node)
+            && rollout::available(binding, obj.spec.min_ready_seconds, now)
+        {
+            cordon::free(ctx, node, &name, cordon::Why::Configured).await?;
+        }
     }
 
-    let results = results::collect(obj, &revision, &nodes, &bindings);
+    let results = results::collect(obj, &revision, &targeted, &bindings);
     Ok(Observation::Rollout {
         revision,
         counts: plan.counts,
@@ -173,6 +289,9 @@ async fn roll_out(obj: &NodeConfiguration, ctx: &Context) -> Result<Observation,
 
 async fn apply(obj: &NodeConfiguration, ctx: &Context) -> Result<Action, Error> {
     let name = obj.name_any();
+    if obj.metadata.deletion_timestamp.is_some() {
+        return Ok(Action::await_change());
+    }
     let problems = validate::problems(&name, &obj.spec);
     let observation = if problems.is_empty() {
         roll_out(obj, ctx).await?
@@ -219,18 +338,25 @@ mod tests {
     use super::*;
     use crate::crd::binding::NodeConfigurationBindingStatus;
     use crate::crd::testing::resource;
-    use crate::crd::{FileRule, LineEditRule, NamedRule, Rules};
+    use crate::crd::{FileRule, LineEditRule, NamedRule, RollingUpdate, Rules};
+    use kube::Resource as _;
     use prometheus_client::registry::Registry;
-    use wiremock::matchers::{method, path, query_param};
+    use wiremock::matchers::{method, path, path_regex, query_param};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     const GROUP_PATH: &str = "/apis/node-configuration-operator.sh/v1alpha1";
+    const EVENTS_PATH: &str = "/apis/events.k8s.io/v1/namespaces/default/events";
 
     fn context(server: &MockServer) -> Arc<Context> {
         let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
         let config = kube::Config::new(server.uri().parse().unwrap());
+        let client = Client::try_from(config).unwrap();
         Arc::new(Context {
-            client: Client::try_from(config).unwrap(),
+            recorder: Recorder::new(
+                client.clone(),
+                "node-configuration-operator".to_string().into(),
+            ),
+            client,
             metrics: Arc::new(Metrics::new(&mut Registry::default())),
         })
     }
@@ -247,7 +373,12 @@ mod tests {
     }
 
     fn applied(obj: &NodeConfiguration, node: &str, revision: &str) -> NodeConfigurationBinding {
-        let mut binding = new_binding(obj, node, current_spec(obj, node, revision));
+        let mut binding = new_binding(
+            &obj.name_any(),
+            node,
+            &format!("uid-{node}"),
+            current_spec(obj, node, revision),
+        );
         binding.metadata.resource_version = Some("7".to_string());
         binding.status = Some(NodeConfigurationBindingStatus {
             observed_revision: Some(revision.to_string()),
@@ -271,10 +402,70 @@ mod tests {
         nodes: &[&str],
         bindings: &[NodeConfigurationBinding],
     ) {
-        let items: Vec<_> = nodes
-            .iter()
-            .map(|n| json!({"metadata": {"name": n}}))
-            .collect();
+        let items = nodes.iter().map(|n| node(n, None)).collect();
+        cluster_of(server, obj, items, bindings).await;
+    }
+
+    fn node(name: &str, cordoned_by: Option<&str>) -> serde_json::Value {
+        let mut node = json!({
+            "apiVersion": "v1",
+            "kind": "Node",
+            "metadata": {"name": name, "uid": format!("uid-{name}"), "resourceVersion": "5"}
+        });
+        if let Some(holder) = cordoned_by {
+            node["metadata"]["annotations"] = json!({cordon::HOLDERS_ANNOTATION: holder});
+            node["spec"] = json!({"unschedulable": true});
+        }
+        node
+    }
+
+    async fn node_api(server: &MockServer, node: &serde_json::Value) {
+        let at = format!(
+            "/api/v1/nodes/{}",
+            node["metadata"]["name"].as_str().unwrap()
+        );
+        mock(server, "GET", at.clone(), node.clone()).await;
+        mock(server, "PATCH", at, node.clone()).await;
+        mock(
+            server,
+            "POST",
+            EVENTS_PATH.to_string(),
+            json!({
+                "apiVersion": "events.k8s.io/v1",
+                "kind": "Event",
+                "metadata": {"name": "event", "namespace": "default"}
+            }),
+        )
+        .await;
+    }
+
+    fn cordoning() -> NodeConfiguration {
+        let mut obj = resource(motd());
+        obj.spec.strategy.rolling_update = Some(RollingUpdate {
+            max_unavailable: None,
+            cordon: true,
+        });
+        obj
+    }
+
+    fn gone() -> ResponseTemplate {
+        ResponseTemplate::new(404).set_body_json(json!({
+            "apiVersion": "v1", "kind": "Status", "status": "Failure", "reason": "NotFound", "code": 404
+        }))
+    }
+
+    async fn cluster_of(
+        server: &MockServer,
+        obj: &NodeConfiguration,
+        items: Vec<serde_json::Value>,
+        bindings: &[NodeConfigurationBinding],
+    ) {
+        Mock::given(method("GET"))
+            .and(path_regex("^/api/v1/nodes/[^/]+$"))
+            .respond_with(gone())
+            .with_priority(9)
+            .mount(server)
+            .await;
         Mock::given(method("GET"))
             .and(path("/api/v1/nodes"))
             .and(query_param(
@@ -395,8 +586,9 @@ mod tests {
         assert_eq!(created["metadata"]["name"], "mng.c");
         assert_eq!(created["metadata"]["labels"][NODE_LABEL], "c");
         assert_eq!(
-            created["metadata"]["ownerReferences"][0]["kind"],
-            "NodeConfiguration"
+            created["metadata"]["ownerReferences"],
+            json!([{"apiVersion": "v1", "kind": "Node", "name": "c", "uid": "uid-c"}]),
+            "the node is the only owner"
         );
         assert_eq!(created["spec"]["revision"], revision);
         assert_eq!(created["spec"]["rules"][0]["name"], "motd");
@@ -508,6 +700,235 @@ mod tests {
             sent[0].2["status"]["conditions"][1]["reason"],
             "InvalidSpec"
         );
+    }
+
+    #[tokio::test]
+    async fn a_cordoning_rollout_cordons_the_node_before_it_moves() {
+        let server = MockServer::start().await;
+        let obj = cordoning();
+        let revision = AgentPayload::of(&obj.spec).revision();
+        let bindings = [applied(&obj, "a", "old"), applied(&obj, "b", &revision)];
+        cluster(&server, &obj, &["a", "b"], &bindings).await;
+        node_api(&server, &node("a", None)).await;
+        mock(
+            &server,
+            "PUT",
+            format!("{GROUP_PATH}/nodeconfigurationbindings/mng.a"),
+            json!(bindings[0]),
+        )
+        .await;
+
+        reconcile(Arc::new(obj), context(&server)).await.unwrap();
+        let sent = requests(&server).await;
+        let calls: Vec<(&str, &str)> = sent
+            .iter()
+            .map(|(verb, at, _)| (verb.as_str(), at.as_str()))
+            .collect();
+        assert_eq!(
+            calls,
+            [
+                ("PATCH", "/api/v1/nodes/a"),
+                ("POST", EVENTS_PATH),
+                ("PUT", "/nodeconfigurationbindings/mng.a"),
+                ("PATCH", "/nodeconfigurations/mng/status"),
+            ]
+        );
+        assert_eq!(sent[0].2["spec"]["unschedulable"], true);
+        assert_eq!(sent[0].2["metadata"]["resourceVersion"], "5");
+        assert_eq!(
+            sent[0].2["metadata"]["annotations"][cordon::HOLDERS_ANNOTATION],
+            "mng"
+        );
+        assert_eq!(sent[1].2["reason"], "Cordon");
+        assert_eq!(sent[1].2["type"], "Normal");
+        assert_eq!(sent[1].2["regarding"]["kind"], "Node");
+        assert_eq!(sent[1].2["regarding"]["name"], "a");
+        assert_eq!(
+            sent[1].2["note"],
+            format!("Cordoned the node while NodeConfiguration mng applies revision {revision}")
+        );
+    }
+
+    #[tokio::test]
+    async fn a_configured_node_is_uncordoned() {
+        let server = MockServer::start().await;
+        let obj = cordoning();
+        let revision = AgentPayload::of(&obj.spec).revision();
+        let mut moving = applied(&obj, "b", &revision);
+        moving.status.as_mut().unwrap().observed_revision = Some("old".to_string());
+        let bindings = [applied(&obj, "a", &revision), moving];
+        let nodes = vec![node("a", Some("mng")), node("b", Some("mng"))];
+        cluster_of(&server, &obj, nodes, &bindings).await;
+        node_api(&server, &node("a", Some("mng"))).await;
+
+        reconcile(Arc::new(obj), context(&server)).await.unwrap();
+        let sent = requests(&server).await;
+        assert_eq!(sent[0].1, "/api/v1/nodes/a");
+        assert_eq!(sent[0].2["spec"], json!({"unschedulable": null}));
+        assert_eq!(
+            sent[0].2["metadata"]["annotations"],
+            json!({cordon::HOLDERS_ANNOTATION: null})
+        );
+        assert_eq!(sent[1].2["reason"], "Uncordon");
+        assert_eq!(
+            sent[1].2["note"],
+            "Uncordoned the node, NodeConfiguration mng is configured on it"
+        );
+        assert!(
+            sent.iter().all(|(_, at, _)| at != "/api/v1/nodes/b"),
+            "the node that still applies its revision stays cordoned"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_node_that_leaves_the_target_is_uncordoned() {
+        let server = MockServer::start().await;
+        let mut obj = cordoning();
+        obj.spec.target.exclude_nodes = vec!["b".to_string()];
+        let revision = AgentPayload::of(&obj.spec).revision();
+        let bindings = [applied(&obj, "a", &revision), applied(&obj, "b", "old")];
+        let nodes = vec![node("a", None), node("b", Some("mng"))];
+        cluster_of(&server, &obj, nodes, &bindings).await;
+        node_api(&server, &node("b", Some("mng"))).await;
+        mock(
+            &server,
+            "DELETE",
+            format!("{GROUP_PATH}/nodeconfigurationbindings/mng.b"),
+            json!({"apiVersion": "v1", "kind": "Status", "status": "Success"}),
+        )
+        .await;
+
+        reconcile(Arc::new(obj), context(&server)).await.unwrap();
+        let sent = requests(&server).await;
+        assert_eq!(sent[0].1, "/api/v1/nodes/b");
+        assert_eq!(
+            sent[1].2["note"],
+            "Uncordoned the node, NodeConfiguration mng no longer targets it"
+        );
+        assert_eq!(sent[2].0, "DELETE");
+    }
+
+    #[tokio::test]
+    async fn turning_cordon_off_releases_the_nodes() {
+        let server = MockServer::start().await;
+        let mut obj = cordoning();
+        obj.spec.dry_run = true;
+        let revision = AgentPayload::of(&obj.spec).revision();
+        let bindings = [applied(&obj, "a", &revision)];
+        cluster_of(&server, &obj, vec![node("a", Some("mng"))], &bindings).await;
+        node_api(&server, &node("a", Some("mng"))).await;
+
+        reconcile(Arc::new(obj), context(&server)).await.unwrap();
+        let sent = requests(&server).await;
+        assert_eq!(sent[0].1, "/api/v1/nodes/a");
+        assert_eq!(
+            sent[1].2["note"],
+            "Uncordoned the node, NodeConfiguration mng no longer cordons nodes"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_node_someone_else_cordoned_is_left_alone() {
+        let server = MockServer::start().await;
+        let obj = cordoning();
+        let bindings = [applied(&obj, "a", "old")];
+        cluster(&server, &obj, &["a"], &bindings).await;
+        let mut foreign = node("a", None);
+        foreign["spec"] = json!({"unschedulable": true});
+        mock(&server, "GET", "/api/v1/nodes/a".to_string(), foreign).await;
+        mock(
+            &server,
+            "PUT",
+            format!("{GROUP_PATH}/nodeconfigurationbindings/mng.a"),
+            json!(bindings[0]),
+        )
+        .await;
+
+        reconcile(Arc::new(obj), context(&server)).await.unwrap();
+        let sent = requests(&server).await;
+        let calls: Vec<(&str, &str)> = sent
+            .iter()
+            .map(|(verb, at, _)| (verb.as_str(), at.as_str()))
+            .collect();
+        assert_eq!(
+            calls,
+            [
+                ("PUT", "/nodeconfigurationbindings/mng.a"),
+                ("PATCH", "/nodeconfigurations/mng/status"),
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn a_node_replaced_under_the_same_name_starts_over() {
+        let server = MockServer::start().await;
+        let obj = resource(motd());
+        let revision = AgentPayload::of(&obj.spec).revision();
+        let mut previous = applied(&obj, "a", &revision);
+        previous.metadata.owner_references = Some(vec![node_owner("a", "uid-before")]);
+        cluster(&server, &obj, &["a"], std::slice::from_ref(&previous)).await;
+        Mock::given(method("DELETE"))
+            .and(path(format!(
+                "{GROUP_PATH}/nodeconfigurationbindings/mng.a"
+            )))
+            .respond_with(gone())
+            .mount(&server)
+            .await;
+        mock(
+            &server,
+            "POST",
+            format!("{GROUP_PATH}/nodeconfigurationbindings"),
+            json!(previous),
+        )
+        .await;
+
+        reconcile(Arc::new(obj), context(&server)).await.unwrap();
+        let sent = requests(&server).await;
+        assert_eq!(
+            sent[0].0, "DELETE",
+            "one the collector removed first is fine"
+        );
+        assert_eq!(sent[1].0, "POST");
+        assert_eq!(sent[1].2["metadata"]["ownerReferences"][0]["uid"], "uid-a");
+        assert_eq!(sent[2].2["status"]["configuredNodes"], 0);
+    }
+
+    #[tokio::test]
+    async fn a_binding_owned_by_its_configuration_is_handed_to_the_node() {
+        let server = MockServer::start().await;
+        let obj = resource(motd());
+        let revision = AgentPayload::of(&obj.spec).revision();
+        let mut legacy = applied(&obj, "a", &revision);
+        legacy.metadata.owner_references = obj.controller_owner_ref(&()).map(|owner| vec![owner]);
+        cluster(&server, &obj, &["a"], std::slice::from_ref(&legacy)).await;
+        mock(
+            &server,
+            "PUT",
+            format!("{GROUP_PATH}/nodeconfigurationbindings/mng.a"),
+            json!(legacy),
+        )
+        .await;
+
+        reconcile(Arc::new(obj), context(&server)).await.unwrap();
+        let sent = requests(&server).await;
+        assert_eq!(sent[0].0, "PUT");
+        assert_eq!(
+            sent[0].2["metadata"]["ownerReferences"],
+            json!([{"apiVersion": "v1", "kind": "Node", "name": "a", "uid": "uid-a"}])
+        );
+        assert_eq!(sent[0].2["spec"]["revision"], revision);
+    }
+
+    #[tokio::test]
+    async fn a_resource_that_is_being_deleted_is_left_to_the_cleanup() {
+        let server = MockServer::start().await;
+        let mut obj = json!(resource(motd()));
+        obj["metadata"]["deletionTimestamp"] = json!("2026-11-13T00:00:00Z");
+        let obj: NodeConfiguration = serde_json::from_value(obj).unwrap();
+
+        let action = reconcile(Arc::new(obj), context(&server)).await.unwrap();
+        assert_eq!(action, Action::await_change());
+        assert!(server.received_requests().await.unwrap().is_empty());
     }
 
     #[tokio::test]

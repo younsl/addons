@@ -8,6 +8,7 @@ spec:
     type: RollingUpdate
     rollingUpdate:
       maxUnavailable: 1
+      cordon: true
   minReadySeconds: 30
   rules:
     - name: restrict-shell-profiles

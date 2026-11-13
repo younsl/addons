@@ -45,9 +45,37 @@ The controller and the agent run the same image with the same `imagePullSecrets`
 
 | Subject | Scope | Rules |
 | --- | --- | --- |
-| Controller | Cluster | Read NodeConfigurations and write their status, manage NodeConfigurationBindings, read Nodes |
+| Controller | Cluster | Read NodeConfigurations and write their status, manage NodeConfigurationBindings, read and patch Nodes, record Events |
+| Controller | Release namespace | Read the agent template, manage the agent DaemonSet, create and update the leader Lease |
 | Agent | Cluster | Read NodeConfigurationBindings and write their status |
+
+## High availability
+
+The controller elects a leader through a Lease named after the release in the release namespace. Only the leader rolls configurations out, and the other replicas stay ready and idle.
+
+```yaml
+replicaCount: 2
+leaderElection:
+  enabled: true
+  leaseDurationSeconds: 15
+  renewDeadlineSeconds: 10
+  retryPeriodSeconds: 2
+```
+
+- A leader that stops gives the Lease back, so a standby takes over within `retryPeriodSeconds`. After a crash a standby waits `leaseDurationSeconds` on a Lease that is no longer renewed.
+- A leader that cannot renew within `renewDeadlineSeconds` stops and restarts as a standby, before any standby may take over.
+- Leader election is on by default with one replica too, so the old and the new pod never act together during a rolling update.
+- The chart refuses `replicaCount` above 1 with `leaderElection.enabled: false`.
+- Spread the replicas over nodes with `affinity`, and watch `node_configuration_controller_leader`, which is 1 on the leader.
+
+```console
+$ kubectl get lease node-configuration-operator -n kube-system
+NAME                          HOLDER                                        AGE
+node-configuration-operator   node-configuration-operator-7d9f6c5b8-x2k4q   3d
+```
+
+The agents are a DaemonSet and need no election.
 
 ## Uninstall
 
-Deleting a NodeConfiguration removes its bindings. The nodes keep the configuration that was applied. The CRD stays on `helm uninstall` while `crds.keep` is true.
+Deleting a NodeConfiguration makes the controller remove its bindings. A binding is also removed with its node, by the Kubernetes garbage collector. The nodes keep the configuration that was applied. The CRD stays on `helm uninstall` while `crds.keep` is true.

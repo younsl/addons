@@ -56,6 +56,13 @@ spec:
     - jsonPath: .status.lastTransitionTime
       name: Status Age
       type: date
+    - jsonPath: .status.lastChangeTime
+      name: Last Change
+      type: date
+    - jsonPath: .status.lastChangedRules
+      name: Changed
+      priority: 1
+      type: integer
     - jsonPath: .metadata.creationTimestamp
       name: Age
       type: date
@@ -252,6 +259,15 @@ spec:
                 description: Rules that failed in the last run.
                 format: int32
                 type: integer
+              lastChangeTime:
+                description: When a run last corrected the node, in RFC 3339. It outlives the runs after it that find nothing to change.
+                nullable: true
+                type: string
+              lastChangedRules:
+                default: 0
+                description: Rules that corrected the node in the run at `lastChangeTime`.
+                format: int32
+                type: integer
               lastTransitionTime:
                 description: When `observedRevision` or `ready` last changed, in RFC 3339.
                 nullable: true
@@ -274,6 +290,14 @@ spec:
                 items:
                   description: What the last run did with one rule.
                   properties:
+                    lastChange:
+                      description: What the rule changed at `lastChangeTime`.
+                      nullable: true
+                      type: string
+                    lastChangeTime:
+                      description: When the rule last corrected the node, in RFC 3339.
+                      nullable: true
+                      type: string
                     message:
                       description: What changed, is pending, or failed.
                       nullable: true

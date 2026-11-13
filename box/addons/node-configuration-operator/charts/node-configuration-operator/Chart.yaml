@@ -3,8 +3,8 @@ name: node-configuration-operator
 description: Continuously reconciles the OS configuration of EKS managed node group nodes from NodeConfiguration custom resources
 type: application
 deprecated: false
-version: 0.1.0
-appVersion: "0.1.0"
+version: 0.2.0
+appVersion: "0.2.0"
 home: https://github.com/younsl/addons
 sources:
   - https://github.com/younsl/addons/tree/main/box/addons/node-configuration-operator
@@ -21,4 +21,12 @@ keywords:
 annotations:
   artifacthub.io/changes: |
     - kind: added
-      description: "Initial release with the controller Deployment, the agent DaemonSet, the NodeConfiguration and NodeConfigurationBinding CRDs, and their RBAC"
+      description: "leaderElection values, a Lease the controller replicas elect a leader through, with the Role rules for it"
+    - kind: added
+      description: "Controller RBAC to patch Nodes and record Events, for the cordon option of a rollout"
+    - kind: added
+      description: "Status Age, Last Change, and Changed columns on NodeConfigurationBinding"
+    - kind: changed
+      description: "A NodeConfigurationBinding is owned by its Node, so the nodeconfigurations/finalizers rule is gone"
+    - kind: changed
+      description: "App version 0.2.0"

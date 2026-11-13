@@ -55,6 +55,53 @@ pub struct ControllerArgs {
     /// Name of the `ConfigMap` that holds the agent `DaemonSet` template.
     #[arg(long, env = "AGENT_TEMPLATE")]
     pub agent_template: String,
+
+    /// Whether to act only while holding a `Lease`, which more than one
+    /// replica needs.
+    #[arg(
+        long,
+        env = "LEADER_ELECTION",
+        default_value_t = false,
+        action = clap::ArgAction::Set
+    )]
+    pub leader_election: bool,
+
+    /// Name of the `Lease` in the namespace of the controller.
+    #[arg(
+        long,
+        env = "LEADER_ELECTION_LEASE_NAME",
+        default_value = "node-configuration-operator"
+    )]
+    pub leader_election_lease_name: String,
+
+    /// Seconds a standby waits on a `Lease` that is not renewed before it
+    /// takes over.
+    #[arg(
+        long,
+        env = "LEADER_ELECTION_LEASE_DURATION_SECONDS",
+        default_value_t = 15
+    )]
+    pub leader_election_lease_duration_seconds: u64,
+
+    /// Seconds the leader keeps trying to renew before it steps down.
+    #[arg(
+        long,
+        env = "LEADER_ELECTION_RENEW_DEADLINE_SECONDS",
+        default_value_t = 10
+    )]
+    pub leader_election_renew_deadline_seconds: u64,
+
+    /// Seconds between two attempts to take or renew the `Lease`.
+    #[arg(
+        long,
+        env = "LEADER_ELECTION_RETRY_PERIOD_SECONDS",
+        default_value_t = 2
+    )]
+    pub leader_election_retry_period_seconds: u64,
+
+    /// Name of this pod, written into the `Lease` as the holder.
+    #[arg(long, env = "POD_NAME")]
+    pub pod_name: Option<String>,
 }
 
 #[derive(Args, Debug, Clone)]
@@ -108,6 +155,14 @@ mod tests {
         };
         assert_eq!(args.namespace, "kube-system");
         assert_eq!(args.agent_template, "agent-template");
+        assert!(!args.leader_election);
+        assert_eq!(
+            args.leader_election_lease_name,
+            "node-configuration-operator"
+        );
+        assert_eq!(args.leader_election_lease_duration_seconds, 15);
+        assert_eq!(args.leader_election_renew_deadline_seconds, 10);
+        assert_eq!(args.leader_election_retry_period_seconds, 2);
         assert!(Cli::try_parse_from(["node-configuration-operator", "controller"]).is_err());
     }
 

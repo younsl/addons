@@ -41,6 +41,7 @@ pub struct Metrics {
     pub rule_outcomes_total: Family<RuleLabels, Counter>,
     pub last_run_timestamp_seconds: Family<ConfigurationLabels, Gauge<i64, AtomicI64>>,
     pub last_run_failed_rules: Family<ConfigurationLabels, Gauge<i64, AtomicI64>>,
+    pub leader: Gauge<i64, AtomicI64>,
 }
 
 impl Metrics {
@@ -74,6 +75,11 @@ impl Metrics {
             "node_configuration_agent_last_run_failed_rules",
             "Rules that failed in the last run of a configuration on this node",
             metrics.last_run_failed_rules.clone(),
+        );
+        registry.register(
+            "node_configuration_controller_leader",
+            "1 while this controller replica acts, which is always without leader election",
+            metrics.leader.clone(),
         );
         metrics
     }

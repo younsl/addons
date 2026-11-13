@@ -1,3 +1,6 @@
+{{- if and (gt (int .Values.replicaCount) 1) (not .Values.leaderElection.enabled) }}
+{{- fail "replicaCount above 1 requires leaderElection.enabled, or every replica rolls the nodes out at once" }}
+{{- end }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -46,6 +49,23 @@ spec:
                 fieldRef:
                   apiVersion: v1
                   fieldPath: metadata.namespace
+            - name: LEADER_ELECTION
+              value: {{ .Values.leaderElection.enabled | quote }}
+            {{- if .Values.leaderElection.enabled }}
+            - name: LEADER_ELECTION_LEASE_NAME
+              value: {{ include "node-configuration-operator.fullname" . }}
+            - name: LEADER_ELECTION_LEASE_DURATION_SECONDS
+              value: {{ .Values.leaderElection.leaseDurationSeconds | quote }}
+            - name: LEADER_ELECTION_RENEW_DEADLINE_SECONDS
+              value: {{ .Values.leaderElection.renewDeadlineSeconds | quote }}
+            - name: LEADER_ELECTION_RETRY_PERIOD_SECONDS
+              value: {{ .Values.leaderElection.retryPeriodSeconds | quote }}
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  apiVersion: v1
+                  fieldPath: metadata.name
+            {{- end }}
           ports:
             - name: http
               containerPort: 8080

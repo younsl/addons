@@ -209,6 +209,7 @@ mod tests {
             message: None,
             rules: Vec::new(),
             last_transition_time: Some("2027-01-15T07:59:00Z".to_string()),
+            ..NodeConfigurationBindingStatus::default()
         });
         binding
     }
@@ -221,6 +222,7 @@ mod tests {
         let mut s = spec(Rules::default());
         s.strategy.rolling_update = Some(RollingUpdate {
             max_unavailable: Some(value),
+            cordon: false,
         });
         s
     }

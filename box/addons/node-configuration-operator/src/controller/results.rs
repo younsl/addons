@@ -137,10 +137,10 @@ mod tests {
                 .map(|(name, outcome)| RuleStatus {
                     name: (*name).into(),
                     outcome: (*outcome).into(),
-                    message: None,
+                    ..RuleStatus::default()
                 })
                 .collect(),
-            last_transition_time: None,
+            ..NodeConfigurationBindingStatus::default()
         });
         binding
     }

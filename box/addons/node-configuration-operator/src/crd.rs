@@ -102,6 +102,19 @@ pub struct NodeConfigurationSpec {
     pub rules: Rules,
 }
 
+impl NodeConfigurationSpec {
+    /// Whether a node is cordoned while it moves to a new revision.
+    pub fn cordons(&self) -> bool {
+        !self.dry_run
+            && self.strategy.type_ == StrategyType::RollingUpdate
+            && self
+                .strategy
+                .rolling_update
+                .as_ref()
+                .is_some_and(|r| r.cordon)
+    }
+}
+
 const fn default_interval_seconds() -> u32 {
     300
 }
@@ -146,6 +159,12 @@ pub struct RollingUpdate {
     /// time.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_unavailable: Option<IntOrString>,
+    /// Cordons a node before it moves to a new revision and uncordons it
+    /// once the revision is configured there, so no new Pod is scheduled on a
+    /// node whose configuration is changing. A node that was already cordoned
+    /// is left as it is, and a dry run never cordons.
+    #[serde(default)]
+    pub cordon: bool,
 }
 
 /// Narrows the managed node group nodes the agent runs on.

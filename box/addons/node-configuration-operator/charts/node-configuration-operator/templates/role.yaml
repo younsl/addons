@@ -17,6 +17,15 @@ rules:
     resources: ["daemonsets"]
     resourceNames: [{{ include "node-configuration-operator.agentName" . | quote }}]
     verbs: ["get", "patch", "delete"]
+  {{- if .Values.leaderElection.enabled }}
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["create"]
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    resourceNames: [{{ include "node-configuration-operator.fullname" . | quote }}]
+    verbs: ["get", "update"]
+  {{- end }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding

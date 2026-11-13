@@ -2,6 +2,26 @@
 
 Notable changes to the node-configuration-operator (NCO) app (the container image), newest first. Entries are headed by the image version and its release date (KST).
 
+## 0.2.0 (2026-11-13)
+
+### Added
+
+- `spec.strategy.rollingUpdate.cordon` (default `false`). The controller cordons a node right before it moves it to a new revision and uncordons it once the node is configured for `minReadySeconds`, so no new Pod is scheduled on a node whose configuration is changing. A node that was already cordoned is left as it is, a dry run never cordons, and the node is released when it leaves the target, when `cordon` is turned off, and when the NodeConfiguration is deleted. See [docs/rollout.md](docs/rollout.md#cordon).
+- `Cordon` and `Uncordon` Events on the Node, each with a sentence that names the NodeConfiguration and the revision or the cause, shown by `kubectl describe node`.
+- Leader election for the controller through a Lease, with the flags `--leader-election`, `--leader-election-lease-name`, `--leader-election-lease-duration-seconds` (`15`), `--leader-election-renew-deadline-seconds` (`10`), `--leader-election-retry-period-seconds` (`2`), and `--pod-name`. A standby stays ready and idle, a leader that stops gives the Lease back, and a leader that cannot renew in time stops before a standby may take over. See [docs/installation.md](docs/installation.md#high-availability).
+- Metric `node_configuration_controller_leader`, 1 on the replica that acts.
+- Binding status fields `lastChangeTime` and `lastChangedRules`, and per rule `lastChangeTime` and `lastChange`. They keep what a run corrected after the following runs report `unchanged`, so the first run on a new node stays visible in the resource.
+- `STATUS AGE`, `LAST CHANGE`, and (wide) `CHANGED` columns in `kubectl get ncb`.
+
+### Changed
+
+- A NodeConfigurationBinding is owned by its Node instead of its NodeConfiguration, like a Karpenter NodeClaim. The Kubernetes garbage collector removes it with the node, also while no controller runs, and a node replaced under the same name gets a fresh binding. The controller removes the bindings of a deleted NodeConfiguration. Bindings of 0.1.0 are handed over on the first pass. See [docs/how-it-works.md](docs/how-it-works.md#binding-lifecycle).
+- The controller ClusterRole patches Nodes and creates Events, no longer needs `nodeconfigurations/finalizers`, and the Role manages the leader Lease. Chart 0.2.0 ships the rules.
+
+### Fixed
+
+- The agent ran the rules of a binding again right after every status it wrote, because the write came back as a watch event. A new node ran three times within seconds and its `changed` outcomes were overwritten by `unchanged` at once. A binding now runs when its spec changes and then every `intervalSeconds`.
+
 ## 0.1.0 (2026-11-13)
 
 First release. A Kubernetes operator that keeps the OS configuration of EKS managed node group nodes in line with NodeConfiguration resources, replacing one-off hardening scripts run through SSM. One image runs as the controller and as the agent.

@@ -21,6 +21,7 @@ The agent DaemonSet is not restarted by a rule change. The controller rewrites b
 | --- | --- | --- |
 | `spec.strategy.type` | `RollingUpdate` | `RollingUpdate` or `OnDelete` |
 | `spec.strategy.rollingUpdate.maxUnavailable` | `1` | Nodes that may be unavailable during the rollout, as a count or a percentage that rounds up |
+| `spec.strategy.rollingUpdate.cordon` | `false` | Cordons a node while it moves to a new revision, see [Cordon](#cordon) |
 | `spec.minReadySeconds` | `0` | Seconds a node must stay configured before it counts as available |
 | `spec.paused` | `false` | Holds a new revision back |
 | `spec.progressDeadlineSeconds` | `600` | Seconds without progress before the rollout is reported as stalled |
@@ -44,6 +45,44 @@ A node is available when its binding reports the assigned revision as applied wi
 - A node that fails a rule of the new revision stays unavailable and keeps its share of the budget. With the default of 1 a broken rule reaches one node and the rollout stops there.
 
 After `progressDeadlineSeconds` without progress the `Progressing` condition turns false with the reason `ProgressDeadlineExceeded`. The operator does not roll back by itself. Revert the spec, and the stuck node moves back first.
+
+## Cordon
+
+With `spec.strategy.rollingUpdate.cordon: true` the controller cordons a node right before it writes the new revision into its binding, and uncordons it once the node is available again, which includes `minReadySeconds`. No new Pod is scheduled on a node whose configuration is changing. Running Pods stay, since the node is not drained.
+
+```yaml
+spec:
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      cordon: true
+  minReadySeconds: 30
+```
+
+- Only a move to a new revision cordons. The run on every interval and the first run on a node that joins do not, and neither does a dry run.
+- Only the nodes a rollout moves are cordoned, so the `maxUnavailable` budget bounds how many healthy nodes are cordoned at a time.
+- A node that fails a rule of the new revision stays cordoned until a later run or a reverted spec configures it.
+- A node that was already cordoned is left as it is and is not uncordoned afterwards.
+- A node that several NodeConfigurations move at once is uncordoned after the last of them is configured. The holders are listed in the `node-configuration-operator.sh/cordoned-by` annotation of the Node.
+- The node is also uncordoned when it leaves the target, when `cordon` is turned off, and when the NodeConfiguration is deleted.
+- Uncordoning a node by hand during a rollout is respected. The controller does not cordon it again for the same revision.
+
+Every cordon and uncordon is recorded as an Event on the Node, so `kubectl describe node` shows who changed the node and why.
+
+```console
+$ kubectl events --for node/ip-10-0-1-23.ap-northeast-2.compute.internal
+LAST SEEN   TYPE     REASON     OBJECT                                            MESSAGE
+2m          Normal   Cordon     Node/ip-10-0-1-23.ap-northeast-2.compute.internal   Cordoned the node while NodeConfiguration os-hardening applies revision 5f8c2d1a9b
+84s         Normal   Uncordon   Node/ip-10-0-1-23.ap-northeast-2.compute.internal   Uncordoned the node, NodeConfiguration os-hardening is configured on it
+```
+
+| Uncordon message ends with | Cause |
+| --- | --- |
+| `is configured on it` | The node applied its revision and stayed configured for `minReadySeconds` |
+| `no longer targets it` | The target changed or the node was excluded |
+| `no longer cordons nodes` | `cordon` was turned off, the strategy changed, or `dryRun` was turned on |
+| `was deleted` | The NodeConfiguration was deleted |
 
 ## Pause and resume
 

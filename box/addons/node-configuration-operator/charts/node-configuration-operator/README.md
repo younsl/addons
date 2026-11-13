@@ -1,6 +1,6 @@
 # node-configuration-operator
 
-![Version: 0.1.0](https://img.shields.io/badge/Version-0.1.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.1.0](https://img.shields.io/badge/AppVersion-0.1.0-informational?style=flat-square)
+![Version: 0.2.0](https://img.shields.io/badge/Version-0.2.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.2.0](https://img.shields.io/badge/AppVersion-0.2.0-informational?style=flat-square)
 
 Continuously reconciles the OS configuration of EKS managed node group nodes from NodeConfiguration custom resources
 
@@ -39,7 +39,7 @@ helm install node-configuration-operator oci://ghcr.io/younsl/charts/node-config
 Install a specific version:
 
 ```console
-helm install node-configuration-operator oci://ghcr.io/younsl/charts/node-configuration-operator --version 0.1.0
+helm install node-configuration-operator oci://ghcr.io/younsl/charts/node-configuration-operator --version 0.2.0
 ```
 
 ### Install from local chart
@@ -47,7 +47,7 @@ helm install node-configuration-operator oci://ghcr.io/younsl/charts/node-config
 Download node-configuration-operator chart and install from local directory:
 
 ```console
-helm pull oci://ghcr.io/younsl/charts/node-configuration-operator --untar --version 0.1.0
+helm pull oci://ghcr.io/younsl/charts/node-configuration-operator --untar --version 0.2.0
 helm install node-configuration-operator ./node-configuration-operator
 ```
 
@@ -79,7 +79,11 @@ The following table lists the configurable parameters and their default values.
 | crds.keep | bool | `true` | Whether to keep CRDs on chart uninstall. |
 | crds.annotations | object | `{}` | Annotations to add to the CRD resources. |
 | crds.additionalLabels | object | `{}` | Additional labels to add to the CRD resources. |
-| replicaCount | int | `1` | Number of controller replicas to run. |
+| replicaCount | int | `1` | Number of controller replicas to run. Above 1 requires `leaderElection.enabled`, and the replicas beyond the leader stand by. |
+| leaderElection.enabled | bool | `true` | Whether a controller replica acts only while it holds a Lease in the release namespace. One replica keeps it on so that two pods never act at once during a rolling update. |
+| leaderElection.leaseDurationSeconds | int | `15` | Seconds a standby waits on a Lease that is not renewed before it takes over. |
+| leaderElection.renewDeadlineSeconds | int | `10` | Seconds the leader keeps trying to renew the Lease before it steps down. Must be below `leaseDurationSeconds`. |
+| leaderElection.retryPeriodSeconds | int | `2` | Seconds between two attempts to take or renew the Lease. Must be below `renewDeadlineSeconds`. |
 | revisionHistoryLimit | int | `5` | Number of old ReplicaSets and DaemonSet revisions to retain for rollback. |
 | image.registry | string | `"ghcr.io"` | Container image registry host, prefixed to `repository`. Set empty when `repository` carries the full path. |
 | image.repository | string | `"younsl/node-configuration-operator"` | Container image repository path without registry prefix. The controller and the agent run the same image. |
