@@ -48,3 +48,4 @@ repos:
         language: script
         files: '\.rs$|Cargo\.(toml|lock)$'
         stages: [pre-push]
+        require_serial: true
