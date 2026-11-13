@@ -1,6 +1,6 @@
 # How it works
 
-One image runs in two roles. The controller is a Deployment that decides which node applies which revision. The agent is a single DaemonSet that the controller creates, with one pod per targeted node, and that one pod applies every NodeConfiguration assigned to its node.
+node-configuration-operator (NCO) runs one image in two roles. The controller is a Deployment that decides which node applies which revision. The agent is a single DaemonSet that the controller creates, with one pod per targeted node, and that one pod applies every NodeConfiguration assigned to its node.
 
 <p align="center"><img src="assets/architecture.png" alt="node-configuration-operator architecture" width="760"></p>
 

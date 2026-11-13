@@ -5,7 +5,7 @@
 [![Helm Chart](https://img.shields.io/badge/ghcr.io-charts%2Fnode--configuration--operator-black?style=flat-square&logo=helm&logoColor=white)](https://github.com/younsl/addons/pkgs/container/charts%2Fnode-configuration-operator)
 [![GitHub license](https://img.shields.io/github/license/younsl/addons?style=flat-square&color=black)](https://github.com/younsl/addons/blob/main/LICENSE)
 
-[Kubernetes operator](https://kubernetes.io/docs/concepts/extend-kubernetes/operator/) that keeps the OS configuration of EKS managed node group nodes in line with NodeConfiguration [custom resources](https://kubernetes.io/docs/concepts/extend-kubernetes/api-extension/custom-resources/). It replaces one-off hardening scripts: a replaced node is configured as soon as it joins, and drift on a running node is reverted on the next run. Nodes that Karpenter owns are left to their userData.
+node-configuration-operator (NCO) is a [Kubernetes operator](https://kubernetes.io/docs/concepts/extend-kubernetes/operator/) that keeps the OS configuration of EKS managed node group nodes in line with NodeConfiguration [custom resources](https://kubernetes.io/docs/concepts/extend-kubernetes/api-extension/custom-resources/). It replaces one-off hardening scripts: a replaced node is configured as soon as it joins, and drift on a running node is reverted on the next run. Nodes that Karpenter owns are left to their userData.
 
 ## Features
 

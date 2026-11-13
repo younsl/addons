@@ -1,6 +1,6 @@
 # Changelog
 
-Notable changes to the node-configuration-operator app (the container image), newest first. Entries are headed by the image version and its release date (KST).
+Notable changes to the node-configuration-operator (NCO) app (the container image), newest first. Entries are headed by the image version and its release date (KST).
 
 ## 0.1.0 (2026-11-13)
 
