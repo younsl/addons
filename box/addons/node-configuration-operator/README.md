@@ -7,6 +7,14 @@
 
 node-configuration-operator (NCO) is a [Kubernetes operator](https://kubernetes.io/docs/concepts/extend-kubernetes/operator/) that keeps the OS configuration of EKS managed node group nodes in line with NodeConfiguration [custom resources](https://kubernetes.io/docs/concepts/extend-kubernetes/api-extension/custom-resources/). It replaces one-off hardening scripts: a replaced node is configured as soon as it joins, and drift on a running node is reverted on the next run. Nodes that Karpenter owns are left to their userData.
 
+## Architecture
+
+The controller is a Deployment in the release namespace and the agent is a DaemonSet the controller creates there. NodeConfiguration and NodeConfigurationBinding are cluster-scoped, and a binding is the only thing the two roles share. The details are in [How it works](docs/how-it-works.md).
+
+<p align="center"><img src="docs/assets/kubernetes-architecture.png" alt="node-configuration-operator on Kubernetes" width="760"></p>
+
+Diagram source: [kubernetes-architecture.svg](docs/assets/kubernetes-architecture.svg)
+
 ## Features
 
 - Named rules with one action each (file mode, login shell, line edit, or managed file), run in list order
@@ -59,16 +67,15 @@ A complete hardening baseline is in [examples/os-hardening.yaml](examples/os-har
 
 ## Documentation
 
-| Document | Topic |
-| --- | --- |
-| [How it works](docs/how-it-works.md) | Controller, agent, host access, and status |
-| [Rollout](docs/rollout.md) | Revisions, strategy, pause, and a stalled rollout |
-| [NodeConfiguration spec](docs/nodeconfiguration-spec.md) | Every field and rule kind |
-| [Installation](docs/installation.md) | Chart values, namespace requirements, and RBAC |
-| [Security](docs/security.md) | Agent privileges and what a resource author can do |
-| [Metrics](docs/metrics.md) | Prometheus metrics and alert ideas |
-| [Development](docs/development.md) | Build, test, and release |
-| [Changelog](CHANGELOG.md) | Notable changes by image version |
+- [How it works](docs/how-it-works.md): controller, agent, host access, and status
+- [Rollout](docs/rollout.md): revisions, strategy, pause, and a stalled rollout
+- [NodeConfiguration spec](docs/nodeconfiguration-spec.md): every field of the resource
+- [Rules](docs/rules.md): every rule action and its fields
+- [Installation](docs/installation.md): chart values, namespace requirements, and RBAC
+- [Security](docs/security.md): agent privileges and what a resource author can do
+- [Metrics](docs/metrics.md): Prometheus metrics and alert ideas
+- [Development](docs/development.md): build, test, and release
+- [Changelog](CHANGELOG.md): notable changes by image version
 
 ## License
 
