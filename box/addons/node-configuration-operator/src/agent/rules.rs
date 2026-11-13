@@ -9,7 +9,7 @@ use std::time::Duration;
 
 use regex::Regex;
 
-use super::hostfs::{Attributes, HostRoot, has_wildcard, write_atomic};
+use super::hostfs::{Attributes, HostRoot, has_wildcard, open_entry, write_atomic};
 use super::script::Scripts;
 use crate::crd::validate::parse_mode;
 use crate::crd::{
@@ -229,8 +229,8 @@ fn file_mode(
     path: &str,
     dry_run: bool,
 ) -> io::Result<(Outcome, String)> {
-    let real = host.resolve(path)?;
-    let current = fs::metadata(&real)?.mode() & 0o7777;
+    let file = open_entry(&host.resolve(path)?)?;
+    let current = file.metadata()?.mode() & 0o7777;
     let parse = |mode: &str| parse_mode(mode).ok_or_else(|| invalid("invalid octal mode"));
     let wanted = match (&rule.mode, &rule.clear) {
         (Some(mode), None) => parse(mode)?,
@@ -241,7 +241,7 @@ fn file_mode(
         return Ok((Outcome::Unchanged, format!("{current:04o}")));
     }
     if !dry_run {
-        fs::set_permissions(&real, fs::Permissions::from_mode(wanted))?;
+        file.set_permissions(fs::Permissions::from_mode(wanted))?;
     }
     Ok((drift(dry_run), format!("{current:04o} to {wanted:04o}")))
 }

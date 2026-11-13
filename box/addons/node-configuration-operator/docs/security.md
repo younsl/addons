@@ -30,6 +30,16 @@ The controller creates the agent DaemonSet, so its ServiceAccount can create Dae
 
 The same holds for write access to NodeConfigurationBindings, because a binding is what the agent applies. Only the controller needs it. The agent can read bindings and write their status, and holds no AWS permission.
 
+## Paths other accounts can write to
+
+A rule may point into a directory a non-root account owns, such as a home directory. The agent runs as root, so it guards against a link planted there.
+
+- A symbolic link is followed only when root created it. A link owned by another account fails the rule instead of redirecting it.
+- A mode is changed on the opened file after it is checked to be the inspected entry and not a link.
+- A rewrite goes to a new temporary file with an unpredictable name, created exclusively with mode `0600`, and never through an existing name.
+
+A race on a parent directory that the account can rename is not closed. Prefer rules on root-owned paths, and treat rules under a home directory as best effort.
+
 ## What the operator does not do
 
 - It never executes a command on the host unless `agent.allowScripts` is on. There is no shell in the image, and a script runs through the shell of the node.

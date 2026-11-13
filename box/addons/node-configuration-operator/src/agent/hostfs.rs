@@ -4,8 +4,10 @@ use std::collections::VecDeque;
 use std::ffi::{OsStr, OsString};
 use std::fs;
 use std::io::{self, Write as _};
-use std::os::unix::fs::{MetadataExt as _, PermissionsExt as _};
+use std::os::unix::fs::{MetadataExt as _, OpenOptionsExt as _, PermissionsExt as _};
 use std::path::{Component, Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 const MAX_SYMLINK_HOPS: usize = 40;
 
@@ -53,6 +55,13 @@ pub fn wildcard_match(pattern: &str, name: &str) -> bool {
     p[pi..].iter().all(|c| *c == '*')
 }
 
+/// A symbolic link is followed only when root or the owner of the host root
+/// created it. A link planted by another account in a directory it can write
+/// to would otherwise redirect a rule to any file on the node.
+const fn trusted_link(link_uid: u32, root_uid: u32) -> bool {
+    link_uid == 0 || link_uid == root_uid
+}
+
 pub fn has_wildcard(path: &str) -> bool {
     path.contains(['*', '?'])
 }
@@ -74,6 +83,7 @@ impl HostRoot {
         let mut pending: VecDeque<Step> = steps(Path::new(path)).collect();
         let mut current: Vec<OsString> = Vec::new();
         let mut hops = 0;
+        let root_uid = fs::metadata(&self.root)?.uid();
         while let Some(step) = pending.pop_front() {
             match step {
                 Step::Root => current.clear(),
@@ -83,7 +93,17 @@ impl HostRoot {
                 Step::Name(name) => {
                     current.push(name);
                     let candidate = self.real(&current);
-                    if fs::symlink_metadata(&candidate)?.file_type().is_symlink() {
+                    let meta = fs::symlink_metadata(&candidate)?;
+                    if meta.file_type().is_symlink() {
+                        if !trusted_link(meta.uid(), root_uid) {
+                            return Err(io::Error::new(
+                                io::ErrorKind::PermissionDenied,
+                                format!(
+                                    "symbolic link owned by uid {} is not followed",
+                                    meta.uid()
+                                ),
+                            ));
+                        }
                         hops += 1;
                         if hops > MAX_SYMLINK_HOPS {
                             return Err(io::Error::other("too many levels of symbolic links"));
@@ -165,23 +185,54 @@ impl Attributes {
     }
 }
 
+const TEMP_ATTEMPTS: u32 = 8;
+static TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+fn temp_path(path: &Path, name: &OsStr) -> PathBuf {
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |elapsed| elapsed.subsec_nanos());
+    let unique = format!(
+        ".{:x}-{nanos:x}-{:x}.tmp",
+        std::process::id(),
+        TEMP_COUNTER.fetch_add(1, Ordering::Relaxed)
+    );
+    let mut temp_name = OsString::from(".");
+    temp_name.push(name);
+    temp_name.push(unique);
+    path.with_file_name(temp_name)
+}
+
+/// Creates the temporary file exclusively, so a name planted in a directory
+/// another account can write to is never opened or followed.
+fn create_temp(path: &Path, name: &OsStr) -> io::Result<(PathBuf, fs::File)> {
+    let mut attempt = 0;
+    loop {
+        let temp = temp_path(path, name);
+        match fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .open(&temp)
+        {
+            Ok(file) => return Ok((temp, file)),
+            Err(e) if e.kind() == io::ErrorKind::AlreadyExists && attempt < TEMP_ATTEMPTS => {
+                attempt += 1;
+            }
+            Err(e) => return Err(e),
+        }
+    }
+}
+
 /// Replaces `path` through a rename in its own directory, so a reader never
 /// sees a half-written file.
 pub fn write_atomic(path: &Path, content: &[u8], attributes: Attributes) -> io::Result<()> {
     let name = path
         .file_name()
         .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "not a file path"))?;
-    let mut temp_name = OsString::from(".");
-    temp_name.push(name);
-    temp_name.push(OsStr::new(".node-configuration-operator.tmp"));
-    let temp = path.with_file_name(temp_name);
+    let (temp, mut file) = create_temp(path, name)?;
 
     let result = (|| {
-        let mut file = fs::OpenOptions::new()
-            .write(true)
-            .create(true)
-            .truncate(true)
-            .open(&temp)?;
         file.write_all(content)?;
         file.set_permissions(fs::Permissions::from_mode(attributes.mode))?;
         if let Some((uid, gid)) = attributes.owner {
@@ -197,6 +248,25 @@ pub fn write_atomic(path: &Path, content: &[u8], attributes: Attributes) -> io::
         let _ = fs::remove_file(&temp);
     }
     result
+}
+
+/// Opens an existing file or directory for a change of its own attributes.
+/// The entry must not be a symbolic link, and the opened file is checked to
+/// be the entry that was inspected, so a link swapped in meanwhile is refused.
+pub fn open_entry(path: &Path) -> io::Result<fs::File> {
+    let before = fs::symlink_metadata(path)?;
+    if !(before.is_file() || before.is_dir()) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "not a regular file or directory",
+        ));
+    }
+    let file = fs::File::open(path)?;
+    let opened = file.metadata()?;
+    if (opened.dev(), opened.ino()) != (before.dev(), before.ino()) {
+        return Err(io::Error::other("the entry changed while it was checked"));
+    }
+    Ok(file)
 }
 
 #[cfg(test)]
@@ -282,6 +352,70 @@ mod tests {
         assert_eq!(host.glob("/file/*").unwrap(), Vec::<String>::new());
         assert_eq!(host.glob("no-slash*").unwrap(), Vec::<String>::new());
         assert_eq!(host.glob("/fil?").unwrap(), vec!["/file"]);
+    }
+
+    #[test]
+    fn only_links_of_root_or_the_host_root_owner_are_followed() {
+        assert!(trusted_link(0, 0));
+        assert!(trusted_link(0, 501));
+        assert!(trusted_link(501, 501));
+        assert!(!trusted_link(1000, 0));
+        assert!(!trusted_link(1000, 501));
+    }
+
+    #[test]
+    fn a_planted_temporary_name_is_never_followed() {
+        let dir = tempfile::tempdir().unwrap();
+        let victim = dir.path().join("victim");
+        fs::write(&victim, "secret").unwrap();
+        let target = dir.path().join("motd");
+        // The name the first attempt of this process would pick cannot be
+        // guessed, so every leftover in the directory must be left alone.
+        std::os::unix::fs::symlink(&victim, dir.path().join(".motd.planted.tmp")).unwrap();
+
+        write_atomic(
+            &target,
+            b"hi\n",
+            Attributes {
+                mode: 0o644,
+                owner: None,
+            },
+        )
+        .unwrap();
+        assert_eq!(fs::read_to_string(&target).unwrap(), "hi\n");
+        assert_eq!(fs::read_to_string(&victim).unwrap(), "secret");
+        let left: Vec<_> = fs::read_dir(dir.path())
+            .unwrap()
+            .map(|e| e.unwrap().file_name().into_string().unwrap())
+            .filter(|name| name.starts_with(".motd.") && name != ".motd.planted.tmp")
+            .collect();
+        assert_eq!(left, Vec::<String>::new());
+
+        let (first, _) = create_temp(&target, OsStr::new("motd")).unwrap();
+        let (second, _) = create_temp(&target, OsStr::new("motd")).unwrap();
+        assert_ne!(first, second);
+        let mode = fs::metadata(&first).unwrap().mode() & 0o7777;
+        assert_eq!(mode, 0o600);
+    }
+
+    #[test]
+    fn an_entry_is_opened_only_when_it_is_a_file_or_directory() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("file");
+        fs::write(&file, "x").unwrap();
+        let link = dir.path().join("link");
+        std::os::unix::fs::symlink(&file, &link).unwrap();
+
+        assert!(open_entry(&file).is_ok());
+        assert!(open_entry(dir.path()).is_ok());
+        assert_eq!(
+            open_entry(&link).unwrap_err().kind(),
+            io::ErrorKind::InvalidInput
+        );
+        assert_eq!(
+            open_entry(&dir.path().join("missing")).unwrap_err().kind(),
+            io::ErrorKind::NotFound
+        );
     }
 
     #[test]
