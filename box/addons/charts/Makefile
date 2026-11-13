@@ -12,7 +12,11 @@ docs-standalone:
 	@for chart in $(CHARTS_DIR)/*/; do \
 		if [ -f "$$chart/Chart.yaml" ]; then \
 			echo "Generating docs for $$chart"; \
-			helm-docs --chart-search-root "$$chart" --template-files="$(CURDIR)/$(SHARED_TEMPLATE)" --sort-values-order file --log-level info; \
+			if [ -f "$$chart/README.md.gotmpl" ]; then \
+				helm-docs --chart-search-root "$$chart" --template-files="README.md.gotmpl" --sort-values-order file --log-level info; \
+			else \
+				helm-docs --chart-search-root "$$chart" --template-files="$(CURDIR)/$(SHARED_TEMPLATE)" --sort-values-order file --log-level info; \
+			fi; \
 		fi \
 	done
 
