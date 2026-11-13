@@ -1,0 +1,82 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 600" font-family="Geist, Inter, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#a1a1a1"/>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="1000" height="600" fill="#000000"/>
+
+  <text x="40" y="54" font-size="22" font-weight="600" fill="#ededed" letter-spacing="-0.4">jenkins-inbound-agent</text>
+  <text x="40" y="80" font-size="12" fill="#a1a1a1" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">image layer architecture</text>
+
+  <rect x="800" y="45" width="12" height="12" rx="3" fill="#0a0a0a" stroke="#ededed" stroke-width="1"/>
+  <text x="820" y="55" font-size="12" fill="#a1a1a1">custom</text>
+  <rect x="880" y="45" width="12" height="12" rx="3" fill="none" stroke="#666666" stroke-width="1" stroke-dasharray="3 2"/>
+  <text x="900" y="55" font-size="12" fill="#a1a1a1">upstream</text>
+
+  <line x1="40" y1="100" x2="960" y2="100" stroke="#1f1f1f" stroke-width="1"/>
+
+  <g font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11" fill="#666666" letter-spacing="1">
+    <text x="40" y="124">CUSTOM LAYERS</text>
+    <text x="740" y="166">BUILD STAGE</text>
+    <text x="40" y="420">UPSTREAM BASE</text>
+    <text x="740" y="420">PLATFORMS</text>
+  </g>
+
+  <g font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11.5">
+    <rect x="40" y="136" width="640" height="56" rx="8" fill="#0a0a0a" stroke="#333333" stroke-width="1"/>
+    <text x="60" y="160" fill="#666666">04</text>
+    <text x="100" y="160" font-family="Geist, Inter, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14" font-weight="600" fill="#ededed">Amazon Corretto 11 / 17 / 21</text>
+    <text x="660" y="160" fill="#a1a1a1" text-anchor="end">/usr/lib/jvm/java-{11,17,21}-amazon-corretto</text>
+    <text x="100" y="179" fill="#a1a1a1">RUN apt-get install java-{11,17,21}-amazon-corretto-jdk</text>
+
+    <rect x="40" y="202" width="640" height="56" rx="8" fill="#0a0a0a" stroke="#333333" stroke-width="1"/>
+    <text x="60" y="226" fill="#666666">03</text>
+    <text x="100" y="226" font-family="Geist, Inter, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14" font-weight="600" fill="#ededed">AWS CLI v2.22.35</text>
+    <text x="660" y="226" fill="#a1a1a1" text-anchor="end">/usr/local/bin/aws</text>
+    <text x="100" y="245" fill="#a1a1a1">COPY --from=awscli /opt/aws-cli, RUN ln -s aws aws_completer</text>
+
+    <rect x="40" y="268" width="640" height="56" rx="8" fill="#0a0a0a" stroke="#333333" stroke-width="1"/>
+    <text x="60" y="292" fill="#666666">02</text>
+    <text x="100" y="292" font-family="Geist, Inter, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14" font-weight="600" fill="#ededed">sshpass</text>
+    <text x="660" y="292" fill="#a1a1a1" text-anchor="end">/usr/bin/sshpass</text>
+    <text x="100" y="311" fill="#a1a1a1">RUN apt-get install sshpass</text>
+
+    <rect x="40" y="334" width="640" height="56" rx="8" fill="#0a0a0a" stroke="#333333" stroke-width="1"/>
+    <text x="60" y="358" fill="#666666">01</text>
+    <text x="100" y="358" font-family="Geist, Inter, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14" font-weight="600" fill="#ededed">Timezone</text>
+    <text x="660" y="358" fill="#a1a1a1" text-anchor="end">KST</text>
+    <text x="100" y="377" fill="#a1a1a1">ENV TZ=Asia/Seoul</text>
+
+    <rect x="40" y="432" width="640" height="128" rx="8" fill="#000000" stroke="#444444" stroke-width="1" stroke-dasharray="4 3"/>
+    <text x="60" y="458" fill="#666666">00</text>
+    <text x="100" y="458" font-family="Geist, Inter, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14" font-weight="600" fill="#a1a1a1">jenkins/inbound-agent</text>
+    <text x="660" y="458" fill="#666666" text-anchor="end">FROM ${BASE_IMAGE}:${BASE_TAG}</text>
+    <text x="100" y="477" fill="#666666">Debian, Temurin JDK /opt/java/openjdk, USER jenkins, ENTRYPOINT jenkins-agent</text>
+    <line x1="100" y1="494" x2="660" y2="494" stroke="#1f1f1f" stroke-width="1"/>
+    <text x="100" y="518" fill="#a1a1a1">2.580.1</text>
+    <text x="180" y="518" fill="#666666">3385.vf1123fb_515da_-1-jdk25</text>
+    <text x="660" y="518" fill="#666666" text-anchor="end">Temurin 25</text>
+
+    <rect x="740" y="178" width="220" height="104" rx="8" fill="#000000" stroke="#444444" stroke-width="1" stroke-dasharray="4 3"/>
+    <text x="760" y="204" font-family="Geist, Inter, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14" font-weight="600" fill="#a1a1a1">awscli</text>
+    <text x="760" y="226" fill="#666666">apt-get install curl unzip</text>
+    <text x="760" y="245" fill="#666666">awscli-exe-linux-${arch}</text>
+    <text x="760" y="264" fill="#666666">install -i /opt/aws-cli</text>
+    <line x1="738" y1="230" x2="686" y2="230" stroke="#a1a1a1" stroke-width="1" marker-end="url(#arrow)"/>
+    <text x="712" y="222" font-size="10" fill="#a1a1a1" text-anchor="middle">COPY</text>
+    <text x="740" y="304" font-family="Geist, Inter, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#666666">Discarded after COPY,</text>
+    <text x="740" y="321" font-family="Geist, Inter, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#666666">curl and unzip never ship.</text>
+
+    <rect x="740" y="432" width="220" height="128" rx="8" fill="#0a0a0a" stroke="#333333" stroke-width="1"/>
+    <text x="760" y="458" font-family="Geist, Inter, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14" font-weight="600" fill="#ededed">Multi-arch</text>
+    <text x="760" y="482" fill="#a1a1a1">linux/amd64</text>
+    <text x="940" y="482" fill="#666666" text-anchor="end">&lt;tag&gt;-amd64</text>
+    <text x="760" y="504" fill="#a1a1a1">linux/arm64</text>
+    <text x="940" y="504" fill="#666666" text-anchor="end">&lt;tag&gt;-arm64</text>
+    <line x1="760" y1="520" x2="940" y2="520" stroke="#1f1f1f" stroke-width="1"/>
+    <text x="760" y="542" fill="#a1a1a1">manifest list</text>
+    <text x="940" y="542" fill="#666666" text-anchor="end">&lt;tag&gt;</text>
+  </g>
+</svg>

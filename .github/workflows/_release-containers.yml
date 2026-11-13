@@ -1,0 +1,127 @@
+name: Release Containers
+run-name: "📦 Release containers (version label change)"
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'box/addons/jenkins-inbound-agent/*/Dockerfile'
+  workflow_dispatch:
+    inputs:
+      directory:
+        description: "Version directory to release (box/addons/jenkins-inbound-agent/<directory>)"
+        required: true
+        type: string
+      force:
+        description: "Rebuild even if the version already exists on GHCR (overwrites the tag)"
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  detect:
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+      packages: read
+    outputs:
+      has_releases: ${{ steps.gen.outputs.has_releases }}
+      build_matrix: ${{ steps.gen.outputs.build_matrix }}
+      manifest_matrix: ${{ steps.gen.outputs.manifest_matrix }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          # ci-changed-files.sh diffs the whole push
+          fetch-depth: 0
+
+      - name: Generate release matrices
+        id: gen
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SELECTED: ${{ inputs.directory }}
+          FORCE: ${{ inputs.force }}
+          EVENT_NAME: ${{ github.event_name }}
+          PUSH_BEFORE: ${{ github.event.before }}
+        run: .github/scripts/ci-detect-container-releases.sh
+
+  build:
+    needs: detect
+    if: needs.detect.outputs.has_releases == 'true'
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.detect.outputs.build_matrix) }}
+    env:
+      IMAGE: ghcr.io/${{ matrix.image }}:${{ matrix.version }}-${{ matrix.arch }}
+      ARCH: ${{ matrix.arch }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Login to Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push image
+        uses: docker/build-push-action@v7
+        with:
+          context: ${{ matrix.base_dir }}
+          platforms: linux/${{ matrix.arch }}
+          push: true
+          tags: ${{ env.IMAGE }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+          provenance: false
+          sbom: false
+          cache-from: type=gha,scope=${{ matrix.project }}-${{ matrix.directory }}-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.project }}-${{ matrix.directory }}-${{ matrix.arch }}
+
+      - name: Verify image architecture
+        run: |
+          built_arch=$(docker buildx imagetools inspect "${IMAGE}" --format '{{.Image.Architecture}}')
+          echo "${IMAGE} architecture: ${built_arch}"
+          [[ "${built_arch}" == "${ARCH}" ]]
+
+  manifest:
+    needs: [detect, build]
+    if: needs.detect.outputs.has_releases == 'true'
+    runs-on: ubuntu-26.04
+    permissions:
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.detect.outputs.manifest_matrix) }}
+    env:
+      IMAGE: ghcr.io/${{ matrix.image }}:${{ matrix.version }}
+    steps:
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Login to Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create manifest list
+        run: docker buildx imagetools create --tag "${IMAGE}" "${IMAGE}-amd64" "${IMAGE}-arm64"
+
+      - name: Verify both platforms
+        run: |
+          platforms=$(docker buildx imagetools inspect "${IMAGE}" --format '{{range .Manifest.Manifests}}{{.Platform.OS}}/{{.Platform.Architecture}} {{end}}')
+          echo "${IMAGE} platforms: ${platforms}"
+          for platform in linux/amd64 linux/arm64; do
+            [[ " ${platforms}" == *" ${platform} "* ]] || { echo "::error::${platform} missing from ${IMAGE}"; exit 1; }
+          done

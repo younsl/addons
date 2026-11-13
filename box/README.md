@@ -15,6 +15,8 @@ box/
 
 Long-running [Kubernetes operators](https://kubernetes.io/docs/concepts/extend-kubernetes/operator/), exporters, and services that run in a cluster. Each one is a static Rust binary on a [scratch](https://hub.docker.com/_/scratch) image, usually with its own chart under `charts/`. Images go to `ghcr.io/younsl/{name}` and charts to `ghcr.io/younsl/charts/{name}`.
 
+The one exception is [jenkins-inbound-agent](addons/jenkins-inbound-agent/), a Jenkins agent image that extends an upstream image with build tools.
+
 Standalone [Helm](https://helm.sh/) charts that only package Kubernetes resources, such as policies, node pools, and mesh config, live in [addons/charts](addons/charts/) with no image of their own. They are published as [OCI artifacts](https://helm.sh/docs/topics/registries/) to `ghcr.io/younsl/charts/{chart}`.
 
 ### cli
