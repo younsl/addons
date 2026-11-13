@@ -80,27 +80,7 @@
       "minimum": 0
     },
     "image": {
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "registry": {
-          "type": ["string", "null"]
-        },
-        "repository": {
-          "type": "string"
-        },
-        "pullPolicy": {
-          "type": "string",
-          "enum": ["Always", "IfNotPresent", "Never"]
-        },
-        "tag": {
-          "type": ["string", "null"]
-        },
-        "digest": {
-          "type": ["string", "null"],
-          "pattern": "^(sha256:[a-f0-9]{64})?$"
-        }
-      }
+      "$ref": "#/definitions/image"
     },
     "imagePullSecrets": {
       "type": ["array", "null"],
@@ -161,6 +141,9 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
+        "image": {
+          "$ref": "#/definitions/image"
+        },
         "serviceAccount": {
           "$ref": "#/definitions/serviceAccount"
         },
@@ -219,6 +202,36 @@
               "enum": ["affinity", "containers", "hostPID", "imagePullSecrets", "nodeSelector", "priorityClassName", "serviceAccountName", "tolerations", "volumes"]
             }
           }
+        },
+        "podMonitor": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "interval": {
+              "type": ["string", "null"]
+            },
+            "scrapeTimeout": {
+              "type": ["string", "null"]
+            },
+            "additionalLabels": {
+              "$ref": "#/definitions/nullableStringMap"
+            },
+            "relabelings": {
+              "type": ["array", "null"],
+              "items": {
+                "type": "object"
+              }
+            },
+            "metricRelabelings": {
+              "type": ["array", "null"],
+              "items": {
+                "type": "object"
+              }
+            }
+          }
         }
       }
     },
@@ -250,6 +263,29 @@
     }
   },
   "definitions": {
+    "image": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "registry": {
+          "type": ["string", "null"]
+        },
+        "repository": {
+          "type": "string"
+        },
+        "pullPolicy": {
+          "type": "string",
+          "enum": ["Always", "IfNotPresent", "Never"]
+        },
+        "tag": {
+          "type": ["string", "null"]
+        },
+        "digest": {
+          "type": ["string", "null"],
+          "pattern": "^(sha256:[a-f0-9]{64})?$"
+        }
+      }
+    },
     "nullableStringMap": {
       "type": ["object", "null"],
       "additionalProperties": {
@@ -409,6 +445,10 @@
                     "type": "string",
                     "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
                     "maxLength": 63
+                  },
+                  "failurePolicy": {
+                    "type": "string",
+                    "enum": ["Fail", "Ignore"]
                   },
                   "fileMode": {
                     "type": "object",

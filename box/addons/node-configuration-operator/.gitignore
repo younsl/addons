@@ -1,4 +1,5 @@
-/target/
+target/
 **/*.rs.bk
 node-configuration-operator-linux-*
+node-configuration-agent-linux-*
 lcov.info

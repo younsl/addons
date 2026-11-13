@@ -42,9 +42,9 @@ revisionHistoryLimit: 5
 image:
   # -- (string) Container image registry host, prefixed to `repository`. Set empty when `repository` carries the full path.
   registry: ghcr.io
-  # -- (string) Container image repository path without registry prefix. The controller and the agent run the same image.
+  # -- (string) Container image repository path of the controller without registry prefix. The agent has its own image under `agent.image`.
   repository: younsl/node-configuration-operator
-  # -- (string) Image pull policy of the controller and the agent pods.
+  # -- (string) Image pull policy of the controller pods.
   pullPolicy: IfNotPresent
   # -- (string) Image tag. Defaults to `.Chart.AppVersion` if empty.
   tag: ""
@@ -113,6 +113,17 @@ logging:
   format: json
 
 agent:
+  image:
+    # -- (string) Container image registry host of the agent, prefixed to `repository`. Set empty when `repository` carries the full path.
+    registry: ghcr.io
+    # -- (string) Container image repository path of the agent without registry prefix.
+    repository: younsl/node-configuration-agent
+    # -- (string) Image pull policy of the agent pods.
+    pullPolicy: IfNotPresent
+    # -- (string) Agent image tag. Defaults to `.Chart.AppVersion` if empty. The agent and the controller are released together, so keep both on the same version.
+    tag: ""
+    # -- (string) Agent image digest (`sha256:...`). When set, appended to the tag as `tag@digest` and takes precedence.
+    digest: ""
   serviceAccount:
     # -- (bool) Whether to create the ServiceAccount the agent pods run as.
     create: true
@@ -174,6 +185,21 @@ agent:
     - operator: Exists
   # -- (object) Extra Pod spec fields of the agent, e.g. runtimeClassName. Fields the chart already renders are rejected.
   extraPodSpec: {}
+  podMonitor:
+    # -- (bool) Whether the controller creates a Prometheus Operator PodMonitor for the agent pods. It is created with the agent DaemonSet and removed with it, and needs the PodMonitor CRD in the cluster.
+    enabled: false
+    # -- (string) Scrape interval, e.g. `30s`. Empty uses the default of Prometheus.
+    interval: ""
+    # -- (string) Scrape timeout, e.g. `10s`. Empty uses the default of Prometheus.
+    scrapeTimeout: ""
+    # -- (object) Labels to add to the PodMonitor, e.g. the `release` label a Prometheus selects monitors by.
+    additionalLabels: {}
+    # -- (list) Relabelings of the scrape target. The default copies the node name onto every series as `node`.
+    relabelings:
+      - sourceLabels: [__meta_kubernetes_pod_node_name]
+        targetLabel: node
+    # -- (list) Relabelings of the scraped samples.
+    metricRelabelings: []
 
 # -- (list) NodeConfiguration custom resources to create. One agent pod per node applies all of them, and a change of the rules of one rolls out under its own strategy.
 nodeConfigurations: []
@@ -204,6 +230,7 @@ nodeConfigurations: []
   #             - /root/.cshrc
   #           mode: "0640"
   #       - name: drop-setuid
+  #         failurePolicy: Ignore
   #         fileMode:
   #           paths:
   #             - /usr/bin/newgrp

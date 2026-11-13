@@ -1,0 +1,58 @@
+[package]
+name = "node-configuration-agent"
+version = "0.3.0"
+edition = "2024"
+rust-version = "1.100.0"
+authors = ["younsl <cysl@kakao.com>"]
+license = "Apache-2.0"
+description = "Agent of node-configuration-operator that keeps the OS configuration of its node in line with NodeConfiguration custom resources"
+readme = "../README.md"
+repository = "https://github.com/younsl/addons"
+
+[[bin]]
+name = "node-configuration-agent"
+path = "src/main.rs"
+doc = false
+
+[dependencies]
+node-configuration-common = { path = "../common" }
+
+tokio = { version = "1.53.2", features = ["macros", "rt-multi-thread", "time"] }
+tokio-util = "0.7.20"
+futures = { version = "0.3.34", default-features = false, features = ["std"] }
+
+kube = { version = "4.2.0", default-features = false, features = ["client", "runtime", "derive", "rustls-tls", "aws-lc-rs"] }
+k8s-openapi = { version = "0.28.0", features = ["v1_32", "schemars"] }
+
+serde_json = "1.0.154"
+
+chrono = { version = "0.4.45", default-features = false, features = ["clock", "std"] }
+clap = { version = "4.6.7", features = ["derive", "env"] }
+regex = "1.13.1"
+
+anyhow = "1.0.104"
+thiserror = "2.0.21"
+
+tracing = "0.1.44"
+
+prometheus-client = "0.23.1"
+
+[dev-dependencies]
+wiremock = "0.6.5"
+tempfile = "3.27.0"
+rustls = { version = "0.23.45", default-features = false, features = ["aws-lc-rs"] }
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+nursery = { level = "warn", priority = -1 }
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"

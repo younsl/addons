@@ -1,6 +1,21 @@
 # Changelog
 
-Notable changes to the node-configuration-operator (NCO) app (the container image), newest first. Entries are headed by the image version and its release date (KST).
+Notable changes to the node-configuration-operator (NCO) app (the container images), newest first. Entries are headed by the image version and its release date (KST).
+
+## 0.3.0 (2026-11-13)
+
+### Added
+
+- `spec.rules[].failurePolicy` (`Fail` or `Ignore`, default `Fail`). A rule with `Ignore` is optional: its failure is still reported as the outcome `failed` and in the binding message, but the node counts as configured, so it neither stops a rollout nor holds a group back. `failedRules`, `failedNodes`, and `node_configuration_agent_last_run_failed_rules` leave ignored failures out. The revision of a NodeConfiguration without the field does not change, so an upgrade starts no rollout. See [docs/rules.md](docs/rules.md#failure-policy).
+- Chart value `agent.podMonitor` (`enabled`, `interval`, `scrapeTimeout`, `additionalLabels`, `relabelings`, `metricRelabelings`). The controller creates a Prometheus Operator PodMonitor for the agent pods with the agent DaemonSet, repairs it every minute, and deletes it with the DaemonSet or when the value is turned off. A cluster without the PodMonitor CRD gets a warning and keeps its agents. See [docs/metrics.md](docs/metrics.md#scraping).
+- `arch` in the startup log of both binaries, next to `version`, `commit`, `build_date`, and `rustc_version`.
+
+### Changed
+
+- The agent is an image of its own, `ghcr.io/younsl/node-configuration-agent`, with the binary `node-configuration-agent`. `ghcr.io/younsl/node-configuration-operator` holds only the controller. Both are released under the same version, and the chart value `agent.image` selects the agent image. A mirror has to carry both.
+- The `controller` and `agent` subcommands are gone. Each binary takes its flags directly, so a manifest that passes `args: [controller]` or `args: [agent]` has to drop them. Chart 0.3.0 does.
+- Each role exposes only its own metrics. The controller no longer serves empty `node_configuration_agent_*` series, and the agent no longer serves `node_configuration_controller_leader`.
+- The source is three crates, `operator`, `agent`, and `common`, each image built from its own directory.
 
 ## 0.2.0 (2026-11-13)
 

@@ -23,7 +23,7 @@ Karpenter nodes are never selected, whatever the target says. The controller der
 
 ## Groups and priority
 
-Resources that share `spec.group` apply in order on each node. The one with the highest `spec.priority` runs first. A lower one runs on a node only after every higher one of the group is configured there, so a failed rule in an early resource holds the later ones back on that node. Resources of equal priority do not wait for each other, and a resource without a group runs independently.
+Resources that share `spec.group` apply in order on each node. The one with the highest `spec.priority` runs first. A lower one runs on a node only after every higher one of the group is configured there, so a failed rule in an early resource holds the later ones back on that node, unless its `failurePolicy` is `Ignore`. Resources of equal priority do not wait for each other, and a resource without a group runs independently.
 
 ```yaml
 apiVersion: node-configuration-operator.sh/v1alpha1

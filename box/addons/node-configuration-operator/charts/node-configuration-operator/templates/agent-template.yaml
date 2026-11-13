@@ -1,4 +1,4 @@
-{{- /* Not applied by Helm. The controller creates the DaemonSet from this template and adds the node affinity of the NodeConfiguration targets. */ -}}
+{{- /* Not applied by Helm. The controller creates the DaemonSet from this template and adds the node affinity of the NodeConfiguration targets. It creates the PodMonitor with the DaemonSet and removes it with it. */ -}}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -9,3 +9,7 @@ metadata:
 data:
   daemonset.yaml: |
     {{- include "node-configuration-operator.agentDaemonSet" . | nindent 4 }}
+  {{- if .Values.agent.podMonitor.enabled }}
+  podmonitor.yaml: |
+    {{- include "node-configuration-operator.agentPodMonitor" . | nindent 4 }}
+  {{- end }}

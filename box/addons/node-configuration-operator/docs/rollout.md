@@ -38,7 +38,7 @@ spec:
 
 ## How the budget is spent
 
-A node is available when its binding reports the assigned revision as applied with no failed rule, for at least `minReadySeconds`. On every pass the controller counts the unavailable nodes and moves old-revision nodes to the current revision until the count reaches `maxUnavailable`.
+A node is available when its binding reports the assigned revision as applied with no failed rule, for at least `minReadySeconds`. A failure of a rule with `failurePolicy: Ignore` does not count. On every pass the controller counts the unavailable nodes and moves old-revision nodes to the current revision until the count reaches `maxUnavailable`.
 
 - A node that is already unavailable moves first and costs no budget, so a fix reaches a broken node without waiting.
 - A node that joins gets the current revision right away. It counts as unavailable until its first run.
@@ -113,7 +113,7 @@ os-hardening   6         2         5            1        False   RollingOut   3d
 | Desired | `status.desiredNodes` | Nodes the target selects |
 | Updated | `status.updatedNodes` | Nodes assigned the current revision |
 | Configured | `status.configuredNodes` | Nodes whose last run applied their assigned revision with no failed rule |
-| Failed | `status.failedNodes` | Nodes whose last run failed at least one rule |
+| Failed | `status.failedNodes` | Nodes whose last run failed at least one rule, ignored failures aside |
 | Ready | `Ready` condition | True once every node is updated and available |
 | Rollout | `Progressing` condition reason | See below |
 

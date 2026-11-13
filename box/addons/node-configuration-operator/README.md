@@ -9,7 +9,7 @@ node-configuration-operator (NCO) is a [Kubernetes operator](https://kubernetes.
 
 ## Architecture
 
-The controller is a Deployment in the release namespace and the agent is a DaemonSet the controller creates there. NodeConfiguration and NodeConfigurationBinding are cluster-scoped, and a binding is the only thing the two roles share. The details are in [How it works](docs/how-it-works.md).
+The controller is a Deployment in the release namespace and the agent is a DaemonSet the controller creates there, each from its own image. NodeConfiguration and NodeConfigurationBinding are cluster-scoped, and a binding is the only thing the two roles share. The details are in [How it works](docs/how-it-works.md).
 
 <p align="center"><img src="docs/assets/kubernetes-architecture.png" alt="node-configuration-operator on Kubernetes" width="760"></p>
 
@@ -29,6 +29,8 @@ Diagram source: [kubernetes-architecture.svg](docs/assets/kubernetes-architectur
 - Groups that apply several NodeConfigurations on a node in priority order
 - Dry run that reports the drift without writing to the node
 - A failed rule stops the rollout on that node instead of spreading
+- A failure policy per rule: Fail (default) for rules that must succeed, Ignore for optional ones
+- Prometheus metrics on both roles, with an optional PodMonitor for the agents that the controller creates and removes with them
 - Results aggregated in the status: failed nodes, per-rule counts across nodes, and the reason for each node that is not configured
 
 ## Quick Start

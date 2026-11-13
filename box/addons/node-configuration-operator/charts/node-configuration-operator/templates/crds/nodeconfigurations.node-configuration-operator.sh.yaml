@@ -124,6 +124,12 @@ spec:
                 items:
                   description: One named, idempotent action on the node.
                   properties:
+                    failurePolicy:
+                      description: What a failure of this rule means for the node, `Fail` or `Ignore`. With `Fail` the node is not configured. With `Ignore` the failure is still reported as the outcome `failed`, but the node counts as configured, so it neither stops a rollout nor holds a group back.
+                      enum:
+                      - Fail
+                      - Ignore
+                      type: string
                     file:
                       description: A file whose whole content is managed.
                       nullable: true
@@ -362,7 +368,7 @@ spec:
                 type: array
               configuredNodes:
                 default: 0
-                description: Nodes whose last run applied their assigned revision without a failed rule.
+                description: Nodes whose last run applied their assigned revision without a failed rule, ignored failures aside.
                 format: int32
                 type: integer
               desiredNodes:
@@ -372,7 +378,7 @@ spec:
                 type: integer
               failedNodes:
                 default: 0
-                description: Nodes whose last run failed at least one rule.
+                description: Nodes whose last run failed at least one rule, ignored failures aside.
                 format: int32
                 type: integer
               failures:
@@ -414,7 +420,7 @@ spec:
                       type: integer
                     failed:
                       default: 0
-                      description: Nodes where the rule failed.
+                      description: Nodes where the rule failed. With the failure policy `Ignore` these nodes still count as configured.
                       format: int32
                       type: integer
                     name:

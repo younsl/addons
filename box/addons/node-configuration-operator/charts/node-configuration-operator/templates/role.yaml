@@ -17,6 +17,15 @@ rules:
     resources: ["daemonsets"]
     resourceNames: [{{ include "node-configuration-operator.agentName" . | quote }}]
     verbs: ["get", "patch", "delete"]
+  {{- if .Values.agent.podMonitor.enabled }}
+  - apiGroups: ["monitoring.coreos.com"]
+    resources: ["podmonitors"]
+    verbs: ["create"]
+  {{- end }}
+  - apiGroups: ["monitoring.coreos.com"]
+    resources: ["podmonitors"]
+    resourceNames: [{{ include "node-configuration-operator.agentName" . | quote }}]
+    verbs: [{{ if .Values.agent.podMonitor.enabled }}"get", "patch", {{ end }}"delete"]
   {{- if .Values.leaderElection.enabled }}
   - apiGroups: ["coordination.k8s.io"]
     resources: ["leases"]

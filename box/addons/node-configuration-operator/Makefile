@@ -1,8 +1,11 @@
-BINARY     := node-configuration-operator
-VERSION    := $(shell grep -oE 'org\.opencontainers\.image\.version="[^"]+"' Dockerfile | cut -d'"' -f2)
+OPERATOR   := node-configuration-operator
+AGENT      := node-configuration-agent
+CRATES     := common operator agent
+VERSION    := $(shell grep -oE 'org\.opencontainers\.image\.version="[^"]+"' operator/Dockerfile | cut -d'"' -f2)
 REGISTRY   ?= ghcr.io/younsl
-IMAGE      := $(REGISTRY)/$(BINARY)
 COVER_MIN  ?= 70
+TARGET_amd64 := x86_64-unknown-linux-musl
+TARGET_arm64 := aarch64-unknown-linux-musl
 
 .PHONY: all build release crd test coverage fmt lint check clean \
         zigbuild-amd64 zigbuild-arm64 zigbuild docker-build docker-push help
@@ -12,66 +15,70 @@ COVER_MIN  ?= 70
 ## all: fmt + lint + test + build
 all: fmt lint test build
 
-## build: compile debug binary
+## build: compile debug binaries
 build:
-	cargo build
+	cd operator && cargo build
+	cd agent && cargo build
 
-## release: compile optimized release binary
+## release: compile optimized release binaries
 release:
-	cargo build --release
+	cd operator && cargo build --release --bin $(OPERATOR)
+	cd agent && cargo build --release
 
 ## crd: regenerate the CRDs in the Helm chart from the Rust types
 crd:
-	cargo run --quiet --bin crdgen
+	cd operator && cargo run --quiet --bin crdgen
 
-## test: run tests
+## test: run the tests of every crate
 test:
-	cargo test
+	for crate in $(CRATES); do (cd $$crate && cargo test) || exit 1; done
 
-## coverage: enforce minimum line coverage (cargo-llvm-cov)
+## coverage: enforce minimum line coverage of both images (cargo-llvm-cov)
 coverage:
-	cargo llvm-cov --fail-under-lines $(COVER_MIN)
+	cd operator && cargo llvm-cov --fail-under-lines $(COVER_MIN)
+	cd agent && cargo llvm-cov --fail-under-lines $(COVER_MIN)
 
 ## fmt: format code
 fmt:
-	cargo fmt
+	for crate in $(CRATES); do (cd $$crate && cargo fmt) || exit 1; done
 
 ## lint: rustfmt check + clippy with warnings denied
 lint:
-	cargo fmt --check
-	cargo clippy --all-targets -- -D warnings
+	for crate in $(CRATES); do (cd $$crate && cargo fmt --check && cargo clippy --all-targets -- -D warnings) || exit 1; done
 
 ## check: type-check without building
 check:
-	cargo check
+	for crate in $(CRATES); do (cd $$crate && cargo check) || exit 1; done
 
 ## clean: remove build artifacts
 clean:
-	cargo clean
-	rm -f $(BINARY)-linux-*
+	for crate in $(CRATES); do (cd $$crate && cargo clean) || exit 1; done
+	rm -f operator/$(OPERATOR)-linux-* agent/$(AGENT)-linux-*
 
-## zigbuild-amd64: cross-compile static linux/amd64 binary
-zigbuild-amd64:
-	cargo zigbuild --release --bin $(BINARY) --target x86_64-unknown-linux-musl
-	cp target/x86_64-unknown-linux-musl/release/$(BINARY) $(BINARY)-linux-amd64
+## zigbuild-amd64: cross-compile static linux/amd64 binaries
+## zigbuild-arm64: cross-compile static linux/arm64 binaries
+zigbuild-amd64 zigbuild-arm64: zigbuild-%:
+	cd operator && cargo zigbuild --release --bin $(OPERATOR) --target $(TARGET_$*) \
+		&& cp target/$(TARGET_$*)/release/$(OPERATOR) $(OPERATOR)-linux-$*
+	cd agent && cargo zigbuild --release --bin $(AGENT) --target $(TARGET_$*) \
+		&& cp target/$(TARGET_$*)/release/$(AGENT) $(AGENT)-linux-$*
 
-## zigbuild-arm64: cross-compile static linux/arm64 binary
-zigbuild-arm64:
-	cargo zigbuild --release --bin $(BINARY) --target aarch64-unknown-linux-musl
-	cp target/aarch64-unknown-linux-musl/release/$(BINARY) $(BINARY)-linux-arm64
-
-## zigbuild: cross-compile both architectures
+## zigbuild: cross-compile both binaries for both architectures
 zigbuild: zigbuild-amd64 zigbuild-arm64
 
-## docker-build: cross-compile both arches, then build multi-arch image (requires buildx)
+## docker-build: cross-compile, then build both multi-arch images (requires buildx)
 docker-build: zigbuild
 	docker buildx build --platform linux/amd64,linux/arm64 \
-		-t $(IMAGE):$(VERSION) -t $(IMAGE):latest .
+		-t $(REGISTRY)/$(OPERATOR):$(VERSION) -t $(REGISTRY)/$(OPERATOR):latest operator
+	docker buildx build --platform linux/amd64,linux/arm64 \
+		-t $(REGISTRY)/$(AGENT):$(VERSION) -t $(REGISTRY)/$(AGENT):latest agent
 
-## docker-push: cross-compile both arches, then build and push multi-arch image
+## docker-push: cross-compile, then build and push both multi-arch images
 docker-push: zigbuild
 	docker buildx build --platform linux/amd64,linux/arm64 \
-		-t $(IMAGE):$(VERSION) -t $(IMAGE):latest --push .
+		-t $(REGISTRY)/$(OPERATOR):$(VERSION) -t $(REGISTRY)/$(OPERATOR):latest --push operator
+	docker buildx build --platform linux/amd64,linux/arm64 \
+		-t $(REGISTRY)/$(AGENT):$(VERSION) -t $(REGISTRY)/$(AGENT):latest --push agent
 
 ## help: show this message
 help:

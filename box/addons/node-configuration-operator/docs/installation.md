@@ -39,14 +39,14 @@ Every value is described in the [chart README](../charts/node-configuration-oper
 
 ## Private registry
 
-The controller and the agent run the same image with the same `imagePullSecrets`, so mirroring one image and setting `image.registry` is enough.
+The controller and the agent are two images, node-configuration-operator and node-configuration-agent, released together under the same version and pulled with the same `imagePullSecrets`. Mirror both and set `image.registry` and `agent.image.registry`.
 
 ## RBAC
 
 | Subject | Scope | Rules |
 | --- | --- | --- |
 | Controller | Cluster | Read NodeConfigurations and write their status, manage NodeConfigurationBindings, read and patch Nodes, record Events |
-| Controller | Release namespace | Read the agent template, manage the agent DaemonSet, create and update the leader Lease |
+| Controller | Release namespace | Read the agent template, manage the agent DaemonSet and, with `agent.podMonitor.enabled`, its PodMonitor, create and update the leader Lease |
 | Agent | Cluster | Read NodeConfigurationBindings and write their status |
 
 ## High availability

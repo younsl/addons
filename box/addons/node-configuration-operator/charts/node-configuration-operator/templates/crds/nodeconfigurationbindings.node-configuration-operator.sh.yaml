@@ -106,6 +106,12 @@ spec:
                 items:
                   description: One named, idempotent action on the node.
                   properties:
+                    failurePolicy:
+                      description: What a failure of this rule means for the node, `Fail` or `Ignore`. With `Fail` the node is not configured. With `Ignore` the failure is still reported as the outcome `failed`, but the node counts as configured, so it neither stops a rollout nor holds a group back.
+                      enum:
+                      - Fail
+                      - Ignore
+                      type: string
                     file:
                       description: A file whose whole content is managed.
                       nullable: true
@@ -256,7 +262,7 @@ spec:
             properties:
               failedRules:
                 default: 0
-                description: Rules that failed in the last run.
+                description: Failures of the last run, ignored ones left out.
                 format: int32
                 type: integer
               lastChangeTime:
@@ -273,7 +279,7 @@ spec:
                 nullable: true
                 type: string
               message:
-                description: The first failure of the last run, the binding this one waits for, or the number of changes a dry run found.
+                description: The first failure of the last run, the binding this one waits for, the first ignored failure, or the number of changes a dry run found.
                 nullable: true
                 type: string
               observedRevision:
@@ -282,7 +288,7 @@ spec:
                 type: string
               ready:
                 default: false
-                description: The last run applied every rule without a failure.
+                description: The last run applied every rule without a failure, ignored failures aside.
                 type: boolean
               rules:
                 default: []

@@ -1,0 +1,56 @@
+[package]
+name = "node-configuration-common"
+version = "0.3.0"
+edition = "2024"
+rust-version = "1.100.0"
+authors = ["younsl <cysl@kakao.com>"]
+license = "Apache-2.0"
+description = "API types and runtime plumbing shared by node-configuration-operator and node-configuration-agent"
+repository = "https://github.com/younsl/addons"
+publish = false
+
+[lib]
+name = "node_configuration_common"
+path = "src/lib.rs"
+
+[dependencies]
+tokio = { version = "1.53.2", features = ["macros", "rt", "signal", "net"] }
+tokio-util = "0.7.20"
+
+axum = { version = "0.8.9", default-features = false, features = ["http1", "tokio"] }
+
+kube = { version = "4.2.0", default-features = false, features = ["client", "derive", "rustls-tls", "aws-lc-rs"] }
+k8s-openapi = { version = "0.28.0", features = ["v1_32", "schemars"] }
+schemars = "1.2.3"
+rustls = { version = "0.23.45", default-features = false, features = ["aws-lc-rs"] }
+
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+
+clap = { version = "4.6.7", features = ["derive", "env"] }
+regex = "1.13.1"
+
+anyhow = "1.0.104"
+
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", features = ["env-filter", "json"] }
+
+prometheus-client = "0.23.1"
+
+[dev-dependencies]
+tokio = { version = "1.53.2", features = ["macros", "rt-multi-thread"] }
+tower = { version = "0.5.3", features = ["util"] }
+http-body-util = "0.1.5"
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+nursery = { level = "warn", priority = -1 }
+# Internal library shared by the binaries, not a published API
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+must_use_candidate = "allow"
+too_long_first_doc_paragraph = "allow"

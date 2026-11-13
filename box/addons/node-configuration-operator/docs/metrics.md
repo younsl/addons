@@ -1,6 +1,6 @@
 # Metrics
 
-The controller and every agent serve Prometheus metrics at `/metrics` on port 8080 (`http`), next to `/healthz` and `/readyz`. Both roles run the same image and register the same metric names. A role only writes the metrics that belong to it, so the others stay empty there.
+The controller and every agent serve Prometheus metrics at `/metrics` on port 8080 (`http`), next to `/healthz` and `/readyz`. Each role registers the build and reconcile metrics and its own: the controller exposes no `node_configuration_agent_*` series, and the agent no `node_configuration_controller_*` one.
 
 ## Overview
 
@@ -11,7 +11,7 @@ The controller and every agent serve Prometheus metrics at `/metrics` on port 80
 | `node_configuration_controller_leader` | gauge | none | controller | 1 while this replica acts |
 | `node_configuration_agent_rule_outcomes_total` | counter | `configuration`, `kind`, `outcome` | agent | Rule outcomes on this node |
 | `node_configuration_agent_last_run_timestamp_seconds` | gauge | `configuration` | agent | Unix time of the last run |
-| `node_configuration_agent_last_run_failed_rules` | gauge | `configuration` | agent | Rules that failed in the last run |
+| `node_configuration_agent_last_run_failed_rules` | gauge | `configuration` | agent | Rules that failed in the last run, ignored failures aside |
 
 No metric carries a node label. An agent reports about the node it runs on, so the node comes from the scrape target, see [Scraping](#scraping).
 
@@ -72,6 +72,7 @@ How to read it:
 - `unchanged` grows on every run of a node that is in line. It is the heartbeat of a healthy rule.
 - `pending` only appears with `spec.dryRun: true`.
 - `skipped` is expected where a target is optional. It does not make a node unready.
+- `failed` includes the failures of rules with `failurePolicy: Ignore`, which do not make a node unready either.
 
 The counter keeps what the status of a binding does not. The status holds the last run, and this counter holds every run since the agent started.
 
@@ -83,7 +84,7 @@ A binding that waits for a higher priority of its group does not run, so the val
 
 ### node_configuration_agent_last_run_failed_rules
 
-Number of rules that failed in the last run of a configuration on this node. 0 means the last run applied every rule. The value drops back to 0 as soon as a later run succeeds.
+Number of rules that failed in the last run of a configuration on this node. A failure of a rule with `failurePolicy: Ignore` is left out. 0 means the last run applied every rule that must succeed. The value drops back to 0 as soon as a later run succeeds.
 
 ## Example output
 
@@ -102,7 +103,30 @@ node_configuration_controller_leader 0
 
 ## Scraping
 
-The chart creates no Service and no monitor resource. Scrape the pods directly. With the Prometheus Operator one PodMonitor covers both roles, and a relabeling copies the node name onto the agent series.
+The chart creates no Service. Scrape the pods directly.
+
+### Agent
+
+With the Prometheus Operator, set `agent.podMonitor.enabled` and the controller creates a PodMonitor for the agent pods next to the agent DaemonSet.
+
+```yaml
+agent:
+  podMonitor:
+    enabled: true
+    interval: 30s
+    additionalLabels:
+      release: kube-prometheus-stack
+```
+
+- The PodMonitor carries the name of the agent DaemonSet and lives in the release namespace. It is created with the DaemonSet and deleted with it, so it is gone while no NodeConfiguration exists.
+- The default `relabelings` copy the node name onto every series as `node`.
+- The chart ships it as a template in the agent ConfigMap, and the controller applies that template every minute, which repairs a manual edit. Turning the value off removes the PodMonitor.
+- The controller Role gains `create`, `get`, and `patch` on PodMonitors in the release namespace only while the value is on. `delete` on the one PodMonitor is always there, for the cleanup.
+- Without the PodMonitor CRD the controller logs `Agent PodMonitor sync failed` as a warning every minute and keeps the agents running.
+
+### Controller
+
+The controller pods are not covered by that PodMonitor. Ship one with the chart value `extraObjects`:
 
 ```yaml
 apiVersion: monitoring.coreos.com/v1
@@ -115,25 +139,18 @@ spec:
     matchNames:
       - kube-system
   selector:
-    matchExpressions:
-      - key: app.kubernetes.io/name
-        operator: In
-        values:
-          - node-configuration-operator
-          - node-configuration-operator-agent
+    matchLabels:
+      app.kubernetes.io/name: node-configuration-operator
   podMetricsEndpoints:
     - port: http
       path: /metrics
-      relabelings:
-        - sourceLabels: [__meta_kubernetes_pod_node_name]
-          targetLabel: node
 ```
 
-The chart value `extraObjects` can ship this PodMonitor with the release. For annotation-based discovery set `podAnnotations` and `agent.podAnnotations` instead.
+For annotation-based discovery set `podAnnotations` and `agent.podAnnotations` instead.
 
 ## Queries
 
-The queries below assume the `node` label from the PodMonitor above.
+The queries below assume the `node` label of the agent PodMonitor.
 
 | Question | Expression |
 | --- | --- |

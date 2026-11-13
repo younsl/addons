@@ -14,7 +14,7 @@ The first four are declarative: the agent compares before it writes, so a node a
 
 ## Anatomy
 
-Every rule has a `name` and exactly one action: `fileMode`, `loginShell`, `lineEdit`, `file`, or `script`. The rules run in list order on every run, and a failed rule does not stop the ones after it.
+Every rule has a `name`, exactly one action (`fileMode`, `loginShell`, `lineEdit`, `file`, or `script`), and an optional [failurePolicy](#failure-policy). The rules run in list order on every run, and a failed rule does not stop the ones after it.
 
 ```yaml
 rules:
@@ -39,7 +39,38 @@ Every rule reports one outcome per node and run, see [Status](how-it-works.md#st
 - `changed`: the rule corrected the node in this run.
 - `pending`: a dry run found a difference and left it.
 - `skipped`: the target does not exist on the node, such as a missing file or account.
-- `failed`: the rule could not be applied. The agent retries after 60 seconds.
+- `failed`: the rule could not be applied. The agent retries after 60 seconds, unless the failure is ignored.
+
+## Failure policy
+
+`failurePolicy` says what a failure of the rule means for the node, with the same two values as the failure policy of a Kubernetes admission webhook or a Kyverno policy.
+
+| Value | A failed rule |
+| --- | --- |
+| `Fail` (default) | Leaves the node not configured. The rollout stops there, lower priorities of the group wait, and the agent retries after 60 seconds |
+| `Ignore` | Is reported and nothing else. The node counts as configured, the rollout moves on, and the rule runs again on the next interval |
+
+```yaml
+rules:
+  - name: deny-root-login
+    lineEdit:
+      path: /etc/ssh/sshd_config
+      pattern: '^#?PermitRootLogin .*'
+      replacement: PermitRootLogin no
+  - name: reload-sshd
+    failurePolicy: Ignore
+    script:
+      run: systemctl reload sshd
+```
+
+Use `Ignore` for a rule that is nice to have, such as a tuning step that not every AMI supports. An ignored failure stays visible:
+
+- The rule keeps the outcome `failed` in the binding and in `status.rules` of the NodeConfiguration.
+- The binding stays `ready` with `failedRules: 0`, and its message reads `rule reload-sshd failed and was ignored, script run, exit code 1`. A failure that is not ignored takes the message first.
+- The agent logs `Rule failed, ignored` as a warning.
+- `failedNodes` and the metric `node_configuration_agent_last_run_failed_rules` leave it out. The counter `node_configuration_agent_rule_outcomes_total` counts it under `failed`.
+
+A rule the schema or the controller rejects, such as an invalid regular expression, is an invalid spec whatever its policy. A missing target is `skipped` and never a failure.
 
 ## fileMode
 

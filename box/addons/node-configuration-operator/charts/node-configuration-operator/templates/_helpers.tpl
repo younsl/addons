@@ -49,6 +49,19 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end -}}
 {{- end -}}
 
+{{- define "node-configuration-operator.agentImage" -}}
+{{- $registry := .Values.agent.image.registry | trimSuffix "/" -}}
+{{- $tag := .Values.agent.image.tag | default .Chart.AppVersion -}}
+{{- if $registry -}}
+{{- printf "%s/%s:%s" $registry .Values.agent.image.repository $tag -}}
+{{- else -}}
+{{- printf "%s:%s" .Values.agent.image.repository $tag -}}
+{{- end -}}
+{{- with .Values.agent.image.digest -}}
+@{{ . }}
+{{- end -}}
+{{- end -}}
+
 {{- define "node-configuration-operator.agentName" -}}
 {{- printf "%s-agent" (include "node-configuration-operator.fullname" .) | trunc 63 | trimSuffix "-" }}
 {{- end }}
@@ -106,10 +119,8 @@ spec:
       {{- end }}
       containers:
         - name: agent
-          image: {{ include "node-configuration-operator.image" . | quote }}
-          imagePullPolicy: {{ .Values.image.pullPolicy }}
-          args:
-            - agent
+          image: {{ include "node-configuration-operator.agentImage" . | quote }}
+          imagePullPolicy: {{ .Values.agent.image.pullPolicy }}
           env:
             - name: LOG_LEVEL
               value: {{ .Values.logging.level | quote }}
@@ -179,5 +190,42 @@ spec:
       {{- end }}
       {{- with .Values.agent.extraPodSpec }}
       {{- toYaml . | nindent 6 }}
+      {{- end }}
+{{- end }}
+
+{{- define "node-configuration-operator.agentPodMonitor" -}}
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: {{ include "node-configuration-operator.agentName" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "node-configuration-operator.labels" . | nindent 4 }}
+    {{- with .Values.agent.podMonitor.additionalLabels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  namespaceSelector:
+    matchNames:
+      - {{ .Release.Namespace }}
+  selector:
+    matchLabels:
+      {{- include "node-configuration-operator.agentSelectorLabels" . | nindent 6 }}
+  podMetricsEndpoints:
+    - port: http
+      path: /metrics
+      {{- with .Values.agent.podMonitor.interval }}
+      interval: {{ . }}
+      {{- end }}
+      {{- with .Values.agent.podMonitor.scrapeTimeout }}
+      scrapeTimeout: {{ . }}
+      {{- end }}
+      {{- with .Values.agent.podMonitor.relabelings }}
+      relabelings:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.agent.podMonitor.metricRelabelings }}
+      metricRelabelings:
+        {{- toYaml . | nindent 8 }}
       {{- end }}
 {{- end }}

@@ -1,6 +1,6 @@
 # How it works
 
-node-configuration-operator (NCO) runs one image in two roles. The controller is a Deployment that decides which node applies which revision. The agent is a single DaemonSet that the controller creates, with one pod per targeted node, and that one pod applies every NodeConfiguration assigned to its node.
+node-configuration-operator (NCO) ships two images. The controller (node-configuration-operator) is a Deployment that decides which node applies which revision. The agent (node-configuration-agent) is a single DaemonSet that the controller creates, with one pod per targeted node, and that one pod applies every NodeConfiguration assigned to its node.
 
 <p align="center"><img src="assets/architecture.png" alt="node-configuration-operator architecture" width="760"></p>
 
@@ -47,6 +47,7 @@ The chart does not install the DaemonSet. It ships the pod settings (image, reso
 - A new, changed, or deleted NodeConfiguration updates the affinity at once. The template is read again every minute, which also repairs a manual edit of the DaemonSet.
 - With no NodeConfiguration left, the DaemonSet is deleted and no agent runs.
 - The DaemonSet is owned by the template ConfigMap, so uninstalling the chart removes the agents.
+- With `agent.podMonitor.enabled` the template also holds a PodMonitor for the agent pods. The controller applies it with the DaemonSet and deletes it with it, see [Scraping](metrics.md#scraping).
 
 A change of the targets changes the pod template, so the agent pods restart under `agent.updateStrategy`. A restart is harmless: the new pod reads its bindings and compares before it writes.
 
@@ -58,7 +59,7 @@ A change of the targets changes the pod template, so the agent pods restart unde
 - In a dry run, compares and reports each difference as `pending` without writing.
 - Compares before it writes. A node already in line is read and left untouched, so the interval can be short.
 - Reports the applied revision, readiness, the first failure, and the outcome of every rule in the binding status. The status is written only when it changes.
-- Retries a binding with a failed rule after 60 seconds.
+- Retries a binding with a failed rule after 60 seconds. A failure of a rule with `failurePolicy: Ignore` is reported and does not count, see [Failure policy](rules.md#failure-policy).
 
 ## Host access
 
@@ -101,7 +102,7 @@ status:
 
 | Field | Meaning |
 | --- | --- |
-| `failedNodes` | Nodes whose last run failed at least one rule |
+| `failedNodes` | Nodes whose last run failed at least one rule, ignored failures aside |
 | `rules` | Per rule, how many nodes on the current revision reported each outcome in their last run |
 | `failures` | Nodes that are not configured and why (a failed rule, or the configuration they wait for), at most ten in node name order |
 
@@ -111,7 +112,7 @@ status:
 | `changed` | The rule corrected the node in this run |
 | `pending` | A dry run found a difference and left it |
 | `skipped` | The target does not exist on the node, such as a missing file or account |
-| `failed` | The rule could not be applied |
+| `failed` | The rule could not be applied. With `failurePolicy: Ignore` the node still counts as configured |
 
 A rule that touches several paths counts once per node, under the outcome that matters most. `changed` drops back to `unchanged` on the next run, so a steady `changed` count means something else keeps rewriting the node. The counts of a rule add up to the nodes that ran the current revision, and a node that waits for a higher priority of its group is in none of them.
 

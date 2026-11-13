@@ -1,6 +1,6 @@
 # node-configuration-operator
 
-![Version: 0.2.0](https://img.shields.io/badge/Version-0.2.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.2.0](https://img.shields.io/badge/AppVersion-0.2.0-informational?style=flat-square)
+![Version: 0.3.0](https://img.shields.io/badge/Version-0.3.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.3.0](https://img.shields.io/badge/AppVersion-0.3.0-informational?style=flat-square)
 
 Continuously reconciles the OS configuration of EKS managed node group nodes from NodeConfiguration custom resources
 
@@ -39,7 +39,7 @@ helm install node-configuration-operator oci://ghcr.io/younsl/charts/node-config
 Install a specific version:
 
 ```console
-helm install node-configuration-operator oci://ghcr.io/younsl/charts/node-configuration-operator --version 0.2.0
+helm install node-configuration-operator oci://ghcr.io/younsl/charts/node-configuration-operator --version 0.3.0
 ```
 
 ### Install from local chart
@@ -47,7 +47,7 @@ helm install node-configuration-operator oci://ghcr.io/younsl/charts/node-config
 Download node-configuration-operator chart and install from local directory:
 
 ```console
-helm pull oci://ghcr.io/younsl/charts/node-configuration-operator --untar --version 0.2.0
+helm pull oci://ghcr.io/younsl/charts/node-configuration-operator --untar --version 0.3.0
 helm install node-configuration-operator ./node-configuration-operator
 ```
 
@@ -90,8 +90,8 @@ The following table lists the configurable parameters and their default values.
 | podDisruptionBudget.unhealthyPodEvictionPolicy | string | `"IfHealthyBudget"` | `IfHealthyBudget` evicts an unhealthy pod only while the budget is met. `AlwaysAllow` always evicts it. Empty leaves it unset. |
 | revisionHistoryLimit | int | `5` | Number of old ReplicaSets and DaemonSet revisions to retain for rollback. |
 | image.registry | string | `"ghcr.io"` | Container image registry host, prefixed to `repository`. Set empty when `repository` carries the full path. |
-| image.repository | string | `"younsl/node-configuration-operator"` | Container image repository path without registry prefix. The controller and the agent run the same image. |
-| image.pullPolicy | string | `"IfNotPresent"` | Image pull policy of the controller and the agent pods. |
+| image.repository | string | `"younsl/node-configuration-operator"` | Container image repository path of the controller without registry prefix. The agent has its own image under `agent.image`. |
+| image.pullPolicy | string | `"IfNotPresent"` | Image pull policy of the controller pods. |
 | image.tag | string | `""` | Image tag. Defaults to `.Chart.AppVersion` if empty. |
 | image.digest | string | `""` | Image digest (`sha256:...`). When set, appended to the tag as `tag@digest` and takes precedence. |
 | imagePullSecrets | list | `[]` | Image pull secrets of the controller and the agent pods. |
@@ -112,6 +112,11 @@ The following table lists the configurable parameters and their default values.
 | extraPodSpec | object | `{}` | Extra Pod spec fields of the controller, e.g. runtimeClassName. Fields the chart already renders are rejected. |
 | logging.level | string | `"info"` | Log level of the controller and the agent pods: trace, debug, info, warn, error. `RUST_LOG` on the pod overrides it. |
 | logging.format | string | `"json"` | Log format: json or text |
+| agent.image.registry | string | `"ghcr.io"` | Container image registry host of the agent, prefixed to `repository`. Set empty when `repository` carries the full path. |
+| agent.image.repository | string | `"younsl/node-configuration-agent"` | Container image repository path of the agent without registry prefix. |
+| agent.image.pullPolicy | string | `"IfNotPresent"` | Image pull policy of the agent pods. |
+| agent.image.tag | string | `""` | Agent image tag. Defaults to `.Chart.AppVersion` if empty. The agent and the controller are released together, so keep both on the same version. |
+| agent.image.digest | string | `""` | Agent image digest (`sha256:...`). When set, appended to the tag as `tag@digest` and takes precedence. |
 | agent.serviceAccount.create | bool | `true` | Whether to create the ServiceAccount the agent pods run as. |
 | agent.serviceAccount.annotations | object | `{}` | Annotations to add to the agent ServiceAccount. |
 | agent.serviceAccount.name | string | `""` | Agent ServiceAccount name. Defaults to the fullname template with an `-agent` suffix if empty. |
@@ -129,6 +134,12 @@ The following table lists the configurable parameters and their default values.
 | agent.affinity | object | `{}` | Extra affinity of the agent pods. The controller sets the required node affinity from the targets of the NodeConfiguration resources and replaces one given here. |
 | agent.tolerations | list | `[{"operator":"Exists"}]` | Tolerations of the agent pods. The default tolerates every taint so a tainted node is still configured. |
 | agent.extraPodSpec | object | `{}` | Extra Pod spec fields of the agent, e.g. runtimeClassName. Fields the chart already renders are rejected. |
+| agent.podMonitor.enabled | bool | `false` | Whether the controller creates a Prometheus Operator PodMonitor for the agent pods. It is created with the agent DaemonSet and removed with it, and needs the PodMonitor CRD in the cluster. |
+| agent.podMonitor.interval | string | `""` | Scrape interval, e.g. `30s`. Empty uses the default of Prometheus. |
+| agent.podMonitor.scrapeTimeout | string | `""` | Scrape timeout, e.g. `10s`. Empty uses the default of Prometheus. |
+| agent.podMonitor.additionalLabels | object | `{}` | Labels to add to the PodMonitor, e.g. the `release` label a Prometheus selects monitors by. |
+| agent.podMonitor.relabelings | list | `[{"sourceLabels":["__meta_kubernetes_pod_node_name"],"targetLabel":"node"}]` | Relabelings of the scrape target. The default copies the node name onto every series as `node`. |
+| agent.podMonitor.metricRelabelings | list | `[]` | Relabelings of the scraped samples. |
 | nodeConfigurations | list | `[]` | NodeConfiguration custom resources to create. One agent pod per node applies all of them, and a change of the rules of one rolls out under its own strategy. |
 | extraObjects | list | `[]` | Additional Kubernetes resources to create alongside the chart. |
 
