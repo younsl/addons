@@ -8,7 +8,7 @@ It runs as a long-lived [Deployment](https://kubernetes.io/docs/concepts/workloa
 
 volume-autoscaler is the successor of external-ebs-autoresizer, which it replaces from 0.1.0. The renamed API group, image, metric prefix, and annotation prefix are listed in the [changelog](../CHANGELOG.md).
 
-Built with Rust 1.99.1 and shipped as a statically linked musl binary (cargo-zigbuild) on a `scratch` image for `linux/amd64` and `linux/arm64`.
+Built with Rust 1.100.0 and shipped as a statically linked musl binary (cargo-zigbuild) on a `scratch` image for `linux/amd64` and `linux/arm64`.
 
 ![volume-autoscaler architecture](assets/architecture-simple.svg)
 

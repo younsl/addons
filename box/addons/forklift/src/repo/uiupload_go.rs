@@ -702,7 +702,7 @@ impl Uploader {
                 .cmp(&go_latest_rank(a))
                 .then_with(|| go_semver_compare(b, a))
         });
-        let best = versions.first().map(|v| (*v).clone()).unwrap_or_default();
+        let best = versions.first().map_or_default(|v| (*v).clone());
         Ok(infos.remove(&best).unwrap_or_default())
     }
 

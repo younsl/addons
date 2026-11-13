@@ -125,12 +125,11 @@ impl OidcProvider {
         let groups = claims
             .get(&self.groups_claim)
             .and_then(|v| v.as_array())
-            .map(|raw| {
+            .map_or_default(|raw| {
                 raw.iter()
                     .filter_map(|g| g.as_str().map(str::to_string))
                     .collect()
-            })
-            .unwrap_or_default();
+            });
         Ok((username.to_string(), email.to_string(), groups))
     }
 
@@ -255,8 +254,7 @@ pub async fn handle_callback(State(svc): State<Arc<Service>>, req: Request) -> R
     let query: std::collections::HashMap<String, String> = parts
         .uri
         .query()
-        .map(|q| form_urlencoded::parse(q.as_bytes()).into_owned().collect())
-        .unwrap_or_default();
+        .map_or_default(|q| form_urlencoded::parse(q.as_bytes()).into_owned().collect());
 
     let state_cookie = cookie(&parts, OIDC_STATE_COOKIE).unwrap_or_default();
     if state_cookie.is_empty() || Some(&state_cookie) != query.get("state") {

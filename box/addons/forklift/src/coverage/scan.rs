@@ -870,8 +870,7 @@ pub(crate) mod tests {
                 .url
                 .query_pairs()
                 .find(|(k, _)| k == "ref")
-                .map(|(_, v)| v.into_owned())
-                .unwrap_or_default();
+                .map_or_default(|(_, v)| v.into_owned());
 
             if tail.is_empty() {
                 // The project itself, which is how a path not covered by the last

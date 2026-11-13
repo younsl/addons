@@ -215,14 +215,11 @@ async fn list_artifacts_filters() {
         (resp.status, resp.json())
     };
     let paths = |out: &serde_json::Value| -> Vec<String> {
-        let mut paths: Vec<String> = out["artifacts"]
-            .as_array()
-            .map(|rows| {
-                rows.iter()
-                    .filter_map(|a| a["path"].as_str().map(str::to_string))
-                    .collect()
-            })
-            .unwrap_or_default();
+        let mut paths: Vec<String> = out["artifacts"].as_array().map_or_default(|rows| {
+            rows.iter()
+                .filter_map(|a| a["path"].as_str().map(str::to_string))
+                .collect()
+        });
         paths.sort();
         paths
     };

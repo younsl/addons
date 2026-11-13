@@ -26,17 +26,15 @@ fn extract_metadata_from_value(data: &Value) -> (String, String, String) {
         .to_string();
 
     let artifact = data.get("report").and_then(|r| r.get("artifact"));
-    let image = artifact
-        .map(|a| {
-            let repo = a.get("repository").and_then(|v| v.as_str()).unwrap_or("");
-            let tag = a.get("tag").and_then(|v| v.as_str()).unwrap_or("");
-            if tag.is_empty() {
-                repo.to_string()
-            } else {
-                format!("{repo}:{tag}")
-            }
-        })
-        .unwrap_or_default();
+    let image = artifact.map_or_default(|a| {
+        let repo = a.get("repository").and_then(|v| v.as_str()).unwrap_or("");
+        let tag = a.get("tag").and_then(|v| v.as_str()).unwrap_or("");
+        if tag.is_empty() {
+            repo.to_string()
+        } else {
+            format!("{repo}:{tag}")
+        }
+    });
 
     let registry = data
         .get("report")

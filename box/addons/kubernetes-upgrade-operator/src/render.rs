@@ -24,9 +24,7 @@ pub fn upgrade_path(spec: &EKSUpgradeSpec, status: &EKSUpgradeStatus) -> String 
         .or(status.current_version.as_deref())
         .unwrap_or("unknown");
 
-    let path = planning
-        .map(|p| p.upgrade_path.join(" → "))
-        .unwrap_or_default();
+    let path = planning.map_or_default(|p| p.upgrade_path.join(" → "));
 
     if path.is_empty() {
         format!("{} → {}", source, spec.target_version)

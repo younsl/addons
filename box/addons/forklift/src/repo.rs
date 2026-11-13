@@ -1766,9 +1766,7 @@ pub(crate) fn strip_auth_on_cross_host_redirect(
 /// Returns the authenticated principal's username for the request, or "" when
 /// the request is anonymous.
 pub(crate) fn username_from_context(parts: &Parts) -> String {
-    crate::auth::from_request_parts(parts)
-        .map(|p| p.username.clone())
-        .unwrap_or_default()
+    crate::auth::from_request_parts(parts).map_or_default(|p| p.username.clone())
 }
 
 /// Interprets an HTTP Retry-After header (delta-seconds or an HTTP date),

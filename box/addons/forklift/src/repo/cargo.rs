@@ -369,8 +369,7 @@ impl Manager {
             host = parts
                 .uri
                 .authority()
-                .map(std::string::ToString::to_string)
-                .unwrap_or_default();
+                .map_or_default(std::string::ToString::to_string);
         }
         let forwarded = super::header_str(&parts.headers, "X-Forwarded-Host");
         if !forwarded.is_empty() {

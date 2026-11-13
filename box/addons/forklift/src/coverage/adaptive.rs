@@ -112,8 +112,7 @@ impl AdaptiveLimiter {
                 let state = self.state.lock();
                 state
                     .paused_until
-                    .map(|until| until.saturating_duration_since(Instant::now()))
-                    .unwrap_or_default()
+                    .map_or_default(|until| until.saturating_duration_since(Instant::now()))
             };
             if wait.is_zero() {
                 break;

@@ -419,8 +419,7 @@ pub(crate) mod fake {
             let instance_filter: Vec<String> = filters
                 .iter()
                 .find(|f| f.name() == Some("attachment.instance-id"))
-                .map(|f| f.values().to_vec())
-                .unwrap_or_default();
+                .map_or_default(|f| f.values().to_vec());
             let vols: Vec<Volume> = self
                 .volumes
                 .lock()

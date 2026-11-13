@@ -567,8 +567,7 @@ pub(crate) fn normalize_endpoint(endpoint: &str) -> String {
         Ok(u) if u.host_str().is_some() => {
             let port = u
                 .port_or_known_default()
-                .map(|p| format!(":{p}"))
-                .unwrap_or_default();
+                .map_or_default(|p| format!(":{p}"));
             format!(
                 "{}://{}{port}",
                 u.scheme(),

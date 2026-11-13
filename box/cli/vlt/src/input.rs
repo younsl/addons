@@ -539,7 +539,7 @@ mod tests {
     }
 
     fn status_text(app: &App) -> String {
-        app.status.as_ref().map(|s| s.0.clone()).unwrap_or_default()
+        app.status.as_ref().map_or_default(|s| s.0.clone())
     }
 
     fn setup(app: &App) -> &SetupState {

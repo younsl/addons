@@ -535,8 +535,7 @@ pub(super) async fn preview_repo_sample(
         .store
         .get_repository(id)
         .await
-        .map(|repo| repo.format)
-        .unwrap_or_default();
+        .map_or_default(|repo| repo.format);
     write_json(
         StatusCode::OK,
         NotificationSamplePreviewDTO {

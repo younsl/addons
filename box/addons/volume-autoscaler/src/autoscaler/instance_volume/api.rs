@@ -140,8 +140,7 @@ async fn reconcile(
     let name = iva.metadata.name.clone().unwrap_or_default();
     if let Some(status) = validation_status(&iva) {
         let reason = condition(&status.conditions, CONDITION_SCALING_ACTIVE)
-            .map(|c| c.reason.clone())
-            .unwrap_or_default();
+            .map_or_default(|c| c.reason.clone());
         match ctx.api.patch_status(&name, &status).await {
             Ok(()) => {
                 info!(autoscaler = %name, reason = %reason, "InstanceVolumeAutoscaler spec validated");

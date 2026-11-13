@@ -1741,7 +1741,7 @@ pub(crate) mod tests {
         let roles = srv.admin_do(Method::GET, "/roles", "").await.json();
         // admin (bootstrap) + maven-rw
         assert!(
-            roles.as_array().map(Vec::len).unwrap_or_default() >= 2,
+            roles.as_array().map_or_default(Vec::len) >= 2,
             "roles len = {roles}"
         );
     }

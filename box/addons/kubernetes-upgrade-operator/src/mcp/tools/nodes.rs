@@ -89,27 +89,24 @@ pub fn render_karpenter(cr: &EKSUpgrade, live_nodeclaims: Option<usize>) -> Tool
     };
 
     let karpenter = status.phases.karpenter_node_pools;
-    let pools: Vec<serde_json::Value> = karpenter
-        .as_ref()
-        .map(|k| {
-            k.pools
-                .iter()
-                .take(LIST_CAP)
-                .map(|pool| {
-                    json!({
-                        "name": pool.name,
-                        "status": format!("{:?}", pool.status),
-                        "totalNodes": pool.total_nodes,
-                        "replacedNodes": pool.replaced_nodes,
-                        "inFlight": pool.current_batch.iter().map(|b| json!({
-                            "nodeClaim": b.node_claim,
-                            "state": b.state,
-                        })).collect::<Vec<_>>(),
-                    })
+    let pools: Vec<serde_json::Value> = karpenter.as_ref().map_or_default(|k| {
+        k.pools
+            .iter()
+            .take(LIST_CAP)
+            .map(|pool| {
+                json!({
+                    "name": pool.name,
+                    "status": format!("{:?}", pool.status),
+                    "totalNodes": pool.total_nodes,
+                    "replacedNodes": pool.replaced_nodes,
+                    "inFlight": pool.current_batch.iter().map(|b| json!({
+                        "nodeClaim": b.node_claim,
+                        "state": b.state,
+                    })).collect::<Vec<_>>(),
                 })
-                .collect()
-        })
-        .unwrap_or_default();
+            })
+            .collect()
+    });
 
     let (replaced, total) = karpenter
         .as_ref()

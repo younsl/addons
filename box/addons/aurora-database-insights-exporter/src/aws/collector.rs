@@ -176,15 +176,11 @@ impl PiCollector for AwsPiCollector {
                 let dimensions: Vec<(String, String)> =
                     dims.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
                 let value = key.total.unwrap_or(0.0);
-                let additional_metrics = key
-                    .additional_metrics
-                    .as_ref()
-                    .map(|m| {
-                        m.iter()
-                            .map(|(k, v)| (k.clone(), *v))
-                            .collect::<HashMap<String, f64>>()
-                    })
-                    .unwrap_or_default();
+                let additional_metrics = key.additional_metrics.as_ref().map_or_default(|m| {
+                    m.iter()
+                        .map(|(k, v)| (k.clone(), *v))
+                        .collect::<HashMap<String, f64>>()
+                });
                 results.push(DimensionKeyResult {
                     dimensions,
                     value,
@@ -284,14 +280,12 @@ pub async fn collect_instance_metrics<P: PiCollector>(
                     .dimensions
                     .iter()
                     .find(|(k, _)| k.contains("id"))
-                    .map(|(_, v)| v.clone())
-                    .unwrap_or_default();
+                    .map_or_default(|(_, v)| v.clone());
                 let raw_text = dk
                     .dimensions
                     .iter()
                     .find(|(k, _)| k.contains("statement"))
-                    .map(|(_, v)| v.clone())
-                    .unwrap_or_default();
+                    .map_or_default(|(_, v)| v.clone());
                 let (sql_tokenized_text, sql_tokenized_text_truncated) = truncate_sql(&raw_text);
                 SqlTokenizedMetric {
                     sql_tokenized_id,
@@ -342,14 +336,12 @@ pub async fn collect_instance_metrics<P: PiCollector>(
                     .dimensions
                     .iter()
                     .find(|(k, _)| k.contains("id"))
-                    .map(|(_, v)| v.clone())
-                    .unwrap_or_default();
+                    .map_or_default(|(_, v)| v.clone());
                 let raw_text = dk
                     .dimensions
                     .iter()
                     .find(|(k, _)| k.contains("statement"))
-                    .map(|(_, v)| v.clone())
-                    .unwrap_or_default();
+                    .map_or_default(|(_, v)| v.clone());
 
                 // Fetch full SQL text via GetDimensionKeyDetails
                 let sql_full_text = if sql_id.is_empty() {

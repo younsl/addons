@@ -43,8 +43,7 @@ pub fn classify(inv: &Inventory, min_age: Duration, now: DateTime<Utc>) -> Vec<F
         let k = format!("{}/{}", c.namespace, c.name);
         let sets = sets_by_namespace
             .get(c.namespace.as_str())
-            .map(Vec::as_slice)
-            .unwrap_or_default();
+            .map_or_default(Vec::as_slice);
         let (unused, reason) = classify_pvc(c, &inv.claims_in_use, sets, &k);
         claim_unused.insert(k.clone(), unused);
         claim_uid.insert(k, c.uid.as_str());
@@ -60,8 +59,7 @@ pub fn classify(inv: &Inventory, min_age: Duration, now: DateTime<Utc>) -> Vec<F
                 storage_class: c.storage_class.clone(),
                 volume_id: volume_id
                     .get(c.volume_name.as_str())
-                    .map(|s| (*s).to_string())
-                    .unwrap_or_default(),
+                    .map_or_default(|s| (*s).to_string()),
                 volume_name: c.volume_name.clone(),
                 annotations: c.annotations.clone(),
                 owned: c.owned,

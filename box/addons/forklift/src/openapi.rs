@@ -72,8 +72,7 @@ pub(crate) mod tests {
         let ct = resp
             .headers()
             .get(header::CONTENT_TYPE)
-            .map(|v| v.to_str().unwrap().to_string())
-            .unwrap_or_default();
+            .map_or_default(|v| v.to_str().unwrap().to_string());
         let body = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
         (status, ct, String::from_utf8_lossy(&body).into_owned())
     }

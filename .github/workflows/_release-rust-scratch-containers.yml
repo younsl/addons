@@ -155,7 +155,7 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: 1.99.1
+          toolchain: 1.100.0
           targets: ${{ matrix.target }}
           # build-std for the eBPF target needs the core sources
           components: rust-src
@@ -236,7 +236,7 @@ jobs:
           arch="${TARGET%%-*}"
           PATH="${tools}:${PATH}" RUSTC_BOOTSTRAP=1 \
             CARGO_ENCODED_RUSTFLAGS="$(printf -- '--cfg=bpf_target_arch="%s"\037-Cdebuginfo=2\037-Clink-arg=--btf' "${arch}")" \
-            cargo +1.99.1 build --release -Z build-std=core --target bpfel-unknown-none --target-dir "target/${arch}"
+            cargo +1.100.0 build --release -Z build-std=core --target bpfel-unknown-none --target-dir "target/${arch}"
           ls -l "target/${arch}/bpfel-unknown-none/release/"
 
       - name: Build binary with cargo-zigbuild

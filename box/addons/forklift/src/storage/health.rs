@@ -108,7 +108,7 @@ impl HealthMonitor {
             at,
             ok: result.is_ok(),
             latency_ms,
-            error: result.err().map(truncate).unwrap_or_default(),
+            error: result.err().map_or_default(truncate),
         });
     }
 

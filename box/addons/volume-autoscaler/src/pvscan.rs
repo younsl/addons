@@ -683,7 +683,7 @@ impl Scanner {
         }
         info!(
             kind = %f.kind, object = %f.key(), reason = %f.reason,
-            unused_since = f.unused_since.map(|t| t.to_rfc3339_opts(SecondsFormat::Secs, true)).unwrap_or_default(),
+            unused_since = f.unused_since.map_or_default(|t| t.to_rfc3339_opts(SecondsFormat::Secs, true)),
             unused_days = f.unused_days(),
             capacity_bytes = f.capacity_bytes, storage_class = %f.storage_class,
             volume_id = %f.volume_id, bound_to = %f.bound_to(), reclaim_policy = %f.reclaim_policy,

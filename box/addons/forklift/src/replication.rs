@@ -339,8 +339,7 @@ impl Replicator {
         self.last_sync_unix.set(
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_secs_f64())
-                .unwrap_or_default(),
+                .map_or_default(|d| d.as_secs_f64()),
         );
         Ok(())
     }

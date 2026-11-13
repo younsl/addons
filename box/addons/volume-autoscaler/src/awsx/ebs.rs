@@ -98,8 +98,7 @@ impl Clients {
                     if let Some(caps) = new_ebs_caps(it) {
                         fetched.insert(
                             it.instance_type()
-                                .map(|t| t.as_str().to_string())
-                                .unwrap_or_default(),
+                                .map_or_default(|t| t.as_str().to_string()),
                             caps,
                         );
                     }
@@ -161,10 +160,7 @@ impl Clients {
 fn new_volumes(v: &SdkVolume) -> Vec<Volume> {
     let base = Volume {
         id: v.volume_id().unwrap_or_default().to_string(),
-        kind: v
-            .volume_type()
-            .map(|t| t.as_str().to_string())
-            .unwrap_or_default(),
+        kind: v.volume_type().map_or_default(|t| t.as_str().to_string()),
         size_gib: v.size().unwrap_or(0),
         throughput_mibps: v.throughput().unwrap_or(0),
         iops: v.iops().unwrap_or(0),

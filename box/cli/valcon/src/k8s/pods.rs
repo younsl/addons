@@ -56,8 +56,7 @@ fn container_order(pod: &Pod) -> Vec<String> {
     let mut names: Vec<String> = pod
         .spec
         .as_ref()
-        .map(|s| s.containers.iter().map(|c| c.name.clone()).collect())
-        .unwrap_or_default();
+        .map_or_default(|s| s.containers.iter().map(|c| c.name.clone()).collect());
     let preferred = pod
         .metadata
         .annotations

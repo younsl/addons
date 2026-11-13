@@ -601,8 +601,8 @@ fn log_annotation_outcome(
     outcome: &str,
     ann: Option<&AnnotationSet>,
 ) {
-    let set = ann.map(|a| format!("{:?}", a.set)).unwrap_or_default();
-    let removed = ann.map(|a| format!("{:?}", a.remove)).unwrap_or_default();
+    let set = ann.map_or_default(|a| format!("{:?}", a.set));
+    let removed = ann.map_or_default(|a| format!("{:?}", a.remove));
     match outcome {
         OUTCOME_WRITTEN => {
             info!(node = %obs.node.name, volume = %obs.volume.id, recommendation = %d.action, reason = %d.reason,

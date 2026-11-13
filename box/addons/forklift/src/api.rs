@@ -853,9 +853,7 @@ pub(crate) fn map_error(err: meta::Error) -> Response {
 
 /// The authenticated principal's name, or `""` for an anonymous request.
 pub(crate) fn principal_name(parts: &Parts) -> String {
-    auth_service::from_request_parts(parts)
-        .map(|p| p.username.clone())
-        .unwrap_or_default()
+    auth_service::from_request_parts(parts).map_or_default(|p| p.username.clone())
 }
 
 #[cfg(test)]

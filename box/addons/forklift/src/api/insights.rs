@@ -159,10 +159,7 @@ pub(super) async fn get(State(h): State<Arc<Handler>>, request: Request) -> Resp
                     .is_some_and(|p| p.can(repo, auth::ACTION_READ))
             };
             narrow(report, can_read);
-            let username = principal
-                .as_ref()
-                .map(|p| p.username.clone())
-                .unwrap_or_default();
+            let username = principal.as_ref().map_or_default(|p| p.username.clone());
             match scoped_inventory(&h, can_read, &report.inventory.scan_by_repo, &username).await {
                 Ok(inventory) => report.inventory = inventory,
                 Err(err) => return map_error(err),
@@ -677,8 +674,7 @@ struct InsightSettingsDTO {
 }
 
 fn rfc3339(t: Option<chrono::DateTime<Utc>>) -> String {
-    t.map(|t| t.to_rfc3339_opts(chrono::SecondsFormat::Secs, true))
-        .unwrap_or_default()
+    t.map_or_default(|t| t.to_rfc3339_opts(chrono::SecondsFormat::Secs, true))
 }
 
 async fn settings_dto(

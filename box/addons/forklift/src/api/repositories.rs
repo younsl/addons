@@ -413,9 +413,8 @@ pub(super) async fn list_oci_tags(
             serde_json::json!({"tags": Vec::<OciTagDTO>::new()}),
         );
     };
-    let idle_ttl = repoconfig::parse(&repository.config_json)
-        .map(|cfg| cfg.retention.idle_ttl.d())
-        .unwrap_or_default();
+    let idle_ttl =
+        repoconfig::parse(&repository.config_json).map_or_default(|cfg| cfg.retention.idle_ttl.d());
     let tags = match manager.list_oci_tags(repository.id, idle_ttl).await {
         Ok(tags) => tags,
         Err(err) => return map_error(err),
@@ -1341,7 +1340,7 @@ pub(super) async fn list_artifacts(
             continue;
         }
         *broken_by_publication
-            .entry(artifact.publication_id.clone())
+            .entry(artifact.publication_id)
             .or_default() += 1;
     }
     // Labels for the whole repository in one query, and the publishers of its
@@ -1361,9 +1360,7 @@ pub(super) async fn list_artifacts(
     let idle_ttl = if repository.format == meta::FORMAT_OCI {
         std::time::Duration::ZERO
     } else {
-        repoconfig::parse(&repository.config_json)
-            .map(|cfg| cfg.retention.idle_ttl.d())
-            .unwrap_or_default()
+        repoconfig::parse(&repository.config_json).map_or_default(|cfg| cfg.retention.idle_ttl.d())
     };
     let mut out = Vec::with_capacity(arts.len());
     for a in &arts {
@@ -1979,9 +1976,8 @@ pub(super) async fn upstream_health(
     // Probe with the repository's stored credentials so an auth-required upstream
     // is not misreported: any HTTP response counts as reachable, but the surfaced
     // status should reflect what real fetches will see.
-    let upstream_auth = repoconfig::parse(&repository.config_json)
-        .map(|cfg| cfg.upstream_auth)
-        .unwrap_or_default();
+    let upstream_auth =
+        repoconfig::parse(&repository.config_json).map_or_default(|cfg| cfg.upstream_auth);
     write_json(
         StatusCode::OK,
         probe_upstream(&h, &repository.upstream_url, &upstream_auth).await,

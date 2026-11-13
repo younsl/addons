@@ -101,8 +101,7 @@ impl Status {
 pub(crate) fn log(c: &Check) {
     let took = c
         .latency_us
-        .map(|us| duration(Duration::from_micros(us)))
-        .unwrap_or_default();
+        .map_or_default(|us| duration(Duration::from_micros(us)));
     tracing::info!(
         id = c.id,
         check = c.name,
@@ -302,8 +301,7 @@ pub async fn run(
                     src_missing
                         .keys()
                         .next()
-                        .map(String::as_str)
-                        .unwrap_or_default()
+                        .map_or_default(String::as_str)
                 );
                 if opts.allow_missing_source_blobs {
                     Check::warn(

@@ -324,8 +324,7 @@ fn check_points(report: &Report) -> Vec<meta::InsightCheckPoint> {
                 .findings
                 .iter()
                 .find(|f| f.id == c.id)
-                .map(|f| f.severity.label().to_string())
-                .unwrap_or_default(),
+                .map_or_default(|f| f.severity.label().to_string()),
             flagged: c.flagged,
         })
         .collect()
@@ -348,8 +347,7 @@ fn backfill_codes(report: &mut Report) {
         super::rules::CATALOG
             .iter()
             .find(|r| r.id == id)
-            .map(|r| r.code.to_string())
-            .unwrap_or_default()
+            .map_or_default(|r| r.code.to_string())
     };
     for check in report.checks.iter_mut().filter(|c| c.code.is_empty()) {
         check.code = code(&check.id);

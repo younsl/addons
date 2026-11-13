@@ -296,16 +296,13 @@ pub(crate) mod tests {
                 if let Some(msg) = st.list_pods_err.clone() {
                     return status_error(StatusCode::INTERNAL_SERVER_ERROR, "InternalError", &msg);
                 }
-                let selector = uri
-                    .query()
-                    .map(|q| {
-                        form_urlencoded::parse(q.as_bytes())
-                            .filter(|(k, _)| k == "labelSelector")
-                            .map(|(_, v)| v.into_owned())
-                            .collect::<Vec<_>>()
-                            .join(",")
-                    })
-                    .unwrap_or_default();
+                let selector = uri.query().map_or_default(|q| {
+                    form_urlencoded::parse(q.as_bytes())
+                        .filter(|(k, _)| k == "labelSelector")
+                        .map(|(_, v)| v.into_owned())
+                        .collect::<Vec<_>>()
+                        .join(",")
+                });
                 let items: Vec<Pod> = st
                     .pods
                     .values()

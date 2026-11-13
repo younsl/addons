@@ -188,14 +188,12 @@ pub async fn describe_insight(
         let finding = InsightFinding {
             category: insight
                 .category()
-                .map(|c| c.as_str().to_string())
-                .unwrap_or_default(),
+                .map_or_default(|c| c.as_str().to_string()),
             description: insight.description().unwrap_or_default().to_string(),
             severity: insight
                 .insight_status()
                 .and_then(|s| s.status())
-                .map(|s| s.as_str().to_string())
-                .unwrap_or_default(),
+                .map_or_default(|s| s.as_str().to_string()),
             recommendation: insight
                 .recommendation()
                 .map(std::string::ToString::to_string),

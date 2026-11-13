@@ -351,8 +351,7 @@ impl AlertRule {
                 .metadata
                 .creation_timestamp
                 .as_ref()
-                .map(|t| t.0.to_string())
-                .unwrap_or_default(),
+                .map_or_default(|t| t.0.to_string()),
             created_by: status
                 .and_then(|s| s.created_by.clone())
                 .unwrap_or_else(|| UNKNOWN_AUTHOR.to_string()),

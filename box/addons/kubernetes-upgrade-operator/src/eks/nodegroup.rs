@@ -105,8 +105,7 @@ pub async fn update_nodegroup_version(
     let update_id = response
         .update()
         .and_then(|u| u.id())
-        .map(std::string::ToString::to_string)
-        .unwrap_or_default();
+        .map_or_default(std::string::ToString::to_string);
 
     info!("Managed node group update initiated: {}", update_id);
     Ok(update_id)

@@ -169,8 +169,7 @@ pub fn filter_instances(
                     .tags
                     .iter()
                     .find(|(k, _)| k == key)
-                    .map(|(_, v)| v.clone())
-                    .unwrap_or_default();
+                    .map_or_default(|(_, v)| v.clone());
                 (key.clone(), value)
             })
             .collect();

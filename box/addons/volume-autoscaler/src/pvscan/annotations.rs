@@ -78,8 +78,7 @@ pub fn build_annotations(f: &Finding) -> AnnotationSet {
         set.insert(
             key(KEY_UNUSED_SINCE),
             f.unused_since
-                .map(|t| t.to_rfc3339_opts(SecondsFormat::Secs, true))
-                .unwrap_or_default(),
+                .map_or_default(|t| t.to_rfc3339_opts(SecondsFormat::Secs, true)),
         );
         set.insert(key(KEY_UNUSED_REASON), f.reason.clone());
         set.insert(key(KEY_UNUSED_DAYS), f.unused_days().to_string());

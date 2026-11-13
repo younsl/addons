@@ -130,9 +130,8 @@ impl UpstreamProber {
             // Probe with the repository's stored upstream credentials so an
             // auth-required upstream does not read as down; any HTTP response
             // (including 401 on a bad credential) still counts as reachable.
-            let auth = crate::repoconfig::parse(&r.config_json)
-                .map(|cfg| cfg.upstream_auth)
-                .unwrap_or_default();
+            let auth =
+                crate::repoconfig::parse(&r.config_json).map_or_default(|cfg| cfg.upstream_auth);
             targets.push((r.name, r.upstream_url, auth));
         }
 

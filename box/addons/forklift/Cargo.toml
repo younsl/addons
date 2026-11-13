@@ -2,7 +2,7 @@
 name = "forklift"
 version = "0.20.0"
 edition = "2024"
-rust-version = "1.99.1"
+rust-version = "1.100.0"
 license = "Apache-2.0"
 description = "Lightweight Kubernetes-native artifact repository (Maven, npm, Cargo, Go, PyPI, raw, OCI) with proxy caching and supply-chain policy gates"
 publish = false
@@ -169,6 +169,8 @@ struct_excessive_bools = "allow"
 case_sensitive_file_extension_comparisons = "allow"
 # mul_add changes rounding of displayed ratios and scores
 suboptimal_flops = "allow"
+# serde derive on a field-less struct expands to an empty field enum
+empty_enums = "allow"
 # Nursery lints with frequent false positives or worse readability
 option_if_let_else = "allow"
 significant_drop_tightening = "allow"

@@ -194,9 +194,8 @@ impl ReportStore for RemoteStore {
     }
 
     async fn list_namespaces(&self, cluster: Option<&str>) -> Result<Vec<String>> {
-        let query: Vec<(&str, String)> = cluster
-            .map(|c| vec![("cluster", c.to_string())])
-            .unwrap_or_default();
+        let query: Vec<(&str, String)> =
+            cluster.map_or_default(|c| vec![("cluster", c.to_string())]);
         let resp: PagedResponse<String> = self.get("/namespaces", &query).await?;
         Ok(resp.items)
     }

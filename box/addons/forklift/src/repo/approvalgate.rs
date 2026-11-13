@@ -112,9 +112,8 @@ impl Manager {
             let mark = format!("{}\u{0}{pkg}", res.repo.name);
             if !m.req_marks.has(&mark) {
                 m.req_marks.set(&mark, PENDING_MARK_TTL);
-                let username = auth::from_request_parts(&parts)
-                    .map(|p| p.username.clone())
-                    .unwrap_or_default();
+                let username =
+                    auth::from_request_parts(&parts).map_or_default(|p| p.username.clone());
                 // Scan the requested coordinate so the would-block inventory
                 // carries a vulnerability signal for the reviewer. A known
                 // version scans precisely; an unknown version (e.g. a blocked
@@ -343,9 +342,7 @@ impl Manager {
         let Some(rec) = &self.rec else {
             return;
         };
-        let username = auth::from_request_parts(parts)
-            .map(|p| p.username.clone())
-            .unwrap_or_default();
+        let username = auth::from_request_parts(parts).map_or_default(|p| p.username.clone());
         rec.record(audit::Event {
             repo: repo_name.to_string(),
             action: meta::EVENT_APPROVAL_REQUEST.to_string(),
@@ -412,9 +409,8 @@ impl Manager {
             if !m.req_marks.has(&mark) {
                 m.req_marks.set(&mark, PENDING_MARK_TTL);
                 if let Some(rec) = &m.rec {
-                    let username = auth::from_request_parts(&parts)
-                        .map(|p| p.username.clone())
-                        .unwrap_or_default();
+                    let username =
+                        auth::from_request_parts(&parts).map_or_default(|p| p.username.clone());
                     rec.record(audit::Event {
                         repo: res.repo.name.clone(),
                         action: meta::EVENT_DENY_BLOCK.to_string(),

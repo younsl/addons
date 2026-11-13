@@ -2,7 +2,7 @@
 name = "volume-autoscaler"
 version = "0.2.0"
 edition = "2024"
-rust-version = "1.99.1"
+rust-version = "1.100.0"
 authors = ["younsl <cysl@kakao.com>"]
 license = "Apache-2.0"
 description = "Grows EC2 root volumes and Kubernetes PersistentVolumeClaims when usage crosses a threshold"

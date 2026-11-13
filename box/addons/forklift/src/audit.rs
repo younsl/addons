@@ -279,7 +279,7 @@ pub fn client_ip_parts(parts: &http::request::Parts) -> String {
 }
 
 pub fn client_ip(headers: &http::HeaderMap, remote: Option<SocketAddr>) -> String {
-    let remote = remote.map(|a| a.to_string()).unwrap_or_default();
+    let remote = remote.map_or_default(|a| a.to_string());
     client_ip_str(headers, &remote)
 }
 

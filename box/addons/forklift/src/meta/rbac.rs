@@ -768,8 +768,7 @@ pub(crate) mod tests {
         let by_user = s.roles_by_user().await.expect("roles_by_user");
         by_user
             .get(&user_id)
-            .map(|rs| rs.iter().map(|r| r.name.clone()).collect())
-            .unwrap_or_default()
+            .map_or_default(|rs| rs.iter().map(|r| r.name.clone()).collect())
     }
 
     fn same_set(a: &[String], b: &[&str]) -> bool {

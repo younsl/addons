@@ -33,8 +33,7 @@ pub(crate) async fn log_requests(
     let remote = req
         .extensions()
         .get::<ConnectInfo<std::net::SocketAddr>>()
-        .map(|ConnectInfo(addr)| addr.to_string())
-        .unwrap_or_default();
+        .map_or_default(|ConnectInfo(addr)| addr.to_string());
 
     let resp = next.run(req).await;
 

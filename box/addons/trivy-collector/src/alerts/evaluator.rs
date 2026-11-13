@@ -102,7 +102,7 @@ impl AlertEvaluator {
         // Compute "already seen" component keys from the previous report
         // once per evaluation pass. Empty set when prev is missing or
         // unparseable; that case treats every match as new.
-        let prev_keys = prev_data_json.map(extract_finding_keys).unwrap_or_default();
+        let prev_keys = prev_data_json.map_or_default(extract_finding_keys);
         // Readiness is not reconciled here. It is a property of the rule, not
         // of the report in hand, and this path only runs when a report arrives
         // — after hydration that is whenever Trivy Operator next rescans. See
@@ -341,7 +341,7 @@ async fn build_test_contexts(
         );
         match &first_key {
             None => {
-                first_key = Some(key.clone());
+                first_key = Some(key);
                 let dedup = format!("{}|{}", row.package_name, row.version);
                 if seen.insert(dedup) && first_contexts.len() < TEST_MAX_FINDINGS {
                     let pkg_type =

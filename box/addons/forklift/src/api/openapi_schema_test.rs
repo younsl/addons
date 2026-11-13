@@ -468,8 +468,7 @@ fn spec_enum(schema: &str, property: &str) -> Vec<String> {
         .schemas
         .get(schema)
         .and_then(|s| s.properties.get(property))
-        .map(|p| p.items.r#enum.clone())
-        .unwrap_or_default();
+        .map_or_default(|p| p.items.r#enum.clone());
     assert!(
         !values.is_empty(),
         "{schema}.{property} declares no enum in {SPEC_PATH}"
@@ -787,8 +786,7 @@ fn type_name(ty: &syn::Type) -> String {
             .path
             .segments
             .last()
-            .map(|s| s.ident.to_string())
-            .unwrap_or_default(),
+            .map_or_default(|s| s.ident.to_string()),
         _ => String::new(),
     }
 }

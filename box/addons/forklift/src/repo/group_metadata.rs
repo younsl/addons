@@ -513,7 +513,7 @@ pub(crate) fn merge_cargo_group(values: &[&[u8]]) -> Option<(Vec<u8>, String)> {
             if entry.version.is_empty() {
                 return None;
             }
-            if seen.insert(entry.version.clone()) {
+            if seen.insert(entry.version) {
                 lines.push(line.to_string());
             }
         }
@@ -766,15 +766,11 @@ pub(crate) fn go_semver_major(v: &str) -> String {
 }
 
 pub(crate) fn go_semver_build(v: &str) -> String {
-    go_semver_parse(v)
-        .map(|p| p.build.to_string())
-        .unwrap_or_default()
+    go_semver_parse(v).map_or_default(|p| p.build.to_string())
 }
 
 pub(crate) fn go_semver_prerelease(v: &str) -> String {
-    go_semver_parse(v)
-        .map(|p| p.prerelease.to_string())
-        .unwrap_or_default()
+    go_semver_parse(v).map_or_default(|p| p.prerelease.to_string())
 }
 
 /// Every identifier is ASCII, so the byte slicing below never splits a multi-byte character: a

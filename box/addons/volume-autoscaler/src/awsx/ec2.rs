@@ -140,8 +140,7 @@ impl Clients {
         Ok(Some(VolumeModification {
             state: m
                 .modification_state()
-                .map(|s| s.as_str().to_string())
-                .unwrap_or_default(),
+                .map_or_default(|s| s.as_str().to_string()),
             start_time: m.start_time().and_then(to_chrono),
             target_gib: m.target_size().unwrap_or(0),
         }))

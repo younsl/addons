@@ -84,16 +84,12 @@ impl<T: Tunnel> DbClient<T> {
             .items()
             .first()
             .map_or_else(|| "0".into(), Value::text);
-        let names: Vec<Vec<u8>> = reply
-            .items()
-            .get(1)
-            .map(|a| {
-                a.items()
-                    .iter()
-                    .filter_map(|k| k.bytes().map(<[u8]>::to_vec))
-                    .collect()
-            })
-            .unwrap_or_default();
+        let names: Vec<Vec<u8>> = reply.items().get(1).map_or_default(|a| {
+            a.items()
+                .iter()
+                .filter_map(|k| k.bytes().map(<[u8]>::to_vec))
+                .collect()
+        });
         if names.is_empty() {
             return Ok((
                 KeyPage {
@@ -216,15 +212,10 @@ fn pairs(items: &[Value]) -> Vec<(String, String)> {
     items
         .chunks(2)
         .map(|c| {
-            let a = c
-                .first()
-                .and_then(Value::bytes)
-                .map(printable)
-                .unwrap_or_default();
+            let a = c.first().and_then(Value::bytes).map_or_default(printable);
             let b = c
                 .get(1)
-                .map(|v| v.bytes().map_or_else(|| v.text(), printable))
-                .unwrap_or_default();
+                .map_or_default(|v| v.bytes().map_or_else(|| v.text(), printable));
             (a, b)
         })
         .collect()
@@ -234,7 +225,7 @@ fn rows(kind: &str, reply: &Value) -> Vec<(String, String)> {
     let text = |v: &Value| v.bytes().map_or_else(|| v.text(), printable);
     match kind {
         "string" => vec![(String::new(), text(reply))],
-        "hash" => pairs(reply.items().get(1).map(Value::items).unwrap_or_default()),
+        "hash" => pairs(reply.items().get(1).map_or_default(Value::items)),
         "list" => reply
             .items()
             .iter()
@@ -244,8 +235,7 @@ fn rows(kind: &str, reply: &Value) -> Vec<(String, String)> {
         "set" => reply
             .items()
             .get(1)
-            .map(Value::items)
-            .unwrap_or_default()
+            .map_or_default(Value::items)
             .iter()
             .map(|v| (String::new(), text(v)))
             .collect(),
@@ -257,12 +247,11 @@ fn rows(kind: &str, reply: &Value) -> Vec<(String, String)> {
             .items()
             .iter()
             .map(|e| {
-                let id = e.items().first().map(Value::text).unwrap_or_default();
+                let id = e.items().first().map_or_default(Value::text);
                 let fields = e
                     .items()
                     .get(1)
-                    .map(|f| pairs(f.items()))
-                    .unwrap_or_default()
+                    .map_or_default(|f| pairs(f.items()))
                     .into_iter()
                     .map(|(k, v)| format!("{k}={v}"))
                     .collect::<Vec<_>>()

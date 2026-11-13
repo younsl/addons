@@ -43,8 +43,7 @@ pub async fn api_request_logger(
     let (user_sub, user_email) = request
         .extensions()
         .get::<AuthSession>()
-        .map(|s| (s.sub.clone(), s.email.clone().unwrap_or_default()))
-        .unwrap_or_default();
+        .map_or_default(|s| (s.sub.clone(), s.email.clone().unwrap_or_default()));
 
     let start = Instant::now();
     let response = next.run(request).await;

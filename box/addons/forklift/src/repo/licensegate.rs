@@ -90,9 +90,8 @@ impl Manager {
             }
 
             if let Some(rec) = &m.rec {
-                let username = auth::from_request_parts(&parts)
-                    .map(|p| p.username.clone())
-                    .unwrap_or_default();
+                let username =
+                    auth::from_request_parts(&parts).map_or_default(|p| p.username.clone());
                 rec.record(audit::Event {
                     repo: res.repo.name.clone(),
                     action: meta::EVENT_LICENSE_BLOCK.to_string(),

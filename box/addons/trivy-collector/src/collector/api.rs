@@ -416,7 +416,7 @@ async fn list_component_matches(
     State(state): State<InternalApi>,
     Query(query): Query<ComponentMatchQuery>,
 ) -> Response {
-    let clusters = query.clusters.as_deref().map(split_csv).unwrap_or_default();
+    let clusters = query.clusters.as_deref().map_or_default(split_csv);
     match state
         .db
         .list_sbom_component_matches(

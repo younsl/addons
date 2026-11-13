@@ -65,7 +65,7 @@ impl Store {
         let updated_by = updated_by.to_string();
         self.write(move |conn| {
             let now = now_rfc3339();
-            let expires = expires_at.map(format_time).unwrap_or_default();
+            let expires = expires_at.map_or_default(format_time);
             conn.execute(
                 "INSERT INTO announcement(id, body, updated_by, updated_at, expires_at, user_dismissible)
          VALUES(1, ?, ?, ?, ?, ?)

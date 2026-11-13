@@ -35,9 +35,7 @@ pub fn require(
     resource: &str,
     action: &str,
 ) -> Result<(), McpError> {
-    let groups = session_from(extensions)
-        .map(|s| s.groups)
-        .unwrap_or_default();
+    let groups = session_from(extensions).map_or_default(|s| s.groups);
     if rbac.is_allowed(&groups, resource, action) {
         Ok(())
     } else {

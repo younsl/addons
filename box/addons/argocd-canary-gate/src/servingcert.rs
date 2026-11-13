@@ -184,7 +184,7 @@ fn leaf_info(der: &CertificateDer<'_>) -> Option<LeafInfo> {
         .subject_alternative_name()
         .ok()
         .flatten()
-        .map(|san| {
+        .map_or_default(|san| {
             san.value
                 .general_names
                 .iter()
@@ -193,8 +193,7 @@ fn leaf_info(der: &CertificateDer<'_>) -> Option<LeafInfo> {
                     _ => None,
                 })
                 .collect()
-        })
-        .unwrap_or_default();
+        });
     Some(LeafInfo {
         subject: common_name(cert.subject()),
         issuer: common_name(cert.issuer()),

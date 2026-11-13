@@ -56,8 +56,7 @@ impl Manager {
                 .store
                 .get_artifact(res.repo.id, &path)
                 .await
-                .map(|artifact| cargo_description(&artifact.metadata_json))
-                .unwrap_or_default();
+                .map_or_default(|artifact| cargo_description(&artifact.metadata_json));
             crates.push(crate_summary_body(hit, &description));
         }
         axum::Json(search_body(crates, hits.len())).into_response()

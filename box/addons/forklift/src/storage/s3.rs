@@ -492,8 +492,7 @@ pub(crate) mod tests {
                 .path()
                 .trim_start_matches('/')
                 .split_once('/')
-                .map(|(_bucket, key)| key.to_string())
-                .unwrap_or_default()
+                .map_or_default(|(_bucket, key)| key.to_string())
         }
 
         fn list(&self, request: &Request) -> ResponseTemplate {

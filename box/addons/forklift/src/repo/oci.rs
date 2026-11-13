@@ -737,8 +737,7 @@ pub(crate) fn query_param(parts: &Parts, key: &str) -> String {
     let query = parts.uri.query().unwrap_or("");
     form_urlencoded::parse(query.as_bytes())
         .find(|(k, _)| k == key)
-        .map(|(_, v)| v.into_owned())
-        .unwrap_or_default()
+        .map_or_default(|(_, v)| v.into_owned())
 }
 
 async fn serve_range(

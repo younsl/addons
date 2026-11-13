@@ -180,8 +180,7 @@ impl Manager {
                     .store
                     .get_artifact(repo.id, &oci_manifest_path(&t.name, &t.digest))
                     .await
-                    .map(|art| art.cached_by)
-                    .unwrap_or_default();
+                    .map_or_default(|art| art.cached_by);
                 items.push(RetentionPreviewItem {
                     path: oci_manifest_path(&t.name, &t.tag),
                     version: t.tag.clone(),

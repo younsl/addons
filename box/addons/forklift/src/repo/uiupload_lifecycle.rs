@@ -734,15 +734,13 @@ impl Uploader {
                 return Err(unsupported("A sparse-index line is malformed"));
             };
             let version = entry.get("vers").and_then(|v| v.as_str()).unwrap_or("");
-            let identity = semver::Version::parse(version)
-                .map(|parsed| {
-                    let rendered = parsed.to_string();
-                    match rendered.find('+') {
-                        Some(index) => rendered[..index].to_string(),
-                        None => rendered,
-                    }
-                })
-                .unwrap_or_default();
+            let identity = semver::Version::parse(version).map_or_default(|parsed| {
+                let rendered = parsed.to_string();
+                match rendered.find('+') {
+                    Some(index) => rendered[..index].to_string(),
+                    None => rendered,
+                }
+            });
             if identity == publication.version {
                 entry.insert("yanked".to_string(), serde_json::Value::Bool(yanked));
                 lines.push(

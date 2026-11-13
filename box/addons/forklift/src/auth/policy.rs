@@ -152,19 +152,16 @@ fn build_roles(
         .map(|name| meta::ManagedRole {
             name: name.clone(),
             description: "Managed by declarative RBAC policy".into(),
-            permissions: actions
-                .get(name)
-                .map(|by_pattern| {
-                    by_pattern
-                        .iter()
-                        .map(|(pattern, acts)| meta::Permission {
-                            repo_pattern: pattern.clone(),
-                            actions: acts.join(","),
-                            ..Default::default()
-                        })
-                        .collect()
-                })
-                .unwrap_or_default(),
+            permissions: actions.get(name).map_or_default(|by_pattern| {
+                by_pattern
+                    .iter()
+                    .map(|(pattern, acts)| meta::Permission {
+                        repo_pattern: pattern.clone(),
+                        actions: acts.join(","),
+                        ..Default::default()
+                    })
+                    .collect()
+            }),
         })
         .collect()
 }

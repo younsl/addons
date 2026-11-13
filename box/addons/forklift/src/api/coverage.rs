@@ -329,8 +329,7 @@ fn to_coverage_settings_dto(s: &coverage::Scanner) -> CoverageSettingsDTO {
         forklift_host_default: s.default_forklift_host(),
         next_run_at: s
             .next_run_at(Utc::now())
-            .map(|t| t.to_rfc3339_opts(chrono::SecondsFormat::Secs, true))
-            .unwrap_or_default(),
+            .map_or_default(|t| t.to_rfc3339_opts(chrono::SecondsFormat::Secs, true)),
     }
 }
 

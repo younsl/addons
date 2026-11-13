@@ -302,9 +302,8 @@ impl AuditRecord {
                 .unwrap_or("")
                 .to_string()
         };
-        let (user_sub, user_email) = authz::session_from(ext)
-            .map(|s| (s.sub, s.email.unwrap_or_default()))
-            .unwrap_or_default();
+        let (user_sub, user_email) =
+            authz::session_from(ext).map_or_default(|s| (s.sub, s.email.unwrap_or_default()));
 
         Self {
             path: format!("{}/tools/call/{tool}", super::MCP_PATH),

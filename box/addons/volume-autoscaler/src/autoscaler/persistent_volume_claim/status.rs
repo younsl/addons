@@ -89,14 +89,12 @@ pub fn build(
     inactive: Option<Inactive>,
     now: DateTime<Utc>,
 ) -> PersistentVolumeClaimAutoscalerStatus {
-    let prev_times: HashMap<&str, _> = prev
-        .map(|p| {
-            p.claims
-                .iter()
-                .filter_map(|c| Some((c.name.as_str(), c.last_scale_time.as_ref()?)))
-                .collect()
-        })
-        .unwrap_or_default();
+    let prev_times: HashMap<&str, _> = prev.map_or_default(|p| {
+        p.claims
+            .iter()
+            .filter_map(|c| Some((c.name.as_str(), c.last_scale_time.as_ref()?)))
+            .collect()
+    });
     entries.sort_by(|a, b| a.name.cmp(&b.name));
     let mut last = prev.and_then(|p| p.last_scale_time.clone());
     for e in &mut entries {
@@ -106,7 +104,7 @@ pub fn build(
         last = latest(last, e.last_scale_time.as_ref());
     }
 
-    let mut conditions = prev.map(|p| p.conditions.clone()).unwrap_or_default();
+    let mut conditions = prev.map_or_default(|p| p.conditions.clone());
     let has = |reason: &str| entries.iter().filter(|e| e.reason == reason).count();
     let target_missing = inactive
         .as_ref()
@@ -147,7 +145,7 @@ pub fn build(
         (
             STATUS_FALSE,
             REASON_FAILED_GET_SCALE,
-            inactive.map(|i| brief(&i.message)).unwrap_or_default(),
+            inactive.map_or_default(|i| brief(&i.message)),
         )
     } else if has(REASON_FAILED_RESCALE) > 0 {
         (

@@ -2,7 +2,7 @@
 name = "kagent-gateway"
 version = "0.3.0"
 edition = "2024"
-rust-version = "1.99.1"
+rust-version = "1.100.0"
 authors = ["younsl <cysl@kakao.com>"]
 license = "Apache-2.0"
 description = "Posts Alertmanager alerts to Slack and replies in-thread with an analysis from a kagent agent over A2A"

@@ -303,7 +303,7 @@ impl KubeApi for KubeClient {
             .get_opt(name)
             .await
             .map_err(|e| format!("get configmap {name}: {e}"))?;
-        Ok(cm.map(|c| decode_state(&c)).unwrap_or_default())
+        Ok(cm.map_or_default(|c| decode_state(&c)))
     }
 
     async fn save_orphan_state(&self, state: &OrphanPvcState) -> Result<(), String> {
@@ -426,8 +426,7 @@ pub(crate) fn claims_in_use(pods: &[Pod], out: &mut HashSet<String>) {
         for v in p
             .spec
             .as_ref()
-            .map(|s| s.volumes.as_deref().unwrap_or_default())
-            .unwrap_or_default()
+            .map_or_default(|s| s.volumes.as_deref().unwrap_or_default())
         {
             if let Some(c) = &v.persistent_volume_claim {
                 out.insert(format!("{ns}/{}", c.claim_name));
@@ -451,8 +450,7 @@ pub(crate) fn from_stateful_set(s: &K8sStatefulSet) -> StatefulSet {
             .unwrap_or(0),
         claim_templates: spec
             .and_then(|s| s.volume_claim_templates.as_ref())
-            .map(|ts| ts.iter().filter_map(|t| t.metadata.name.clone()).collect())
-            .unwrap_or_default(),
+            .map_or_default(|ts| ts.iter().filter_map(|t| t.metadata.name.clone()).collect()),
     }
 }
 

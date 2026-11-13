@@ -1,6 +1,6 @@
 # kubernetes-upgrade-operator
 
-[![Rust](https://img.shields.io/badge/rust-1.99.1-black?style=flat-square&logo=rust&logoColor=white)](https://www.rust-lang.org/)
+[![Rust](https://img.shields.io/badge/rust-1.100.0-black?style=flat-square&logo=rust&logoColor=white)](https://www.rust-lang.org/)
 [![GitHub Container Registry](https://img.shields.io/badge/ghcr.io-kubernetes--upgrade--operator-black?style=flat-square&logo=docker&logoColor=white)](https://github.com/younsl/addons/pkgs/container/kubernetes-upgrade-operator)
 [![Helm Chart](https://img.shields.io/badge/ghcr.io-charts%2Fkubernetes--upgrade--operator-black?style=flat-square&logo=helm&logoColor=white)](https://github.com/younsl/addons/pkgs/container/charts%2Fkubernetes-upgrade-operator)
 [![GitHub license](https://img.shields.io/github/license/younsl/addons?style=flat-square&color=black)](https://github.com/younsl/addons/blob/main/LICENSE)

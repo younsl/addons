@@ -366,8 +366,7 @@ mod tests {
         let content_type = response
             .headers()
             .get(header::CONTENT_TYPE)
-            .map(|v| v.to_str().unwrap().to_string())
-            .unwrap_or_default();
+            .map_or_default(|v| v.to_str().unwrap().to_string());
         let bytes = response
             .into_body()
             .collect()

@@ -51,8 +51,7 @@ pub fn draw(f: &mut Frame, area: Rect, ui: &mut Ui, id: &str, tab: GroupTab, now
         .state
         .latest
         .as_ref()
-        .map(|s| s.stats(&group, &ui.state.topo))
-        .unwrap_or_default();
+        .map_or_default(|s| s.stats(&group, &ui.state.topo));
     let fact = |k: &str, v: String| {
         Line::from(vec![
             Span::styled(format!("{k:<9}"), theme::subtle()),

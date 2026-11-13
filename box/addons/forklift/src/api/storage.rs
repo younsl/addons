@@ -172,7 +172,7 @@ pub(super) async fn get_stats(State(h): State<Arc<Handler>>) -> Response {
     let mut out = StorageStats {
         backend: backend.clone(),
         provider: descriptor.provider.clone(),
-        provider_name: spec.map(|p| p.display_name.to_string()).unwrap_or_default(),
+        provider_name: spec.map_or_default(|p| p.display_name.to_string()),
         provider_deprecation: spec
             .and_then(|p| p.deprecation)
             .unwrap_or_default()
@@ -242,7 +242,7 @@ pub(super) async fn get_health(State(h): State<Arc<Handler>>) -> Response {
         StatusCode::OK,
         StorageHealthDTO {
             interval_seconds: storage::health::CHECK_INTERVAL.as_secs(),
-            checks: monitor.map(|m| m.history()).unwrap_or_default(),
+            checks: monitor.map_or_default(|m| m.history()),
         },
     )
 }
@@ -344,8 +344,7 @@ pub(super) async fn dangling_refs(h: &Arc<Handler>, repo_id: i64) -> Vec<Danglin
                 .store
                 .get_repository(reference.repo_id)
                 .await
-                .map(|repo| repo.name)
-                .unwrap_or_default();
+                .map_or_default(|repo| repo.name);
             names.insert(reference.repo_id, name.clone());
             name
         };

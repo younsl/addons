@@ -439,8 +439,9 @@ impl Uploader {
         let description = package_table
             .get("description")
             .and_then(toml::Value::as_str)
-            .map(|text| truncate_description(text.split_whitespace().collect::<Vec<_>>().join(" ")))
-            .unwrap_or_default();
+            .map_or_default(|text| {
+                truncate_description(text.split_whitespace().collect::<Vec<_>>().join(" "))
+            });
         let mut version_id = parsed_version.expect("valid version").to_string();
         if let Some(index) = version_id.find('+') {
             version_id.truncate(index);
@@ -835,8 +836,7 @@ pub(crate) fn cargo_description(metadata_json: &str) -> String {
         description: String,
     }
     serde_json::from_str::<Envelope>(metadata_json)
-        .map(|envelope| envelope.format_metadata.description)
-        .unwrap_or_default()
+        .map_or_default(|envelope| envelope.format_metadata.description)
 }
 
 pub(crate) fn cargo_canonical_name(name: &str) -> String {

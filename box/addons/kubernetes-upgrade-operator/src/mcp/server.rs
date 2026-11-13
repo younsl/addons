@@ -649,36 +649,24 @@ fn insights_from_value(value: &serde_json::Value) -> crate::eks::insights::Insig
         warning_count: as_usize(&value["warning"]),
         passing_count: as_usize(&value["passing"]),
         info_count: as_usize(&value["info"]),
-        findings: value["findings"]
-            .as_array()
-            .map(|rows| {
-                rows.iter()
-                    .map(|f| crate::eks::insights::InsightFinding {
-                        category: f["category"].as_str().unwrap_or_default().to_string(),
-                        description: f["description"].as_str().unwrap_or_default().to_string(),
-                        severity: f["severity"].as_str().unwrap_or_default().to_string(),
-                        recommendation: f["recommendation"].as_str().map(ToString::to_string),
-                        resources: f["resources"]
-                            .as_array()
-                            .map(|rs| {
-                                rs.iter()
-                                    .map(|r| crate::eks::insights::InsightResource {
-                                        resource_type: r["type"]
-                                            .as_str()
-                                            .unwrap_or_default()
-                                            .to_string(),
-                                        resource_id: r["id"]
-                                            .as_str()
-                                            .unwrap_or_default()
-                                            .to_string(),
-                                    })
-                                    .collect()
+        findings: value["findings"].as_array().map_or_default(|rows| {
+            rows.iter()
+                .map(|f| crate::eks::insights::InsightFinding {
+                    category: f["category"].as_str().unwrap_or_default().to_string(),
+                    description: f["description"].as_str().unwrap_or_default().to_string(),
+                    severity: f["severity"].as_str().unwrap_or_default().to_string(),
+                    recommendation: f["recommendation"].as_str().map(ToString::to_string),
+                    resources: f["resources"].as_array().map_or_default(|rs| {
+                        rs.iter()
+                            .map(|r| crate::eks::insights::InsightResource {
+                                resource_type: r["type"].as_str().unwrap_or_default().to_string(),
+                                resource_id: r["id"].as_str().unwrap_or_default().to_string(),
                             })
-                            .unwrap_or_default(),
-                    })
-                    .collect()
-            })
-            .unwrap_or_default(),
+                            .collect()
+                    }),
+                })
+                .collect()
+        }),
     }
 }
 

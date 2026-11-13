@@ -348,18 +348,13 @@ pub fn diagnose_upgrade(cr: &EKSUpgrade) -> ToolResult {
             )
         }
         Some(UpgradePhase::PreflightChecking) => {
-            let blocking: Vec<String> = status
-                .phases
-                .preflight
-                .as_ref()
-                .map(|p| {
-                    p.checks
-                        .iter()
-                        .filter(|c| c.status == "Fail")
-                        .map(|c| c.name.clone())
-                        .collect()
-                })
-                .unwrap_or_default();
+            let blocking: Vec<String> = status.phases.preflight.as_ref().map_or_default(|p| {
+                p.checks
+                    .iter()
+                    .filter(|c| c.status == "Fail")
+                    .map(|c| c.name.clone())
+                    .collect()
+            });
             if blocking.is_empty() {
                 (
                     format!("{cluster}: preflight checks are running"),

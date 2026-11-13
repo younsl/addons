@@ -83,14 +83,12 @@ pub fn build(
     inactive: Option<Inactive>,
     now: DateTime<Utc>,
 ) -> InstanceVolumeAutoscalerStatus {
-    let prev_times: HashMap<&str, _> = prev
-        .map(|p| {
-            p.instances
-                .iter()
-                .filter_map(|i| Some((i.instance_id.as_str(), i.last_scale_time.as_ref()?)))
-                .collect()
-        })
-        .unwrap_or_default();
+    let prev_times: HashMap<&str, _> = prev.map_or_default(|p| {
+        p.instances
+            .iter()
+            .filter_map(|i| Some((i.instance_id.as_str(), i.last_scale_time.as_ref()?)))
+            .collect()
+    });
     entries.sort_by(|a, b| a.instance_id.cmp(&b.instance_id));
     let mut last = prev.and_then(|p| p.last_scale_time.clone());
     for e in &mut entries {
@@ -100,7 +98,7 @@ pub fn build(
         last = latest(last, e.last_scale_time.as_ref());
     }
 
-    let mut conditions = prev.map(|p| p.conditions.clone()).unwrap_or_default();
+    let mut conditions = prev.map_or_default(|p| p.conditions.clone());
     let has = |reason: &str| entries.iter().filter(|e| e.reason == reason).count();
     let (active_status, active_reason, active_msg) = match inactive {
         Some(i) => (STATUS_FALSE, i.reason, brief(&i.message)),

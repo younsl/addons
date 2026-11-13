@@ -163,13 +163,12 @@ async fn deliver_coverage_report(
         let targets: Vec<notify::Target> = all
             .into_iter()
             .find(|rec| rec.name == name && !rec.webhook_url.is_empty())
-            .map(|rec| {
+            .map_or_default(|rec| {
                 vec![notify::Target {
                     name: rec.name,
                     url: rec.webhook_url,
                 }]
-            })
-            .unwrap_or_default();
+            });
         if targets.is_empty() {
             tracing::warn!(target: LOG_TARGET,
                 receiver = %name,

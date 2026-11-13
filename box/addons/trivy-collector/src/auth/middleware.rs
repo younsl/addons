@@ -136,8 +136,7 @@ pub async fn require_rbac(
     let user_groups = request
         .extensions()
         .get::<AuthSession>()
-        .map(|s| s.groups.clone())
-        .unwrap_or_default();
+        .map_or_default(|s| s.groups.clone());
 
     // Evaluate RBAC policy
     if !state.rbac.is_allowed(&user_groups, resource, action) {
@@ -214,14 +213,11 @@ async fn validate_bearer_token(
         email: claims["email"].as_str().map(String::from),
         name: claims["name"].as_str().map(String::from),
         preferred_username: claims["preferred_username"].as_str().map(String::from),
-        groups: claims["groups"]
-            .as_array()
-            .map(|arr| {
-                arr.iter()
-                    .filter_map(|v| v.as_str().map(String::from))
-                    .collect()
-            })
-            .unwrap_or_default(),
+        groups: claims["groups"].as_array().map_or_default(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect()
+        }),
         expires_at: claims["exp"].as_i64().unwrap_or(i64::MAX),
     };
 
