@@ -53,6 +53,9 @@ spec:
     - jsonPath: .status.failedRules
       name: Failed
       type: integer
+    - jsonPath: .status.lastTransitionTime
+      name: Status Age
+      type: date
     - jsonPath: .metadata.creationTimestamp
       name: Age
       type: date

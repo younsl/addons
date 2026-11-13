@@ -32,6 +32,7 @@ pub const NODE_LABEL: &str = "node-configuration-operator.sh/node";
     printcolumn = r#"{"name":"Applied","type":"string","jsonPath":".status.observedRevision"}"#,
     printcolumn = r#"{"name":"Ready","type":"boolean","jsonPath":".status.ready"}"#,
     printcolumn = r#"{"name":"Failed","type":"integer","jsonPath":".status.failedRules"}"#,
+    printcolumn = r#"{"name":"Status Age","type":"date","jsonPath":".status.lastTransitionTime"}"#,
     printcolumn = r#"{"name":"Age","type":"date","jsonPath":".metadata.creationTimestamp"}"#
 )]
 #[serde(rename_all = "camelCase")]
