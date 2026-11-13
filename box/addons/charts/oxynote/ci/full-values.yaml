@@ -1,0 +1,45 @@
+oxynote:
+  publicUrl: https://notes.example.com
+  config:
+    OXYNOTE_LOG_LEVEL: INFO
+    OXYNOTE_MAX_ORGANIZATIONS: 1
+    OXYNOTE_CRASH_REPORTING_DISABLED: true
+  existingSecret: oxynote-env
+
+githubApp:
+  privateKeySecret: oxynote-github-app
+
+persistence:
+  existingClaim: oxynote-data
+
+ingress:
+  enabled: true
+  className: nginx
+  tls:
+    - secretName: notes-example-com-tls
+      hosts:
+        - notes.example.com
+
+httpRoute:
+  enabled: true
+  parentRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: example-gateway
+      namespace: gateway-system
+  hostnames:
+    - notes.example.com
+
+dnsConfig:
+  options:
+    - name: ndots
+      value: "2"
+
+resources:
+  requests:
+    cpu: 250m
+    memory: 512Mi
+
+podDisruptionBudget:
+  enabled: true
+  unhealthyPodEvictionPolicy: AlwaysAllow

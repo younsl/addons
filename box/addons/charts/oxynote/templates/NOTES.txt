@@ -1,0 +1,23 @@
+Oxynote {{ .Values.image.tag | default .Chart.AppVersion }} is starting. The first boot initializes the database and can take a few minutes.
+
+{{- if .Values.oxynote.publicUrl }}
+
+Open {{ .Values.oxynote.publicUrl }}
+{{- else }}
+
+OXYNOTE_PUBLIC_URL is unset, so Oxynote expects http://localhost:8080:
+
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "oxynote.fullname" . }} 8080:{{ .Values.service.port }}
+
+Set oxynote.publicUrl before exposing it on a real domain.
+{{- end }}
+
+With the default single-workspace mode, the first boot creates the admin account admin@example.com with the password oxynote-admin-1234. Anyone who reaches the instance can sign in with it, so change the email and password right away.
+{{- if .Values.ingress.enabled }}
+
+WARNING: ingress.enabled is true. The Kubernetes Ingress API is frozen and receives no new features. Prefer the Gateway API HTTPRoute (httpRoute.enabled) for new installs. If you keep Ingress, raise the controller's request body limit to at least 30MB for uploads.
+{{- end }}
+{{- if not .Values.persistence.enabled }}
+
+WARNING: persistence is disabled. /oxynote/data is an emptyDir, so every document, generated secret and uploaded image is lost when the pod restarts.
+{{- end }}

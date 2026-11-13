@@ -1,0 +1,218 @@
+# -- (string) Override the chart name used in resource names
+nameOverride: ""
+# -- (string) Override the full resource name
+fullnameOverride: ""
+
+image:
+  # -- (string) Image registry. Empty renders the repository without a registry prefix
+  registry: ghcr.io
+  # -- (string) Image repository under the registry. The image is published for linux/amd64 and linux/arm64
+  repository: oxynote/oxynote
+  # -- (string) Image tag. Defaults to the chart appVersion
+  tag: ""
+  # -- (string) Image digest, for example `sha256:...`. Takes precedence over `tag` when set
+  digest: ""
+  # -- (string) Image pull policy
+  pullPolicy: IfNotPresent
+
+# -- (list) Image pull secrets for private registries or pull-through caches
+imagePullSecrets: []
+
+oxynote:
+  # -- (string) Origin users open in the browser, for example `https://notes.example.com` (sets `OXYNOTE_PUBLIC_URL`). Scheme and host only. Empty keeps the upstream default `http://localhost:8080`
+  publicUrl: ""
+  # -- (object) Plain `OXYNOTE_*` environment variables rendered as-is. Keys outside the upstream list fail the boot, so typos surface at startup. See https://github.com/oxynote/oxynote/blob/main/docker/prod/README.md
+  config: {}
+  # config:
+  #   OXYNOTE_LOG_LEVEL: INFO
+  #   OXYNOTE_CRASH_REPORTING_DISABLED: "true"
+  #   OXYNOTE_MAX_ORGANIZATIONS: "1"
+  # -- (string) Name of an existing Secret whose keys are loaded as environment variables. Put credentials here, such as `OXYNOTE_DB_DSN`, `OXYNOTE_SMTP_DSN`, `OXYNOTE_OBJECT_STORAGE_DSN`, `OXYNOTE_AI_ASSISTANT_API_KEY`. Every key must be a valid `OXYNOTE_*` name
+  existingSecret: ""
+
+githubApp:
+  # -- (string) Name of an existing Secret holding the GitHub App private key, mounted at `/oxynote/github/private-key.pem`. Also set `OXYNOTE_GITHUB_APP_ID`, `OXYNOTE_GITHUB_APP_SLUG` and `OXYNOTE_GITHUB_APP_SIGNATURE_SECRET`
+  privateKeySecret: ""
+  # -- (string) Key inside `githubApp.privateKeySecret` that holds the PEM file
+  privateKeySecretKey: private-key.pem
+
+persistence:
+  # -- (bool) Persist `/oxynote/data` (embedded PostgreSQL, generated secrets, uploaded images, search index) on a PersistentVolumeClaim. Disabled uses an emptyDir, which loses every document on pod restart
+  enabled: true
+  # -- (string) Use an existing PersistentVolumeClaim instead of creating one
+  existingClaim: ""
+  # -- (string) StorageClass for the created claim. Empty uses the cluster default
+  storageClassName: ""
+  # -- (list) Access modes for the created claim
+  accessModes:
+    - ReadWriteOnce
+  # -- (string) Size of the created claim
+  size: 10Gi
+  # -- (object) Annotations for the created claim
+  annotations: {}
+  # -- (bool) Keep the created claim on `helm uninstall` (`helm.sh/resource-policy: keep`). Losing the volume signs everyone out and orphans stored data-source credentials
+  keep: true
+
+serviceAccount:
+  # -- (bool) Create a ServiceAccount
+  create: true
+  # -- (string) ServiceAccount name. Defaults to the full name when `create` is true, `default` otherwise
+  name: ""
+  # -- (object) ServiceAccount annotations
+  annotations: {}
+  # -- (bool) Mount the ServiceAccount token. Oxynote does not call the Kubernetes API
+  automountServiceAccountToken: false
+
+service:
+  # -- (string) Service type
+  type: ClusterIP
+  # -- (int) Service port that forwards to the container port 8080
+  port: 8080
+  # -- (object) Service annotations
+  annotations: {}
+
+ingress:
+  # -- (bool) Create an Ingress. The Ingress API is frozen, so prefer `httpRoute` for new installs
+  enabled: false
+  # -- (string) IngressClass name
+  className: ""
+  # -- (object) Ingress annotations. Allow request bodies of at least 30MB for uploads
+  annotations: {}
+  # -- (list) Ingress hosts and paths
+  hosts:
+    - host: notes.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  # -- (list) Ingress TLS configuration
+  tls: []
+  # tls:
+  #   - secretName: notes-example-com-tls
+  #     hosts:
+  #       - notes.example.com
+
+httpRoute:
+  # -- (bool) Create a Gateway API HTTPRoute
+  enabled: false
+  # -- (object) HTTPRoute annotations
+  annotations: {}
+  # -- (list) Gateways this route attaches to
+  parentRefs: []
+  # parentRefs:
+  #   - group: gateway.networking.k8s.io
+  #     kind: Gateway
+  #     name: example-gateway
+  #     namespace: gateway-system
+  #     sectionName: https
+  # -- (list) Hostnames matched by the route
+  hostnames: []
+  # hostnames:
+  #   - notes.example.com
+  # -- (list) Route matches. The backend is always the chart Service
+  matches:
+    - path:
+        type: PathPrefix
+        value: /
+
+# -- (object) Annotations added to the Deployment
+deploymentAnnotations: {}
+# -- (object) Annotations added to the pod
+podAnnotations: {}
+# -- (object) Labels added to the pod
+podLabels: {}
+
+# -- (object) Pod security context. UID 65532 is fixed by the upstream image. `OnRootMismatch` stops kubelet from adding group write to the PostgreSQL data directory on every mount, which PostgreSQL refuses
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  runAsGroup: 65532
+  fsGroup: 65532
+  fsGroupChangePolicy: OnRootMismatch
+  seccompProfile:
+    type: RuntimeDefault
+
+# -- (object) Container security context. The image writes only to `/oxynote/data` and `/tmp`, so the root filesystem stays read-only
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+
+# -- (object) Container resource requests and limits
+resources: {}
+
+# -- (list) In-place resize policy per resource. CPU resizes without a restart. Memory restarts the container, since the Node.js heap and PostgreSQL buffers are sized at startup
+resizePolicy:
+  - resourceName: cpu
+    restartPolicy: NotRequired
+  - resourceName: memory
+    restartPolicy: RestartContainer
+
+podDisruptionBudget:
+  # -- (bool) Create a PodDisruptionBudget. With a single replica, `maxUnavailable: 0` or `minAvailable: 1` blocks node drains until the PDB is removed
+  enabled: false
+  # -- (int or string) Minimum available pods. Takes precedence over `maxUnavailable` when set
+  minAvailable: ""
+  # -- (int or string) Maximum unavailable pods
+  maxUnavailable: 1
+  # -- (string) Eviction policy for unhealthy pods (`IfHealthyBudget` or `AlwaysAllow`). Empty uses the cluster default
+  unhealthyPodEvictionPolicy: ""
+
+# -- (int) Grace period for the ordered shutdown that flushes open documents last
+terminationGracePeriodSeconds: 60
+
+# -- (object) Startup probe. The upstream image allows 180s before health checks count
+startupProbe:
+  httpGet:
+    path: /auth-realtime/api/auth-config
+    port: http
+  periodSeconds: 5
+  timeoutSeconds: 5
+  failureThreshold: 36
+
+# -- (object) Liveness probe. Runs the image's layered health check, which fails when any internal service hangs
+livenessProbe:
+  exec:
+    command:
+      - /usr/bin/node
+      - /oxynote/prod/healthcheck.mjs
+  periodSeconds: 30
+  timeoutSeconds: 10
+  failureThreshold: 5
+
+# -- (object) Readiness probe through the front door
+readinessProbe:
+  httpGet:
+    path: /auth-realtime/api/auth-config
+    port: http
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+# -- (string) Pod DNS policy. `None` requires `dnsConfig.nameservers`
+dnsPolicy: ClusterFirst
+# -- (object) Pod DNS config
+dnsConfig: {}
+# dnsConfig:
+#   options:
+#     - name: ndots
+#       value: "2"
+
+# -- (string) PriorityClass name
+priorityClassName: ""
+# -- (object) Node selector
+nodeSelector: {}
+# -- (list) Tolerations
+tolerations: []
+# -- (object) Affinity rules
+affinity: {}
+
+# -- (list) Extra environment variables for the container
+extraEnv: []
+# -- (list) Extra envFrom sources for the container
+extraEnvFrom: []
+# -- (list) Extra volumes for the pod
+extraVolumes: []
+# -- (list) Extra volume mounts for the container
+extraVolumeMounts: []
