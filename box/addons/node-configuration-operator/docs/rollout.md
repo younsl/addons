@@ -67,6 +67,7 @@ spec:
 - A node that several NodeConfigurations move at once is uncordoned after the last of them is configured. The holders are listed in the `node-configuration-operator.sh/cordoned-by` annotation of the Node.
 - The node is also uncordoned when it leaves the target, when `cordon` is turned off, and when the NodeConfiguration is deleted.
 - Uncordoning a node by hand during a rollout is respected. The controller does not cordon it again for the same revision.
+- [Cordoning](https://kubernetes.io/docs/concepts/architecture/nodes/#manual-node-administration) a node by hand while the controller holds its cordon is not kept. A cordon has no owner, so the controller uncordons the node once the rollout is done. Cordon it again afterwards to keep it out of scheduling.
 
 Every cordon and uncordon is recorded as an Event on the Node, so `kubectl describe node` shows who changed the node and why.
 
