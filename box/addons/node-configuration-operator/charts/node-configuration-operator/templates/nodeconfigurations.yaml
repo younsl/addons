@@ -1,0 +1,11 @@
+{{- range .Values.nodeConfigurations }}
+---
+apiVersion: node-configuration-operator.sh/v1alpha1
+kind: NodeConfiguration
+metadata:
+  name: {{ .name }}
+  labels:
+    {{- include "node-configuration-operator.labels" $ | nindent 4 }}
+spec:
+  {{- toYaml .spec | nindent 2 }}
+{{- end }}

@@ -1,0 +1,24 @@
+apiVersion: v2
+name: node-configuration-operator
+description: Continuously reconciles the OS configuration of EKS managed node group nodes from NodeConfiguration custom resources
+type: application
+deprecated: false
+version: 0.1.0
+appVersion: "0.1.0"
+home: https://github.com/younsl/addons
+sources:
+  - https://github.com/younsl/addons/tree/main/box/addons/node-configuration-operator
+maintainers:
+  - name: younsl
+    email: cysl@kakao.com
+    url: https://github.com/younsl
+keywords:
+  - eks
+  - kubernetes
+  - node
+  - hardening
+  - operator
+annotations:
+  artifacthub.io/changes: |
+    - kind: added
+      description: "Initial release with the controller Deployment, the agent DaemonSet, the NodeConfiguration and NodeConfigurationBinding CRDs, and their RBAC"

@@ -1,0 +1,4 @@
+/target/
+**/*.rs.bk
+node-configuration-operator-linux-*
+lcov.info

@@ -1,0 +1,37 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "node-configuration-operator.fullname" . }}
+  labels:
+    {{- include "node-configuration-operator.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["node-configuration-operator.sh"]
+    resources: ["nodeconfigurations"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["node-configuration-operator.sh"]
+    resources: ["nodeconfigurations/status"]
+    verbs: ["get", "patch", "update"]
+  # The bindings carry a blocking ownerReference to their NodeConfiguration.
+  - apiGroups: ["node-configuration-operator.sh"]
+    resources: ["nodeconfigurations/finalizers"]
+    verbs: ["update"]
+  - apiGroups: ["node-configuration-operator.sh"]
+    resources: ["nodeconfigurationbindings"]
+    verbs: ["get", "list", "watch", "create", "update", "delete"]
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "node-configuration-operator.agentName" . }}
+  labels:
+    {{- include "node-configuration-operator.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["node-configuration-operator.sh"]
+    resources: ["nodeconfigurationbindings"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["node-configuration-operator.sh"]
+    resources: ["nodeconfigurationbindings/status"]
+    verbs: ["get", "patch", "update"]

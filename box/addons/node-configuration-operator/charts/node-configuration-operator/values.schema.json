@@ -1,0 +1,475 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "title": "node-configuration-operator values",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "global": {
+      "type": "object"
+    },
+    "nameOverride": {
+      "type": ["string", "null"]
+    },
+    "fullnameOverride": {
+      "type": ["string", "null"]
+    },
+    "crds": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "install": {
+          "type": "boolean"
+        },
+        "keep": {
+          "type": "boolean"
+        },
+        "annotations": {
+          "$ref": "#/definitions/nullableStringMap"
+        },
+        "additionalLabels": {
+          "$ref": "#/definitions/nullableStringMap"
+        }
+      }
+    },
+    "replicaCount": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "revisionHistoryLimit": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "image": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "registry": {
+          "type": ["string", "null"]
+        },
+        "repository": {
+          "type": "string"
+        },
+        "pullPolicy": {
+          "type": "string",
+          "enum": ["Always", "IfNotPresent", "Never"]
+        },
+        "tag": {
+          "type": ["string", "null"]
+        },
+        "digest": {
+          "type": ["string", "null"],
+          "pattern": "^(sha256:[a-f0-9]{64})?$"
+        }
+      }
+    },
+    "imagePullSecrets": {
+      "type": ["array", "null"],
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "serviceAccount": {
+      "$ref": "#/definitions/serviceAccount"
+    },
+    "resources": {
+      "type": "object"
+    },
+    "securityContext": {
+      "type": "object"
+    },
+    "priorityClassName": {
+      "type": ["string", "null"]
+    },
+    "podAnnotations": {
+      "$ref": "#/definitions/nullableStringMap"
+    },
+    "nodeSelector": {
+      "$ref": "#/definitions/nullableStringMap"
+    },
+    "tolerations": {
+      "type": ["array", "null"],
+      "items": {
+        "type": "object"
+      }
+    },
+    "affinity": {
+      "type": ["object", "null"]
+    },
+    "extraPodSpec": {
+      "type": ["object", "null"],
+      "propertyNames": {
+        "not": {
+          "enum": ["affinity", "containers", "imagePullSecrets", "nodeSelector", "priorityClassName", "serviceAccountName", "tolerations"]
+        }
+      }
+    },
+    "agent": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "serviceAccount": {
+          "$ref": "#/definitions/serviceAccount"
+        },
+        "resources": {
+          "type": "object"
+        },
+        "securityContext": {
+          "type": "object"
+        },
+        "allowScripts": {
+          "type": "boolean"
+        },
+        "resizePolicy": {
+          "type": ["array", "null"],
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["resourceName", "restartPolicy"],
+            "properties": {
+              "resourceName": {
+                "type": "string",
+                "enum": ["cpu", "memory"]
+              },
+              "restartPolicy": {
+                "type": "string",
+                "enum": ["NotRequired", "RestartContainer"]
+              }
+            }
+          }
+        },
+        "updateStrategy": {
+          "type": ["object", "null"]
+        },
+        "priorityClassName": {
+          "type": ["string", "null"]
+        },
+        "podAnnotations": {
+          "$ref": "#/definitions/nullableStringMap"
+        },
+        "nodeSelector": {
+          "$ref": "#/definitions/nullableStringMap"
+        },
+        "affinity": {
+          "type": ["object", "null"]
+        },
+        "tolerations": {
+          "type": ["array", "null"],
+          "items": {
+            "type": "object"
+          }
+        },
+        "extraPodSpec": {
+          "type": ["object", "null"],
+          "propertyNames": {
+            "not": {
+              "enum": ["affinity", "containers", "hostPID", "imagePullSecrets", "nodeSelector", "priorityClassName", "serviceAccountName", "tolerations", "volumes"]
+            }
+          }
+        }
+      }
+    },
+    "logging": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "level": {
+          "type": "string",
+          "enum": ["trace", "debug", "info", "warn", "error"]
+        },
+        "format": {
+          "type": "string",
+          "enum": ["json", "text"]
+        }
+      }
+    },
+    "nodeConfigurations": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/nodeConfiguration"
+      }
+    },
+    "extraObjects": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    }
+  },
+  "definitions": {
+    "nullableStringMap": {
+      "type": ["object", "null"],
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "serviceAccount": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "create": {
+          "type": "boolean"
+        },
+        "annotations": {
+          "$ref": "#/definitions/nullableStringMap"
+        },
+        "name": {
+          "type": ["string", "null"]
+        },
+        "imagePullSecrets": {
+          "type": ["array", "null"],
+          "items": {
+            "type": "object"
+          }
+        }
+      }
+    },
+    "octalMode": {
+      "type": "string",
+      "pattern": "^[0-7]{3,4}$"
+    },
+    "nodeConfiguration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "spec"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$",
+          "maxLength": 63
+        },
+        "spec": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["rules"],
+          "properties": {
+            "target": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "nodeGroups": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "nodeSelector": {
+                  "$ref": "#/definitions/nullableStringMap"
+                },
+                "excludeNodes": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                }
+              }
+            },
+            "group": {
+              "type": "string",
+              "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+              "maxLength": 63
+            },
+            "priority": {
+              "type": "integer",
+              "minimum": -1000000,
+              "maximum": 1000000
+            },
+            "dryRun": {
+              "type": "boolean"
+            },
+            "intervalSeconds": {
+              "type": "integer",
+              "minimum": 30,
+              "maximum": 86400
+            },
+            "strategy": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "enum": ["RollingUpdate", "OnDelete"]
+                },
+                "rollingUpdate": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "maxUnavailable": {
+                      "oneOf": [
+                        {
+                          "type": "integer",
+                          "minimum": 1
+                        },
+                        {
+                          "type": "string",
+                          "pattern": "^([1-9][0-9]?|100)%$"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            },
+            "minReadySeconds": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 3600
+            },
+            "paused": {
+              "type": "boolean"
+            },
+            "progressDeadlineSeconds": {
+              "type": "integer",
+              "minimum": 60,
+              "maximum": 86400
+            },
+            "rules": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["name"],
+                "oneOf": [
+                  {
+                    "required": ["fileMode"]
+                  },
+                  {
+                    "required": ["loginShell"]
+                  },
+                  {
+                    "required": ["lineEdit"]
+                  },
+                  {
+                    "required": ["file"]
+                  },
+                  {
+                    "required": ["script"]
+                  }
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+                    "maxLength": 63
+                  },
+                  "fileMode": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["paths"],
+                    "oneOf": [
+                      {
+                        "required": ["mode"]
+                      },
+                      {
+                        "required": ["clear"]
+                      }
+                    ],
+                    "properties": {
+                      "paths": {
+                        "type": "array",
+                        "minItems": 1,
+                        "items": {
+                          "type": "string",
+                          "pattern": "^(/[^/*?]+)*/[^/]+$"
+                        }
+                      },
+                      "mode": {
+                        "$ref": "#/definitions/octalMode"
+                      },
+                      "clear": {
+                        "$ref": "#/definitions/octalMode"
+                      }
+                    }
+                  },
+                  "loginShell": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["users", "shell"],
+                    "properties": {
+                      "users": {
+                        "type": "array",
+                        "minItems": 1,
+                        "items": {
+                          "type": "string",
+                          "pattern": "^[a-z_][a-z0-9_-]{0,31}$"
+                        }
+                      },
+                      "shell": {
+                        "type": "string",
+                        "pattern": "^/[^:\\s]+$"
+                      }
+                    }
+                  },
+                  "lineEdit": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["path", "pattern", "replacement"],
+                    "properties": {
+                      "path": {
+                        "type": "string",
+                        "pattern": "^/[^*?]+$"
+                      },
+                      "pattern": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "replacement": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "file": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["path", "content"],
+                    "properties": {
+                      "path": {
+                        "type": "string",
+                        "pattern": "^/[^*?]+$"
+                      },
+                      "content": {
+                        "type": "string"
+                      },
+                      "mode": {
+                        "$ref": "#/definitions/octalMode"
+                      }
+                    }
+                  },
+                  "script": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["run"],
+                    "properties": {
+                      "run": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "unless": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "timeoutSeconds": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 600
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

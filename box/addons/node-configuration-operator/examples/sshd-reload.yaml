@@ -1,0 +1,16 @@
+apiVersion: node-configuration-operator.sh/v1alpha1
+kind: NodeConfiguration
+metadata:
+  name: sshd-hardening
+spec:
+  rules:
+    - name: deny-root-login
+      lineEdit:
+        path: /etc/ssh/sshd_config
+        pattern: '^#?PermitRootLogin .*'
+        replacement: PermitRootLogin no
+    - name: reload-sshd
+      script:
+        unless: test /run/node-configuration/sshd-reloaded -nt /etc/ssh/sshd_config
+        run: systemctl reload sshd && mkdir -p /run/node-configuration && touch /run/node-configuration/sshd-reloaded
+        timeoutSeconds: 30

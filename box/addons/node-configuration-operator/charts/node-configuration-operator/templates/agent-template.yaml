@@ -1,0 +1,11 @@
+{{- /* Not applied by Helm. The controller creates the DaemonSet from this template and adds the node affinity of the NodeConfiguration targets. */ -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "node-configuration-operator.agentTemplateName" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "node-configuration-operator.labels" . | nindent 4 }}
+data:
+  daemonset.yaml: |
+    {{- include "node-configuration-operator.agentDaemonSet" . | nindent 4 }}

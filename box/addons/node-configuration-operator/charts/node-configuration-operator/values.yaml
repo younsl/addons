@@ -1,0 +1,231 @@
+# -- (string) Overrides the chart name used in resource names and the app.kubernetes.io/name label
+nameOverride: ""
+# -- (string) Overrides the full generated resource name
+fullnameOverride: ""
+
+crds:
+  # -- (bool) Whether to install CRDs. Set to false if CRDs are managed externally.
+  install: true
+  # -- (bool) Whether to keep CRDs on chart uninstall.
+  keep: true
+  # -- (object) Annotations to add to the CRD resources.
+  annotations: {}
+  # -- (object) Additional labels to add to the CRD resources.
+  additionalLabels: {}
+
+# -- (int) Number of controller replicas to run.
+replicaCount: 1
+
+# -- (int) Number of old ReplicaSets and DaemonSet revisions to retain for rollback.
+revisionHistoryLimit: 5
+
+image:
+  # -- (string) Container image registry host, prefixed to `repository`. Set empty when `repository` carries the full path.
+  registry: ghcr.io
+  # -- (string) Container image repository path without registry prefix. The controller and the agent run the same image.
+  repository: younsl/node-configuration-operator
+  # -- (string) Image pull policy of the controller and the agent pods.
+  pullPolicy: IfNotPresent
+  # -- (string) Image tag. Defaults to `.Chart.AppVersion` if empty.
+  tag: ""
+  # -- (string) Image digest (`sha256:...`). When set, appended to the tag as `tag@digest` and takes precedence.
+  digest: ""
+
+# -- (list) Image pull secrets of the controller and the agent pods.
+imagePullSecrets: []
+
+serviceAccount:
+  # -- (bool) Whether to create the controller ServiceAccount.
+  create: true
+  # -- (object) Annotations to add to the controller ServiceAccount.
+  annotations: {}
+  # -- (string) Controller ServiceAccount name. Defaults to the fullname template if empty.
+  name: ""
+  # -- (list) Image pull secrets attached to the controller ServiceAccount, used by every pod that runs as it.
+  imagePullSecrets: []
+
+resources:
+  limits:
+    # -- (string) Memory limit of the controller.
+    memory: 64Mi
+  requests:
+    # -- (string) CPU request of the controller.
+    cpu: 10m
+    # -- (string) Memory request of the controller.
+    memory: 32Mi
+
+# -- (object) Container security context of the controller.
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  readOnlyRootFilesystem: true
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+
+# -- (string) Pod priority class name of the controller. Empty uses the Kubernetes default.
+priorityClassName: ""
+
+# -- (object) Annotations to add to the controller pod.
+podAnnotations: {}
+# -- (object) Node selector for controller pod scheduling.
+nodeSelector: {}
+# -- (list) Tolerations for controller pod scheduling.
+tolerations: []
+# -- (object) Affinity rules for controller pod scheduling.
+affinity: {}
+# -- (object) Extra Pod spec fields of the controller, e.g. runtimeClassName. Fields the chart already renders are rejected.
+extraPodSpec: {}
+
+logging:
+  # -- (string) Log level of the controller and the agent pods: trace, debug, info, warn, error. `RUST_LOG` on the pod overrides it.
+  level: info
+  # -- (string) Log format: json or text
+  format: json
+
+agent:
+  serviceAccount:
+    # -- (bool) Whether to create the ServiceAccount the agent pods run as.
+    create: true
+    # -- (object) Annotations to add to the agent ServiceAccount.
+    annotations: {}
+    # -- (string) Agent ServiceAccount name. Defaults to the fullname template with an `-agent` suffix if empty.
+    name: ""
+    # -- (list) Image pull secrets attached to the agent ServiceAccount, used by every pod that runs as it.
+    imagePullSecrets: []
+  resources:
+    limits:
+      # -- (string) Memory limit of the agent.
+      memory: 64Mi
+    requests:
+      # -- (string) CPU request of the agent.
+      cpu: 10m
+      # -- (string) Memory request of the agent.
+      memory: 16Mi
+  # -- (bool) Whether rules with a `script` action may run. It makes the agent pod privileged with the host PID namespace and replaces `agent.securityContext`, because a script runs as root in the host root filesystem. Left off, a script rule fails and every other rule still runs.
+  allowScripts: false
+  # -- (list) In-place resize policy of the agent container. The default resizes CPU without a restart and restarts the container on a memory resize.
+  resizePolicy:
+    - resourceName: cpu
+      restartPolicy: NotRequired
+    - resourceName: memory
+      restartPolicy: RestartContainer
+  # -- (object) Container security context of the agent, unused when `agent.allowScripts` is on. It writes host files as root, and the three capabilities cover modes and owners of files that belong to other accounts.
+  securityContext:
+    runAsUser: 0
+    runAsGroup: 0
+    runAsNonRoot: false
+    privileged: false
+    readOnlyRootFilesystem: true
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
+      add:
+        - CHOWN
+        - DAC_OVERRIDE
+        - FOWNER
+    seccompProfile:
+      type: RuntimeDefault
+  # -- (object) Update strategy of the agent DaemonSet itself, used when the image, these settings, or the set of targeted nodes changes. Rule changes roll out per NodeConfiguration instead.
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 10%
+  # -- (string) Pod priority class name of the agent. Empty uses the Kubernetes default.
+  priorityClassName: ""
+  # -- (object) Annotations to add to the agent pods.
+  podAnnotations: {}
+  # -- (object) Node selector of the agent pods, on top of the node affinity the controller adds.
+  nodeSelector: {}
+  # -- (object) Extra affinity of the agent pods. The controller sets the required node affinity from the targets of the NodeConfiguration resources and replaces one given here.
+  affinity: {}
+  # -- (list) Tolerations of the agent pods. The default tolerates every taint so a tainted node is still configured.
+  tolerations:
+    - operator: Exists
+  # -- (object) Extra Pod spec fields of the agent, e.g. runtimeClassName. Fields the chart already renders are rejected.
+  extraPodSpec: {}
+
+# -- (list) NodeConfiguration custom resources to create. One agent pod per node applies all of them, and a change of the rules of one rolls out under its own strategy.
+nodeConfigurations: []
+  # - name: os-hardening
+  #   spec:
+  #     group: os-vulnerability-hardening
+  #     priority: 100
+  #     dryRun: false
+  #     target:
+  #       nodeGroups: []
+  #       excludeNodes: []
+  #     intervalSeconds: 300
+  #     strategy:
+  #       type: RollingUpdate
+  #       rollingUpdate:
+  #         maxUnavailable: 1
+  #     minReadySeconds: 30
+  #     paused: false
+  #     progressDeadlineSeconds: 600
+  #     rules:
+  #       - name: restrict-shell-profiles
+  #         fileMode:
+  #           paths:
+  #             - /home/ec2-user/.bash*
+  #             - /home/ssm-user/.bash*
+  #             - /root/.bash*
+  #             - /root/.cshrc
+  #           mode: "0640"
+  #       - name: drop-setuid
+  #         fileMode:
+  #           paths:
+  #             - /usr/bin/newgrp
+  #             - /usr/sbin/unix_chkpwd
+  #           clear: "4000"
+  #       - name: disable-system-logins
+  #         loginShell:
+  #           users: [sync, shutdown, halt]
+  #           shell: /sbin/nologin
+  #       - name: deny-root-login
+  #         lineEdit:
+  #           path: /etc/ssh/sshd_config
+  #           pattern: '^#?PermitRootLogin .*'
+  #           replacement: PermitRootLogin no
+  #       - name: restrict-compilers
+  #         fileMode:
+  #           paths:
+  #             - /usr/bin/gcc
+  #             - /usr/bin/cc
+  #           clear: "0001"
+  #       - name: restrict-su
+  #         fileMode:
+  #           paths:
+  #             - /usr/bin/su
+  #           mode: "4750"
+  #       - name: require-wheel-for-su
+  #         lineEdit:
+  #           path: /etc/pam.d/su
+  #           pattern: '^#(auth\s*required\s*pam_wheel.so use_uid)'
+  #           replacement: $1
+  #       - name: login-banner
+  #         file:
+  #           path: /etc/issue.net
+  #           content: |
+  #             WARNING: Authorized users only. All activities are monitored and recorded.
+  #       - name: motd
+  #         file:
+  #           path: /etc/motd
+  #           content: |
+  #             WARNING: Authorized users only. All activities are monitored and recorded.
+  #       - name: ssh-banner
+  #         lineEdit:
+  #           path: /etc/ssh/sshd_config
+  #           pattern: '^#?Banner .*'
+  #           replacement: Banner /etc/issue.net
+
+# -- (list) Additional Kubernetes resources to create alongside the chart.
+extraObjects: []
+  # - apiVersion: v1
+  #   kind: ConfigMap
+  #   metadata:
+  #     name: extra-config
+  #   data:
+  #     key: value
