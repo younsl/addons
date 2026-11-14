@@ -2,7 +2,7 @@
 
 ## Layout
 
-The component is one Cargo workspace of three crates next to the chart. The root `Cargo.toml` holds the version, the dependency versions, the lints, and the release profile, and one `Cargo.lock` pins both images to the same dependencies. Each image is built from the directory of its crate.
+The component is one [Cargo workspace](https://doc.rust-lang.org/cargo/reference/workspaces.html) of three crates next to the chart. The root `Cargo.toml` holds the version, the dependency versions, the lints, and the release profile, and one `Cargo.lock` pins both images to the same dependencies. Each image is built from the directory of its crate.
 
 | Path | Role |
 | --- | --- |
@@ -10,7 +10,7 @@ The component is one Cargo workspace of three crates next to the chart. The root
 | `agent/` | The agent: crate and Dockerfile |
 | `common/` | What both share: the resource types, the revision hash, and the process plumbing |
 | `charts/` | The Helm chart, with the generated CRDs |
-| `Cargo.toml` | The workspace: shared package fields, dependency versions, lints, and the release profile |
+| `Cargo.toml` | The [workspace](https://doc.rust-lang.org/cargo/reference/workspaces.html): shared package fields, dependency versions, lints, and the release profile |
 
 | Path | Role |
 | --- | --- |
