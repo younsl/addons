@@ -15,8 +15,8 @@ on:
       - 'box/addons/volume-autoscaler/Dockerfile'
       - 'box/addons/node-configuration-operator/crates/operator/Dockerfile'
       - 'box/addons/node-configuration-operator/crates/agent/Dockerfile'
-      - 'box/addons/forklift/Dockerfile'
-      - 'box/addons/forklift/Dockerfile.mcp'
+      - 'box/addons/forklift/crates/forklift/Dockerfile'
+      - 'box/addons/forklift/crates/forklift-mcp/Dockerfile'
   workflow_dispatch:
     inputs:
       project:
@@ -254,7 +254,7 @@ jobs:
         env:
           VERGEN_GIT_SHA: ${{ github.sha }}
           BUILD_TIMESTAMP: ${{ github.event.head_commit.timestamp }}
-          # Read by forklift's build.rs, ignored by the other crates
+          # Read by the forklift crates at compile time, ignored by the others
           FORKLIFT_VERSION: ${{ matrix.version }}
           FORKLIFT_COMMIT: ${{ github.sha }}
         run: |

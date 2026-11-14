@@ -38,7 +38,7 @@ defaults:
     working-directory: box/addons/forklift
 
 jobs:
-  # The console is built first: the binary embeds src/webui/dist.
+  # The console is built first: the binary embeds crates/forklift/src/webui/dist.
   rust:
     name: Rust
     runs-on: ubuntu-26.04
@@ -82,14 +82,17 @@ jobs:
         run: cargo fmt --all -- --check
 
       - name: Clippy
-        run: cargo clippy --all-targets --locked -- -D warnings
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
 
       - name: Test with coverage
         run: |
-          cargo llvm-cov --all-targets --locked --summary-only --json --output-path cover.json
-          total=$(python3 -c 'import json; print(json.load(open("cover.json"))["data"][0]["totals"]["lines"]["percent"])')
-          echo "total coverage: ${total}% (min ${COVERAGE_MIN}%)"
-          awk "BEGIN { exit !(${total} >= ${COVERAGE_MIN}) }" || { echo "::error::coverage below ${COVERAGE_MIN}%"; exit 1; }
+          # Each image holds the minimum by itself, a workspace total would let one hide the other
+          for package in forklift forklift-mcp; do
+            cargo llvm-cov -p "${package}" --all-targets --locked --summary-only --json --output-path cover.json
+            total=$(python3 -c 'import json; print(json.load(open("cover.json"))["data"][0]["totals"]["lines"]["percent"])')
+            echo "${package} coverage: ${total}% (min ${COVERAGE_MIN}%)"
+            awk "BEGIN { exit !(${total} >= ${COVERAGE_MIN}) }" || { echo "::error::${package} coverage below ${COVERAGE_MIN}%"; exit 1; }
+          done
 
   # The build runs tsc and route-tree generation, so type errors fail here.
   web:

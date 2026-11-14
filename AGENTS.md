@@ -41,7 +41,7 @@ Applies to READMEs, docs, this file, commit messages, and chart annotations.
 
 ## Rust
 
-There is no repository-wide workspace. A component is one standalone crate, or one [Cargo workspace](https://doc.rust-lang.org/cargo/reference/workspaces.html) when it ships several crates that release together (`node-configuration-operator`). Such a workspace keeps its crates under `crates/` and the package fields, dependency versions, lints, and profile below in its root `Cargo.toml`. Match these when adding or touching a crate.
+There is no repository-wide workspace. A component is one standalone crate, or one [Cargo workspace](https://doc.rust-lang.org/cargo/reference/workspaces.html) when it ships several crates, released together (`node-configuration-operator`) or as separate images with their own versions (`forklift`). Such a workspace keeps its crates under `crates/` and the package fields, dependency versions, lints, and profile below in its root `Cargo.toml`. Match these when adding or touching a crate.
 
 ### Crate
 
