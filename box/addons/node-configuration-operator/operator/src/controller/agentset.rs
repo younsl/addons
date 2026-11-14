@@ -12,7 +12,7 @@ use k8s_openapi::api::apps::v1::DaemonSet;
 use k8s_openapi::api::core::v1::{
     Affinity, ConfigMap, NodeAffinity, NodeSelector, NodeSelectorRequirement, NodeSelectorTerm,
 };
-use k8s_openapi::apimachinery::pkg::apis::meta::v1::OwnerReference;
+use k8s_openapi::apimachinery::pkg::apis::meta::v1::{ObjectMeta, OwnerReference};
 use kube::api::{Api, ApiResource, DeleteParams, DynamicObject, Patch, PatchParams, TypeMeta};
 use kube::runtime::{WatchStreamExt as _, reflector, watcher};
 use kube::{Client, ResourceExt as _};
@@ -53,10 +53,108 @@ pub struct Source {
     pub config_map: String,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Outcome {
-    Applied,
+    Created,
+    Updated,
+    Unchanged,
     Removed,
+    Absent,
+}
+
+impl Outcome {
+    const fn present(self) -> bool {
+        matches!(self, Self::Created | Self::Updated | Self::Unchanged)
+    }
+
+    /// What an apply did, read from the metadata before and after it. The
+    /// status is left out, so the rollout of the pods is never a change.
+    fn of_apply(before: Option<&ObjectMeta>, after: &ObjectMeta) -> Self {
+        match before {
+            None => Self::Created,
+            Some(before)
+                if before.generation != after.generation
+                    || before.labels != after.labels
+                    || before.annotations != after.annotations
+                    || before.owner_references != after.owner_references =>
+            {
+                Self::Updated
+            }
+            Some(_) => Self::Unchanged,
+        }
+    }
+}
+
+/// Why a sync runs: the targets changed, or the periodic check is due.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Trigger {
+    Targets,
+    Resync,
+}
+
+impl Trigger {
+    const fn as_str(self) -> &'static str {
+        match self {
+            Self::Targets => "targets",
+            Self::Resync => "resync",
+        }
+    }
+}
+
+// An update nobody asked for means the object differed from the template: a
+// manual edit, or a chart upgrade that changed the template.
+fn report(kind: &str, source: &Source, name: &str, outcome: Outcome, trigger: Trigger) {
+    let namespace = source.namespace.as_str();
+    let trigger_name = trigger.as_str();
+    match (outcome, trigger) {
+        (Outcome::Created, Trigger::Targets) => {
+            info!(
+                kind,
+                namespace,
+                name,
+                trigger = trigger_name,
+                "Created the agent {kind}"
+            );
+        }
+        (Outcome::Created, Trigger::Resync) => info!(
+            kind,
+            namespace,
+            name,
+            trigger = trigger_name,
+            "Created the agent {kind}, it was missing"
+        ),
+        (Outcome::Updated, Trigger::Targets) => info!(
+            kind,
+            namespace,
+            name,
+            trigger = trigger_name,
+            "Updated the agent {kind}"
+        ),
+        (Outcome::Updated, Trigger::Resync) => info!(
+            kind,
+            namespace,
+            name,
+            trigger = trigger_name,
+            "Repaired the agent {kind}, it differed from the template"
+        ),
+        (Outcome::Removed, _) => {
+            info!(
+                kind,
+                namespace,
+                name,
+                trigger = trigger_name,
+                "Deleted the agent {kind}"
+            );
+        }
+        (Outcome::Unchanged | Outcome::Absent, _) => debug!(
+            kind,
+            namespace,
+            name,
+            trigger = trigger_name,
+            ?outcome,
+            "Agent {kind} needs no change"
+        ),
+    }
 }
 
 fn requirement(key: &str, operator: &str, values: Option<Vec<String>>) -> NodeSelectorRequirement {
@@ -152,7 +250,7 @@ async fn sync_monitor(
     source: &Source,
     config_map: &ConfigMap,
     name: &str,
-    agents: &Outcome,
+    agents: Outcome,
 ) -> Result<Outcome, Error> {
     let resource = ApiResource {
         group: "monitoring.coreos.com".to_string(),
@@ -162,17 +260,18 @@ async fn sync_monitor(
         plural: "podmonitors".to_string(),
     };
     let api = Api::<DynamicObject>::namespaced_with(client.clone(), &source.namespace, &resource);
-    let wanted = monitor(source, config_map, name)?.filter(|_| *agents == Outcome::Applied);
+    let wanted = monitor(source, config_map, name)?.filter(|_| agents.present());
     let Some(monitor) = wanted else {
         return match api.delete(name, &DeleteParams::default()).await {
             // Without the API or the permission there is nothing of ours to remove.
             Ok(_) => Ok(Outcome::Removed),
             Err(kube::Error::Api(status)) if matches!(status.code, 403 | 404) => {
-                Ok(Outcome::Removed)
+                Ok(Outcome::Absent)
             }
             Err(e) => Err(e.into()),
         };
     };
+    let before = live(&api, name).await?;
     match api
         .patch(
             name,
@@ -181,9 +280,23 @@ async fn sync_monitor(
         )
         .await
     {
-        Ok(_) => Ok(Outcome::Applied),
+        Ok(after) => Ok(Outcome::of_apply(
+            before.as_ref().map(|monitor| &monitor.metadata),
+            &after.metadata,
+        )),
         Err(kube::Error::Api(status)) if status.code == 404 => Err(Error::MonitorApiMissing),
         Err(e) => Err(e.into()),
+    }
+}
+
+async fn live<K>(api: &Api<K>, name: &str) -> Result<Option<K>, kube::Error>
+where
+    K: Clone + std::fmt::Debug + serde::de::DeserializeOwned,
+{
+    match api.get(name).await {
+        Ok(object) => Ok(Some(object)),
+        Err(kube::Error::Api(status)) if status.code == 404 => Ok(None),
+        Err(e) => Err(e),
     }
 }
 
@@ -227,6 +340,7 @@ pub async fn sync(
     client: &Client,
     source: &Source,
     terms: Vec<NodeSelectorTerm>,
+    trigger: Trigger,
 ) -> Result<Outcome, Error> {
     let config_map = Api::<ConfigMap>::namespaced(client.clone(), &source.namespace)
         .get(&source.config_map)
@@ -234,9 +348,15 @@ pub async fn sync(
     let daemon_set = template(source, &config_map)?;
     let name = daemon_set.name_any();
     let agents = sync_daemon_set(client, source, daemon_set, terms).await?;
-    match sync_monitor(client, source, &config_map, &name, &agents).await {
-        Ok(outcome) => debug!(?outcome, "Agent PodMonitor synced"),
-        Err(e) => warn!("Agent PodMonitor sync failed, {e}"),
+    report("DaemonSet", source, &name, agents, trigger);
+    match sync_monitor(client, source, &config_map, &name, agents).await {
+        Ok(outcome) => report(MONITOR_KIND, source, &name, outcome, trigger),
+        Err(e) => warn!(
+            kind = MONITOR_KIND,
+            namespace = source.namespace,
+            name,
+            "Agent PodMonitor sync failed, {e}"
+        ),
     }
     Ok(agents)
 }
@@ -253,18 +373,23 @@ async fn sync_daemon_set(
     if terms.is_empty() {
         return match api.delete(&name, &DeleteParams::default()).await {
             Ok(_) => Ok(Outcome::Removed),
-            Err(kube::Error::Api(status)) if status.code == 404 => Ok(Outcome::Removed),
+            Err(kube::Error::Api(status)) if status.code == 404 => Ok(Outcome::Absent),
             Err(e) => Err(e.into()),
         };
     }
     let daemon_set = render(daemon_set, terms)?;
-    api.patch(
-        &name,
-        &PatchParams::apply(FIELD_MANAGER).force(),
-        &Patch::Apply(&daemon_set),
-    )
-    .await?;
-    Ok(Outcome::Applied)
+    let before = live(&api, &name).await?;
+    let after = api
+        .patch(
+            &name,
+            &PatchParams::apply(FIELD_MANAGER).force(),
+            &Patch::Apply(&daemon_set),
+        )
+        .await?;
+    Ok(Outcome::of_apply(
+        before.as_ref().map(|daemon_set| &daemon_set.metadata),
+        &after.metadata,
+    ))
 }
 
 fn targets(configurations: &[Arc<NodeConfiguration>]) -> Vec<NodeSelectorTerm> {
@@ -309,15 +434,25 @@ pub async fn run(client: Client, source: Source, shutdown: CancellationToken) {
         if !force && applied.as_ref() == Some(&desired) {
             continue;
         }
-        match sync(&client, &source, desired.clone()).await {
+        let trigger = if applied.as_ref() == Some(&desired) {
+            Trigger::Resync
+        } else {
+            Trigger::Targets
+        };
+        match sync(&client, &source, desired.clone(), trigger).await {
             Ok(outcome) => {
-                if applied.as_ref() != Some(&desired) {
-                    info!(targets = desired.len(), ?outcome, "Agent DaemonSet synced");
-                }
+                debug!(targets = desired.len(), ?outcome, "Agent DaemonSet synced");
                 applied = Some(desired);
             }
             Err(e) => {
-                warn!("Agent DaemonSet sync failed, {e}");
+                warn!(
+                    kind = "DaemonSet",
+                    namespace = source.namespace,
+                    config_map = source.config_map,
+                    targets = desired.len(),
+                    trigger = trigger.as_str(),
+                    "Agent DaemonSet sync failed, {e}"
+                );
                 applied = None;
             }
         }
@@ -465,10 +600,15 @@ spec:
             .mount(&server)
             .await;
 
-        let outcome = sync(&client(&server), &source(), terms([&target(&["a"], &[])]))
-            .await
-            .unwrap();
-        assert_eq!(outcome, Outcome::Applied);
+        let outcome = sync(
+            &client(&server),
+            &source(),
+            terms([&target(&["a"], &[])]),
+            Trigger::Targets,
+        )
+        .await
+        .unwrap();
+        assert_eq!(outcome, Outcome::Created);
     }
 
     #[tokio::test]
@@ -490,8 +630,66 @@ spec:
             .mount(&server)
             .await;
 
-        let outcome = sync(&client(&server), &source(), Vec::new()).await.unwrap();
-        assert_eq!(outcome, Outcome::Removed);
+        let outcome = sync(&client(&server), &source(), Vec::new(), Trigger::Targets)
+            .await
+            .unwrap();
+        assert_eq!(outcome, Outcome::Absent);
+    }
+
+    fn meta(generation: i64, labels: &[(&str, &str)]) -> ObjectMeta {
+        ObjectMeta {
+            generation: Some(generation),
+            labels: Some(
+                labels
+                    .iter()
+                    .map(|(k, v)| ((*k).to_string(), (*v).to_string()))
+                    .collect(),
+            ),
+            ..ObjectMeta::default()
+        }
+    }
+
+    #[test]
+    fn an_apply_is_judged_by_the_metadata_around_it() {
+        let live = meta(1, &[("app", "agent")]);
+        assert_eq!(Outcome::of_apply(None, &live), Outcome::Created);
+        assert_eq!(Outcome::of_apply(Some(&live), &live), Outcome::Unchanged);
+        let respecced = meta(2, &[("app", "agent")]);
+        assert_eq!(Outcome::of_apply(Some(&live), &respecced), Outcome::Updated);
+        let relabeled = meta(1, &[("app", "other")]);
+        assert_eq!(Outcome::of_apply(Some(&relabeled), &live), Outcome::Updated);
+        assert!(Outcome::Unchanged.present());
+        assert!(!Outcome::Absent.present());
+    }
+
+    #[tokio::test]
+    async fn a_resync_repairs_an_edited_daemon_set() {
+        let server = MockServer::start().await;
+        config_map(&server, json!({TEMPLATE_KEY: TEMPLATE})).await;
+        for (verb, generation) in [("GET", 1), ("PATCH", 2)] {
+            Mock::given(method(verb))
+                .and(path(
+                    "/apis/apps/v1/namespaces/kube-system/daemonsets/nco-agent",
+                ))
+                .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                    "apiVersion": "apps/v1",
+                    "kind": "DaemonSet",
+                    "metadata": {"name": "nco-agent", "generation": generation},
+                })))
+                .expect(1)
+                .mount(&server)
+                .await;
+        }
+
+        let outcome = sync(
+            &client(&server),
+            &source(),
+            terms([&Target::default()]),
+            Trigger::Resync,
+        )
+        .await
+        .unwrap();
+        assert_eq!(outcome, Outcome::Updated);
     }
 
     const MONITOR: &str = r"
@@ -570,10 +768,16 @@ spec:
             .await;
 
         let client = client(&server);
-        let applied = sync(&client, &source(), terms([&Target::default()])).await;
-        assert_eq!(applied.unwrap(), Outcome::Applied);
+        let applied = sync(
+            &client,
+            &source(),
+            terms([&Target::default()]),
+            Trigger::Targets,
+        )
+        .await;
+        assert_eq!(applied.unwrap(), Outcome::Created);
         // Without a target the agents go, and the monitor with them.
-        let removed = sync(&client, &source(), Vec::new()).await;
+        let removed = sync(&client, &source(), Vec::new(), Trigger::Targets).await;
         assert_eq!(removed.unwrap(), Outcome::Removed);
     }
 
@@ -589,8 +793,14 @@ spec:
             .mount(&server)
             .await;
 
-        let outcome = sync(&client(&server), &source(), terms([&Target::default()])).await;
-        assert_eq!(outcome.unwrap(), Outcome::Applied);
+        let outcome = sync(
+            &client(&server),
+            &source(),
+            terms([&Target::default()]),
+            Trigger::Targets,
+        )
+        .await;
+        assert_eq!(outcome.unwrap(), Outcome::Created);
     }
 
     #[tokio::test]
@@ -614,13 +824,19 @@ spec:
             &source(),
             &config_map,
             "nco-agent",
-            &Outcome::Applied,
+            Outcome::Created,
         )
         .await
         .unwrap_err();
         assert!(matches!(missing, Error::MonitorApiMissing));
-        let outcome = sync(&client, &source(), terms([&Target::default()])).await;
-        assert_eq!(outcome.unwrap(), Outcome::Applied);
+        let outcome = sync(
+            &client,
+            &source(),
+            terms([&Target::default()]),
+            Trigger::Targets,
+        )
+        .await;
+        assert_eq!(outcome.unwrap(), Outcome::Created);
 
         let mut broken = config_map.clone();
         broken
@@ -636,7 +852,7 @@ spec:
     async fn a_broken_template_is_reported() {
         let server = MockServer::start().await;
         config_map(&server, json!({"other": "x"})).await;
-        let err = sync(&client(&server), &source(), Vec::new())
+        let err = sync(&client(&server), &source(), Vec::new(), Trigger::Targets)
             .await
             .unwrap_err();
         assert!(matches!(err, Error::MissingTemplate(_)));
@@ -647,7 +863,7 @@ spec:
             json!({TEMPLATE_KEY: "apiVersion: apps/v1\nkind: DaemonSet\nmetadata: {}\n"}),
         )
         .await;
-        let err = sync(&client(&nameless), &source(), Vec::new())
+        let err = sync(&client(&nameless), &source(), Vec::new(), Trigger::Targets)
             .await
             .unwrap_err();
         assert!(matches!(err, Error::Incomplete("metadata.name")));
@@ -658,9 +874,14 @@ spec:
             json!({TEMPLATE_KEY: "apiVersion: apps/v1\nkind: DaemonSet\nmetadata:\n  name: a\n"}),
         )
         .await;
-        let err = sync(&client(&specless), &source(), terms([&Target::default()]))
-            .await
-            .unwrap_err();
+        let err = sync(
+            &client(&specless),
+            &source(),
+            terms([&Target::default()]),
+            Trigger::Targets,
+        )
+        .await
+        .unwrap_err();
         assert!(matches!(err, Error::Incomplete("spec.template.spec")));
     }
 }

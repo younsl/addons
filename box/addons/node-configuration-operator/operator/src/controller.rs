@@ -32,6 +32,7 @@ use status::Observation;
 
 pub const NODE_GROUP_LABEL: &str = "eks.amazonaws.com/nodegroup";
 pub const KARPENTER_LABEL: &str = "karpenter.sh/nodepool";
+const BINDING_KIND: &str = "NodeConfigurationBinding";
 const RESYNC: Duration = Duration::from_secs(300);
 const RETRY: Duration = Duration::from_secs(30);
 
@@ -39,6 +40,26 @@ const RETRY: Duration = Duration::from_secs(30);
 pub enum Error {
     #[error("Kubernetes API request failed, {0}")]
     Kube(#[from] kube::Error),
+    #[error("could not {action} binding {binding}, {source}")]
+    Binding {
+        action: &'static str,
+        binding: String,
+        source: Box<kube::Error>,
+    },
+    #[error("could not update the status of NodeConfiguration {name}, {source}")]
+    Status {
+        name: String,
+        source: Box<kube::Error>,
+    },
+}
+
+fn failed(action: &'static str, binding: &str) -> impl FnOnce(kube::Error) -> Error {
+    let binding = binding.to_string();
+    move |source| Error::Binding {
+        action,
+        binding,
+        source: Box::new(source),
+    }
 }
 
 pub struct Context {
@@ -185,16 +206,41 @@ async fn bindings_of(
             .zip(nodes.get(node))
             .is_some_and(|(owner, current)| owner != current);
         if replaced {
-            remove(api, &binding.name_any()).await?;
+            let stale = binding.name_any();
+            remove(api, &stale)
+                .await
+                .map_err(failed("delete", &stale))?;
             info!(
+                kind = BINDING_KIND,
                 name,
-                node, "Deleted the binding of a node that was replaced"
+                node,
+                binding = stale,
+                "Deleted the binding of a node that was replaced"
             );
         } else {
             bindings.push(binding);
         }
     }
     Ok(bindings)
+}
+
+async fn untarget(
+    ctx: &Context,
+    api: &Api<NodeConfigurationBinding>,
+    name: &str,
+    stale: &NodeConfigurationBinding,
+) -> Result<(), Error> {
+    let binding = stale.name_any();
+    let node = &stale.spec.node_name;
+    cordon::free(ctx, node, name, cordon::Why::Untargeted).await?;
+    remove(api, &binding)
+        .await
+        .map_err(failed("delete", &binding))?;
+    info!(
+        kind = BINDING_KIND,
+        name, node, binding, "Deleted the binding of a node that is no longer targeted"
+    );
+    Ok(())
 }
 
 async fn roll_out(obj: &NodeConfiguration, ctx: &Context) -> Result<Observation, Error> {
@@ -215,14 +261,7 @@ async fn roll_out(obj: &NodeConfiguration, ctx: &Context) -> Result<Observation,
     let now = chrono::Utc::now();
     let plan = rollout::plan(&obj.spec, &revision, &targeted, &bindings, now);
     for index in &plan.delete {
-        let stale = &bindings[*index];
-        cordon::free(ctx, &stale.spec.node_name, &name, cordon::Why::Untargeted).await?;
-        remove(&api, &stale.name_any()).await?;
-        info!(
-            name,
-            binding = stale.name_any(),
-            "Deleted the binding of a node that is no longer targeted"
-        );
+        untarget(ctx, &api, &name, &bindings[*index]).await?;
     }
     for create in &plan.create {
         let spec = create.held.map_or_else(
@@ -234,14 +273,15 @@ async fn roll_out(obj: &NodeConfiguration, ctx: &Context) -> Result<Observation,
         );
         let assigned = spec.revision.clone();
         let uid = nodes.get(&create.node).map_or("", String::as_str);
-        api.create(
-            &PostParams::default(),
-            &new_binding(&name, &create.node, uid, spec),
-        )
-        .await?;
+        let binding = new_binding(&name, &create.node, uid, spec);
+        api.create(&PostParams::default(), &binding)
+            .await
+            .map_err(failed("create", &binding.name_any()))?;
         info!(
+            kind = BINDING_KIND,
             name,
             node = create.node,
+            binding = binding.name_any(),
             revision = assigned,
             "Assigned a revision to a new node"
         );
@@ -262,12 +302,25 @@ async fn roll_out(obj: &NodeConfiguration, ctx: &Context) -> Result<Observation,
                 }
                 updated.spec = current_spec(obj, node, &revision);
             }
-            api.replace(&updated.name_any(), &PostParams::default(), &updated)
-                .await?;
+            let binding = updated.name_any();
+            api.replace(&binding, &PostParams::default(), &updated)
+                .await
+                .map_err(failed("update", &binding))?;
             if moves {
-                info!(name, node, revision, "Moved a node to the current revision");
+                info!(
+                    kind = BINDING_KIND,
+                    name,
+                    node,
+                    binding,
+                    from = bindings[index].spec.revision,
+                    revision,
+                    "Moved a node to the current revision"
+                );
             } else {
-                info!(name, node, "Handed the binding over to its node");
+                info!(
+                    kind = BINDING_KIND,
+                    name, node, binding, "Handed the binding over to its node"
+                );
             }
         }
         if cordons
@@ -308,7 +361,11 @@ async fn apply(obj: &NodeConfiguration, ctx: &Context) -> Result<Action, Error> 
             &PatchParams::default(),
             &Patch::Merge(json!({ "status": status })),
         )
-        .await?;
+        .await
+        .map_err(|source| Error::Status {
+            name: name.clone(),
+            source: Box::new(source),
+        })?;
         info!(
             name,
             revision = status.revision,

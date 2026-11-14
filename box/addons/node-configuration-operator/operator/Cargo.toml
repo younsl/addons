@@ -1,6 +1,6 @@
 [package]
 name = "node-configuration-operator"
-version = "0.3.0"
+version = "0.3.1"
 edition = "2024"
 rust-version = "1.100.0"
 authors = ["younsl <cysl@kakao.com>"]

@@ -53,8 +53,10 @@ pub async fn sweep(ctx: &Context) -> Result<(), kube::Error> {
         if !alive.contains(configuration) {
             remove(&api, &binding.name_any()).await?;
             info!(
+                kind = "NodeConfigurationBinding",
                 name = configuration,
                 node = binding.spec.node_name,
+                binding = binding.name_any(),
                 "Deleted the binding of a deleted NodeConfiguration"
             );
         }

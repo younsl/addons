@@ -1,6 +1,6 @@
 # node-configuration-operator
 
-![Version: 0.3.0](https://img.shields.io/badge/Version-0.3.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.3.0](https://img.shields.io/badge/AppVersion-0.3.0-informational?style=flat-square)
+![Version: 0.3.1](https://img.shields.io/badge/Version-0.3.1-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.3.1](https://img.shields.io/badge/AppVersion-0.3.1-informational?style=flat-square)
 
 Continuously reconciles the OS configuration of EKS managed node group nodes from NodeConfiguration custom resources
 
@@ -39,7 +39,7 @@ helm install node-configuration-operator oci://ghcr.io/younsl/charts/node-config
 Install a specific version:
 
 ```console
-helm install node-configuration-operator oci://ghcr.io/younsl/charts/node-configuration-operator --version 0.3.0
+helm install node-configuration-operator oci://ghcr.io/younsl/charts/node-configuration-operator --version 0.3.1
 ```
 
 ### Install from local chart
@@ -47,7 +47,7 @@ helm install node-configuration-operator oci://ghcr.io/younsl/charts/node-config
 Download node-configuration-operator chart and install from local directory:
 
 ```console
-helm pull oci://ghcr.io/younsl/charts/node-configuration-operator --untar --version 0.3.0
+helm pull oci://ghcr.io/younsl/charts/node-configuration-operator --untar --version 0.3.1
 helm install node-configuration-operator ./node-configuration-operator
 ```
 

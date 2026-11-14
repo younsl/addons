@@ -2,6 +2,21 @@
 
 Notable changes to the node-configuration-operator (NCO) app (the container images), newest first. Entries are headed by the image version and its release date (KST).
 
+## 0.3.1 (2026-11-14)
+
+### Added
+
+- The controller logs what each sync did to the agent DaemonSet and PodMonitor: `Created the agent DaemonSet`, `Updated the agent DaemonSet`, `Deleted the agent DaemonSet`, and the same for the PodMonitor. Each line carries `kind`, `namespace`, `name`, and `trigger` (`targets` for a change of the targets, `resync` for the check every minute).
+- Drift repair is logged. A resync that changes the object logs `Repaired the agent DaemonSet, it differed from the template`, and one that finds it gone logs `Created the agent DaemonSet, it was missing`. A manual edit and a template changed by a chart upgrade log the same line.
+- `kind` and `binding` in every log line about a NodeConfigurationBinding, and `from` (the previous revision) in `Moved a node to the current revision`.
+- A failed reconcile names what it could not write, such as `Reconcile failed, could not create binding os-hardening.node-1, ...` or `could not update the status of NodeConfiguration os-hardening, ...`.
+- `kind`, `namespace`, `config_map`, `targets`, and `trigger` in the `Agent DaemonSet sync failed` warning, and `kind`, `namespace`, and `name` in `Agent PodMonitor sync failed`.
+
+### Changed
+
+- `Agent DaemonSet synced` is a debug line now. The lines above replace it at the info level.
+- The controller reads the agent DaemonSet, and the PodMonitor when the chart ships one, before every apply to tell a change from none. The Role of the chart already allows it.
+
 ## 0.3.0 (2026-11-13)
 
 ### Added
