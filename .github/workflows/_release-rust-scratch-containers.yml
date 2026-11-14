@@ -13,8 +13,8 @@ on:
       - 'box/addons/argocd-canary-gate/Dockerfile'
       - 'box/addons/filesystem-cleaner/Dockerfile'
       - 'box/addons/volume-autoscaler/Dockerfile'
-      - 'box/addons/node-configuration-operator/operator/Dockerfile'
-      - 'box/addons/node-configuration-operator/agent/Dockerfile'
+      - 'box/addons/node-configuration-operator/crates/operator/Dockerfile'
+      - 'box/addons/node-configuration-operator/crates/agent/Dockerfile'
       - 'box/addons/forklift/Dockerfile'
       - 'box/addons/forklift/Dockerfile.mcp'
   workflow_dispatch:
