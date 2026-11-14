@@ -1,9 +1,9 @@
 [workspace]
 resolver = "3"
 members = [
-    "common",
-    "operator",
-    "agent",
+    "crates/common",
+    "crates/operator",
+    "crates/agent",
 ]
 
 [workspace.package]
@@ -16,7 +16,7 @@ readme = "README.md"
 repository = "https://github.com/younsl/addons"
 
 [workspace.dependencies]
-node-configuration-common = { path = "common" }
+node-configuration-common = { path = "crates/common" }
 
 tokio = "1.53.2"
 tokio-util = "0.7.20"

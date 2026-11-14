@@ -9,7 +9,7 @@ use node_configuration_operator::chart::templates;
 fn chart_crds_match_the_rust_types() {
     for (relative, content) in templates() {
         let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("..")
+            .join("../..")
             .join(&relative);
         let on_disk = std::fs::read_to_string(&path)
             .unwrap_or_else(|e| panic!("read {}: {e}", path.display()));

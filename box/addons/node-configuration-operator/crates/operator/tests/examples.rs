@@ -5,7 +5,7 @@ use serde::Deserialize as _;
 
 #[test]
 fn examples_are_valid() {
-    let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../examples");
+    let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../../examples");
     let mut seen = 0;
     for entry in std::fs::read_dir(dir).unwrap() {
         let path = entry.unwrap().path();

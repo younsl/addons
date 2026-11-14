@@ -1,6 +1,6 @@
 OPERATOR   := node-configuration-operator
 AGENT      := node-configuration-agent
-VERSION    := $(shell grep -oE 'org\.opencontainers\.image\.version="[^"]+"' operator/Dockerfile | cut -d'"' -f2)
+VERSION    := $(shell grep -oE 'org\.opencontainers\.image\.version="[^"]+"' crates/operator/Dockerfile | cut -d'"' -f2)
 REGISTRY   ?= ghcr.io/younsl
 COVER_MIN  ?= 70
 TARGET_amd64 := x86_64-unknown-linux-musl
@@ -51,14 +51,14 @@ check:
 ## clean: remove build artifacts
 clean:
 	cargo clean
-	rm -f operator/$(OPERATOR)-linux-* agent/$(AGENT)-linux-*
+	rm -f crates/operator/$(OPERATOR)-linux-* crates/agent/$(AGENT)-linux-*
 
 ## zigbuild-amd64: cross-compile static linux/amd64 binaries
 ## zigbuild-arm64: cross-compile static linux/arm64 binaries
 zigbuild-amd64 zigbuild-arm64: zigbuild-%:
 	cargo zigbuild --release --bin $(OPERATOR) --bin $(AGENT) --target $(TARGET_$*)
-	cp target/$(TARGET_$*)/release/$(OPERATOR) operator/$(OPERATOR)-linux-$*
-	cp target/$(TARGET_$*)/release/$(AGENT) agent/$(AGENT)-linux-$*
+	cp target/$(TARGET_$*)/release/$(OPERATOR) crates/operator/$(OPERATOR)-linux-$*
+	cp target/$(TARGET_$*)/release/$(AGENT) crates/agent/$(AGENT)-linux-$*
 
 ## zigbuild: cross-compile both binaries for both architectures
 zigbuild: zigbuild-amd64 zigbuild-arm64
@@ -66,16 +66,16 @@ zigbuild: zigbuild-amd64 zigbuild-arm64
 ## docker-build: cross-compile, then build both multi-arch images (requires buildx)
 docker-build: zigbuild
 	docker buildx build --platform linux/amd64,linux/arm64 \
-		-t $(REGISTRY)/$(OPERATOR):$(VERSION) -t $(REGISTRY)/$(OPERATOR):latest operator
+		-t $(REGISTRY)/$(OPERATOR):$(VERSION) -t $(REGISTRY)/$(OPERATOR):latest crates/operator
 	docker buildx build --platform linux/amd64,linux/arm64 \
-		-t $(REGISTRY)/$(AGENT):$(VERSION) -t $(REGISTRY)/$(AGENT):latest agent
+		-t $(REGISTRY)/$(AGENT):$(VERSION) -t $(REGISTRY)/$(AGENT):latest crates/agent
 
 ## docker-push: cross-compile, then build and push both multi-arch images
 docker-push: zigbuild
 	docker buildx build --platform linux/amd64,linux/arm64 \
-		-t $(REGISTRY)/$(OPERATOR):$(VERSION) -t $(REGISTRY)/$(OPERATOR):latest --push operator
+		-t $(REGISTRY)/$(OPERATOR):$(VERSION) -t $(REGISTRY)/$(OPERATOR):latest --push crates/operator
 	docker buildx build --platform linux/amd64,linux/arm64 \
-		-t $(REGISTRY)/$(AGENT):$(VERSION) -t $(REGISTRY)/$(AGENT):latest --push agent
+		-t $(REGISTRY)/$(AGENT):$(VERSION) -t $(REGISTRY)/$(AGENT):latest --push crates/agent
 
 ## help: show this message
 help:

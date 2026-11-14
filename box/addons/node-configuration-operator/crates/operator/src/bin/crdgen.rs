@@ -9,7 +9,7 @@ use node_configuration_operator::chart::templates;
 fn main() -> Result<()> {
     for (relative, content) in templates() {
         let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("..")
+            .join("../..")
             .join(&relative);
         std::fs::write(&path, content).with_context(|| format!("write {}", path.display()))?;
         eprintln!("wrote {relative}");
