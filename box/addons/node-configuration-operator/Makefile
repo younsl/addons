@@ -1,6 +1,5 @@
 OPERATOR   := node-configuration-operator
 AGENT      := node-configuration-agent
-CRATES     := common operator agent
 VERSION    := $(shell grep -oE 'org\.opencontainers\.image\.version="[^"]+"' operator/Dockerfile | cut -d'"' -f2)
 REGISTRY   ?= ghcr.io/younsl
 COVER_MIN  ?= 70
@@ -17,51 +16,49 @@ all: fmt lint test build
 
 ## build: compile debug binaries
 build:
-	cd operator && cargo build
-	cd agent && cargo build
+	cargo build --workspace
 
 ## release: compile optimized release binaries
 release:
-	cd operator && cargo build --release --bin $(OPERATOR)
-	cd agent && cargo build --release
+	cargo build --release --bin $(OPERATOR) --bin $(AGENT)
 
 ## crd: regenerate the CRDs in the Helm chart from the Rust types
 crd:
-	cd operator && cargo run --quiet --bin crdgen
+	cargo run --quiet --bin crdgen
 
 ## test: run the tests of every crate
 test:
-	for crate in $(CRATES); do (cd $$crate && cargo test) || exit 1; done
+	cargo test --workspace
 
 ## coverage: enforce minimum line coverage of both images (cargo-llvm-cov)
 coverage:
-	cd operator && cargo llvm-cov --fail-under-lines $(COVER_MIN)
-	cd agent && cargo llvm-cov --fail-under-lines $(COVER_MIN)
+	cargo llvm-cov -p $(OPERATOR) --fail-under-lines $(COVER_MIN)
+	cargo llvm-cov -p $(AGENT) --fail-under-lines $(COVER_MIN)
 
 ## fmt: format code
 fmt:
-	for crate in $(CRATES); do (cd $$crate && cargo fmt) || exit 1; done
+	cargo fmt --all
 
 ## lint: rustfmt check + clippy with warnings denied
 lint:
-	for crate in $(CRATES); do (cd $$crate && cargo fmt --check && cargo clippy --all-targets -- -D warnings) || exit 1; done
+	cargo fmt --all --check
+	cargo clippy --workspace --all-targets -- -D warnings
 
 ## check: type-check without building
 check:
-	for crate in $(CRATES); do (cd $$crate && cargo check) || exit 1; done
+	cargo check --workspace
 
 ## clean: remove build artifacts
 clean:
-	for crate in $(CRATES); do (cd $$crate && cargo clean) || exit 1; done
+	cargo clean
 	rm -f operator/$(OPERATOR)-linux-* agent/$(AGENT)-linux-*
 
 ## zigbuild-amd64: cross-compile static linux/amd64 binaries
 ## zigbuild-arm64: cross-compile static linux/arm64 binaries
 zigbuild-amd64 zigbuild-arm64: zigbuild-%:
-	cd operator && cargo zigbuild --release --bin $(OPERATOR) --target $(TARGET_$*) \
-		&& cp target/$(TARGET_$*)/release/$(OPERATOR) $(OPERATOR)-linux-$*
-	cd agent && cargo zigbuild --release --bin $(AGENT) --target $(TARGET_$*) \
-		&& cp target/$(TARGET_$*)/release/$(AGENT) $(AGENT)-linux-$*
+	cargo zigbuild --release --bin $(OPERATOR) --bin $(AGENT) --target $(TARGET_$*)
+	cp target/$(TARGET_$*)/release/$(OPERATOR) operator/$(OPERATOR)-linux-$*
+	cp target/$(TARGET_$*)/release/$(AGENT) agent/$(AGENT)-linux-$*
 
 ## zigbuild: cross-compile both binaries for both architectures
 zigbuild: zigbuild-amd64 zigbuild-arm64

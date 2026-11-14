@@ -2,7 +2,7 @@
 
 ## Layout
 
-The component is three standalone crates next to the chart. Each image is built from its own directory, and both depend on `common` by path.
+The component is one Cargo workspace of three crates next to the chart. The root `Cargo.toml` holds the version, the dependency versions, the lints, and the release profile, and one `Cargo.lock` pins both images to the same dependencies. Each image is built from the directory of its crate.
 
 | Path | Role |
 | --- | --- |
@@ -10,6 +10,7 @@ The component is three standalone crates next to the chart. Each image is built 
 | `agent/` | The agent: crate and Dockerfile |
 | `common/` | What both share: the resource types, the revision hash, and the process plumbing |
 | `charts/` | The Helm chart, with the generated CRDs |
+| `Cargo.toml` | The workspace: shared package fields, dependency versions, lints, and the release profile |
 
 | Path | Role |
 | --- | --- |
@@ -49,7 +50,7 @@ The rule engine only needs a directory, so its tests run against a temporary dir
 
 ## Release
 
-Bump `org.opencontainers.image.version` in both `operator/Dockerfile` and `agent/Dockerfile` for the images, and `version` in `Chart.yaml` for the chart. The two images share a version, and the chart pulls both at its app version. Each release runs on push to `main`. The release workflow tests the crate of each image, so run `make test` for `common` before a release.
+Bump `org.opencontainers.image.version` in both `operator/Dockerfile` and `agent/Dockerfile` for the images, and `version` in `Chart.yaml` for the chart. The two images share a version, and the chart pulls both at its app version. Each release runs on push to `main`. The release workflow tests the crate of each image, so run `make test`, which covers `common` too, before a release.
 
 ## Conclusion
 
