@@ -41,7 +41,7 @@ Applies to READMEs, docs, this file, commit messages, and chart annotations.
 
 ## Rust
 
-Every crate is standalone (no workspace). Match these when adding or touching one.
+There is no repository-wide workspace. A component is one standalone crate, or one Cargo workspace when it ships several crates that release together (`node-configuration-operator`). Such a workspace keeps the package fields, dependency versions, lints, and profile below in its root `Cargo.toml`. Match these when adding or touching a crate.
 
 ### Crate
 
