@@ -1,5 +1,7 @@
 # node-configuration-operator
 
+<img src="docs/assets/logo.svg" alt="node-configuration-operator logo" width="120">
+
 [![Rust](https://img.shields.io/badge/rust-1.100.0-black?style=flat-square&logo=rust&logoColor=white)](https://www.rust-lang.org/)
 [![GitHub Container Registry](https://img.shields.io/badge/ghcr.io-node--configuration--operator-black?style=flat-square&logo=docker&logoColor=white)](https://github.com/younsl/ct/pkgs/container/node-configuration-operator)
 [![Helm Chart](https://img.shields.io/badge/ghcr.io-charts%2Fnode--configuration--operator-black?style=flat-square&logo=helm&logoColor=white)](https://github.com/younsl/ct/pkgs/container/charts%2Fnode-configuration-operator)
@@ -82,6 +84,8 @@ A complete hardening baseline is in [examples/os-hardening.yaml](examples/os-har
 ## License
 
 This project is licensed under the Apache License 2.0. See the [LICENSE](../../../LICENSE) file for details.
+
+The logo includes the Kubernetes icon from [CNCF artwork](https://github.com/cncf/artwork), which remains a trademark of its owner.
 
 ## AI Disclosure
 
