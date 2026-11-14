@@ -6,7 +6,7 @@ rust-version = "1.100.0"
 authors = ["younsl <cysl@kakao.com>"]
 description = "Multi-cluster Trivy report collector and viewer"
 license = "Apache-2.0"
-repository = "https://github.com/younsl/addons"
+repository = "https://github.com/younsl/ct"
 default-run = "trivy-collector"
 
 [[bin]]

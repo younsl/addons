@@ -11,9 +11,9 @@ keywords:
   - vulnerability
   - sbom
   - kubernetes
-home: https://github.com/younsl/addons
+home: https://github.com/younsl/ct
 sources:
-  - https://github.com/younsl/addons/tree/main/box/addons/trivy-collector
+  - https://github.com/younsl/ct/tree/main/box/addons/trivy-collector
 maintainers:
   - name: younsl
     email: cysl@kakao.com

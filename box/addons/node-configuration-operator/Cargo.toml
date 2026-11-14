@@ -13,7 +13,7 @@ rust-version = "1.100.0"
 authors = ["younsl <cysl@kakao.com>"]
 license = "Apache-2.0"
 readme = "README.md"
-repository = "https://github.com/younsl/addons"
+repository = "https://github.com/younsl/ct"
 
 [workspace.dependencies]
 node-configuration-common = { path = "crates/common" }

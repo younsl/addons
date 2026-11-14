@@ -5,9 +5,9 @@ type: application
 deprecated: false
 version: 0.3.1
 appVersion: "0.3.1"
-home: https://github.com/younsl/addons
+home: https://github.com/younsl/ct
 sources:
-  - https://github.com/younsl/addons/tree/main/box/addons/node-configuration-operator
+  - https://github.com/younsl/ct/tree/main/box/addons/node-configuration-operator
 maintainers:
   - name: younsl
     email: cysl@kakao.com

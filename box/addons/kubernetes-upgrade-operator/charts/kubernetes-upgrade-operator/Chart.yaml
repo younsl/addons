@@ -5,9 +5,9 @@ type: application
 deprecated: false
 version: 0.2.0
 appVersion: "0.6.0"
-home: https://github.com/younsl/addons
+home: https://github.com/younsl/ct
 sources:
-  - https://github.com/younsl/addons/tree/main/box/addons/kubernetes-upgrade-operator
+  - https://github.com/younsl/ct/tree/main/box/addons/kubernetes-upgrade-operator
 maintainers:
   - name: younsl
     email: cysl@kakao.com

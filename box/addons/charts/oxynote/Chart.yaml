@@ -8,7 +8,7 @@ deprecated: false
 kubeVersion: ">=1.29.0-0"
 home: https://github.com/oxynote/oxynote
 sources:
-  - https://github.com/younsl/addons/tree/main/box/addons/charts/oxynote
+  - https://github.com/younsl/ct/tree/main/box/addons/charts/oxynote
   - https://github.com/oxynote/oxynote
 keywords:
   - oxynote

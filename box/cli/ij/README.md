@@ -1,8 +1,8 @@
 # ij
 
-[![GitHub release](https://img.shields.io/github/v/release/younsl/addons?filter=ij*&style=flat-square&color=black)](https://github.com/younsl/addons/releases?q=ij&expanded=true)
+[![GitHub release](https://img.shields.io/github/v/release/younsl/ct?filter=ij*&style=flat-square&color=black)](https://github.com/younsl/ct/releases?q=ij&expanded=true)
 [![Rust](https://img.shields.io/badge/rust-1.100.0-black?style=flat-square&logo=rust&logoColor=white)](https://www.rust-lang.org/)
-[![GitHub license](https://img.shields.io/github/license/younsl/addons?style=flat-square&color=black)](https://github.com/younsl/addons/blob/main/LICENSE)
+[![GitHub license](https://img.shields.io/github/license/younsl/ct?style=flat-square&color=black)](https://github.com/younsl/ct/blob/main/LICENSE)
 
 **I**nfra **J**anitor - EC2 operations CLI for SSM connect and AMI cleanup. Scans AWS regions in parallel with fuzzy search. Inspired by [gossm](https://github.com/gjbae1212/gossm).
 
@@ -71,7 +71,7 @@ Prebuilt binaries for Linux and macOS (amd64, arm64) live in [`dist/<version>/`]
 VERSION=0.1.0
 OS=$(uname -s | tr '[:upper:]' '[:lower:]')
 ARCH=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
-curl -fsSL "https://raw.githubusercontent.com/younsl/addons/main/box/cli/ij/dist/${VERSION}/ij-${OS}-${ARCH}.tar.gz" | tar -xz
+curl -fsSL "https://raw.githubusercontent.com/younsl/ct/main/box/cli/ij/dist/${VERSION}/ij-${OS}-${ARCH}.tar.gz" | tar -xz
 sudo install -m 0755 ij /usr/local/bin/ij
 ij --version
 ```

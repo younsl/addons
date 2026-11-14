@@ -6,7 +6,7 @@ rust-version = "1.100.0"
 authors = ["younsl <cysl@kakao.com>"]
 description = "Prometheus exporter for AWS Aurora MySQL Database Insights (Performance Insights) metrics"
 license = "Apache-2.0"
-repository = "https://github.com/younsl/addons"
+repository = "https://github.com/younsl/ct"
 
 [[bin]]
 name = "adie"

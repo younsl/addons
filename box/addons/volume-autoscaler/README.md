@@ -2,10 +2,10 @@
 
 <img src="docs/assets/logo.svg" alt="volume-autoscaler logo" width="120">
 
-[![GitHub Container Registry](https://img.shields.io/badge/ghcr.io-volume--autoscaler-black?style=flat-square&logo=docker&logoColor=white)](https://github.com/younsl/addons/pkgs/container/volume-autoscaler)
-[![Helm Chart](https://img.shields.io/badge/ghcr.io-charts%2Fvolume--autoscaler-black?style=flat-square&logo=helm&logoColor=white)](https://github.com/younsl/addons/pkgs/container/charts%2Fvolume-autoscaler)
+[![GitHub Container Registry](https://img.shields.io/badge/ghcr.io-volume--autoscaler-black?style=flat-square&logo=docker&logoColor=white)](https://github.com/younsl/ct/pkgs/container/volume-autoscaler)
+[![Helm Chart](https://img.shields.io/badge/ghcr.io-charts%2Fvolume--autoscaler-black?style=flat-square&logo=helm&logoColor=white)](https://github.com/younsl/ct/pkgs/container/charts%2Fvolume-autoscaler)
 [![Rust](https://img.shields.io/badge/rust-1.100.0-black?style=flat-square&logo=rust&logoColor=white)](https://www.rust-lang.org/)
-[![GitHub license](https://img.shields.io/github/license/younsl/addons?style=flat-square&color=black)](https://github.com/younsl/addons/blob/main/LICENSE)
+[![GitHub license](https://img.shields.io/github/license/younsl/ct?style=flat-square&color=black)](https://github.com/younsl/ct/blob/main/LICENSE)
 
 Grows the root [EBS volume](https://docs.aws.amazon.com/ebs/latest/userguide/ebs-volumes.html) and filesystem of standalone [EC2 instances](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/concepts.html) over [SSM Run Command](https://docs.aws.amazon.com/systems-manager/latest/userguide/run-command.html) when disk usage crosses a threshold, and grows [PersistentVolumeClaims](https://kubernetes.io/docs/concepts/storage/persistent-volumes/) before they fill up. Both are declared in resources modeled on the [HorizontalPodAutoscaler](https://kubernetes.io/docs/concepts/workloads/autoscaling/horizontal-pod-autoscale/): [InstanceVolumeAutoscaler](docs/instance-volume-autoscaler.md) (short name iva) for EC2 instances and [PersistentVolumeClaimAutoscaler](docs/persistent-volume-claim-autoscaler.md) (short name pvca) for claims, with utilization read from a cluster-local Prometheus or a central Mimir.
 

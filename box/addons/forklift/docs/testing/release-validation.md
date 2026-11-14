@@ -79,7 +79,7 @@ external test tool, not the Forklift implementation.
 
 ## Security scan result
 
-The eight open [Dependabot alerts](https://github.com/younsl/addons/security/dependabot)
+The eight open [Dependabot alerts](https://github.com/younsl/ct/security/dependabot)
 queried on 2026-09-08 were all npm development dependencies in
 `web/pnpm-lock.yaml`, not Go dependencies. Local `pnpm --dir web audit`
 reproduced the same eight GHSA IDs (six high, two moderate).

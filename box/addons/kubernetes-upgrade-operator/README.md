@@ -1,9 +1,9 @@
 # kubernetes-upgrade-operator
 
 [![Rust](https://img.shields.io/badge/rust-1.100.0-black?style=flat-square&logo=rust&logoColor=white)](https://www.rust-lang.org/)
-[![GitHub Container Registry](https://img.shields.io/badge/ghcr.io-kubernetes--upgrade--operator-black?style=flat-square&logo=docker&logoColor=white)](https://github.com/younsl/addons/pkgs/container/kubernetes-upgrade-operator)
-[![Helm Chart](https://img.shields.io/badge/ghcr.io-charts%2Fkubernetes--upgrade--operator-black?style=flat-square&logo=helm&logoColor=white)](https://github.com/younsl/addons/pkgs/container/charts%2Fkubernetes-upgrade-operator)
-[![GitHub license](https://img.shields.io/github/license/younsl/addons?style=flat-square&color=black)](https://github.com/younsl/addons/blob/main/LICENSE)
+[![GitHub Container Registry](https://img.shields.io/badge/ghcr.io-kubernetes--upgrade--operator-black?style=flat-square&logo=docker&logoColor=white)](https://github.com/younsl/ct/pkgs/container/kubernetes-upgrade-operator)
+[![Helm Chart](https://img.shields.io/badge/ghcr.io-charts%2Fkubernetes--upgrade--operator-black?style=flat-square&logo=helm&logoColor=white)](https://github.com/younsl/ct/pkgs/container/charts%2Fkubernetes-upgrade-operator)
+[![GitHub license](https://img.shields.io/github/license/younsl/ct?style=flat-square&color=black)](https://github.com/younsl/ct/blob/main/LICENSE)
 
 [Kubernetes operator](https://kubernetes.io/docs/concepts/extend-kubernetes/operator/) that upgrades EKS clusters declaratively. It watches EKSUpgrade [custom resources](https://kubernetes.io/docs/concepts/extend-kubernetes/api-extension/custom-resources/) and steps the control plane, add-ons, managed node groups, and Karpenter NodePools one minor version at a time, from a hub cluster across accounts. Inspired by Rancher's [system-upgrade-controller](https://github.com/rancher/system-upgrade-controller).
 

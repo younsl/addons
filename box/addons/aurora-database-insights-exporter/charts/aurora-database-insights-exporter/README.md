@@ -4,7 +4,7 @@
 
 Prometheus exporter for AWS Aurora MySQL Database Insights metrics
 
-**Homepage:** <https://github.com/younsl/addons>
+**Homepage:** <https://github.com/younsl/ct>
 
 ## Installation
 
@@ -131,7 +131,7 @@ The following table lists the configurable parameters and their default values.
 
 ## Source Code
 
-* <https://github.com/younsl/addons/tree/main/box/addons/aurora-database-insights-exporter>
+* <https://github.com/younsl/ct/tree/main/box/addons/aurora-database-insights-exporter>
 
 ## Maintainers
 
@@ -141,7 +141,7 @@ The following table lists the configurable parameters and their default values.
 
 ## License
 
-This chart is licensed under the Apache License 2.0. See the [LICENSE](https://github.com/younsl/addons/blob/main/LICENSE) file for details.
+This chart is licensed under the Apache License 2.0. See the [LICENSE](https://github.com/younsl/ct/blob/main/LICENSE) file for details.
 
 ## Contributing
 

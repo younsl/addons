@@ -6,7 +6,7 @@ This file records only what the repository cannot tell you by itself: convention
 
 ## Overview
 
-Monorepo of Kubernetes addons, operators, CLI tools, and runtime container images, plus personal docs under `docs/`. Components with an image live in `box/addons/`, standalone Helm charts in `box/addons/charts/`, CLIs in `box/cli/`. Every component is built in Rust, except `jenkins-inbound-agent`, which extends an upstream image and keeps one directory per Jenkins controller version. `trivy-collector` and `forklift` embed a web frontend that the image build compiles first.
+ct (Cluster Toolkit) is a monorepo of Kubernetes addons, operators, CLI tools, and runtime container images, plus personal docs under `docs/`. Components with an image live in `box/addons/`, standalone Helm charts in `box/addons/charts/`, CLIs in `box/cli/`. Every component is built in Rust, except `jenkins-inbound-agent`, which extends an upstream image and keeps one directory per Jenkins controller version. `trivy-collector` and `forklift` embed a web frontend that the image build compiles first.
 
 Each component does one thing well. Prefer a new small component over extending an existing one past its purpose.
 

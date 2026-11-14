@@ -4,7 +4,7 @@
 
 Lightweight Kubernetes-native artifact repository (Maven, npm, Cargo, Go, PyPI) with proxy caching and supply-chain controls (age policy, package approval, vulnerability scanning)
 
-**Homepage:** <https://github.com/younsl/addons/tree/main/box/addons/forklift>
+**Homepage:** <https://github.com/younsl/ct/tree/main/box/addons/forklift>
 
 ## Requirements
 
@@ -291,7 +291,7 @@ The following table lists the configurable parameters and their default values.
 
 ## Source Code
 
-* <https://github.com/younsl/addons/tree/main/box/addons/forklift/charts/forklift>
+* <https://github.com/younsl/ct/tree/main/box/addons/forklift/charts/forklift>
 
 ## Maintainers
 
@@ -301,7 +301,7 @@ The following table lists the configurable parameters and their default values.
 
 ## License
 
-This chart is licensed under the Apache License 2.0. See [LICENSE](https://github.com/younsl/addons/blob/main/LICENSE) for details.
+This chart is licensed under the Apache License 2.0. See [LICENSE](https://github.com/younsl/ct/blob/main/LICENSE) for details.
 
 ## Contributing
 
