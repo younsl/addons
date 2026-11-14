@@ -6,71 +6,72 @@ A Helm chart for Oxynote, an open-source technical wiki connected to the systems
 
 **Homepage:** <https://github.com/oxynote/oxynote>
 
-This chart is maintained by younsl and is not an official Oxynote project. The upstream image reference lives in [docker/prod/README.md](https://github.com/oxynote/oxynote/blob/main/docker/prod/README.md).
+## Requirements
+
+Kubernetes: `>=1.29.0-0`
 
 ## Installation
 
-The chart is distributed only as an OCI artifact on ghcr.io, so `helm search repo` does not work. List versions with [crane](https://github.com/google/go-containerregistry/blob/main/cmd/crane/README.md):
+### List available versions
+
+This chart is distributed via OCI registry, so you need to use [crane](https://github.com/google/go-containerregistry/blob/main/cmd/crane/README.md) instead of `helm search repo` to discover available versions:
 
 ```console
 crane ls ghcr.io/younsl/charts/oxynote
 ```
 
-Install:
+If you need to install crane on macOS, you can easily install it using [Homebrew](https://brew.sh/), the package manager.
 
-```console
-helm install oxynote oci://ghcr.io/younsl/charts/oxynote \
-  --version 0.1.0 \
-  --namespace oxynote --create-namespace \
-  --set oxynote.publicUrl=https://notes.example.com
+```bash
+brew install crane
 ```
 
-Inspect the chart before installing:
+### Install the chart
+
+Install the chart with the release name `oxynote`:
 
 ```console
-helm show values oci://ghcr.io/younsl/charts/oxynote --version 0.1.0
+helm install oxynote oci://ghcr.io/younsl/charts/oxynote
 ```
 
-## Design notes
+Install with custom values:
 
-- Single instance only. Oxynote keeps its search index on the data volume, so the Deployment runs one replica with the `Recreate` strategy and the replica count is not configurable.
-- `enableServiceLinks` is always `false`. The image rejects any unknown `OXYNOTE_*` variable at boot, and Kubernetes injects `OXYNOTE_SERVICE_HOST` and friends when the Service is named `oxynote`.
-- `/oxynote/data` holds the embedded PostgreSQL, the generated secrets, uploaded images and the search index. Losing it loses every document and permanently orphans stored data-source credentials, so the created PVC is kept on `helm uninstall` by default.
-- `fsGroupChangePolicy: OnRootMismatch` is the default because a recursive `fsGroup` change adds group write to the PostgreSQL data directory, which PostgreSQL refuses to open.
-- The root filesystem is read-only and `/tmp` is an emptyDir. The embedded PostgreSQL socket lives there.
+```console
+helm install oxynote oci://ghcr.io/younsl/charts/oxynote -f values.yaml
+```
+
+Install a specific version:
+
+```console
+helm install oxynote oci://ghcr.io/younsl/charts/oxynote --version 0.1.0
+```
+
+### Install from local chart
+
+Download oxynote chart and install from local directory:
+
+```console
+helm pull oci://ghcr.io/younsl/charts/oxynote --untar --version 0.1.0
+helm install oxynote ./oxynote
+```
+
+The `--untar` option downloads and unpacks the chart files into a directory for easy viewing and editing.
+
+## Upgrade
+
+```console
+helm upgrade oxynote oci://ghcr.io/younsl/charts/oxynote
+```
+
+## Uninstall
+
+```console
+helm uninstall oxynote
+```
 
 ## Configuration
 
-Set the public origin with `oxynote.publicUrl`. Put plain settings in `oxynote.config` and credentials in a Secret referenced by `oxynote.existingSecret`:
-
-```yaml
-oxynote:
-  publicUrl: https://notes.example.com
-  config:
-    OXYNOTE_LOG_LEVEL: INFO
-    OXYNOTE_CRASH_REPORTING_DISABLED: "true"
-  existingSecret: oxynote-env
-```
-
-```console
-kubectl -n oxynote create secret generic oxynote-env \
-  --from-literal=OXYNOTE_DB_DSN='postgresql://oxynote:${DB_PASSWORD}@db.example.com/oxynote?sslmode=require' \
-  --from-literal=OXYNOTE_SMTP_DSN='smtp://${SMTP_USER}:${SMTP_PASSWORD}@smtp.example.com:587?tls=starttls'
-```
-
-The default single-workspace mode creates the admin `admin@example.com` with the password `oxynote-admin-1234` on first boot. Change both before exposing the instance.
-
-## Backup
-
-With the embedded database, dump it with the `pg_dump` the image ships:
-
-```console
-kubectl -n oxynote exec deploy/oxynote -- sh -c 'PGPASSWORD="$(cat /oxynote/data/secrets/database-password)" /usr/libexec/postgresql18/pg_dump -h /tmp/postgresql -U oxynote oxynote' > oxynote.sql
-```
-
-## Requirements
-
-Kubernetes: `>=1.29.0-0`
+The following table lists the configurable parameters and their default values.
 
 ## Values
 
@@ -138,3 +139,25 @@ Kubernetes: `>=1.29.0-0`
 | extraEnvFrom | list | `[]` | Extra envFrom sources for the container |
 | extraVolumes | list | `[]` | Extra volumes for the pod |
 | extraVolumeMounts | list | `[]` | Extra volume mounts for the container |
+
+## Source Code
+
+* <https://github.com/younsl/addons/tree/main/box/addons/charts/oxynote>
+* <https://github.com/oxynote/oxynote>
+
+## Maintainers
+
+| Name | Email | Url |
+| ---- | ------ | --- |
+| younsl | <cysl@kakao.com> | <https://github.com/younsl> |
+
+## License
+
+This chart is licensed under the Apache License 2.0. See the [LICENSE](https://github.com/younsl/addons/blob/main/LICENSE) file for details.
+
+## Contributing
+
+This repository does not accept external contributions. Pull requests and issues are disabled.
+
+----------------------------------------------
+Autogenerated from chart metadata using [helm-docs v1.14.2](https://github.com/norwoodj/helm-docs/releases/v1.14.2)
