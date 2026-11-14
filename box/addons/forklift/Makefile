@@ -1,14 +1,15 @@
 BINARY      := forklift
-VERSION     := $(shell grep -oE 'org\.opencontainers\.image\.version="[^"]+"' Dockerfile | cut -d'"' -f2)
-MCP_VERSION := $(shell grep -oE 'org\.opencontainers\.image\.version="[^"]+"' Dockerfile.mcp | cut -d'"' -f2)
+VERSION     := $(shell grep -oE 'org\.opencontainers\.image\.version="[^"]+"' crates/forklift/Dockerfile | cut -d'"' -f2)
+MCP_VERSION := $(shell grep -oE 'org\.opencontainers\.image\.version="[^"]+"' crates/forklift-mcp/Dockerfile | cut -d'"' -f2)
 COMMIT      := $(shell git rev-parse --short HEAD 2>/dev/null || echo none)
 ECR_REGISTRY ?= ghcr.io/younsl
 IMAGE        := $(ECR_REGISTRY)/$(BINARY)
 COVER_MIN   ?= 73
 PLATFORMS   ?= linux/amd64,linux/arm64
 DATA_DIR    ?= ./.data
-# Build metadata is injected at compile time (see src/version.rs).
-BUILD_ENV   := FORKLIFT_VERSION=$(VERSION) FORKLIFT_COMMIT=$(COMMIT)
+# Build metadata is injected at compile time (see crates/common/src/version.rs).
+BUILD_ENV     := FORKLIFT_VERSION=$(VERSION) FORKLIFT_COMMIT=$(COMMIT)
+MCP_BUILD_ENV := FORKLIFT_VERSION=$(MCP_VERSION) FORKLIFT_COMMIT=$(COMMIT)
 # Cross targets built by `make cross`; cargo-zigbuild links them with zig.
 CROSS_TARGETS := x86_64-unknown-linux-musl aarch64-unknown-linux-musl
 
@@ -18,13 +19,15 @@ all: fmt lint test build
 
 ## build: compile the release binaries into bin/
 build:
-	$(BUILD_ENV) cargo build --release --locked
+	$(BUILD_ENV) cargo build --release --locked --bin $(BINARY)
+	$(MCP_BUILD_ENV) cargo build --release --locked --bin $(BINARY)-mcp
 	@mkdir -p bin && cp target/release/$(BINARY) target/release/$(BINARY)-mcp bin/
 
 ## cross: cross-compile static musl binaries for every platform into bin/<target>/
 cross:
 	@for t in $(CROSS_TARGETS); do \
-		$(BUILD_ENV) cargo zigbuild --release --locked --target $$t || exit 1; \
+		$(BUILD_ENV) cargo zigbuild --release --locked --bin $(BINARY) --target $$t || exit 1; \
+		$(MCP_BUILD_ENV) cargo zigbuild --release --locked --bin $(BINARY)-mcp --target $$t || exit 1; \
 		mkdir -p bin/$$t && cp target/$$t/release/$(BINARY) target/$$t/release/$(BINARY)-mcp bin/$$t/; \
 	done
 
@@ -42,14 +45,16 @@ web-dev:
 
 ## test: run the test suite
 test:
-	cargo test --all-targets --locked
+	cargo test --workspace --all-targets --locked
 
-## coverage: enforce minimum line coverage (requires cargo-llvm-cov)
+## coverage: enforce minimum line coverage of each image (requires cargo-llvm-cov)
 coverage:
-	@total=$$(cargo llvm-cov --all-targets --locked --summary-only --json | \
-		python3 -c 'import json,sys; print(json.load(sys.stdin)["data"][0]["totals"]["lines"]["percent"])'); \
-	echo "total coverage: $$total% (min $(COVER_MIN)%)"; \
-	awk "BEGIN { exit !($$total >= $(COVER_MIN)) }" || { echo "coverage below $(COVER_MIN)%"; exit 1; }
+	@for p in $(BINARY) $(BINARY)-mcp; do \
+		total=$$(cargo llvm-cov -p $$p --all-targets --locked --summary-only --json | \
+			python3 -c 'import json,sys; print(json.load(sys.stdin)["data"][0]["totals"]["lines"]["percent"])'); \
+		echo "$$p coverage: $$total% (min $(COVER_MIN)%)"; \
+		awk "BEGIN { exit !($$total >= $(COVER_MIN)) }" || { echo "$$p coverage below $(COVER_MIN)%"; exit 1; }; \
+	done
 
 ## fmt: format code
 fmt:
@@ -61,9 +66,9 @@ lint: clippy
 
 ## clippy: run clippy on every target
 clippy:
-	cargo clippy --all-targets --locked -- -D warnings
+	cargo clippy --workspace --all-targets --locked -- -D warnings
 
-## web-build: build the React UI into src/webui/dist (embedded into the binary)
+## web-build: build the React UI into crates/forklift/src/webui/dist (embedded into the binary)
 web-build:
 	cd web && mise exec -- pnpm install --frozen-lockfile && mise exec -- pnpm run build
 
@@ -85,34 +90,34 @@ e2e:
 
 ## clean: remove build and coverage artifacts
 clean:
-	rm -rf bin target .data $(BINARY)-linux-* $(BINARY)-mcp-linux-*
+	rm -rf bin target .data crates/$(BINARY)/$(BINARY)-linux-* crates/$(BINARY)-mcp/$(BINARY)-mcp-linux-*
 
 ## docker-context: stage the cross-compiled binaries under the names the Dockerfiles copy
 docker-context: web-build cross
-	cp bin/x86_64-unknown-linux-musl/$(BINARY) $(BINARY)-linux-amd64
-	cp bin/aarch64-unknown-linux-musl/$(BINARY) $(BINARY)-linux-arm64
-	cp bin/x86_64-unknown-linux-musl/$(BINARY)-mcp $(BINARY)-mcp-linux-amd64
-	cp bin/aarch64-unknown-linux-musl/$(BINARY)-mcp $(BINARY)-mcp-linux-arm64
+	cp bin/x86_64-unknown-linux-musl/$(BINARY) crates/$(BINARY)/$(BINARY)-linux-amd64
+	cp bin/aarch64-unknown-linux-musl/$(BINARY) crates/$(BINARY)/$(BINARY)-linux-arm64
+	cp bin/x86_64-unknown-linux-musl/$(BINARY)-mcp crates/$(BINARY)-mcp/$(BINARY)-mcp-linux-amd64
+	cp bin/aarch64-unknown-linux-musl/$(BINARY)-mcp crates/$(BINARY)-mcp/$(BINARY)-mcp-linux-arm64
 
 ## docker-build: build the multi-arch forklift image (requires buildx)
 docker-build: docker-context
 	docker buildx build --platform $(PLATFORMS) \
-		-t $(IMAGE):$(VERSION) -t $(IMAGE):latest .
+		-t $(IMAGE):$(VERSION) -t $(IMAGE):latest crates/$(BINARY)
 
 ## docker-build-mcp: build the multi-arch forklift-mcp image (requires buildx)
 docker-build-mcp: docker-context
-	docker buildx build --platform $(PLATFORMS) -f Dockerfile.mcp \
-		-t $(IMAGE)-mcp:$(MCP_VERSION) -t $(IMAGE)-mcp:latest .
+	docker buildx build --platform $(PLATFORMS) \
+		-t $(IMAGE)-mcp:$(MCP_VERSION) -t $(IMAGE)-mcp:latest crates/$(BINARY)-mcp
 
 ## docker-push: build and push the multi-arch forklift image
 docker-push: docker-context
 	docker buildx build --push --platform $(PLATFORMS) \
-		-t $(IMAGE):$(VERSION) -t $(IMAGE):latest .
+		-t $(IMAGE):$(VERSION) -t $(IMAGE):latest crates/$(BINARY)
 
 ## docker-push-mcp: build and push the multi-arch forklift-mcp image
 docker-push-mcp: docker-context
-	docker buildx build --push --platform $(PLATFORMS) -f Dockerfile.mcp \
-		-t $(IMAGE)-mcp:$(MCP_VERSION) -t $(IMAGE)-mcp:latest .
+	docker buildx build --push --platform $(PLATFORMS) \
+		-t $(IMAGE)-mcp:$(MCP_VERSION) -t $(IMAGE)-mcp:latest crates/$(BINARY)-mcp
 
 ## helm-lint: lint the Helm chart
 helm-lint:

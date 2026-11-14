@@ -4,8 +4,8 @@
 
 **Implementation status: Implemented.** Verified on 2026-08-16 against `main`
 commit `5db514b`. Pipeline configuration and order resolution live in
-`src/repoconfig.rs` (`PolicyPipelineConfig`, `EffectiveOrder`),
-and the gates in `src/repo/policypipeline.rs` (`policyGates` before the age
+`crates/forklift/src/repoconfig.rs` (`PolicyPipelineConfig`, `EffectiveOrder`),
+and the gates in `crates/forklift/src/repo/policypipeline.rs` (`policyGates` before the age
 break, `finalPolicyGate` after it). Policy templates are exposed through the API
 and UI only; they cannot be declared through
 [Helm](https://github.com/helm/helm) values or GitOps.
@@ -119,7 +119,7 @@ assessment filters that follow age and then runs approval. The same split is use
 for cached, newly fetched, and pass-through content. npm packuments and PyPI
 simple indexes resume the chain after their age rewrite.
 
-The internal policy evaluator in `src/repo/policypipeline.rs` evaluates a
+The internal policy evaluator in `crates/forklift/src/repo/policypipeline.rs` evaluates a
 request against the configured stages and returns the response for a blocked
 request. Allowed requests continue through the repository handler.
 

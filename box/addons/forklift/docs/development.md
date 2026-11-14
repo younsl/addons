@@ -10,7 +10,7 @@ Read this before the first local build or the first pull request.
 
 ## Background
 
-The repository holds one Rust crate and one frontend. The binary embeds the
+The repository holds one [Cargo workspace](https://doc.rust-lang.org/cargo/reference/workspaces.html) and one frontend. The workspace has three crates under `crates/`: `forklift` (the server), `forklift-mcp` (the MCP server, released under its own version), and `common` (the log format, shutdown signal, and build version both share). The binary embeds the
 built [React](https://github.com/facebook/react) UI at compile time
 (`rust-embed`), so a release is a single artifact with no separate static file
 server. A placeholder
@@ -19,7 +19,7 @@ without ever running the frontend toolchain; `make web-build` replaces it with
 the real UI, and the release workflow runs the same build before compiling.
 
 Releases are label-driven rather than tag-driven. The container image version
-comes from an OCI label in the `Dockerfile` and the chart version from
+comes from an OCI label in `crates/forklift/Dockerfile` and the chart version from
 `Chart.yaml`, so changing either on `main` is what publishes a new version.
 
 ```bash
@@ -27,8 +27,8 @@ make build        # release binaries (forklift, forklift-mcp) into bin/
 make cross        # static musl binaries for linux/amd64 and linux/arm64 via cargo-zigbuild
 make test         # cargo test
 make lint         # rustfmt check + clippy with warnings denied
-make coverage     # enforce 73% line coverage (cargo-llvm-cov)
-make web-build    # build the React UI into src/webui/dist
+make coverage     # enforce 73% line coverage of each image (cargo-llvm-cov)
+make web-build    # build the React UI into crates/forklift/src/webui/dist
 make dev          # run with debug logging and a local ./.data dir
 make docker-build # multi-arch scratch image (builds the UI and the musl binaries first)
 make helm-lint    # lint the chart
@@ -63,4 +63,4 @@ Design documents live in [designs/](designs/) and each one opens with an explici
 
 ## Releases
 
-The container image is released from the `org.opencontainers.image.version` label in the `Dockerfile` (the MCP image from `Dockerfile.mcp`), and the chart from the version in `charts/forklift/Chart.yaml`; pushing a change to either on `main` triggers the matching workflow in the repository's `.github/workflows/`. The images are built by `_release-rust-scratch-containers.yml`, which cross-compiles the binaries on the runner: both Dockerfiles are `scratch` images that only copy the finished binary in.
+The container image is released from the `org.opencontainers.image.version` label in `crates/forklift/Dockerfile` (the MCP image from `crates/forklift-mcp/Dockerfile`), and the chart from the version in `charts/forklift/Chart.yaml`; pushing a change to either on `main` triggers the matching workflow in the repository's `.github/workflows/`. The images are built by `_release-rust-scratch-containers.yml`, which cross-compiles the binaries on the runner: both Dockerfiles are `scratch` images that only copy the finished binary in.

@@ -4,11 +4,11 @@
 
 **Implementation status: Implemented.** Verified on 2026-08-19 against `main`
 commit `81763cd` (working tree). The distribution API lives in
-`src/repo/oci.rs` (routing, pull, tags), `src/repo/oci_push.rs`
-(sessions, manifest verification), `src/repo/oci_proxy.rs` (bearer-token
-handshake, Docker Hub library prefix), and `src/repo/oci_prune.rs`
+`crates/forklift/src/repo/oci.rs` (routing, pull, tags), `crates/forklift/src/repo/oci_push.rs`
+(sessions, manifest verification), `crates/forklift/src/repo/oci_proxy.rs` (bearer-token
+handshake, Docker Hub library prefix), and `crates/forklift/src/repo/oci_prune.rs`
 (reachability GC and session expiry); tags and sessions persist via
-`src/meta/oci.rs` (migrations 0030/0031). Verified end to end with crane
+`crates/forklift/src/meta/oci.rs` (migrations 0030/0031). Verified end to end with crane
 (push, pull, index), helm (push, pull) and podman (push, pull) plus a live
 Docker Hub proxy pull, and the official OCI distribution-spec conformance
 suite v1.1.1 passes all four workflows (pull, push, content discovery, content
@@ -34,7 +34,7 @@ authentication behavior require updating this design before merge.
 ## Overview
 
 Forklift serves Maven, npm, Cargo, Go modules, PyPI and raw
-(`src/meta/models.rs:193`). All five package formats are build-time
+(`crates/forklift/src/meta/models.rs:193`). All five package formats are build-time
 dependency sources. The runtime artifacts a Kubernetes cluster actually pulls —
 container images and Helm charts — have no home in Forklift, so a cluster that
 uses Forklift for dependencies still needs a second registry for images.
@@ -52,16 +52,16 @@ Two properties of the existing implementation make OCI cheaper here than a
 sixth package format would normally be:
 
 - Storage is already content-addressed by SHA-256. `storage.BlobStore.Put`
-  returns the digest of what it stored (`src/storage.rs:86`,
-  `src/storage/s3.rs:133`), and reference counting lives in the `blobs`
-  table (`src/meta/migrations/0001_init.sql:14`). The OCI blob model is the
+  returns the digest of what it stored (`crates/forklift/src/storage.rs:86`,
+  `crates/forklift/src/storage/s3.rs:133`), and reference counting lives in the `blobs`
+  table (`crates/forklift/src/meta/migrations/0001_init.sql:14`). The OCI blob model is the
   same model with the digest supplied by the client instead of computed by the
   server.
 - The request path is already format-agnostic below the handler.
-  `Engine.serve`/`Engine.put` (`src/repo.rs:261`, `:737`) handle
+  `Engine.serve`/`Engine.put` (`crates/forklift/src/repo.rs:261`, `:737`) handle
   cache freshness, proxy fetch, audit, metrics and the store hooks; the policy
   pipeline is invoked uniformly with `(pkg, version)` strings
-  (`src/repo/policypipeline.rs:22`).
+  (`crates/forklift/src/repo/policypipeline.rs:22`).
 
 Three properties make it harder than the package formats:
 
@@ -71,7 +71,7 @@ Three properties make it harder than the package formats:
   liveness is per artifact row; nothing today understands that deleting one
   artifact row can break a different, still-live artifact.
 - Public upstreams (Docker Hub, GHCR) require a per-scope bearer-token
-  handshake. `UpstreamAuthConfig` (`src/repoconfig.rs:51`) only
+  handshake. `UpstreamAuthConfig` (`crates/forklift/src/repoconfig.rs:51`) only
   carries static credentials.
 
 ## Goals
@@ -131,7 +131,7 @@ docker pull forklift.example.com/oci-public/library/nginx:1.27
                                  repository  OCI name
 ```
 
-`Manager.Register` (`src/repo/router.rs:230`) gains:
+`Manager.Register` (`crates/forklift/src/repo/router.rs:230`) gains:
 
 The Axum registry router mounts `/v2`, `/v2/`, and `/v2/{repo}/{*rest}`
 inside the authenticated route group.
@@ -147,9 +147,9 @@ Routing must satisfy:
   left of that suffix is the OCI name, which must match
   `[a-z0-9]+([._-][a-z0-9]+)*(/[a-z0-9]+([._-][a-z0-9]+)*)*` per the spec.
 - A path that matches no endpoint returns 404 with code `NAME_UNKNOWN`, never
-  the SPA fallback (`src/bin/forklift.rs:421`).
+  the SPA fallback (`crates/forklift/src/bin/forklift.rs:421`).
 - The mount point stays inside the authenticated group
-  (`src/bin/forklift.rs:413`), so handlers see the principal.
+  (`crates/forklift/src/bin/forklift.rs:413`), so handlers see the principal.
 
 Endpoint coverage for v1 is `end-1` through `end-11` of the distribution spec,
 including cross-repository blob mount (`end-11`, `?mount=&from=`), which BuildKit
@@ -160,11 +160,11 @@ and `crane copy` rely on to avoid re-uploading shared layers. `end-12`
 
 The spec requires errors as `{"errors":[{"code":…,"message":…}]}` with
 `Content-Type: application/json`. `resolveRepo` writes plain-text errors
-(`src/repo/router.rs:334`) and is shared by every format, so the OCI
+(`crates/forklift/src/repo/router.rs:334`) and is shared by every format, so the OCI
 handler wraps its response writer in an `ociErrorWriter` that converts any
 non-2xx plain-text body into the JSON envelope, mirroring the existing
-`groupWriter` (`src/repo/group.rs:119`) and `statusWriter`
-(`src/repo/router.rs:287`) wrappers. Codes used: `BLOB_UNKNOWN`,
+`groupWriter` (`crates/forklift/src/repo/group.rs:119`) and `statusWriter`
+(`crates/forklift/src/repo/router.rs:287`) wrappers. Codes used: `BLOB_UNKNOWN`,
 `BLOB_UPLOAD_INVALID`, `BLOB_UPLOAD_UNKNOWN`, `DIGEST_INVALID`,
 `MANIFEST_BLOB_UNKNOWN`, `MANIFEST_INVALID`, `MANIFEST_UNKNOWN`, `NAME_UNKNOWN`,
 `SIZE_INVALID`, `UNAUTHORIZED`, `DENIED`, `UNSUPPORTED`, `TOOMANYREQUESTS`.
@@ -172,7 +172,7 @@ non-2xx plain-text body into the JSON envelope, mirroring the existing
 ## Storage model
 
 Blobs and manifests are immutable and digest-addressed, so they map onto the
-`artifacts` table (`src/meta/migrations/0001_init.sql:21`) with no schema
+`artifacts` table (`crates/forklift/src/meta/migrations/0001_init.sql:21`) with no schema
 change. Paths are name-scoped:
 
 | Object | Artifact path | `version` | `content_type` |
@@ -207,7 +207,7 @@ Rules:
 - Resolving `…/manifests/{tag}` reads `oci_tags`, then serves the manifest
   artifact by digest. Resolving `…/manifests/{digest}` skips the tag table.
 - On a proxy, the tag row is cached metadata and revalidates on
-  `Cache.MetadataTTL` (`src/repo.rs:821`), because a tag upstream is
+  `Cache.MetadataTTL` (`crates/forklift/src/repo.rs:821`), because a tag upstream is
   a moving target. Manifests and blobs fetched by digest are `kindArtifact` and
   never revalidate.
 - `HEAD` on a manifest must return the same `Docker-Content-Digest`,
@@ -215,7 +215,7 @@ Rules:
   this for its up-to-date check.
 
 Manifests are size-capped before parse (`fetchSpec.maxStoreBytes`,
-`src/repo.rs:239`) at `FORKLIFT_OCI_MAX_MANIFEST_BYTES`, default
+`crates/forklift/src/repo.rs:239`) at `FORKLIFT_OCI_MAX_MANIFEST_BYTES`, default
 4 MiB.
 
 ## Push
@@ -248,7 +248,7 @@ CREATE TABLE oci_upload_sessions (
 
 - Session bytes are appended to a file under the data directory's temp path (the
   same directory already passed to `NewS3BlobStore`,
-  `src/storage/s3.rs:95`), so with an RWX volume or the S3 backend any
+  `crates/forklift/src/storage/s3.rs:95`), so with an RWX volume or the S3 backend any
   replica can continue a session another replica started. This is the reason the
   offset lives in the metadata store rather than in memory: a push must not
   break because the ingress sent `PATCH` to a different pod than `POST`.
@@ -265,7 +265,7 @@ CREATE TABLE oci_upload_sessions (
   deleted with their temp files by the leader-gated prune below.
 
 Pushes are subject to the existing RBAC mapping: `actionForMethod`
-(`src/repo/router.rs:208`) already maps `POST`/`PUT` to write and `DELETE`
+(`crates/forklift/src/repo/router.rs:208`) already maps `POST`/`PUT` to write and `DELETE`
 to delete, so `POST`, `PATCH` (added to the write case) and `PUT` all require
 write on the repository.
 
@@ -288,22 +288,22 @@ repository whose upstream host is `registry-1.docker.io` prefixes single-segment
 names with `library/` when `Upload.OCIDockerHubLibraryPrefix` is set, which
 defaults to true for that host and false otherwise. Format-scoped config flags
 have precedent in `Upload.PyPIAllowLegacyZIP`
-(`src/repoconfig.rs:135`).
+(`crates/forklift/src/repoconfig.rs:135`).
 
 Rate limiting matters more here than for the package formats: an upstream 429
 must be surfaced as `TOOMANYREQUESTS` with the upstream `Retry-After`
-preserved, which `Engine.writeRetry` (`src/repo.rs:573`) already
+preserved, which `Engine.writeRetry` (`crates/forklift/src/repo.rs:573`) already
 does.
 
 ## Group repositories
 
 Manifest and blob requests are immutable lookups and use the existing streaming
-first-hit fan-out in `grouped` (`src/repo/group.rs:47`), so member priority
+first-hit fan-out in `grouped` (`crates/forklift/src/repo/group.rs:47`), so member priority
 resolves duplicate names.
 
 Tag lists are mutable indexes and must merge, joining the existing mechanism:
 
-- `groupMetadataKind` (`src/repo/group_metadata.rs:59`) returns `oci-tags`
+- `groupMetadataKind` (`crates/forklift/src/repo/group_metadata.rs:59`) returns `oci-tags`
   when the format is `oci` and the wildcard ends in `/tags/list`.
 - `groupMetadataContentType` (`:223`) maps `oci-tags:default` to
   `application/json`.
@@ -314,13 +314,13 @@ Tag lists are mutable indexes and must merge, joining the existing mechanism:
 - `n`/`last` pagination is applied after the merge, and the `Link` header is
   synthesized from the merged list.
 
-`ValidateGroupMembers` (`src/repo/group.rs:157`) needs no change; it
+`ValidateGroupMembers` (`crates/forklift/src/repo/group.rs:157`) needs no change; it
 already requires format equality.
 
 ## Supply-chain policies
 
 The pipeline is invoked with a package coordinate and a version
-(`src/repo/policypipeline.rs:22`). For OCI:
+(`crates/forklift/src/repo/policypipeline.rs:22`). For OCI:
 
 | Coordinate | Value |
 |---|---|
@@ -329,7 +329,7 @@ The pipeline is invoked with a package coordinate and a version
 
 What this yields, with no new policy code:
 
-- **Approval** (`src/repo/approvalgate.rs:41`) and **version deny** work on
+- **Approval** (`crates/forklift/src/repo/approvalgate.rs:41`) and **version deny** work on
   `name` + `tag`, which is the natural review unit for an image.
 - **Age policy** works on a proxy from the upstream response's `Last-Modified`
   or, when absent, the config blob's `created`. Digest-addressed manifests carry
@@ -337,14 +337,14 @@ What this yields, with no new policy code:
 - **Source-IP ACL** and **RBAC** apply through the shared `resolveRepo` and
   `authorize` path.
 - **Vulnerability and license gates no-op by construction.** `osvEcosystem`
-  (`src/repo/vulnscan.rs:133`) and `depsDevSystem`
-  (`src/repo/licensescan.rs:41`) return `""` for an unmapped format, and
+  (`crates/forklift/src/repo/vulnscan.rs:133`) and `depsDevSystem`
+  (`crates/forklift/src/repo/licensescan.rs:41`) return `""` for an unmapped format, and
   `vulnGate` returns before evaluating `block_unscanned`
-  (`src/repo/vulngate.rs:22`). No exemption code is needed, but the
+  (`crates/forklift/src/repo/vulngate.rs:22`). No exemption code is needed, but the
   repository Security tab must state that the two gates are inert for `oci` so
   an operator does not read an enabled-but-inert policy as coverage.
 
-`UpstreamPackageURL` (`src/repo/upstreamurl.rs:13`) gains an `oci` case
+`UpstreamPackageURL` (`crates/forklift/src/repo/upstreamurl.rs:13`) gains an `oci` case
 returning the upstream registry's web URL for the name, so an approval reviewer
 can open the source image.
 
@@ -353,19 +353,19 @@ can open the source image.
 This is the section that changes existing behavior, and the reason the format
 cannot be shipped as "just another handler".
 
-The blob sweeper (`src/repo/sweeper.rs:18`) is already correct: it reclaims
+The blob sweeper (`crates/forklift/src/repo/sweeper.rs:18`) is already correct: it reclaims
 bytes only when `blobs.ref_count` reaches zero and a grace period has passed, and
 every OCI blob has an artifact row holding a reference.
 
 Two existing paths are **not** correct for OCI and must be gated off:
 
-- **Idle retention reaper** (`src/repo/reaper.rs:22`) deletes artifacts by
+- **Idle retention reaper** (`crates/forklift/src/repo/reaper.rs:22`) deletes artifacts by
   `last_accessed_at`. A layer blob shared by a rarely-pulled tag is idle by that
   measure while the tag is still live; deleting its row drops the last reference
   and the sweeper then deletes the bytes, leaving a tagged manifest that cannot
   be pulled. The reaper must skip repositories whose format is `oci`.
 - **Cache-size eviction** (`Engine.maybeEvict`,
-  `src/repo.rs:834`) evicts LRU artifacts against
+  `crates/forklift/src/repo.rs:834`) evicts LRU artifacts against
   `Cache.MaxSizeBytes` and has the same failure mode. It must skip `oci`
   repositories.
 
@@ -378,7 +378,7 @@ Deletion instead goes through a manifest-aware path:
   digest and the manifest artifact row. `DELETE …/manifests/{tag}` removes only
   the tag row, per spec.
 - A new leader-gated `RunOCIPrune`, scheduled alongside the sweeper and reaper
-  in `src/bin/forklift.rs`, computes per `(repo_id, name)` the set of digests
+  in `crates/forklift/src/bin/forklift.rs`, computes per `(repo_id, name)` the set of digests
   reachable from manifests that are still tagged or still referenced by a
   tagged index, and deletes the blob and manifest artifact rows outside that
   set. The existing sweeper then reclaims the bytes after its grace window. The
@@ -391,14 +391,14 @@ Deletion instead goes through a manifest-aware path:
 
 `docker login` follows a 401 that carries a `Basic` challenge by sending Basic
 credentials on subsequent requests, which is what
-`auth.UnauthorizedBasic` (`src/auth/middleware.rs:149`) already emits. No
+`auth.UnauthorizedBasic` (`crates/forklift/src/auth/middleware.rs:149`) already emits. No
 token service is required in v1:
 
 - Local accounts, OIDC-provisioned accounts and scoped access tokens all work as
   the `docker login` password, which makes a Kubernetes `imagePullSecret` a
   scoped read-only Forklift token.
 - Anonymous read follows `authz.AnonymousRead()` exactly as the package formats
-  do (`src/repo/router.rs:172`).
+  do (`crates/forklift/src/repo/router.rs:172`).
 - `GET /v2/` must return 401 rather than 404 when unauthenticated, because
   clients treat it as the auth probe.
 
@@ -411,27 +411,27 @@ deployment concern, not a server one.
 
 | Surface | Change |
 |---|---|
-| `src/meta/models.rs:193` | add `FormatOCI = "oci"`, extend the format comment on `:10` |
-| `src/api/repositories.rs:127` | add `meta.FormatOCI` to `validFormats` |
-| `src/api/repositories.rs:84` | `PublishMethods` = `["docker", "helm", "oras"]` |
-| `src/repo/router.rs:230` | register the `/v2` routes |
-| `src/repo/seed.rs:34` | optional seed trio: `oci` proxy of Docker Hub, `oci-hosted`, `oci-public` group |
+| `crates/forklift/src/meta/models.rs:193` | add `FormatOCI = "oci"`, extend the format comment on `:10` |
+| `crates/forklift/src/api/repositories.rs:127` | add `meta.FormatOCI` to `validFormats` |
+| `crates/forklift/src/api/repositories.rs:84` | `PublishMethods` = `["docker", "helm", "oras"]` |
+| `crates/forklift/src/repo/router.rs:230` | register the `/v2` routes |
+| `crates/forklift/src/repo/seed.rs:34` | optional seed trio: `oci` proxy of Docker Hub, `oci-hosted`, `oci-public` group |
 | `web/src/utils/repository-endpoint.ts` | `oci` returns `{host}/{name}` with the hint `docker login / docker pull` — note it is a host prefix, not a URL |
 | `web/src/routes/workspace/repositories/new.tsx` | format option, and hide the upload form for `oci` |
 | `web/src/routes/workspace/repositories/$id/-detail.tsx` | tag-oriented artifact rendering; disable retention and cache-size controls |
-| `src/openapi` | format enum, regenerate `web/src/services/v1/openapi-types.ts` |
+| `crates/forklift/src/openapi` | format enum, regenerate `web/src/services/v1/openapi-types.ts` |
 | `docs/usage.md`, `docs/installation.md`, `README.md` | format table, client wiring, HTTPS requirement for containerd |
 | `charts/forklift` | nothing structural; `/v2` is served by the existing HTTP port |
 
 The UI upload route is deliberately not extended: `Uploader.Supports`
-(`src/repo/uiupload.rs:205`) keeps returning false for `oci`, so
+(`crates/forklift/src/repo/uiupload.rs:205`) keeps returning false for `oci`, so
 `Capabilities.Upload` is false and no upload affordance appears. Pushing an
 image through a browser form is not a workflow worth building; the native
 clients are universal.
 
 ## Configuration
 
-New environment variables, following `src/config.rs`:
+New environment variables, following `crates/forklift/src/config.rs`:
 
 | Variable | Default | Meaning |
 |---|---|---|
@@ -445,7 +445,7 @@ Per-repository: `Upload.OCIDockerHubLibraryPrefix` (see [Proxy](#proxy)).
 ## Metrics
 
 No new metric families. `Engine` already labels ingress and egress bytes by
-format (`src/repo.rs`, `bytes` with the `format` label) and cache
+format (`crates/forklift/src/repo.rs`, `bytes` with the `format` label) and cache
 hits and misses by repository, which covers the operator question of how much
 layer traffic the proxy is absorbing. Two gauges are added because they have no
 analogue:

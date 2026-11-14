@@ -9,7 +9,7 @@ import { gzipSync } from "node:zlib";
 // Only assets/ is compressed: its content-hashed files are gitignored, so the
 // .gz siblings never land in the repository or go stale against a tracked
 // original the way root files (index.html, favicons) could.
-const dist = new URL("../../src/webui/dist/assets", import.meta.url).pathname;
+const dist = new URL("../../crates/forklift/src/webui/dist/assets", import.meta.url).pathname;
 const compressible = /\.(js|css|svg|json|map|txt|xml|webmanifest)$/;
 
 async function walk(dir) {

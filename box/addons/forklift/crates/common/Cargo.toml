@@ -1,0 +1,25 @@
+[package]
+name = "forklift-common"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Log format, shutdown signal, and build version shared by forklift and forklift-mcp"
+publish = false
+
+[lib]
+name = "forklift_common"
+path = "src/lib.rs"
+
+[features]
+# Exposes `forklift_common::logging::capture` to the tests of dependent crates.
+testing = []
+
+[dependencies]
+tokio.workspace = true
+chrono.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+[lints]
+workspace = true

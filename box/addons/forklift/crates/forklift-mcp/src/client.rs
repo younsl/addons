@@ -3,8 +3,8 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use crate::mcp::metrics::Metrics;
-use crate::mcp::server::{Body, Query};
+use crate::metrics::Metrics;
+use crate::server::{Body, Query};
 
 const MAX_RESPONSE_BYTES: usize = 8 << 20;
 

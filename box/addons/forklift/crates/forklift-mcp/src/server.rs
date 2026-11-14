@@ -21,8 +21,8 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::mcp::client::{Client, path_escape, query_escape};
-use crate::mcp::metrics::{Metrics, OUTCOME_ERROR, OUTCOME_OK, OUTCOME_TOOL_ERROR};
+use crate::client::{Client, path_escape, query_escape};
+use crate::metrics::{Metrics, OUTCOME_ERROR, OUTCOME_OK, OUTCOME_TOOL_ERROR};
 
 // --- query and body builders ------------------------------------------------
 
@@ -125,9 +125,9 @@ fn repo_path(id: i64, suffix: &str) -> String {
 /// Wraps an upstream response (or error) as a tool result. API errors are
 /// reported through `is_error` so the model can read the message and adjust,
 /// rather than failing the whole MCP call.
-fn result(res: Result<Vec<u8>, crate::mcp::client::Error>) -> Result<CallToolResult, ErrorData> {
+fn result(res: Result<Vec<u8>, crate::client::Error>) -> Result<CallToolResult, ErrorData> {
     match res {
-        Err(err @ crate::mcp::client::Error::Api { .. }) => {
+        Err(err @ crate::client::Error::Api { .. }) => {
             Ok(CallToolResult::error(vec![ContentBlock::text(
                 err.to_string(),
             )]))
@@ -2092,9 +2092,9 @@ pub(crate) mod tests {
     use axum::http::{HeaderMap, StatusCode, Uri};
     use rmcp::model::{CallToolResult, ContentBlock};
 
-    use crate::mcp::client::Client;
-    use crate::mcp::metrics::Metrics;
-    use crate::mcp::server::Server;
+    use crate::client::Client;
+    use crate::metrics::Metrics;
+    use crate::server::Server;
 
     /// Builds the server under test. `metrics` may be `None`.
     pub(crate) fn connect(c: Arc<Client>, metrics: Option<Arc<Metrics>>) -> Arc<Server> {
@@ -2241,7 +2241,7 @@ pub(crate) mod tests {
 
     #[test]
     fn coerce_arguments_follows_schema_types() {
-        use crate::mcp::server::coerce_arguments;
+        use crate::server::coerce_arguments;
         use serde_json::json;
 
         let schema = json!({
@@ -2303,8 +2303,8 @@ pub(crate) mod tests {
         use axum::http::{Method, Uri};
         use serde_json::{Value, json};
 
-        use crate::mcp::client::Client;
-        use crate::mcp::server::tests::{connect, install_crypto_provider, spawn_upstream};
+        use crate::client::Client;
+        use crate::server::tests::{connect, install_crypto_provider, spawn_upstream};
 
         /// What the fake forklift API saw for one tool call.
         #[derive(Debug, Default, Clone, PartialEq)]

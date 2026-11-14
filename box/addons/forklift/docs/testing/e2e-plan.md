@@ -309,6 +309,6 @@ The blocking task owns a connection lease and returns it when the operation
 finishes, including during panic unwinding. Change detection keeps its pinned
 connection across cancelled queries as well.
 
-`src/meta/readpool_test.rs` covers cancellation, panic recovery and pinned
+`crates/forklift/src/meta/readpool_test.rs` covers cancellation, panic recovery and pinned
 connection reuse. E2E runs must use fresh data and report every failure rather
 than accepting failed requests as successful writes.

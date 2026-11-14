@@ -1,0 +1,5 @@
+# The scratch image copies only the prebuilt binaries
+src
+tests
+build.rs
+Cargo.toml

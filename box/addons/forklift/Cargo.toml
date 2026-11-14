@@ -1,30 +1,19 @@
-[package]
-name = "forklift"
-version = "0.20.0"
+[workspace]
+resolver = "3"
+members = [
+    "crates/common",
+    "crates/forklift",
+    "crates/forklift-mcp",
+]
+
+[workspace.package]
 edition = "2024"
 rust-version = "1.100.0"
 license = "Apache-2.0"
-description = "Lightweight Kubernetes-native artifact repository (Maven, npm, Cargo, Go, PyPI, raw, OCI) with proxy caching and supply-chain policy gates"
-publish = false
-default-run = "forklift"
 
-[lib]
-name = "forklift"
-path = "src/lib.rs"
+[workspace.dependencies]
+forklift-common = { path = "crates/common" }
 
-[[bin]]
-name = "forklift"
-path = "src/bin/forklift/main.rs"
-
-[[bin]]
-name = "forklift-mcp"
-path = "src/bin/forklift_mcp.rs"
-
-[features]
-# Exposes `forklift::testing` (shared test harness) to the integration tests in tests/.
-testing = []
-
-[dependencies]
 # Runtime
 tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros", "net", "fs", "io-util", "sync", "time", "signal", "process"] }
 tokio-util = { version = "0.7.19", features = ["io", "io-util", "rt"] }
@@ -81,7 +70,7 @@ base64 = "0.23.1"
 rand = "0.10.3"
 hex = "0.4.3"
 
-# MCP server (forklift-mcp binary)
+# MCP server (forklift-mcp)
 rmcp = { version = "3.4.1", features = ["server", "transport-streamable-http-server", "schemars", "macros"] }
 schemars = "1.2.2"
 
@@ -123,27 +112,20 @@ dashmap = "6.2.1"
 itoa = "1.0.18"
 arc-swap = "1.9.2"
 
-# Allocator: musl's malloc serializes threads and is slow on small allocations
-[target.'cfg(target_os = "linux")'.dependencies]
 tikv-jemallocator = "0.7.0"
 
-[dev-dependencies]
-# Self-reference so tests/ can use the harness behind the `testing` feature.
-forklift = { path = ".", features = ["testing"] }
+# Tests
 wiremock = "0.6.5"
-tokio = { version = "1.53.1", features = ["test-util"] }
-tower = { version = "0.5.3", features = ["util"] }
 pretty_assertions = "1.4.1"
 serial_test = "4.0.1"
-# Reads DTO JSON shapes from Rust source (see src/api/openapi_schema_test.rs).
 syn = { version = "3.0.6", features = ["full"] }
 rcgen = { version = "0.14.10", default-features = false, features = ["aws_lc_rs", "pem"] }
 tokio-rustls = { version = "0.26.6", default-features = false, features = ["aws_lc_rs", "tls12"] }
 
-[lints.rust]
+[workspace.lints.rust]
 unsafe_code = "forbid"
 
-[lints.clippy]
+[workspace.lints.clippy]
 all = { level = "warn", priority = -1 }
 pedantic = { level = "warn", priority = -1 }
 nursery = { level = "warn", priority = -1 }

@@ -9,8 +9,8 @@ use std::time::Duration;
 use anyhow::Context as _;
 use axum::Router;
 use axum::routing::get;
-use forklift::mcp;
-use forklift::version;
+use forklift_common::version;
+use forklift_mcp as mcp;
 use prometheus::{Encoder, Registry, TextEncoder};
 use rmcp::transport::StreamableHttpService;
 use rmcp::transport::streamable_http_server::session::local::LocalSessionManager;
@@ -27,7 +27,7 @@ fn main() -> std::process::ExitCode {
         println!("forklift-mcp {}", version::string());
         return std::process::ExitCode::SUCCESS;
     }
-    forklift::server::logging::init_logging(
+    forklift_common::logging::init_logging(
         &env_or("FORKLIFT_MCP_LOG_LEVEL", "info"),
         &env_or("FORKLIFT_MCP_LOG_FORMAT", "json"),
     );
@@ -142,7 +142,7 @@ async fn run() -> anyhow::Result<()> {
     tokio::select! {
         res = wait(&mut http) => return res,
         res = wait(&mut metrics_http) => return res,
-        () = forklift::server::signal::shutdown_signal() => {}
+        () = forklift_common::signal::shutdown_signal() => {}
     }
 
     tracing::info!("shutting down");

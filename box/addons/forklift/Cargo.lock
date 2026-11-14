@@ -1557,6 +1557,7 @@ dependencies = [
  "dashmap",
  "flate2",
  "forklift",
+ "forklift-common",
  "form_urlencoded",
  "futures-util",
  "glob-match",
@@ -1589,12 +1590,10 @@ dependencies = [
  "rcgen",
  "regex",
  "reqwest",
- "rmcp",
  "rusqlite",
  "rust-embed",
  "rustix 1.1.5",
  "rustls",
- "schemars 1.2.2",
  "semver",
  "serde",
  "serde_json",
@@ -1622,6 +1621,39 @@ dependencies = [
  "wiremock",
  "zip",
  "zstd",
+]
+
+[[package]]
+name = "forklift-common"
+version = "0.0.0"
+dependencies = [
+ "chrono",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "forklift-mcp"
+version = "0.3.2"
+dependencies = [
+ "anyhow",
+ "axum",
+ "forklift-common",
+ "http",
+ "parking_lot",
+ "prometheus",
+ "reqwest",
+ "rmcp",
+ "rustls",
+ "schemars 1.2.2",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+ "tokio",
+ "tokio-util",
+ "tracing",
 ]
 
 [[package]]

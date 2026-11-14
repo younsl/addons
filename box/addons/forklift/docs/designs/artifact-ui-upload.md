@@ -3,10 +3,10 @@
 ## Status
 
 **Implementation status: Implemented.** Verified on 2026-08-16 against `main`
-commit `5db514b`. The management API endpoints live in `src/api/uploads.rs`
+commit `5db514b`. The management API endpoints live in `crates/forklift/src/api/uploads.rs`
 (`receiveUpload`, `commitUpload`, `cancelUpload`), the uploader facade in
-`src/repo/uiupload.rs`, group metadata aggregation in
-`src/repo/group_metadata.rs`, and the upload route in
+`crates/forklift/src/repo/uiupload.rs`, group metadata aggregation in
+`crates/forklift/src/repo/group_metadata.rs`, and the upload route in
 `web/src/routes/workspace/repositories/$id/upload.tsx` with per-format forms for
 Maven, npm, Cargo, Go, and PyPI.
 
@@ -51,7 +51,7 @@ Forklift should add a contextual **Upload artifact** action to the Artifacts tab
 of a hosted repository. The action opens a dedicated upload route whose form is
 specialized for the repository format. The browser sends one streaming
 `multipart/form-data` request to the management API; a new uploader facade in
-`src/repo` validates the package, derives canonical repository paths, and
+`crates/forklift/src/repo` validates the package, derives canonical repository paths, and
 commits all generated artifacts through the existing content-addressed storage,
 audit, metrics, vulnerability-scan, and license-resolution pipeline.
 
@@ -146,7 +146,7 @@ Apache-2.0 license.
 Add a first-class upload section to `config.Config`. These are process-level
 resource and rollout controls, not repository policy:
 
-Upload limits are represented by `UploadConfig` in `src/config.rs`; the table below defines the resource controls.
+Upload limits are represented by `UploadConfig` in `crates/forklift/src/config.rs`; the table below defines the resource controls.
 
 | Environment / flag | Development default | GA default | Constraint |
 | --- | ---: | ---: | --- |
@@ -896,8 +896,8 @@ path is never presented as an overwrite conflict.
 ### Ownership boundary
 
 The management API currently owns repository metadata but not the blob engine.
-Do not duplicate storage logic in `src/api`. Add an uploader interface to
-the API handler and inject the existing `repo.Manager` from `src/bin/forklift.rs`:
+Do not duplicate storage logic in `crates/forklift/src/api`. Add an uploader interface to
+the API handler and inject the existing `repo.Manager` from `crates/forklift/src/bin/forklift.rs`:
 
 The API delegates upload receipt, status, confirmation, cancellation, publication deletion, and Cargo yank changes to the repository manager. Outcomes and problems are returned as typed values.
 
@@ -1701,7 +1701,7 @@ token is the primary control; origin checks are defense in depth.
 
 Application traffic is intended to route only to the elected leader, but direct
 pod access and label-transition races are possible. Add a write gate injected
-from `src/bin/forklift.rs`:
+from `crates/forklift/src/bin/forklift.rs`:
 
 The write gate captures a leadership term and cancellation signal at upload start, then validates that term before committing.
 
@@ -1902,19 +1902,19 @@ native-client end-to-end tests.
 Backend additions:
 
 ```text
-src/meta/migrations/0024_artifact_publications.sql
-src/meta/migrations/0025_artifact_upload_requests.sql
-src/meta/migrations/0026_audit_request_detail.sql
-src/meta/migrations/0027_group_metadata_cache.sql
-src/meta/publication.rs
-src/repo/uiupload.rs
-src/repo/uiupload_maven.rs
-src/repo/uiupload_pypi.rs
-src/repo/uiupload_npm.rs
-src/repo/uiupload_cargo.rs
-src/repo/uiupload_go.rs
-src/repo/group_metadata.rs
-src/api/uploads.rs
+crates/forklift/src/meta/migrations/0024_artifact_publications.sql
+crates/forklift/src/meta/migrations/0025_artifact_upload_requests.sql
+crates/forklift/src/meta/migrations/0026_audit_request_detail.sql
+crates/forklift/src/meta/migrations/0027_group_metadata_cache.sql
+crates/forklift/src/meta/publication.rs
+crates/forklift/src/repo/uiupload.rs
+crates/forklift/src/repo/uiupload_maven.rs
+crates/forklift/src/repo/uiupload_pypi.rs
+crates/forklift/src/repo/uiupload_npm.rs
+crates/forklift/src/repo/uiupload_cargo.rs
+crates/forklift/src/repo/uiupload_go.rs
+crates/forklift/src/repo/group_metadata.rs
+crates/forklift/src/api/uploads.rs
 ```
 
 
@@ -1923,8 +1923,8 @@ Format files do not write metadata directly; they return plans. `api/uploads.rs`
 owns path-ID resolution and JSON/problem response adaptation only. Existing
 protocol handlers reuse format publication helpers where their native request
 contains a complete package (npm and PyPI) and keep raw-path behavior otherwise.
-`src/repo/pypi.rs` also gains hosted root Simple API synthesis and complete
-PEP 691 1.1 fields. `src/repo/cargo.rs` stops advertising `api` and emits
+`crates/forklift/src/repo/pypi.rs` also gains hosted root Simple API synthesis and complete
+PEP 691 1.1 fields. `crates/forklift/src/repo/cargo.rs` stops advertising `api` and emits
 the correct `auth-required`. Maven/Cargo/Go raw PUT and raw delete reject
 managed paths.
 
@@ -1947,7 +1947,7 @@ Migration requirements:
 
 The upload endpoint uses the new structured `Problem` writer locally. Do not
 change every existing API error in this feature, but put the shared type in
-`src/api` so later endpoints can migrate without a second schema.
+`crates/forklift/src/api` so later endpoints can migrate without a second schema.
 
 ### Workstream 0 — foundation
 
@@ -2027,11 +2027,11 @@ Tests own these repository paths; names are part of the implementation
 contract rather than suggestions:
 
 ```text
-src/repo/uiupload_*_test.rs
-src/repo/group_metadata_*_test.rs
-src/meta/publication_test.rs
-src/meta/meta_test.rs
-src/repo/testdata/uiupload/<format>/
+crates/forklift/src/repo/uiupload_*_test.rs
+crates/forklift/src/repo/group_metadata_*_test.rs
+crates/forklift/src/meta/publication_test.rs
+crates/forklift/src/meta/meta_test.rs
+crates/forklift/src/repo/testdata/uiupload/<format>/
 web/test/features/upload/
 web/test/e2e/upload.spec.ts
 test/integration/native/<format>/

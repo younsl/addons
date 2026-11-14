@@ -4,8 +4,8 @@
 
 **Implementation status: Not implemented.** Verified on 2026-08-16 against
 `main` commit `5db514b`, and still accurate after the Rust port. Forklift ships
-as a single pod: the SPA is embedded with `rust-embed` in `src/webui.rs` and
-served through the fallback handler wired in `src/bin/forklift.rs`. There is no
+as a single pod: the SPA is embedded with `rust-embed` in `crates/forklift/src/webui.rs` and
+served through the fallback handler wired in `crates/forklift/src/bin/forklift.rs`. There is no
 separate frontend image and no HTTPRoute path split.
 
 Proposed. This document describes splitting the single forklift pod into a
@@ -27,13 +27,13 @@ implemented.
 
 Forklift ships as one container image and one pod. The binary embeds the
 [Vite](https://github.com/vitejs/vite)-built
-[React](https://github.com/facebook/react) SPA (`src/webui` via `rust-embed`)
+[React](https://github.com/facebook/react) SPA (`crates/forklift/src/webui` via `rust-embed`)
 and serves everything on port 8080:
 
-- `/api/v1/*` — management API (`src/api`, mounted in
-  `src/bin/forklift.rs`).
+- `/api/v1/*` — management API (`crates/forklift/src/api`, mounted in
+  `crates/forklift/src/bin/forklift.rs`).
 - `/maven|/npm|/cargo|/go|/pypi|/raw` — package format routes
-  (`src/repo/router.rs`).
+  (`crates/forklift/src/repo/router.rs`).
 - `/auth/login`, `/auth/callback` — public OIDC endpoints.
 - `/openapi.yaml`, `/api-docs` — spec and [Scalar](https://github.com/scalar/scalar) docs UI.
 - `/internal/replication/*` — HA replication source.
@@ -116,7 +116,7 @@ catch-all and the backend claims explicit prefixes:
 | `/` | frontend | SSR pages, Next.js static assets (`/_next/*`) |
 
 The Cargo sparse index builds absolute download URLs from
-`X-Forwarded-Host`/`X-Forwarded-Proto` (`src/repo/cargo.rs`); the Gateway
+`X-Forwarded-Host`/`X-Forwarded-Proto` (`crates/forklift/src/repo/cargo.rs`); the Gateway
 implementation must forward these headers to the backend as the current
 ingress does.
 
@@ -134,7 +134,7 @@ ingress does.
 
 ### Backend pod
 
-- The existing binary minus the SPA: remove `src/webui`, the `web` build
+- The existing binary minus the SPA: remove `crates/forklift/src/webui`, the `web` build
   stage in `Dockerfile`, and the `NotFound(webui.Handler())` mount. `NotFound`
   reverts to a plain 404 JSON response.
 - Everything else (config, HA leader election, metrics on 8081, PVC/S3
@@ -169,7 +169,7 @@ Two images from two Dockerfiles, released independently:
 
 The backend image stays `FROM scratch`. Versions are decoupled: the UI can
 ship daily without touching the cache engine. The API contract boundary is
-the OpenAPI spec (`src/openapi/openapi.yaml`); the frontend build pins
+the OpenAPI spec (`crates/forklift/src/openapi/openapi.yaml`); the frontend build pins
 the spec version it generated its client from, and CI fails the frontend
 build if the deployed backend's `/api/v1` version reports an older spec than
 the client requires.
@@ -212,7 +212,7 @@ web:
 2. Frontend image: build and release the current Vite SPA in a standalone
    frontend pod; flip `web.enabled=true` in a staging install; verify OIDC
    login, package pulls, and deep-link refreshes through the Gateway.
-3. Backend: remove `src/webui` and the Dockerfile web stage in the next
+3. Backend: remove `crates/forklift/src/webui` and the Dockerfile web stage in the next
    minor release. Until then the embedded SPA is dead weight but harmless,
    which keeps step 2 reversible by flipping `web.enabled` back.
 4. SSR: port routes to Next.js App Router incrementally; the frontend image
@@ -223,7 +223,7 @@ web:
 - **Route drift.** A new backend path prefix (like a future package format)
   that is not added to the HTTPRoute silently falls through to the frontend
   and returns an SSR 404. Mitigation: a chart test asserting every prefix in
-  `src/repo/router.rs` and `src/bin/forklift.rs` mounts appears in the
+  `crates/forklift/src/repo/router.rs` and `crates/forklift/src/bin/forklift.rs` mounts appears in the
   default `gateway.rules`.
 - **Session semantics in SSR.** Forwarding cookies from the SSR fetch to the
   backend must not leak one user's render into another's cache; Next.js

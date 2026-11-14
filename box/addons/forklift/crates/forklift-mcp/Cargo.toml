@@ -1,0 +1,40 @@
+[package]
+name = "forklift-mcp"
+version = "0.3.2"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Model Context Protocol server for the forklift artifact repository management API"
+publish = false
+
+[lib]
+name = "forklift_mcp"
+path = "src/lib.rs"
+
+[[bin]]
+name = "forklift-mcp"
+path = "src/main.rs"
+
+[dependencies]
+forklift-common.workspace = true
+
+tokio.workspace = true
+tokio-util.workspace = true
+axum.workspace = true
+reqwest.workspace = true
+rustls.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+rmcp.workspace = true
+schemars.workspace = true
+prometheus.workspace = true
+tracing.workspace = true
+anyhow.workspace = true
+thiserror.workspace = true
+http.workspace = true
+
+[dev-dependencies]
+parking_lot.workspace = true
+
+[lints]
+workspace = true

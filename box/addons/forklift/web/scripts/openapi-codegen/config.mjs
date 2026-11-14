@@ -6,7 +6,7 @@ const webRoot = path.resolve(scriptDir, "../..");
 
 export const specPath = path.resolve(
   webRoot,
-  "../src/openapi/openapi.yaml",
+  "../crates/forklift/src/openapi/openapi.yaml",
 );
 export const outDir = path.resolve(webRoot, "src/services/v1");
 export const legacyGeneratedV1Dir = path.resolve(webRoot, "src/generated/v1");

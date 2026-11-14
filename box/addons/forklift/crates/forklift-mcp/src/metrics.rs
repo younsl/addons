@@ -15,8 +15,8 @@ pub const OUTCOME_TOOL_ERROR: &str = "tool_error";
 pub const OUTCOME_ERROR: &str = "error";
 
 /// Metrics holds the forklift-mcp operational collectors. Tool-call metrics
-/// are recorded by [`crate::mcp::Server::call_tool`]; upstream metrics by
-/// [`crate::mcp::Client::do_request`]. All collectors are registered on the
+/// are recorded by [`crate::Server::call_tool`]; upstream metrics by
+/// [`crate::Client::do_request`]. All collectors are registered on the
 /// registry passed to [`Metrics::new`], so tests and the binary each own their
 /// registry.
 pub struct Metrics {
@@ -102,9 +102,9 @@ pub(crate) mod tests {
     use prometheus::Registry;
     use prometheus::core::Collector;
 
-    use crate::mcp::client::Client;
-    use crate::mcp::metrics::{Metrics, OUTCOME_OK, OUTCOME_TOOL_ERROR};
-    use crate::mcp::server::tests::{connect, install_crypto_provider, no_args, spawn_upstream};
+    use crate::client::Client;
+    use crate::metrics::{Metrics, OUTCOME_OK, OUTCOME_TOOL_ERROR};
+    use crate::server::tests::{connect, install_crypto_provider, no_args, spawn_upstream};
 
     #[tokio::test]
     async fn metrics_record_tool_calls_and_upstream() {

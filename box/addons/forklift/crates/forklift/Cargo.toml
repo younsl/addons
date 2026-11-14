@@ -1,0 +1,139 @@
+[package]
+name = "forklift"
+version = "0.20.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Lightweight Kubernetes-native artifact repository (Maven, npm, Cargo, Go, PyPI, raw, OCI) with proxy caching and supply-chain policy gates"
+publish = false
+default-run = "forklift"
+
+[lib]
+name = "forklift"
+path = "src/lib.rs"
+
+[[bin]]
+name = "forklift"
+path = "src/bin/forklift/main.rs"
+
+[features]
+# Exposes `forklift::testing` (shared test harness) to the integration tests in tests/.
+testing = []
+
+[dependencies]
+forklift-common.workspace = true
+
+# Runtime
+tokio.workspace = true
+tokio-util.workspace = true
+tokio-stream.workspace = true
+futures-util.workspace = true
+async-trait.workspace = true
+bytes.workspace = true
+
+# HTTP server
+axum.workspace = true
+hyper.workspace = true
+hyper-util.workspace = true
+http.workspace = true
+http-body.workspace = true
+http-body-util.workspace = true
+tower.workspace = true
+tower-http.workspace = true
+
+# HTTP client (upstream proxying, webhooks, OSV, deps.dev, GitLab, OIDC)
+reqwest.workspace = true
+rustls.workspace = true
+hickory-resolver.workspace = true
+
+# Serialization
+serde.workspace = true
+serde_json.workspace = true
+serde_yaml_ng.workspace = true
+quick-xml.workspace = true
+toml.workspace = true
+
+# Storage
+rusqlite.workspace = true
+aws-config.workspace = true
+aws-sdk-s3.workspace = true
+aws-smithy-http-client.workspace = true
+aws-smithy-runtime-api.workspace = true
+aws-smithy-types.workspace = true
+aws-sigv4.workspace = true
+aws-credential-types.workspace = true
+
+# Kubernetes (Lease leader election, pod role label)
+kube.workspace = true
+k8s-openapi.workspace = true
+
+# Auth
+openidconnect.workspace = true
+bcrypt.workspace = true
+hmac.workspace = true
+sha2.workspace = true
+sha1.workspace = true
+md-5.workspace = true
+subtle.workspace = true
+base64.workspace = true
+rand.workspace = true
+hex.workspace = true
+
+# Observability
+prometheus.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+pprof.workspace = true
+
+# Static assets
+rust-embed.workspace = true
+mime_guess.workspace = true
+
+# Utilities
+chrono.workspace = true
+chrono-tz.workspace = true
+thiserror.workspace = true
+anyhow.workspace = true
+url.workspace = true
+regex.workspace = true
+uuid.workspace = true
+semver.workspace = true
+glob-match.workspace = true
+ipnet.workspace = true
+flate2.workspace = true
+zstd.workspace = true
+tar.workspace = true
+zip.workspace = true
+tempfile.workspace = true
+percent-encoding.workspace = true
+form_urlencoded.workspace = true
+mime.workspace = true
+httpdate.workspace = true
+humantime.workspace = true
+rustix.workspace = true
+parking_lot.workspace = true
+once_cell.workspace = true
+dashmap.workspace = true
+itoa.workspace = true
+arc-swap.workspace = true
+
+# Allocator: musl's malloc serializes threads and is slow on small allocations
+[target.'cfg(target_os = "linux")'.dependencies]
+tikv-jemallocator.workspace = true
+
+[dev-dependencies]
+# Self-reference so tests/ can use the harness behind the `testing` feature.
+forklift = { path = ".", features = ["testing"] }
+forklift-common = { workspace = true, features = ["testing"] }
+wiremock.workspace = true
+tokio = { workspace = true, features = ["test-util"] }
+tower.workspace = true
+pretty_assertions.workspace = true
+serial_test.workspace = true
+# Reads DTO JSON shapes from Rust source (see src/api/openapi_schema_test.rs).
+syn.workspace = true
+rcgen.workspace = true
+tokio-rustls.workspace = true
+
+[lints]
+workspace = true

@@ -729,7 +729,7 @@ mod tests {
             ],
             held: Box::new(|| true),
         };
-        let logs = crate::server::logging::tests::capture_logs();
+        let logs = forklift_common::logging::capture::capture_logs();
         let report = migrate(
             &endpoint(&src),
             &endpoint(&dst),

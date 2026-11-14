@@ -2,8 +2,8 @@
 /bin/
 /forklift
 # Staged into the image build context by `make docker-context`
-/forklift-linux-*
-/forklift-mcp-linux-*
+/crates/forklift/forklift-linux-*
+/crates/forklift-mcp/forklift-mcp-linux-*
 /target/
 cover.out
 *.test
@@ -33,8 +33,8 @@ site/dist/
 /.pnpm-store/
 
 # Embedded UI build output from `make web-build`. None of it is committed: a
-# binary built without it serves src/webui/placeholder.html instead.
-src/webui/dist/
+# binary built without it serves crates/forklift/src/webui/placeholder.html instead.
+crates/forklift/src/webui/dist/
 
 # Packaged Helm charts
 *.tgz

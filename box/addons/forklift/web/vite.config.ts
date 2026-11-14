@@ -4,7 +4,7 @@ import { tanstackRouter } from "@tanstack/router-plugin/vite";
 import tailwindcss from "@tailwindcss/vite";
 import { fileURLToPath, URL } from "node:url";
 
-// The build output is embedded into the forklift binary (src/webui/dist).
+// The build output is embedded into the forklift binary (crates/forklift/src/webui/dist).
 export default defineConfig({
   plugins: [
     tanstackRouter({
@@ -16,7 +16,7 @@ export default defineConfig({
     react(),
   ],
   build: {
-    outDir: "../src/webui/dist",
+    outDir: "../crates/forklift/src/webui/dist",
     emptyOutDir: true,
   },
   resolve: {

@@ -1,0 +1,3 @@
+# The scratch image copies only the prebuilt binaries
+src
+Cargo.toml

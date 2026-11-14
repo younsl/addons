@@ -17,11 +17,11 @@ use prometheus::{
 use tokio_util::sync::CancellationToken;
 
 pub mod health;
-pub mod logging;
+pub use forklift_common::logging;
 pub mod middleware;
 pub(crate) mod pprof_routes;
 mod serve;
-pub mod signal;
+pub use forklift_common::signal;
 
 pub use logging::init_logging;
 
